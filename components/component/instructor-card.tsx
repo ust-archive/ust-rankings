@@ -49,7 +49,7 @@ export function InstructorCard({instructor}: InstructorCardProps) {
 
   const {ranking, score, name, samples, courses, grade} = instructor;
   const scoreFmt = (score * 100).toFixed(1);
-  const coursesFmt = courses.map(it => `${it.program} ${it.code}`).join(' ');
+  const coursesFmt = courses.map(it => `${it.program} ${it.code}`).join(', ');
   return (
     <Card className='bg-white flex'>
       <CardHeader className='flex flex-row gap-4 w-full items-center pr-10'>
