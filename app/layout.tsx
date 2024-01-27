@@ -23,10 +23,10 @@ export default function RootLayout({children}: Readonly<{children: React.ReactNo
           </Link>
           <nav className='ml-auto flex gap-4 sm:gap-6'>
             <Link className='text-sm font-medium hover:underline underline-offset-4' href='#'>
-              About
+              How does it work?
             </Link>
             <Link className='text-sm font-medium hover:underline underline-offset-4' href='#'>
-              How does it work?
+              About
             </Link>
           </nav>
         </header>
