@@ -12,25 +12,21 @@ export const metadata: Metadata = {
   description: 'The Rankings of Instructors at HKUST. ',
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({children}: Readonly<{children: React.ReactNode}>) {
   return (
     <html lang='en'>
       <body className={inter.className}>
         <header className='flex h-16 w-full items-center px-4 md:px-6 bg-[#003366] text-white'>
           <Link className='mr-6' href='#'>
             <MountainIcon className='h-6 w-6'/>
-            <span className='sr-only'>HKUST Rankings</span>
+            <span className='sr-only'>UST Rankings</span>
           </Link>
           <nav className='ml-auto flex gap-4 sm:gap-6'>
             <Link className='text-sm font-medium hover:underline underline-offset-4' href='#'>
-          About
+              About
             </Link>
             <Link className='text-sm font-medium hover:underline underline-offset-4' href='#'>
-          How does it work?
+              How does it work?
             </Link>
           </nav>
         </header>
