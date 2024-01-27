@@ -4,6 +4,7 @@ import '../components/styles/globals.css';
 import Link from 'next/link';
 import {MountainIcon} from 'lucide-react';
 import React from 'react';
+import {cn} from '@/lib/utils';
 
 const inter = Inter({subsets: ['latin']});
 
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
 export default function RootLayout({children}: Readonly<{children: React.ReactNode}>) {
   return (
     <html lang='en'>
-      <body className={inter.className}>
+      <body className={cn(inter.className, 'min-h-screen')}>
         <header className='flex h-16 w-full items-center px-4 md:px-6 bg-[#003366] text-white'>
           <Link className='mr-6' href='#'>
             <MountainIcon className='h-6 w-6'/>
