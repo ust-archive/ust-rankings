@@ -1,5 +1,8 @@
-import {Card, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
+import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {type Instructor} from '@/data';
+import {Collapsible, CollapsibleContent} from '@/components/ui/collapsible';
+import React from 'react';
+import {InstructorRatingChart} from '@/components/component/instructor-rating-chart';
 
 type InstructorCardProps = {
   instructor: Instructor;
@@ -45,13 +48,20 @@ function cssColor(color: Color) {
 }
 
 export function InstructorCard({instructor}: InstructorCardProps) {
+  const [open, setOpen] = React.useState(false);
+
   const bgColor = gradeColor(instructor.percentile);
 
   const {ranking, score, name, samples, courses, grade} = instructor;
   const scoreFmt = (score * 100).toFixed(1);
   const coursesFmt = courses.map(it => `${it.program} ${it.code}`).join(', ');
   return (
-    <Card className='bg-white flex'>
+    <Card
+      className='bg-white flex flex-col cursor-pointer'
+      onClick={() => {
+        setOpen(!open);
+      }}
+    >
       <CardHeader className='flex flex-row gap-4 w-full items-center pr-10'>
         <CardTitle className='text-gray-600 shrink-0 w-36'>
           #{ranking} <span className='font-medium'>({scoreFmt})</span>
@@ -64,6 +74,35 @@ export function InstructorCard({instructor}: InstructorCardProps) {
           <CardTitle>{grade}</CardTitle>
         </Card>
       </CardHeader>
+      <Collapsible open={open}>
+        <CollapsibleContent
+          className='overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown'>
+          <CardContent>
+            <div className='grid grid-cols-2 text-left ml-12 mr-6 text-gray-500 min-h-0'>
+              <div className='grid grid-cols-2 grid-rows-4 gap-x-1'>
+                <span className='text-right'>Rating (Teaching):</span>
+                <span>{instructor.teachRating.toFixed(3)}</span>
+                <span className='text-right'>Rating (Thumbs Up):</span>
+                <span>{instructor.thumbRating.toFixed(3)}</span>
+                <span className='text-right'>Overall Rating: </span>
+                <span>{instructor.teachRating.toFixed(3)}</span>
+                <span className='text-right'>Percentile: </span>
+                <span>{(instructor.percentile * 100).toFixed(1)}%</span>
+              </div>
+              <div className='grid grid-rows-4 gap-x-1'>
+                <span className='font-medium'>Courses (in 2023-24 Spring)</span>
+                <div className='row-span-3 grid grid-rows-3 grid-cols-3'>
+                  {instructor.courses.map(it => {
+                    const str = `${it.program} ${it.code}`;
+                    return <span key={str}>{str}</span>;
+                  })}
+                </div>
+              </div>
+            </div>
+            <InstructorRatingChart thumbRatings={instructor.thumbRatings} teachRatings={instructor.teachRatings}/>
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   );
 }
