@@ -109,6 +109,9 @@ module.exports = {
         slideDown: 'slideDown 300ms ease-out',
         slideUp: 'slideUp 0.2s ease-out',
       },
+      fontFamily: {
+        mono: 'var(--font-mono)'
+      }
     },
   },
   safelist: [

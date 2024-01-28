@@ -1,0 +1,48 @@
+article {
+    @apply max-w-3xl text-left space-y-8
+}
+
+section {
+    @apply space-y-4
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    @apply font-bold tracking-tighter
+}
+
+h1 {
+    @apply text-6xl font-bold
+}
+
+h2 {
+    @apply text-4xl
+}
+
+a {
+    @apply underline
+}
+
+p {
+    @apply text-pretty
+}
+
+ol, ul {
+    @apply list-inside ms-4
+}
+
+ol {
+    @apply list-decimal
+}
+
+ul {
+    @apply list-disc
+}
+
+pre {
+    @apply text-center my-2
+}
