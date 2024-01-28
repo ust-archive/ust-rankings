@@ -12,7 +12,7 @@ export default function Home() {
 
   return (
     <>
-      <h1 className='text-7xl font-bold tracking-tighter text-black'>
+      <h1 className='text-7xl font-bold tracking-tighter text-logo-gradient'>
         UST Rankings
       </h1>
       <form className='w-full max-w-2xl '>

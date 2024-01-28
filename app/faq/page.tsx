@@ -4,7 +4,9 @@ export default function FAQ() {
   return (
     <article>
 
-      <h1>Frequently Asked Questions</h1>
+      <h1 className='text-logo-gradient'>
+        Frequently Asked Questions
+      </h1>
 
       <section>
         <h2>Does It Ranks the Instructors Themselves?</h2>

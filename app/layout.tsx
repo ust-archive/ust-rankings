@@ -21,7 +21,7 @@ export default function RootLayout({children}: Readonly<{children: React.ReactNo
   return (
     <html lang='en'>
       <body className={cn(inter.className, roboto_mono.variable, 'min-h-screen')}>
-        <header className='flex h-16 items-center px-8 text-white bg-[#003366] text-md font-medium '>
+        <header className='flex h-16 items-center px-8 text-white bg-gradient-to-r from-[#003366] via-[#2b6297] to-[#003366] text-lg font-medium'>
           <Link href='/'><GraduationCapIcon className='h-8 w-8'/></Link>
           <div className='m-auto'/>
           <Link className='hover:underline underline-offset-4' href='/faq/'>FAQ</Link>

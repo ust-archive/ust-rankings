@@ -21,7 +21,7 @@ body {
   background: linear-gradient(
       to bottom,
       transparent,
-      rgb(var(--background-end-rgb)) 125vh
+      rgb(var(--background-end-rgb)) 100vh
     )
     rgb(var(--background-start-rgb));
 }
@@ -31,4 +31,9 @@ body {
     /*noinspection CssInvalidPropertyValue*/
     text-wrap: balance;
   }
+}
+
+.text-logo-gradient {
+  @apply p-4 -m-4;
+  @apply bg-gradient-to-br from-[#CC9900] to-[#996600] text-transparent bg-clip-text;
 }
