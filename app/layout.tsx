@@ -7,6 +7,7 @@ import React from 'react';
 import {cn} from '@/lib/utils';
 import {GraduationCapIcon} from 'lucide-react';
 import {Analytics} from '@vercel/analytics/react';
+import {SpeedInsights} from '@vercel/speed-insights/next';
 
 const inter = Inter({subsets: ['latin']});
 const roboto_mono = Roboto_Mono({
@@ -32,6 +33,7 @@ export default function RootLayout({children}: Readonly<{children: React.ReactNo
           {children}
         </main>
         <Analytics/>
+        <SpeedInsights/>
       </body>
     </html>
   );
