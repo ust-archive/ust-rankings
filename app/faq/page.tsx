@@ -1,6 +1,7 @@
-import './styles.css'
+/* eslint-disable react/no-unescaped-entities */
+import './styles.css';
 
-export default function FAQ() {
+export default function Faq() {
   return (
     <article>
 
