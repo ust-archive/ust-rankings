@@ -1,0 +1,4 @@
+.recharts-surface {
+    /* Prevent X-Labels from Overflowing */
+    overflow: visible;
+}

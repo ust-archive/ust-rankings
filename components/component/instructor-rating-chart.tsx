@@ -1,3 +1,4 @@
+import './instructor-rating-chart.css';
 import React from 'react';
 import {AreaChart, type CustomTooltipProps} from '@tremor/react';
 import {type RatingObject} from '@/data';
