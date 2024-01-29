@@ -1,0 +1,93 @@
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+
+  update:
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Give the default GITHUB_TOKEN write permission to commit and push the
+      # added or changed files to the repository.
+      contents: write
+
+    steps:
+      - name: Cache Repositories
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}
+          key: ${{ runner.os }}-workspace
+
+      - name: Checkout Data Repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          repository: ${{ github.repository }}
+          ref: data
+          path: ./data
+
+      - name: Checkout Action Repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          repository: ${{ github.repository }}
+          ref: next
+          path: ./action
+
+      - name: Checkout CQ
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          repository: ust-archive/ust-cq
+          fetch-depth: 1
+          path: ./action/data/cq
+
+      - name: Checkout Review
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          repository: ust-archive/ust.space-data
+          fetch-depth: 1
+          path: ./action/data/review
+
+      - name: Checkout SFQ
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          repository: ust-archive/ust-sfq
+          fetch-depth: 1
+          path: ./action/data/sfq
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Run Update
+        run: |
+          cd ./action
+          bun run run
+          cd ../data
+
+      - name: Setup Commit This
+        run: |
+          cd ./data
+          cp ../action/ratings-course.json ./
+          cp ../action/ratings-instructor.json ./
+          git config --local user.email "bot@ust-rankings.com"
+          git config --local user.name "UST Rankings Bot"
+          git add ratings-course.json ratings-instructor.json
+
+      - name: Commit This
+        continue-on-error: true
+        run: |
+          cd ./data
+          now=$(TZ=Asia/Hong_Kong date +"%Y-%m-%d")
+          git commit -a -m "update: $now"
+
+      - name: Push This
+        uses: ad-m/github-push-action@master
+        with:
+          directory: ./data
