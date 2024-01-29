@@ -23,6 +23,9 @@ export const metadata: Metadata = {
 export default function RootLayout({children}: Readonly<{children: React.ReactNode}>) {
   return (
     <html lang='en'>
+      <head>
+        <meta name='google-site-verification' content='Cdta5XjB-hvjrRL9nSemGyXDvt86xMZypNC5W08v-MA'/>
+      </head>
       <body className={cn(inter.className, roboto_mono.variable, 'min-h-screen')}>
         <header className='flex h-16 items-center px-8 text-white bg-gradient-to-r from-[#003366] via-[#2b6297] to-[#003366] text-lg font-medium'>
           <Link href='/'><GraduationCapIcon className='h-8 w-8'/></Link>
