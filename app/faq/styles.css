@@ -1,5 +1,7 @@
 article {
-    @apply max-w-3xl text-left space-y-8
+    @apply max-w-sm;
+    @apply lg:max-w-3xl;
+    @apply px-4 text-left space-y-8;
 }
 
 article section {

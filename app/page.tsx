@@ -12,10 +12,10 @@ export default function Home() {
 
   return (
     <>
-      <h1 className='text-7xl font-bold tracking-tighter text-logo-gradient'>
+      <h1 className='max-w-sm lg:max-w-2xl text-7xl font-bold tracking-tighter text-logo-gradient'>
         UST Rankings
       </h1>
-      <form className='w-full max-w-2xl '>
+      <form className='w-full max-w-sm lg:max-w-2xl'>
         <Input value={query}
           onChange={(e: ChangeEvent<HTMLInputElement>) => {
             setQuery(e.target.value);
@@ -25,7 +25,7 @@ export default function Home() {
           placeholder='Search for instructors by Name / Course / etc...' type='search'
         />
       </form>
-      <div className='w-full max-w-3xl'>
+      <div className='w-full max-w-sm lg:max-w-3xl px-2'>
         <WindowVirtualizer>
           {result.map(instructor => (
             <div key={instructor.id} className='my-2'>

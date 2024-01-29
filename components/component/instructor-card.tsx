@@ -55,6 +55,8 @@ export function InstructorCard({instructor}: InstructorCardProps) {
   const {ranking, score, name, samples, courses, grade} = instructor;
   const scoreFmt = (score * 100).toFixed(1);
   const coursesFmt = courses.map(it => `${it.program} ${it.code}`).join(', ');
+
+  const [familyName, givenName] = name.split(', ');
   return (
     <Card
       className='bg-white flex flex-col cursor-pointer'
@@ -62,12 +64,15 @@ export function InstructorCard({instructor}: InstructorCardProps) {
         setOpen(!open);
       }}
     >
-      <CardHeader className='flex flex-row gap-4 w-full items-center pr-10'>
-        <CardTitle className='text-gray-600 shrink-0 w-36'>
-          #{ranking} <span className='font-medium'>({scoreFmt})</span>
+      <CardHeader className='flex flex-row gap-4 w-full items-center p-4 lg:p-6 lg:pr-10'>
+        <CardTitle className='text-gray-600 shrink-0 lg:w-36'>
+          #{ranking} <span className='hidden lg:inline font-medium'>({scoreFmt})</span>
         </CardTitle>
         <div className='text-left min-w-0 space-y-1'>
-          <CardTitle className='tracking-normal'>{name}</CardTitle>
+          <CardTitle className='tracking-normal'>
+            <span className='inline-block'>{familyName},&nbsp;</span>
+            <span className='inline-block'>{givenName}</span>
+          </CardTitle>
           <CardDescription className='truncate'>{samples} Review(s). {coursesFmt}</CardDescription>
         </div>
         <Card className='!my-auto !ml-auto py-2 w-12 text-white shrink-0' style={{backgroundColor: cssColor(bgColor)}}>
@@ -78,14 +83,11 @@ export function InstructorCard({instructor}: InstructorCardProps) {
         <CollapsibleContent
           className='overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown'>
           <CardContent>
-            <div className='grid grid-cols-2 text-left ml-12 mr-6 text-gray-500 min-h-0'>
+            <div className='hidden lg:grid grid-cols-2 text-left ml-12 mr-6 text-gray-500 min-h-0'>
               <div className='grid grid-cols-2 grid-rows-4 gap-x-1'>
-                <span className='text-right'>Rating (Teaching):</span>
-                <span>{instructor.teachRating.toFixed(3)}</span>
-                <span className='text-right'>Rating (Thumbs Up):</span>
-                <span>{instructor.thumbRating.toFixed(3)}</span>
-                <span className='text-right'>Overall Rating: </span>
-                <span>{instructor.overallRating.toFixed(3)}</span>
+                <span className='text-right'>Rating (Teaching):</span> <span>{instructor.teachRating.toFixed(3)}</span>
+                <span className='text-right'>Rating (Thumbs Up):</span> <span>{instructor.thumbRating.toFixed(3)}</span>
+                <span className='text-right'>Overall Rating: </span> <span>{instructor.overallRating.toFixed(3)}</span>
                 <span className='text-right'>Percentile: </span>
                 <span>{(instructor.percentile * 100).toFixed(1)}%</span>
               </div>
@@ -99,6 +101,29 @@ export function InstructorCard({instructor}: InstructorCardProps) {
                 </div>
               </div>
             </div>
+
+            <div className='grid lg:hidden gap-y-2 mx-6 mb-1 text-left text-gray-500'>
+              <div className='grid gap-x-2'>
+                <span className='text-right'>Rating (Teaching):</span>
+                <span className='col-start-2'>{instructor.teachRating.toFixed(3)}</span>
+                <span className='text-right'>Rating (Thumbs Up):</span>
+                <span className='col-start-2'>{instructor.thumbRating.toFixed(3)}</span>
+                <span className='text-right'>Overall Rating: </span>
+                <span className='col-start-2'>{instructor.overallRating.toFixed(3)}</span>
+                <span className='text-right'>Percentile: </span>
+                <span className='col-start-2'>{(instructor.percentile * 100).toFixed(1)}%</span>
+              </div>
+              <div className='grid gap-x-2'>
+                <span className='font-medium'>Courses (in 2023-24 Spring)</span>
+                <div className='grid grid-cols-2 gap-x-2'>
+                  {instructor.courses.map(it => {
+                    const str = `${it.program} ${it.code}`;
+                    return <span className='text-nowrap' key={str}>{str}</span>;
+                  })}
+                </div>
+              </div>
+            </div>
+
             <InstructorRatingChart thumbRatings={instructor.thumbRatings} teachRatings={instructor.teachRatings}/>
           </CardContent>
         </CollapsibleContent>
