@@ -83,20 +83,23 @@ export function InstructorCard({instructor}: InstructorCardProps) {
         <CollapsibleContent
           className='overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown'>
           <CardContent>
-            <div className='hidden lg:grid grid-cols-2 text-left ml-12 mr-6 text-gray-500 min-h-0'>
-              <div className='grid grid-cols-2 grid-rows-4 gap-x-1'>
-                <span className='text-right'>Rating (Teaching):</span> <span>{instructor.teachRating.toFixed(3)}</span>
-                <span className='text-right'>Rating (Thumbs Up):</span> <span>{instructor.thumbRating.toFixed(3)}</span>
-                <span className='text-right'>Overall Rating: </span> <span>{instructor.overallRating.toFixed(3)}</span>
+            <div className='hidden lg:grid grid-cols-2 gap-2 mx-6 mb-1 text-left text-gray-500'>
+              <div className='grid gap-x-2'>
+                <span className='text-right'>Rating (Teaching):</span>
+                <span className='col-start-2'>{instructor.teachRating.toFixed(3)}</span>
+                <span className='text-right'>Rating (Thumbs Up):</span>
+                <span className='col-start-2'>{instructor.thumbRating.toFixed(3)}</span>
+                <span className='text-right'>Overall Rating: </span>
+                <span className='col-start-2'>{instructor.overallRating.toFixed(3)}</span>
                 <span className='text-right'>Percentile: </span>
-                <span>{(instructor.percentile * 100).toFixed(1)}%</span>
+                <span className='col-start-2'>{(instructor.percentile * 100).toFixed(1)}%</span>
               </div>
-              <div className='grid grid-rows-4 gap-x-1'>
+              <div className='grid gap-x-2 auto-rows-min'>
                 <span className='font-medium'>Courses (in 2023-24 Spring)</span>
-                <div className='row-span-3 grid grid-rows-3 grid-cols-3'>
+                <div className='grid grid-cols-2 gap-x-2'>
                   {instructor.courses.map(it => {
                     const str = `${it.program} ${it.code}`;
-                    return <span key={str}>{str}</span>;
+                    return <span className='text-nowrap' key={str}>{str}</span>;
                   })}
                 </div>
               </div>
