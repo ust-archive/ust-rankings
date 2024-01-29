@@ -36,10 +36,10 @@ export function fmtSemester(n: number): string {
 }
 
 export function InstructorRatingChart({teachRatings, thumbRatings}: Props) {
-  const teachRatingGroups = teachRatings.reduce(groupBy(it => it.time), {});
-  const thumbRatingGroups = thumbRatings.reduce(groupBy(it => it.time), {});
-  const maxSemester = Math.max(...teachRatings.map(it => it.time), ...thumbRatings.map(it => it.time));
-  const minSemester = Math.min(...teachRatings.map(it => it.time), ...thumbRatings.map(it => it.time));
+  const teachRatingGroups = teachRatings.reduce(groupBy(it => it.semester), {});
+  const thumbRatingGroups = thumbRatings.reduce(groupBy(it => it.semester), {});
+  const maxSemester = Math.max(...teachRatings.map(it => it.semester), ...thumbRatings.map(it => it.semester));
+  const minSemester = Math.min(...teachRatings.map(it => it.semester), ...thumbRatings.map(it => it.semester));
   let semesters = Array
     .from({length: maxSemester - minSemester + 1}, (_, i) => i + minSemester)
     .sort((a, b) => b - a);

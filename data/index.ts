@@ -1,14 +1,15 @@
 import dataObj from './data.json';
 import Fuse from 'fuse.js';
 
-export type RatingObject = {
-  time: number;
-  rating: number;
-};
-
 export type CourseObject = {
   program: string;
   code: string;
+};
+
+export type RatingObject = {
+  rating: number;
+  semester: number;
+  course: CourseObject
 };
 
 export type Instructor = {
@@ -28,6 +29,7 @@ export type Instructor = {
 };
 
 export const data: Instructor[] = dataObj;
+data.sort((a, b) => a.ranking - b.ranking)
 
 const dataForSearch = data.map(instructor => ({
   ...instructor,
