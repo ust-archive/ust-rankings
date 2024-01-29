@@ -85,7 +85,7 @@ export function InstructorCard({instructor}: InstructorCardProps) {
                 <span className='text-right'>Rating (Thumbs Up):</span>
                 <span>{instructor.thumbRating.toFixed(3)}</span>
                 <span className='text-right'>Overall Rating: </span>
-                <span>{instructor.teachRating.toFixed(3)}</span>
+                <span>{instructor.overallRating.toFixed(3)}</span>
                 <span className='text-right'>Percentile: </span>
                 <span>{(instructor.percentile * 100).toFixed(1)}%</span>
               </div>
