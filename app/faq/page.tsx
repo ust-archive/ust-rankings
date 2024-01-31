@@ -93,6 +93,13 @@ export default function Faq() {
         </p>
       </section>
 
+      <section>
+        <h2>Any Feedbacks? </h2>
+        <p>
+          Please send email to <a href='mailto:waver_velvet@hotmail.com'>me</a>.
+        </p>
+      </section>
+
     </article>
   );
 }
