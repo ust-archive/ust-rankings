@@ -5,6 +5,7 @@ import React from 'react';
 import {InstructorRatingChart} from '@/components/component/instructor-rating-chart';
 import {naturalSort} from '@/lib/utils';
 import {InstructorCourseLink} from '@/components/component/instructor-course-link';
+import {stopPropagation} from '@/lib/events';
 
 type InstructorCardProps = {
   instructor: Instructor;
@@ -75,6 +76,12 @@ export function InstructorCard({instructor}: InstructorCardProps) {
     .join(', ');
 
   const [familyName, givenName] = name.split(', ');
+
+  const googleUrl = new URL(
+    'https://www.google.com/search?'
+    + new URLSearchParams({q: `site:facultyprofiles.hkust.edu.hk ${name}`}).toString(),
+  ).toString();
+
   return (
     <Card
       className='bg-white flex flex-col cursor-pointer'
@@ -87,9 +94,11 @@ export function InstructorCard({instructor}: InstructorCardProps) {
           #{ranking} <span className='hidden lg:inline font-medium'>({scoreFmt})</span>
         </CardTitle>
         <div className='text-left min-w-0 space-y-1'>
-          <CardTitle className='tracking-normal'>
-            <span className='inline-block'>{familyName},&nbsp;</span>
-            <span className='inline-block'>{givenName}</span>
+          <CardTitle className='tracking-normal group'>
+            <a href={googleUrl} target='_blanko' onClick={stopPropagation}>
+              <span className='inline-block group-hover:underline'>{familyName},&nbsp;</span>
+              <span className='inline-block group-hover:underline'>{givenName}</span>
+            </a>
           </CardTitle>
           <CardDescription className='truncate'>{samples} Reviews of {coursesFmt}</CardDescription>
         </div>
