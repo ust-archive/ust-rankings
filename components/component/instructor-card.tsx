@@ -1,8 +1,10 @@
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
-import {type Instructor} from '@/data';
+import {type CourseObject, type Instructor} from '@/data';
 import {Collapsible, CollapsibleContent} from '@/components/ui/collapsible';
 import React from 'react';
 import {InstructorRatingChart} from '@/components/component/instructor-rating-chart';
+import {naturalSort} from '@/lib/utils';
+import {InstructorCourseLink} from '@/components/component/instructor-course-link';
 
 type InstructorCardProps = {
   instructor: Instructor;
@@ -47,14 +49,30 @@ function cssColor(color: Color) {
   return `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
 }
 
+function formatCourse(it: CourseObject) {
+  return `${it.program} ${it.code}`;
+}
+
 export function InstructorCard({instructor}: InstructorCardProps) {
   const [open, setOpen] = React.useState(false);
 
   const bgColor = gradeColor(instructor.percentile);
 
   const {ranking, score, name, samples, courses, grade} = instructor;
+
+  const thisCourses = new Map(
+    courses.map(it => [formatCourse(it), it]),
+  );
+  const allCourses = new Map([
+    ...courses.map(it => [formatCourse(it), it]),
+    ...instructor.thumbRatings.map(it => [formatCourse(it.course), it.course]),
+    ...instructor.teachRatings.map(it => [formatCourse(it.course), it.course]),
+  ] as Array<[string, CourseObject]>);
+
   const scoreFmt = (score * 100).toFixed(1);
-  const coursesFmt = courses.map(it => `${it.program} ${it.code}`).join(', ');
+  const coursesFmt = [...allCourses.keys()]
+    .sort(naturalSort)
+    .join(', ');
 
   const [familyName, givenName] = name.split(', ');
   return (
@@ -73,7 +91,7 @@ export function InstructorCard({instructor}: InstructorCardProps) {
             <span className='inline-block'>{familyName},&nbsp;</span>
             <span className='inline-block'>{givenName}</span>
           </CardTitle>
-          <CardDescription className='truncate'>{samples} Review(s). {coursesFmt}</CardDescription>
+          <CardDescription className='truncate'>{samples} Reviews of {coursesFmt}</CardDescription>
         </div>
         <Card className='!my-auto !ml-auto py-2 w-12 text-white shrink-0' style={{backgroundColor: cssColor(bgColor)}}>
           <CardTitle>{grade}</CardTitle>
@@ -84,7 +102,7 @@ export function InstructorCard({instructor}: InstructorCardProps) {
           className='overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown'>
           <CardContent>
             <div className='hidden lg:grid grid-cols-2 gap-2 mx-6 mb-1 text-left text-gray-500'>
-              <div className='grid gap-x-2'>
+              <div className='grid gap-x-2 auto-rows-min'>
                 <span className='text-right'>Rating (Teaching):</span>
                 <span className='col-start-2'>{instructor.teachRating.toFixed(3)}</span>
                 <span className='text-right'>Rating (Thumbs Up):</span>
@@ -95,12 +113,9 @@ export function InstructorCard({instructor}: InstructorCardProps) {
                 <span className='col-start-2'>{(instructor.percentile * 100).toFixed(1)}%</span>
               </div>
               <div className='grid gap-x-2 auto-rows-min'>
-                <span className='font-medium'>Courses (in 2023-24 Spring)</span>
+                <span className='font-medium'>Courses <span className='font-normal'>(A =A vailable this Semester)</span></span>
                 <div className='grid grid-cols-2 gap-x-2'>
-                  {instructor.courses.map(it => {
-                    const str = `${it.program} ${it.code}`;
-                    return <span className='text-nowrap' key={str}>{str}</span>;
-                  })}
+                  {[...allCourses.keys()].sort(naturalSort).map(it => <InstructorCourseLink key={it} course={allCourses.get(it)!} thisSem={thisCourses.has(it)}/>)}
                 </div>
               </div>
             </div>
@@ -117,12 +132,10 @@ export function InstructorCard({instructor}: InstructorCardProps) {
                 <span className='col-start-2'>{(instructor.percentile * 100).toFixed(1)}%</span>
               </div>
               <div className='grid gap-x-2'>
-                <span className='font-medium'>Courses (in 2023-24 Spring)</span>
+                <span className='font-medium'>Courses</span>
+                <span className='font-normal'>(A = Available this Semester)</span>
                 <div className='grid grid-cols-2 gap-x-2'>
-                  {instructor.courses.map(it => {
-                    const str = `${it.program} ${it.code}`;
-                    return <span className='text-nowrap' key={str}>{str}</span>;
-                  })}
+                  {[...allCourses.keys()].sort(naturalSort).map(it => <InstructorCourseLink key={it} course={allCourses.get(it)!} thisSem={thisCourses.has(it)}/>)}
                 </div>
               </div>
             </div>
