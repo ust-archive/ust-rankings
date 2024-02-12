@@ -122,7 +122,7 @@ export function InstructorCard({instructor}: InstructorCardProps) {
                 <span className='col-start-2'>{(instructor.percentile * 100).toFixed(1)}%</span>
               </div>
               <div className='grid gap-x-2 auto-rows-min'>
-                <span className='font-medium'>Courses <span className='font-normal'>(A =A vailable this Semester)</span></span>
+                <span className='font-medium'>Courses <span className='font-normal'>(A = Available this Semester)</span></span>
                 <div className='grid grid-cols-2 gap-x-2'>
                   {[...allCourses.keys()].sort(naturalSort).map(it => <InstructorCourseLink key={it} course={allCourses.get(it)!} thisSem={thisCourses.has(it)}/>)}
                 </div>
