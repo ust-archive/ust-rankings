@@ -94,8 +94,8 @@ export function InstructorCard({instructor}: InstructorCardProps) {
           #{ranking} <span className='hidden lg:inline font-medium'>({scoreFmt})</span>
         </CardTitle>
         <div className='text-left min-w-0 space-y-1'>
-          <CardTitle className='tracking-normal group'>
-            <a href={googleUrl} target='_blanko' onClick={stopPropagation}>
+          <CardTitle className='tracking-normal'>
+            <a className='group' href={googleUrl} target='_blanko' onClick={stopPropagation}>
               <span className='inline-block group-hover:underline'>{familyName},&nbsp;</span>
               <span className='inline-block group-hover:underline'>{givenName}</span>
             </a>
