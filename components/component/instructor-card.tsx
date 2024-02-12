@@ -95,7 +95,7 @@ export function InstructorCard({instructor}: InstructorCardProps) {
         </CardTitle>
         <div className='text-left min-w-0 space-y-1'>
           <CardTitle className='tracking-normal'>
-            <a className='group' href={googleUrl} target='_blank' onClick={stopPropagation}>
+            <a className='group pointer-events-none lg:pointer-events-auto' href={googleUrl} target='_blank' onClick={stopPropagation}>
               <span className='inline-block group-hover:underline'>{familyName},&nbsp;</span>
               <span className='inline-block group-hover:underline'>{givenName}</span>
             </a>
@@ -147,6 +147,7 @@ export function InstructorCard({instructor}: InstructorCardProps) {
                   {[...allCourses.keys()].sort(naturalSort).map(it => <InstructorCourseLink key={it} course={allCourses.get(it)!} thisSem={thisCourses.has(it)}/>)}
                 </div>
               </div>
+              <a className='font-medium underline' href={googleUrl} target='_blank' onClick={stopPropagation}>Instructor Details</a>
             </div>
 
             <InstructorRatingChart thumbRatings={instructor.thumbRatings} teachRatings={instructor.teachRatings}/>
