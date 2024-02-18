@@ -106,7 +106,7 @@ function Room({room}: {room: string}) {
   }
 
   const paName = toPathAdvisorName(room);
-  const url = `https://pathadvisor.ust.hk/search/${paName}`;
+  const url = `https://pathadvisor.ust.hk/interface.php?roomno=${paName}`;
 
   const roomInfoEl = parseRoomInfo(room).segments.map(segment => <span key={segment}
     className='text-nowrap'>{segment}</span>);
