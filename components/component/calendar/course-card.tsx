@@ -88,7 +88,7 @@ function Room({room}: {room: string}) {
     if (match) {
       let segments = match[1].split(', ');
       segments = segments.map((segment, index) =>
-        index === segments.length - 1 ? segment : segment + ',',
+        index === segments.length - 1 ? segment : segment + ', ',
       );
       return {
         segments,
@@ -98,7 +98,7 @@ function Room({room}: {room: string}) {
 
     let segments = input.split(', ');
     segments = segments.map((segment, index) =>
-      index === segments.length - 1 ? segment : segment + ',',
+      index === segments.length - 1 ? segment : segment + ', ',
     );
     return {
       segments,
@@ -108,8 +108,9 @@ function Room({room}: {room: string}) {
   const paName = toPathAdvisorName(room);
   const url = `https://pathadvisor.ust.hk/interface.php?roomno=${paName}`;
 
-  const roomInfoEl = parseRoomInfo(room).segments.map(segment => <span key={segment}
-    className='text-nowrap'>{segment}</span>);
+  const roomInfoEl = parseRoomInfo(room)
+    .segments
+    .map(segment => <span key={segment} className='text-nowrap'>{segment}</span>);
 
   return <div className='flex flex-col'>
     {
