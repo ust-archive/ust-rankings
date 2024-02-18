@@ -1,9 +1,9 @@
 /* eslint-disable react/no-unescaped-entities */
-import './styles.css';
+import styles from './styles.module.css';
 
 export default function Faq() {
   return (
-    <article>
+    <article className={styles.faq}>
 
       <h1 className='text-logo-gradient'>
         Frequently Asked Questions
@@ -50,9 +50,11 @@ export default function Faq() {
           Now is the turn of comparing instructors. The ratings of teaching and the ratings of "thumbs up" are averaged
           to find the "overall" rating, and the numbers of reviews are taken into consideration in this step. Bayesian
           Average is adopted in this case. The final score is calculated by
-          <pre>
-            <code>((mn * mr) + (n * r)) / (mn + n)</code>
-          </pre>
+        </p>
+        <pre>
+          <code>((mn * mr) + (n * r)) / (mn + n)</code>
+        </pre>
+        <p>
           where <code>mn, n</code> are the mean number of reviews and the number of reviews respectively; <code>mr,
           r</code> are the mean rating and the rating respectively. "Mean" here refers to the mean value among the
           instructors.
