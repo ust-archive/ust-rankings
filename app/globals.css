@@ -37,3 +37,45 @@ body {
   @apply p-4 -m-4;
   @apply bg-gradient-to-br from-[#CC9900] to-[#996600] text-transparent bg-clip-text;
 }
+
+
+article h1,
+article h2,
+article h3,
+article h4,
+article h5,
+article h6 {
+    @apply font-bold tracking-tighter;
+}
+
+article h1 {
+    @apply text-6xl font-bold
+}
+
+article h2 {
+    @apply text-4xl
+}
+
+article a {
+    @apply underline
+}
+
+article p {
+    @apply text-pretty
+}
+
+article ol, article ul {
+    @apply list-inside ms-4
+}
+
+article ol {
+    @apply list-decimal
+}
+
+article ul {
+    @apply list-disc
+}
+
+article pre {
+    @apply text-center my-2
+}

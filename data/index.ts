@@ -9,7 +9,7 @@ export type CourseObject = {
 export type RatingObject = {
   rating: number;
   semester: number;
-  course: CourseObject
+  course: CourseObject;
 };
 
 export type Instructor = {
@@ -29,7 +29,7 @@ export type Instructor = {
 };
 
 export const data: Instructor[] = dataObj;
-data.sort((a, b) => a.ranking - b.ranking)
+data.sort((a, b) => a.ranking - b.ranking);
 
 const dataForSearch = data.map(instructor => ({
   ...instructor,
