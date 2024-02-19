@@ -57,19 +57,12 @@ function Intr({instructors}: {instructors: string[]}) {
 
 function Sch({schedule}: {schedule: SectionSchedule}) {
   const m = {
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     MONDAY: 'Mon',
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     TUESDAY: 'Tue',
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     WEDNESDAY: 'Wed',
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     THURSDAY: 'Thu',
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     FRIDAY: 'Fri',
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     SATURDAY: 'Sat',
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     SUNDAY: 'Sun',
   };
   const f = DateTimeFormatter.ofPattern('HH:mm');

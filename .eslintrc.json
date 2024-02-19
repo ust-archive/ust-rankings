@@ -5,6 +5,7 @@
     "xo-typescript/space"
   ],
   "rules": {
-    "new-cap": 0
+    "new-cap": 0,
+    "@typescript-eslint/naming-convention": 0
   }
 }

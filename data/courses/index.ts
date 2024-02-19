@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention */
-
 import {RRule} from 'rrule';
 import type * as ics from 'ics';
 

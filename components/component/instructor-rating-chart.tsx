@@ -21,13 +21,9 @@ function mean(arr: number[]): number {
 
 export function fmtSemester(n: number): string {
   const seasonMap = {
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     0: 'Fall',
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     1: 'Winter',
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     2: 'Spring',
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     3: 'Summer',
   };
   const year = (Math.floor(n / 4) + 2012) % 100;
