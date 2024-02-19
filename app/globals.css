@@ -11,7 +11,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
+    --background-start-rgb: 21, 18, 18;
     --background-end-rgb: 0, 0, 0;
   }
 }
@@ -38,6 +38,12 @@ body {
   @apply bg-gradient-to-br from-[#CC9900] to-[#996600] text-transparent bg-clip-text;
 }
 
+@media (prefers-color-scheme: dark) {
+  .text-logo-gradient {
+    @apply bg-gradient-to-br from-[#FFBF00] to-[#CC8800] text-transparent bg-clip-text;
+  }
+}
+
 
 article h1,
 article h2,
@@ -45,37 +51,37 @@ article h3,
 article h4,
 article h5,
 article h6 {
-    @apply font-bold tracking-tighter;
+  @apply font-bold tracking-tighter;
 }
 
 article h1 {
-    @apply text-6xl font-bold
+  @apply text-6xl font-bold
 }
 
 article h2 {
-    @apply text-4xl
+  @apply text-4xl
 }
 
 article a {
-    @apply underline
+  @apply underline
 }
 
 article p {
-    @apply text-pretty
+  @apply text-pretty
 }
 
 article ol, article ul {
-    @apply list-inside ms-4
+  @apply list-inside ms-4
 }
 
 article ol {
-    @apply list-decimal
+  @apply list-decimal
 }
 
 article ul {
-    @apply list-disc
+  @apply list-disc
 }
 
 article pre {
-    @apply text-center my-2
+  @apply text-center my-2
 }

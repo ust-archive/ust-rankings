@@ -201,7 +201,7 @@ export function CourseCard(props: CourseCardProps) {
         </div>
       </CardHeader>
       <CardContent>
-        <div className='overflow-auto bg-slate-50'>
+        <div className='overflow-auto bg-slate-50 dark:bg-slate-900'>
           <SectionTable
             sections={course.sections}
             isSectionSelected={props.isSectionSelected}
