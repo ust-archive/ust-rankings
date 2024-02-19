@@ -20,9 +20,9 @@ async function updateCalendar() {
 	const SCHEDULE_URL = `https://github.com/FlandiaYingman/quota-data-at-ust/raw/main/data/${currentTerm} Slim.json`
 	const CALENDAR_URL = "https://caldates.ust.hk/cgi-bin/eng/ical.php"
 
-	await fs.writeFile('data/courses/term.json', JSON.stringify(currentTerm))
-	await fs.writeFile('data/courses/schedule.json', await fetchText(SCHEDULE_URL))
-	await fs.writeFile('data/courses/calendar.json', JSON.stringify(ical.sync.parseICS(he.decode(await fetchText(CALENDAR_URL))), null, 2))
+	await fs.writeFile('data/schedule/term.json', JSON.stringify(currentTerm))
+	await fs.writeFile('data/schedule/schedule.json', await fetchText(SCHEDULE_URL))
+	await fs.writeFile('data/schedule/calendar.json', JSON.stringify(ical.sync.parseICS(he.decode(await fetchText(CALENDAR_URL))), null, 2))
 }
 
 await Promise.all([

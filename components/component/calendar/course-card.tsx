@@ -1,15 +1,11 @@
-import * as ics from 'ics';
-import {saveAs} from 'file-saver';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import React, {type ReactNode} from 'react';
 import {groupBy} from '@/lib/utils';
-import {stopPropagation} from '@/lib/events';
-import {type Course, eventAttrFrom, type Section, type SectionSchedule, toPathAdvisorName} from '@/data/courses';
+import {type Course, format, type Section, type SectionSchedule} from '@/data/schedule';
 import {DateTimeFormatter, LocalTime} from '@js-joda/core';
-
-type CourseCardProps = {
-  course: Course;
-};
+import {PathAdvisor} from '@/data/schedule/path-advisor';
+import {Button} from '@/components/ui/button';
+import {toast} from 'sonner';
 
 type Cell = {
   key: string | number;
@@ -29,33 +25,35 @@ function newCell(data: ReactNode, key: string | any, rowSpan?: number, colSpan?:
   };
 }
 
-function Sect({section, course}: {section: Section; course: Course}) {
-  function saveIcs() {
-    const eventAttrs = course.sections
-      .filter(s => s.number === section.number)
-      .map(s => eventAttrFrom(course, s));
-
-    const icsStr = ics.createEvents(eventAttrs).value!;
-    const blob = new Blob([icsStr], {type: 'text/courses;charset=utf-8'});
-    saveAs(blob, `${course.program}${course.code}-${section.section}.ics`);
-  }
-
-  return <div className='flex flex-col'>
-    <a
-      className='cursor-pointer underline'
-      onClick={() => {
-        saveIcs();
-      }}> <span>{section.section}</span> <span>({section.number})</span> </a>
-  </div>;
+function SectionCell(props: {
+  section: Section;
+  selected: boolean;
+  select: (section: number) => void;
+  unselect: (section: number) => void;
+}) {
+  const [selected, setSelected] = React.useState(props.selected);
+  const variant = selected ? 'default' : 'secondary';
+  return <Button variant={variant} onClick={() => {
+    setSelected(!selected);
+    if (selected) {
+      props.unselect(props.section.number);
+      toast(`${format(props.section)} removed from shopping cart.`);
+    } else {
+      props.select(props.section.number);
+      toast(`${format(props.section)} added to shopping cart.`);
+    }
+  }}>
+    <span>{props.section.section}</span> <span>({props.section.number})</span>
+  </Button>;
 }
 
-function Intr({instructors}: {instructors: string[]}) {
-  return <div className='flex flex-col'>
+function InstructorsCell({instructors}: {instructors: string[]}) {
+  return <>
     {instructors.map(i => <span className='block text-nowrap' key={i}>{i}</span>)}
-  </div>;
+  </>;
 }
 
-function Sch({schedule}: {schedule: SectionSchedule}) {
+function ScheduleCell({schedule}: {schedule: SectionSchedule}) {
   const m = {
     MONDAY: 'Mon',
     TUESDAY: 'Tue',
@@ -72,7 +70,7 @@ function Sch({schedule}: {schedule: SectionSchedule}) {
   </>;
 }
 
-function Room({room}: {room: string}) {
+function RoomCell({room}: {room: string}) {
   function parseRoomInfo(input: string): {
     segments: string[];
     number?: number;
@@ -98,30 +96,49 @@ function Room({room}: {room: string}) {
     };
   }
 
-  const paName = toPathAdvisorName(room);
-  const url = `https://pathadvisor.ust.hk/interface.php?roomno=${paName}`;
-
   const roomInfoEl = parseRoomInfo(room)
     .segments
     .map(segment => <span key={segment} className='text-nowrap'>{segment}</span>);
 
+  const hrefPathAdvisor = PathAdvisor.findPathTo(room);
   return <div className='flex flex-col'>
     {
-      paName ? <a href={url} target='_blank' className='underline'>{roomInfoEl}</a> : roomInfoEl
+      hrefPathAdvisor
+        ? <a href={hrefPathAdvisor} target='_blank' className='underline'>{roomInfoEl}</a> : roomInfoEl
     }
   </div>;
 }
 
-function SectionTable({sections, course}: {sections: Section[]; course: Course}) {
+type SectionTableProps = {
+  sections: Section[];
+
+  isSectionSelected: (section: number) => boolean;
+  selectSection: (section: number) => void;
+  unselectSection: (section: number) => void;
+};
+
+function SectionTable(props: SectionTableProps) {
+  const {sections} = props;
+
   const sectionGroups = groupBy(sections, section => section.section);
-  const tableObj = Object.entries(sectionGroups).flatMap(([, sections]) => sections.flatMap(sectionObj => ({
-    cells: [
-      newCell(<Sect section={sectionObj} course={course}/>, sectionObj.number),
-      newCell(<Sch schedule={sectionObj.schedule}/>, sectionObj.schedule),
-      newCell(<Intr instructors={sectionObj.instructors}/>, sectionObj.instructors),
-      newCell(<Room room={sectionObj.room}/>, sectionObj.room),
-    ],
-  })));
+  const tableObj = Object.entries(sectionGroups)
+    .flatMap(([, sections]) => sections.flatMap(section => {
+      const selected = props.isSectionSelected(section.number);
+      return ({
+        key: JSON.stringify(section),
+        cells: [
+          newCell(<SectionCell
+            section={section}
+            selected={selected}
+            select={props.selectSection}
+            unselect={props.unselectSection}
+          />, section.number),
+          newCell(<ScheduleCell schedule={section.schedule}/>, section.schedule),
+          newCell(<InstructorsCell instructors={section.instructors}/>, section.instructors),
+          newCell(<RoomCell room={section.room}/>, section.room),
+        ],
+      });
+    }));
 
   const headerCell: Array<Cell | undefined> = tableObj[0]?.cells.map(() => undefined);
   for (const row of tableObj) {
@@ -140,44 +157,59 @@ function SectionTable({sections, course}: {sections: Section[]; course: Course})
   return <table className='w-full table-auto border font-mono overflow-auto'>
     <thead>
       <tr>
-        <th className='px-2'>Section</th>
-        <th className='px-2'>Schedule</th>
-        <th className='px-2'>Instructors</th>
-        <th className='px-2'>Room</th>
+        <th className='p-2'>Section</th>
+        <th className='p-2'>Schedule</th>
+        <th className='p-2'>Instructors</th>
+        <th className='p-2'>Room</th>
       </tr>
     </thead>
     <tbody>
-      {tableObj.map((row, i) => <tr key={i} className=''>
-        {row.cells.map((cell, j) => {
+      {tableObj.map(row => <tr key={row.key} className=''>
+        {row.cells.map((cell, i) => {
           if (cell.remove) {
             return null;
           }
 
-          return <td className='border px-4 py-2' key={j} rowSpan={cell.rowSpan} colSpan={cell.colSpan}>{cell.data}</td>;
+          return <td className='border p-2' key={i} rowSpan={cell.rowSpan} colSpan={cell.colSpan}>
+            {cell.data}
+          </td>;
         })}
       </tr>)}
     </tbody>
   </table>;
 }
 
-export function CourseCard({course}: CourseCardProps) {
-  const url = `https://w5.ab.ust.hk/wcq/cgi-bin/2330/subject/${course.program}#${course.program}${course.code}`;
+type CourseCardProps = {
+  course: Course;
 
+  isSectionSelected: (section: number) => boolean;
+  selectSection: (section: number) => void;
+  unselectSection: (section: number) => void;
+};
+
+export function CourseCard(props: CourseCardProps) {
+  const {course} = props;
   return (
-    <Card className='bg-white flex flex-col'> <CardHeader
-      className='flex flex-row gap-4 w-full items-center p-4 lg:p-6 lg:pr-10'>
-      <div className='text-left min-w-0 space-y-1'>
-        <CardTitle className='tracking-normal'> <a className='group pointer-events-none lg:pointer-events-auto'
-          href={url} target='_blank' onClick={stopPropagation}>
-          {course.name}
-        </a> </CardTitle> <CardDescription className='truncate'>{course.program} {course.code}</CardDescription>
-      </div>
-    </CardHeader>
-
-    <CardContent>
-      <div className='overflow-auto bg-slate-50'>
-        <SectionTable sections={course.sections} course={course}/>
-      </div>
-    </CardContent> </Card>
+    <Card className='bg-white flex flex-col'>
+      <CardHeader
+        className='flex flex-row gap-4 w-full items-center lg:p-6 lg:pr-10'>
+        <div className='text-left min-w-0 space-y-1'>
+          <CardTitle className='tracking-normal'>
+            {course.name}
+          </CardTitle>
+          <CardDescription className='truncate'>{course.program} {course.code}</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className='overflow-auto bg-slate-50'>
+          <SectionTable
+            sections={course.sections}
+            isSectionSelected={props.isSectionSelected}
+            selectSection={props.selectSection}
+            unselectSection={props.unselectSection}
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
