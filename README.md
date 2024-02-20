@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# UST Rankings
 
-## Getting Started
+[UST Rankings](https://ust-rankings.vercel.app/) provides a basic rankings for instructors at HKUST, based on their teaching performance.
 
-First, run the development server:
+**Features**
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Data are updated time-by-time.
+- Easily search for any instructor.
+- Grade instructors by A+, A, etc. for intuitive understanding.
+- Check trends on instructors' ratings.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+![UST Rankings](https://github.com/Waver-Velvet/ust-rankings/assets/42676149/067b716a-7c74-4eb6-a232-cedf342d7dd0)
+*The actual names are redacted because the rankings are changing time-by-time.*
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
 
-## Learn More
+## UST Schedule
 
-To learn more about Next.js, take a look at the following resources:
+[UST Schedule](https://ust-rankings.vercel.app/schedule) is a sub-site of UST Rankings. It provides the functionality to inspect class schedules, marking them and importing them into user's calendar app.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Features**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+- Data are updated time-by-time.
+- Both `webcal://` link and `.ics` file are available.
+- Directly links the venue to Path Advisor.
 
-## Deploy on Vercel
+![UST Schedule](https://github.com/Waver-Velvet/ust-rankings/assets/42676149/f553e971-bd62-4b0f-a487-8b77215e57ec)
+*This is the dark theme, for demonstrational purpose.*
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Connect
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+Should you have any suggestions, feel free to open an issue or email me.
