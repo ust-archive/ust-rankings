@@ -1,6 +1,6 @@
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import React, {type ReactNode} from 'react';
-import {groupBy} from '@/lib/utils';
+import {cn, groupBy} from '@/lib/utils';
 import {type Course, format, type Section, type SectionSchedule} from '@/data/schedule';
 import {DateTimeFormatter, LocalTime} from '@js-joda/core';
 import {PathAdvisor} from '@/data/schedule/path-advisor';
@@ -13,15 +13,17 @@ type Cell = {
   rowSpan: number;
   colSpan: number;
   remove: boolean;
+  className: string;
 };
 
-function newCell(data: ReactNode, key: string | any, rowSpan?: number, colSpan?: number): Cell {
+function newCell(data: ReactNode, key: string | any, className?: string): Cell {
   return {
     key: typeof key === 'string' ? key : JSON.stringify(key),
     data,
-    rowSpan: rowSpan ?? 1,
-    colSpan: colSpan ?? 1,
+    rowSpan: 1,
+    colSpan: 1,
     remove: false,
+    className: className ?? '',
   };
 }
 
@@ -33,7 +35,7 @@ function SectionCell(props: {
 }) {
   const [selected, setSelected] = React.useState(props.selected);
   const variant = selected ? 'default' : 'secondary';
-  return <Button variant={variant} onClick={() => {
+  return <Button className='h-full w-full' variant={variant} onClick={() => {
     setSelected(!selected);
     if (selected) {
       props.unselect(props.section.number);
@@ -132,7 +134,7 @@ function SectionTable(props: SectionTableProps) {
             selected={selected}
             select={props.selectSection}
             unselect={props.unselectSection}
-          />, section.number),
+          />, section.number, 'p-1'),
           newCell(<ScheduleCell schedule={section.schedule}/>, section.schedule),
           newCell(<InstructorsCell instructors={section.instructors}/>, section.instructors),
           newCell(<RoomCell room={section.room}/>, section.room),
@@ -164,13 +166,17 @@ function SectionTable(props: SectionTableProps) {
       </tr>
     </thead>
     <tbody>
-      {tableObj.map(row => <tr key={row.key} className=''>
+      {/*
+      h-0: fake height for the inner button to stretch to the height of the cell.
+      See: https://stackoverflow.com/questions/3215553/make-a-div-fill-an-entire-table-cell
+      */}
+      {tableObj.map(row => <tr key={row.key} className='h-0'>
         {row.cells.map((cell, i) => {
           if (cell.remove) {
             return null;
           }
 
-          return <td className='border p-2' key={i} rowSpan={cell.rowSpan} colSpan={cell.colSpan}>
+          return <td className={cn('border p-2 h-[inherit]', cell.className)} key={i} rowSpan={cell.rowSpan} colSpan={cell.colSpan}>
             {cell.data}
           </td>;
         })}
