@@ -8,6 +8,7 @@ import {GraduationCapIcon} from 'lucide-react';
 import {Analytics} from '@vercel/analytics/react';
 import {SpeedInsights} from '@vercel/speed-insights/next';
 import {Toaster} from '@/components/ui/sonner';
+import {SiGithub} from '@icons-pack/react-simple-icons';
 
 const inter = Inter({subsets: ['latin']});
 const roboto_mono = Roboto_Mono({
@@ -33,6 +34,7 @@ export default function RootLayout({children}: Readonly<{children: React.ReactNo
           <div className='m-auto'/>
           <Link className='hover:underline underline-offset-4' href='/schedule/'>Schedule</Link>
           <Link className='hover:underline underline-offset-4' href='/faq/'>FAQ</Link>
+          <Link href='https://github.com/Waver-Velvet/ust-rankings'><SiGithub className='h-7 w-7'/></Link>
         </header>
         <main className='flex flex-col items-center space-y-8 text-center py-32'>
           {children}
