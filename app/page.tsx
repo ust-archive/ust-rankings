@@ -5,6 +5,7 @@ import {InstructorCard} from '@/components/component/instructor-card';
 import {data, search} from '@/data';
 import React, {type ChangeEvent} from 'react';
 import {WindowVirtualizer} from 'virtua';
+import {NewDomainBanner} from '@/components/component/new-domain-banner';
 
 export default function Home() {
   const [query, setQuery] = React.useState('');
@@ -12,6 +13,8 @@ export default function Home() {
 
   return (
     <>
+      <NewDomainBanner className='-mt-12 max-w-sm lg:max-w-2xl' />
+
       <h1 className='max-w-sm lg:max-w-2xl text-7xl font-bold tracking-tighter text-logo-gradient'>
         UST Rankings
       </h1>
