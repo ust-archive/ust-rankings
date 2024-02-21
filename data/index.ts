@@ -42,8 +42,6 @@ const dataForSearch = data.map(instructor => ({
   ],
 }));
 
-console.log(dataForSearch);
-
 const fuse = new Fuse(dataForSearch, {
   keys: ['name', 'allCourseStr', 'grade'],
   shouldSort: false,
