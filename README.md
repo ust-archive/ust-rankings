@@ -1,6 +1,6 @@
 # UST Rankings
 
-[UST Rankings](https://ust-rankings.vercel.app/) provides a basic rankings for instructors at HKUST, based on their teaching performance.
+[UST Rankings](https://ust-rankings.com/) provides a basic rankings for instructors at HKUST, based on their teaching performance.
 
 **Features**
 
