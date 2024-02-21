@@ -54,7 +54,7 @@ export function SisParserDialog({callback, ...props}: SisParserDialogProps) {
         placeholder='Paste Here'
         defaultValue={text}
         content={text}
-        onChange={e => {
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           setText(e.target.value);
         }}
       />
