@@ -4,12 +4,13 @@ import {Input} from '@/components/ui/input';
 import React, {type ChangeEvent} from 'react';
 import {WindowVirtualizer} from 'virtua';
 import {CourseCard} from '@/components/component/calendar/course-card';
-import {courses, searchCourses} from '@/data/schedule';
+import {Course, courses, findClass, searchCourses, Section} from '@/data/schedule';
 import {Button} from '@/components/ui/button';
-import {CalendarPlus, Download, HelpCircle} from 'lucide-react';
+import {CalendarPlus, Download, HelpCircle, Import} from 'lucide-react';
 import {Collapsible, CollapsibleContent} from '@/components/ui/collapsible';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import {NewDomainBanner} from '@/components/component/new-domain-banner';
+import {SisParserDialog} from '@/app/schedule/sis-parser-dialog';
 
 export default function Home() {
   const [shoppingCart, setShoppingCart] = React.useState<Set<number>>(new Set());
@@ -26,6 +27,10 @@ export default function Home() {
     setShoppingCart(new Set(shoppingCart));
   };
 
+  const submitSisParserDialog = (classNumbers: number[]) => {
+    classNumbers.forEach(addSectionToShoppingCart);
+  };
+
   const [showHelp, setShowHelp] = React.useState(false);
 
   const [query, setQuery] = React.useState('');
@@ -33,7 +38,7 @@ export default function Home() {
 
   return (
     <>
-      <NewDomainBanner className='-mt-12 max-w-sm lg:max-w-2xl' />
+      <NewDomainBanner className='-mt-12 max-w-sm lg:max-w-2xl'/>
 
       <h1 className='max-w-sm lg:max-w-2xl text-7xl font-bold tracking-tighter text-logo-gradient'>
         UST Schedule
@@ -134,6 +139,8 @@ export default function Home() {
             </WindowVirtualizer>
           </TabsContent>
           <TabsContent value='shopping-cart' className='min-h-[200vh]'>
+            <SisParserDialog callback={submitSisParserDialog}/>
+            <hr className='mt-2'/>
             <WindowVirtualizer>
               {queryResult
                 .filter(it => it.sections.length)

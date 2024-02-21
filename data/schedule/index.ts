@@ -32,6 +32,12 @@ export const sectionMap = groupBy(sections, section => section.number);
 
 export const sectionToCourse = new Map(courses.flatMap(course => course.sections.map(section => [section.number, course])));
 
+export function findClass(number: number): [Course, Section[]] {
+  const sections = sectionMap[number];
+  const course = sectionToCourse.get(number)!;
+  return [course, sections];
+}
+
 const courseForSearch = courses.map(course => ({
   ...course,
   key: `${course.program} ${course.code}`,
