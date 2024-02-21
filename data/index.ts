@@ -33,17 +33,22 @@ data.sort((a, b) => a.ranking - b.ranking);
 
 const dataForSearch = data.map(instructor => ({
   ...instructor,
-  courses: instructor.courses.map(course => ({
-    ...course,
-    str: `${course.program} ${course.code}`,
-  })),
+  allCourseStr: [
+    ...new Set([
+      ...instructor.courses.map(it => it.program + it.code),
+      ...instructor.teachRatings.map(it => it.course.program + it.course.code),
+      ...instructor.thumbRatings.map(it => it.course.program + it.course.code),
+    ]),
+  ],
 }));
 
+console.log(dataForSearch);
+
 const fuse = new Fuse(dataForSearch, {
-  keys: ['name', 'courses.str', 'grade'],
+  keys: ['name', 'allCourseStr', 'grade'],
   shouldSort: false,
   useExtendedSearch: true,
-  threshold: 0.2,
+  threshold: 0.10,
 });
 
 export function search(query: string): Instructor[] {
