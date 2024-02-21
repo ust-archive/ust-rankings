@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+/* eslint-disable @typescript-eslint/prefer-ts-expect-error */
 import dataObj from './data.json';
 import Fuse from 'fuse.js';
 
@@ -28,6 +30,7 @@ export type Instructor = {
   grade: string;
 };
 
+// @ts-ignore: the error is because the JSON file is too big.
 export const data: Instructor[] = dataObj;
 data.sort((a, b) => a.ranking - b.ranking);
 
