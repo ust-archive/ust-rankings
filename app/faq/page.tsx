@@ -9,7 +9,7 @@ export default function Faq() {
     <article className={styles.faq}>
 
       <h1 className='text-logo-gradient'>
-        Frequently Asked Questions
+        FAQ - Rankings
       </h1>
 
       <section>
@@ -99,7 +99,7 @@ export default function Faq() {
       </section>
 
       <h1 className='text-logo-gradient'>
-        FAQ: Schedule
+        FAQ - Schedule
       </h1>
 
       <section>
@@ -114,6 +114,10 @@ export default function Faq() {
           Additionally, UST Schedule is able to show the location of the venue via Path Advisor.
         </p>
       </section>
+
+      <h1 className='text-logo-gradient'>
+        Others
+      </h1>
 
       <section>
         <h2>Any Feedbacks? </h2>
