@@ -1,6 +1,9 @@
 /* eslint-disable react/no-unescaped-entities */
 import styles from './styles.module.css';
 
+const Email = 'mailto:waver_velvet@hotmail.com';
+const Issue = 'https://github.com/Waver-Velvet/ust-rankings/issues/new';
+
 export default function Faq() {
   return (
     <article className={styles.faq}>
@@ -115,7 +118,7 @@ export default function Faq() {
       <section>
         <h2>Any Feedbacks? </h2>
         <p>
-          Please send email to <a href='mailto:waver_velvet@hotmail.com'>me</a>.
+          Please send email to <a href={Email}>me</a>, or open an issue on <a href={Issue} target='_blank'>GitHub</a>.
         </p>
       </section>
 
