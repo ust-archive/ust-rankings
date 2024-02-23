@@ -4,13 +4,14 @@ import {Input} from '@/components/ui/input';
 import React, {type ChangeEvent} from 'react';
 import {WindowVirtualizer} from 'virtua';
 import {CourseCard} from '@/components/component/calendar/course-card';
-import {Course, courses, findClass, searchCourses, Section} from '@/data/schedule';
+import {courses, searchCourses} from '@/data/schedule';
 import {Button} from '@/components/ui/button';
-import {CalendarPlus, Download, HelpCircle, Import} from 'lucide-react';
+import {CalendarPlus, Download, HelpCircle} from 'lucide-react';
 import {Collapsible, CollapsibleContent} from '@/components/ui/collapsible';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import {NewDomainBanner} from '@/components/component/new-domain-banner';
 import {SisParserDialog} from '@/app/schedule/sis-parser-dialog';
+import {toast} from 'sonner';
 
 export default function Home() {
   const [shoppingCart, setShoppingCart] = React.useState<Set<number>>(new Set());
@@ -74,9 +75,12 @@ export default function Home() {
           <Button
             variant='ghost'
             size='icon'
-            onClick={() => {
+            onClick={async () => {
               const params = new URLSearchParams([...shoppingCart].map(it => ['number', it.toString()]));
-              window.open(`webcal://${window.location.host}/api/calendar?` + params.toString());
+              const url = `webcal://${window.location.host}/api/calendar?` + params.toString();
+              window.open(url);
+              await navigator.clipboard.writeText(url);
+              toast('The link is also copied to clipboard');
             }}>
             <CalendarPlus/>
           </Button>
