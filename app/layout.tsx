@@ -9,6 +9,7 @@ import {Analytics} from '@vercel/analytics/react';
 import {SpeedInsights} from '@vercel/speed-insights/next';
 import {Toaster} from '@/components/ui/sonner';
 import {SiGithub} from '@icons-pack/react-simple-icons';
+import {GoogleAnalytics} from '@next/third-parties/google';
 
 const inter = Inter({subsets: ['latin']});
 const roboto_mono = Roboto_Mono({
@@ -43,6 +44,7 @@ export default function RootLayout({children}: Readonly<{children: React.ReactNo
         <Analytics/>
         <SpeedInsights/>
       </body>
+      <GoogleAnalytics gaId='G-C8B9VFGTRH'/>
     </html>
   );
 }
