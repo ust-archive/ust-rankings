@@ -19,6 +19,7 @@ async function redeploy() {
     body: JSON.stringify({
       deploymentId: process.env.VERCEL_DEPLOYMENT_ID,
       name: `Cron Deployment ${new Date().toISOString()}`,
+      target: 'production',
     }),
   });
 
