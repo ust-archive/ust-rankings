@@ -5,12 +5,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({error: 'Unauthorized'}, {status: 401});
   }
 
-  return NextResponse.json(await redeploy());
+  await redeploy();
+  return NextResponse.json({});
 }
 
 async function redeploy() {
   const API = `https://api.vercel.com/v13/deployments?${new URLSearchParams({forceNew: '1'}).toString()}`;
-  return fetch(API, {
+  const resp = await fetch(API, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${process.env.VERCEL_TOKEN}`,
@@ -20,4 +21,8 @@ async function redeploy() {
       name: `Cron Deployment ${new Date().toISOString()}`,
     }),
   });
+
+  if (!resp.ok) {
+    throw new Error(`Failed to redeploy: ${resp.status} ${resp.statusText} ${await resp.text()}`);
+  }
 }
