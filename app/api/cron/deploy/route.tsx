@@ -17,7 +17,7 @@ async function redeploy() {
       Authorization: `Bearer ${process.env.VERCEL_TOKEN}`,
     },
     body: JSON.stringify({
-      deploymentId: process.env.DEPLOYMENT_ID,
+      deploymentId: process.env.VERCEL_DEPLOYMENT_ID,
       name: `Cron Deployment ${new Date().toISOString()}`,
     }),
   });
