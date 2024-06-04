@@ -33,7 +33,6 @@ export default function RootLayout({children}: Readonly<{children: React.ReactNo
           className='flex h-16 items-center px-8 gap-8 text-white bg-gradient-to-r from-[#003366] via-[#2b6297] to-[#003366] dark:from-[#003366] dark:via-[#224e77] dark:to-[#003366] text-lg font-medium'>
           <Link href='/'><GraduationCapIcon className='h-8 w-8'/></Link>
           <div className='m-auto'/>
-          <Link className='no-underline hover:underline underline-offset-4' href='/schedule/'>Schedule</Link>
           <Link className='no-underline hover:underline underline-offset-4' href='/faq/'>FAQ</Link>
           <Link href='https://github.com/Waver-Velvet/ust-rankings'><SiGithub className='h-7 w-7'/></Link>
         </header>
