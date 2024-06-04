@@ -3,6 +3,9 @@
 
 name: Deploy Vercel
 on:
+  # At 20:00 UTC (04:00 HKT)
+  schedule:
+    - cron: 0 20 * * *
   push:
     branches: [ master ]
   workflow_dispatch:
