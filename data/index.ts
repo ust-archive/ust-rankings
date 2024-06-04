@@ -4,8 +4,8 @@ import dataObj from './data.json';
 import Fuse from 'fuse.js';
 
 export type CourseObject = {
-  program: string;
-  code: string;
+  subject: string;
+  course: string;
 };
 
 export type RatingObject = {
@@ -38,9 +38,9 @@ const dataForSearch = data.map(instructor => ({
   ...instructor,
   allCourseStr: [
     ...new Set([
-      ...instructor.courses.map(it => it.program + it.code),
-      ...instructor.teachRatings.map(it => it.course.program + it.course.code),
-      ...instructor.thumbRatings.map(it => it.course.program + it.course.code),
+      ...instructor.courses.map(it => it.subject + it.course),
+      ...instructor.teachRatings.map(it => it.course.subject + it.course.course),
+      ...instructor.thumbRatings.map(it => it.course.subject + it.course.course),
     ]),
   ],
 }));

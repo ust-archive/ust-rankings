@@ -9,7 +9,7 @@ async function fetchText(url) {
 }
 
 async function updateData() {
-	const DATA_URL = "https://raw.githubusercontent.com/Waver-Velvet/ust-rankings-data/main/ust-rankings.json"
+	const DATA_URL = "https://raw.githubusercontent.com/ust-archive/ust-rankings-data/main/ust-rankings.json"
 	await fs.writeFile('data/data.json', await fetchText(DATA_URL))
 }
 

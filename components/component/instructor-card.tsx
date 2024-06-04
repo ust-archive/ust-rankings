@@ -51,7 +51,7 @@ function cssColor(color: Color) {
 }
 
 function formatCourse(it: CourseObject) {
-  return `${it.program} ${it.code}`;
+  return `${it.subject} ${it.course}`;
 }
 
 export function InstructorCard({instructor}: InstructorCardProps) {
