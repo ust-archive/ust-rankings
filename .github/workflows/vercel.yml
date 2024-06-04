@@ -1,0 +1,38 @@
+# Deploy to Vercel action is created because the project is under an organization.
+# Vercel itself cannot link a project under an organization with hobby plan.
+
+name: Deploy Vercel
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/checkout@v2
+
+      # Specify the version of Vercel CLI due to
+      # https://github.com/orgs/vercel/discussions/1209
+      - run: |
+          pnpm install
+          pnpm dlx vercel@33.4.1 pull --yes --token=${VERCEL_TOKEN}
+          pnpm dlx vercel@33.4.1 build --prod
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      # Specify the version of Vercel CLI due to
+      # https://github.com/orgs/vercel/discussions/1209
+      - uses: amondnet/vercel-action@v25 #deploy
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }} # Required
+          vercel-args: '--prod --prebuilt' #Optional
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID}}  #Required
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID}} #Required
+          vercel-version: '33.4.1'
