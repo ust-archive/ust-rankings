@@ -6,10 +6,13 @@ async function fetchText(url) {
   return await resp.text();
 }
 
-async function updateData() {
-  const DATA_URL =
-    "https://raw.githubusercontent.com/ust-archive/ust-rankings-data/main/ust-rankings.json";
-  await fs.writeFile("data/data.json", await fetchText(DATA_URL));
+async function updateInstructorData() {
+  await fs.writeFile(
+    "data/data-instructor.json",
+    await fetchText(
+      "https://raw.githubusercontent.com/ust-archive/ust-rankings-data/main/data-instructor.json",
+    ),
+  );
 }
 
-await Promise.all([updateData()]);
+await Promise.all([updateInstructorData()]);

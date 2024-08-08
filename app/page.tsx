@@ -3,13 +3,30 @@
 import { InstructorCard } from "@/components/component/instructor-card";
 import { NewDomainBanner } from "@/components/component/new-domain-banner";
 import { Input } from "@/components/ui/input";
-import { data, search } from "@/data";
-import React, { type ChangeEvent } from "react";
+import { search, type SortBy } from "@/data";
+import dynamic from "next/dynamic";
+import React, { type ChangeEvent, useState } from "react";
 import { WindowVirtualizer } from "virtua";
 
+const SettingsCard = dynamic(
+  async () =>
+    (await import("@/components/component/settings-card")).SettingsCard,
+  { ssr: false },
+);
+
 export default function Home() {
-  const [query, setQuery] = React.useState("");
-  const result = query === "" ? data : search(query);
+  const [query, setQuery] = useState("");
+
+  const [sortBy, setSortBy] = useState<SortBy>("bayesianScore");
+  const [ratingWeights, setRatingWeights] = useState({
+    ratingContent: 0.1,
+    ratingTeaching: 0.5,
+    ratingGrading: 0.05,
+    ratingWorkload: 0.05,
+    ratingInstructor: 0.3,
+  });
+
+  const result = search(query, sortBy, ratingWeights);
 
   return (
     <>
@@ -29,11 +46,21 @@ export default function Home() {
           type="search"
         />
       </form>
+
+      <div className="max-w- w-full max-w-sm px-2 lg:max-w-3xl">
+        <SettingsCard
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          formula={ratingWeights}
+          setFormula={setRatingWeights}
+        />
+      </div>
+
       <div className="w-full max-w-sm px-2 lg:max-w-3xl">
         <WindowVirtualizer>
-          {result.map((instructor) => (
-            <div key={instructor.id} className="my-2">
-              <InstructorCard instructor={instructor} />
+          {result.map((instructorObj) => (
+            <div key={instructorObj.instructor} className="my-2">
+              <InstructorCard instructorObj={instructorObj} sortBy={sortBy} />
             </div>
           ))}
         </WindowVirtualizer>
