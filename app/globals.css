@@ -34,24 +34,23 @@ body {
 }
 
 .text-logo-gradient {
-  @apply p-4 -m-4;
-  @apply bg-gradient-to-br from-[#CC9900] to-[#996600] text-transparent bg-clip-text;
+  @apply -m-4 p-4;
+  @apply bg-gradient-to-br from-[#CC9900] to-[#996600] bg-clip-text text-transparent;
 }
 
 @media (prefers-color-scheme: dark) {
   .text-logo-gradient {
-    @apply bg-gradient-to-br from-[#FFBF00] to-[#CC8800] text-transparent bg-clip-text;
+    @apply bg-gradient-to-br from-[#FFBF00] to-[#CC8800] bg-clip-text text-transparent;
   }
 }
 
 a {
-  @apply underline cursor-pointer;
+  @apply cursor-pointer underline;
 }
 
 kbd {
-  @apply px-1 py-0.5 text-xs font-semibold text-gray-800 bg-gray-100 border border-gray-200 rounded-lg dark:bg-gray-600 dark:text-gray-100 dark:border-gray-500;
+  @apply rounded-lg border border-gray-200 bg-gray-100 px-1 py-0.5 text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100;
 }
-
 
 article h1,
 article h2,
@@ -63,33 +62,34 @@ article h6 {
 }
 
 article h1 {
-  @apply text-6xl font-bold
+  @apply text-6xl font-bold;
 }
 
 article h2 {
-  @apply text-4xl
+  @apply text-4xl;
 }
 
 article a {
-  @apply underline
+  @apply underline;
 }
 
 article p {
-  @apply text-pretty
+  @apply text-pretty;
 }
 
-ol, ul {
-  @apply list-inside ms-2
+ol,
+ul {
+  @apply ms-2 list-inside;
 }
 
 ol {
-  @apply list-decimal
+  @apply list-decimal;
 }
 
 ul {
-  @apply list-disc
+  @apply list-disc;
 }
 
 article pre {
-  @apply text-center my-2
+  @apply my-2 text-center;
 }

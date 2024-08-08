@@ -1,9 +1,9 @@
-article.faq  {
-    @apply max-w-sm;
-    @apply lg:max-w-3xl;
-    @apply px-4 text-left space-y-8;
+article.faq {
+  @apply max-w-sm;
+  @apply lg:max-w-3xl;
+  @apply space-y-8 px-4 text-left;
 }
 
 article.faq section {
-    @apply space-y-4
+  @apply space-y-4;
 }

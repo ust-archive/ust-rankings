@@ -1,11 +1,6 @@
 {
   "extends": [
     "next/core-web-vitals",
-    "xo",
-    "xo-typescript/space"
-  ],
-  "rules": {
-    "new-cap": 0,
-    "@typescript-eslint/naming-convention": 0
-  }
+    "plugin:prettier/recommended"
+  ]
 }
