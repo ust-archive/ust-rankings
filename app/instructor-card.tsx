@@ -1,5 +1,5 @@
-import { InstructorCourseLink } from "@/components/component/instructor-course-link";
-import { InstructorTrendChart } from "@/components/component/instructor-trend-chart";
+import { InstructorCourseLink } from "@/app/instructor-course-link";
+import { InstructorTrendChart } from "@/app/instructor-trend-chart";
 import {
   Card,
   CardContent,
@@ -12,7 +12,7 @@ import {
   type InstructorCourseObject,
   type InstructorObject,
   type SortBy,
-} from "@/data";
+} from "@/data/instructor";
 import { stopPropagation } from "@/lib/events";
 import { naturalSort } from "@/lib/utils";
 import React from "react";
@@ -98,9 +98,9 @@ export function InstructorCard({ instructorObj, sortBy }: InstructorCardProps) {
   const { courses, historicalCourses, rank, percentile } = instructorObj;
 
   const {
-    bayesianScore,
     score,
     samples,
+    confidence,
     ratingTeaching,
     ratingInstructor,
     ratingWorkload,
@@ -109,8 +109,6 @@ export function InstructorCard({ instructorObj, sortBy }: InstructorCardProps) {
   } = instructorObj.scores[0];
 
   const scoreFmt = (instructorObj.scores[0][sortBy] * 100).toFixed(1);
-
-  const coursesFmt = courses.map(formatCourse).sort(naturalSort);
 
   const historicalCoursesFmt = historicalCourses
     .map(formatCourse)
@@ -167,84 +165,56 @@ export function InstructorCard({ instructorObj, sortBy }: InstructorCardProps) {
       <Collapsible open={open}>
         <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown">
           <CardContent>
-            <div className="mx-6 mb-1 hidden grid-cols-2 gap-2 text-left text-gray-500 lg:grid">
+            <div className="mx-6 mb-1 grid grid-cols-1 gap-2 text-left text-gray-500 lg:grid-cols-2">
               <div className="grid auto-rows-min gap-x-2">
                 <span className="text-right">Rating (Teaching):</span>
                 <span className="col-start-2">{ratingTeaching.toFixed(3)}</span>
+
                 <span className="text-right">Rating (Workload):</span>
                 <span className="col-start-2">{ratingWorkload.toFixed(3)}</span>
+
                 <span className="text-right">Rating (Content):</span>
                 <span className="col-start-2">{ratingContent.toFixed(3)}</span>
+
                 <span className="text-right">Rating (Grading):</span>
                 <span className="col-start-2">{ratingGrading.toFixed(3)}</span>
-                <span className="text-right">Rating (Thumbs Up):</span>
+
+                <span className="text-right">Rating (Instructor):</span>
                 <span className="col-start-2">
                   {ratingInstructor.toFixed(3)}
                 </span>
+
                 <span className="text-right">Overall Rating: </span>
                 <span className="col-start-2">{score.toFixed(3)}</span>
+
+                <span className="text-right">Confidence: </span>
+                <span className="col-start-2">{confidence.toFixed(3)}</span>
+
                 <span className="text-right">Percentile: </span>
                 <span className="col-start-2">
                   {(percentile * 100).toFixed(1)}%
                 </span>
               </div>
               <div className="grid auto-rows-min gap-x-2">
-                <span className="font-medium">
-                  Courses{" "}
-                  <span className="font-normal">
-                    (A = Available this Semester)
-                  </span>
-                </span>
-                <div className="grid grid-cols-2 gap-x-2">
-                  {historicalCourses.map((it) => (
-                    <InstructorCourseLink
-                      key={formatCourse(it)}
-                      course={it}
-                      thisSem={coursesFmt.includes(formatCourse(it))}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mx-6 mb-1 grid gap-y-2 text-left text-gray-500 lg:hidden">
-              <div className="grid gap-x-2">
-                <span className="text-right">Rating (Teaching):</span>
-                <span className="col-start-2">{ratingTeaching.toFixed(3)}</span>
-                <span className="text-right">Rating (Thumbs Up):</span>
-                <span className="col-start-2">
-                  {ratingInstructor.toFixed(3)}
-                </span>
-                <span className="text-right">Overall Rating: </span>
-                <span className="col-start-2">{score.toFixed(3)}</span>
-                <span className="text-right">Percentile: </span>
-                <span className="col-start-2">
-                  {(percentile * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div className="grid gap-x-2">
                 <span className="font-medium">Courses</span>
-                <span className="font-normal">
-                  (A = Available this Semester)
-                </span>
                 <div className="grid grid-cols-2 gap-x-2">
-                  {historicalCourses.map((it) => (
-                    <InstructorCourseLink
-                      key={formatCourse(it)}
-                      course={it}
-                      thisSem={coursesFmt.includes(formatCourse(it))}
-                    />
+                  {courses.map((it) => (
+                    <InstructorCourseLink key={formatCourse(it)} course={it} />
                   ))}
                 </div>
+                <span className="font-medium">Historical Courses</span>
+                <div className="grid grid-cols-2 gap-x-2">
+                  {historicalCourses.map(
+                    (it) =>
+                      courses.map(formatCourse).includes(formatCourse(it)) || (
+                        <InstructorCourseLink
+                          key={formatCourse(it)}
+                          course={it}
+                        />
+                      ),
+                  )}
+                </div>
               </div>
-              <a
-                className="font-medium underline"
-                href={googleUrl}
-                target="_blank"
-                onClick={stopPropagation}
-              >
-                Instructor Details
-              </a>
             </div>
 
             <InstructorTrendChart scores={instructorObj.scores} />

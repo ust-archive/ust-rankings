@@ -1,31 +1,34 @@
 "use client";
 
-import { InstructorCard } from "@/app/instructor-card";
+import { CourseCard } from "@/app/course/course-card";
 import { NewDomainBanner } from "@/components/component/new-domain-banner";
 import { Input } from "@/components/ui/input";
-import { search, type SortBy } from "@/data/instructor";
+import {
+  CourseRatingWeights,
+  CourseSortBy,
+  searchCourses,
+} from "@/data/course";
 import dynamic from "next/dynamic";
 import React, { type ChangeEvent, useState } from "react";
 import { WindowVirtualizer } from "virtua";
 
 const SettingsCard = dynamic(
-  async () => (await import("@/app/settings-card")).SettingsCard,
+  async () => (await import("./settings-card")).SettingsCard,
   { ssr: false },
 );
 
-export default function Home() {
+export default function Course() {
   const [query, setQuery] = useState("");
 
-  const [sortBy, setSortBy] = useState<SortBy>("bayesianScore");
-  const [ratingWeights, setRatingWeights] = useState({
-    ratingContent: 0.1,
-    ratingTeaching: 0.5,
-    ratingGrading: 0.05,
-    ratingWorkload: 0.05,
-    ratingInstructor: 0.3,
+  const [sortBy, setSortBy] = useState<CourseSortBy>("bayesianScore");
+  const [ratingWeights, setRatingWeights] = useState<CourseRatingWeights>({
+    ratingContent: 0.3,
+    ratingTeaching: 0.3,
+    ratingGrading: 0.3,
+    ratingWorkload: 0.1,
   });
 
-  const result = search(query, sortBy, ratingWeights);
+  const result = searchCourses(query, sortBy, ratingWeights);
 
   return (
     <>
@@ -57,9 +60,9 @@ export default function Home() {
 
       <div className="w-full max-w-sm px-2 lg:max-w-3xl">
         <WindowVirtualizer>
-          {result.map((instructorObj) => (
-            <div key={instructorObj.instructor} className="my-2">
-              <InstructorCard instructorObj={instructorObj} sortBy={sortBy} />
+          {result.map((courseObj) => (
+            <div key={courseObj.subject + courseObj.number} className="my-2">
+              <CourseCard courseObj={courseObj} sortBy={sortBy} />
             </div>
           ))}
         </WindowVirtualizer>

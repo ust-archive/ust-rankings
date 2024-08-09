@@ -1,6 +1,6 @@
-import "./instructor-trend-chart.css";
+import "./course-trend-chart.css";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { type InstructorScoreObject } from "@/data";
+import { CourseScoreObject } from "@/data/course";
 import { stopPropagation } from "@/lib/events";
 import { AreaChart, type CustomTooltipProps } from "@tremor/react";
 import ChartTooltip from "@tremor/react/dist/components/chart-elements/common/ChartTooltip";
@@ -8,7 +8,7 @@ import _ from "lodash";
 import React, { useState } from "react";
 
 type InstructorTrendChartProps = {
-  scores: InstructorScoreObject[];
+  scores: CourseScoreObject[];
 };
 
 export function formatTerm(n: number): string {
@@ -23,12 +23,12 @@ export function formatTerm(n: number): string {
   return `${year}-${year + 1} ${season}`;
 }
 
-function allScoresAreInRegularTerm(scores: InstructorScoreObject[]): boolean {
+function allScoresAreInRegularTerm(scores: CourseScoreObject[]): boolean {
   // 0: Fall; 2: Spring
   return scores.every((score) => score.term % 4 === 0 || score.term % 4 === 2);
 }
 
-export function InstructorTrendChart(props: InstructorTrendChartProps) {
+export function CourseTrendChart(props: InstructorTrendChartProps) {
   const [showRatings, setShowRatings] = useState<string[]>([]);
 
   const { scores } = props;
@@ -56,7 +56,6 @@ export function InstructorTrendChart(props: InstructorTrendChartProps) {
       "Rating (Teaching)": score?.individualRatingTeaching ?? NaN,
       "Rating (Grading)": score?.individualRatingGrading ?? NaN,
       "Rating (Workload)": score?.individualRatingWorkload ?? NaN,
-      "Rating (Instructor)": score?.individualRatingInstructor ?? NaN,
       Score: score?.score ?? NaN,
       Samples: score?.individualSamples ?? 0,
     };
@@ -106,9 +105,6 @@ export function InstructorTrendChart(props: InstructorTrendChartProps) {
         </ToggleGroupItem>
         <ToggleGroupItem className="font-semibold" value="Rating (Workload)">
           Workload
-        </ToggleGroupItem>
-        <ToggleGroupItem className="font-semibold" value="Rating (Instructor)">
-          Instructor
         </ToggleGroupItem>
       </ToggleGroup>
       <AreaChart

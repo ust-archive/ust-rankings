@@ -15,4 +15,13 @@ async function updateInstructorData() {
   );
 }
 
-await Promise.all([updateInstructorData()]);
+async function updateCourseData() {
+  await fs.writeFile(
+    "data/data-course.json",
+    await fetchText(
+      "https://raw.githubusercontent.com/ust-archive/ust-rankings-data/main/data-course.json",
+    ),
+  );
+}
+
+await Promise.all([updateInstructorData(), updateCourseData()]);

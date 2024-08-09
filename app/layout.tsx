@@ -36,17 +36,29 @@ export default function RootLayout({
       <body
         className={cn(inter.className, roboto_mono.variable, "min-h-screen")}
       >
-        <header className="flex h-16 items-center gap-8 bg-gradient-to-r from-[#003366] via-[#2b6297] to-[#003366] px-8 text-lg font-medium text-white dark:from-[#003366] dark:via-[#224e77] dark:to-[#003366]">
+        <header className="flex h-16 items-center gap-6 bg-gradient-to-r from-[#003366] via-[#2b6297] to-[#003366] px-8 text-lg font-medium text-white dark:from-[#003366] dark:via-[#224e77] dark:to-[#003366]">
           <Link href="/">
             <GraduationCapIcon className="h-8 w-8" />
           </Link>
           <div className="m-auto" />
           <Link
             className="no-underline underline-offset-4 hover:underline"
-            href="/faq/"
+            href="/"
           >
-            FAQ
+            Instructor Rankings
           </Link>
+          <Link
+            className="no-underline underline-offset-4 hover:underline"
+            href="/course/"
+          >
+            Course Rankings
+          </Link>
+          {/*<Link*/}
+          {/*  className="no-underline underline-offset-4 hover:underline"*/}
+          {/*  href="/faq/"*/}
+          {/*>*/}
+          {/*  FAQ*/}
+          {/*</Link>*/}
           <Link href="https://github.com/Waver-Velvet/ust-rankings">
             <SiGithub className="h-7 w-7" />
           </Link>

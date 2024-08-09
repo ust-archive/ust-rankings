@@ -14,10 +14,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { type RatingType, type SortBy } from "@/data";
+import { type RatingType, type SortBy } from "@/data/instructor";
 import { stopPropagation } from "@/lib/events";
 import { QuestionMarkCircledIcon } from "@radix-ui/react-icons";
-import { type ChangeEvent, forwardRef, useState } from "react";
+import { type ChangeEvent, forwardRef } from "react";
 
 export type SettingsCardProps = {
   sortBy: SortBy;
@@ -40,9 +40,7 @@ const NumInput = forwardRef<HTMLInputElement, InputProps>((props, ref) => (
 NumInput.displayName = "NumInput";
 
 export function SettingsCard(props: SettingsCardProps) {
-  const [openSortBy, setOpenSortBy] = useState(false);
   const { sortBy, setSortBy } = props;
-  const [openFormula, setOpenFormula] = useState(false);
   const { formula, setFormula } = props;
 
   return (
