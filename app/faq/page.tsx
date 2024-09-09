@@ -102,6 +102,24 @@ export default function Faq() {
         </p>
       </section>
 
+      <h1 className="text-logo-gradient">FAQ - Schedule</h1>
+
+      <section>
+        <h2>Why not using the Timetable Planner? </h2>
+        <p>
+          While it is true that Timetable Planner is able to export the schedule
+          to the calendar, it is not flexible as UST Schedule. Users are not
+          allowed to add duplicate courses (except for using the "import to
+          current timetable" feature, but still, it is not flexible). Users are
+          not allowed to add individual lectures, tutorials or labs without
+          adding the full course.
+        </p>
+        <p>
+          Additionally, UST Schedule is able to show the location of the venue
+          via Path Advisor.
+        </p>
+      </section>
+
       <h1 className="text-logo-gradient">Others</h1>
 
       <section>

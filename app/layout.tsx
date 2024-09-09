@@ -53,12 +53,12 @@ export default function RootLayout({
           >
             Course Rankings
           </Link>
-          {/*<Link*/}
-          {/*  className="no-underline underline-offset-4 hover:underline"*/}
-          {/*  href="/faq/"*/}
-          {/*>*/}
-          {/*  FAQ*/}
-          {/*</Link>*/}
+          <Link
+            className="no-underline underline-offset-4 hover:underline"
+            href="/schedule/"
+          >
+            Schedule
+          </Link>
           <Link href="https://github.com/Waver-Velvet/ust-rankings">
             <SiGithub className="h-7 w-7" />
           </Link>
