@@ -50,7 +50,8 @@ export type InstructorObject = {
   courses: Array<{ subject: string; number: string }>;
 } & InstructorExtraObject;
 
-// @ts-expect-error the JSON is huge, so the type is not correctly inferred
+// @ts-expect-error initially, rank and percentile are not defined,
+//   but they will be added in the search function
 export const dataInstructorObjects: Record<string, InstructorObject> =
   dataInstructorJSON;
 export const dataInstructorKeys = Object.keys(dataInstructorObjects);

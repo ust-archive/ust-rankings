@@ -44,7 +44,8 @@ export type CourseObject = {
   scores: CourseScoreObject[];
 } & CourseExtraObject;
 
-// @ts-expect-error the JSON is huge, so the type is not correctly inferred
+// @ts-expect-error initially, rank, percentile, score and bayesianScore are not defined,
+//   but they will be added in the searchCourses function
 export const dataCourseObjects: Record<string, CourseObject> = dataCourseJSON;
 export const dataCourseKeys = Object.keys(dataCourseObjects);
 

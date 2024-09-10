@@ -64,7 +64,6 @@ export interface CourseClassSchedule {
   toTime: string | null;
 }
 
-// @ts-expect-error the JSON is huge, so the type is not correctly inferred
 export const cq: CQ[] = cqObj;
 export const cqTerms: Term[] = cqTermsObj.sort((a, b) =>
   a.term.localeCompare(b.term),
