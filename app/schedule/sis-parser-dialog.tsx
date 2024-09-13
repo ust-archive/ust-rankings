@@ -36,6 +36,7 @@ export function SisParserDialog({
 
   function handleSubmit() {
     callback(classNumbers);
+    setText("");
   }
 
   return (
