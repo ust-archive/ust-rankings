@@ -221,7 +221,7 @@ export default function Home() {
             <SisParserDialog callback={submitSisParserDialog} term={term} />
             <hr className="mt-2" />
             <WindowVirtualizer>
-              {queryResult
+              {searchCourses(term, "")
                 .filter((it) => it.classes.length)
                 .filter((it) =>
                   it.classes.some((section) =>
