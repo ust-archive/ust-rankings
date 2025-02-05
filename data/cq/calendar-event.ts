@@ -1,8 +1,19 @@
 import { Course, CourseClass } from "@/data/cq/index";
 import { PathAdvisor } from "@/data/cq/path-advisor";
-import { convert, DayOfWeek, LocalDate, LocalTime } from "@js-joda/core";
+import {
+  convert,
+  DayOfWeek,
+  LocalDate,
+  LocalTime,
+  ZoneId,
+  ZoneOffset,
+} from "@js-joda/core";
 import type * as ics from "ics";
 import { RRule } from "rrule";
+
+require("@js-joda/timezone");
+
+const HongKongTZ = ZoneId.of("Asia/Hong_Kong");
 
 function findDayOfWeekAfter(after: LocalDate, dayOfWeek: DayOfWeek): LocalDate {
   while (after.dayOfWeek() !== dayOfWeek) {
@@ -30,27 +41,35 @@ export function generateEventAttributes(
                 DayOfWeek.of(weekday),
               );
         const toDate = LocalDate.parse(schedule.toDate);
-        const fromTime = LocalTime.parse(schedule.fromTime!);
-        const toTime = LocalTime.parse(schedule.toTime!);
+        const fromTime = LocalTime.parse(schedule.fromTime!)
+          .atDate(fromDate)
+          .atZone(HongKongTZ)
+          .withZoneSameInstant(ZoneOffset.UTC);
+        const toTime = LocalTime.parse(schedule.toTime!)
+          .atDate(fromDate)
+          .atZone(HongKongTZ)
+          .withZoneSameInstant(ZoneOffset.UTC);
         const rrule = new RRule({
           freq: RRule.WEEKLY,
           until: convert(toDate).toDate(),
         });
         return {
           start: [
-            fromDate.year(),
-            fromDate.monthValue(),
-            fromDate.dayOfMonth(),
+            fromTime.year(),
+            fromTime.monthValue(),
+            fromTime.dayOfMonth(),
             fromTime.hour(),
             fromTime.minute(),
           ],
+          startInputType: "utc",
           end: [
-            fromDate.year(),
-            fromDate.monthValue(),
-            fromDate.dayOfMonth(),
+            toTime.year(),
+            toTime.monthValue(),
+            toTime.dayOfMonth(),
             toTime.hour(),
             toTime.minute(),
           ],
+          endInputType: "utc",
           title: `${course.subject} ${course.number} ${courseClass.section} (${courseClass.number}) - ${course.name}`,
           location: schedule.venue,
           description: `Instructor: ${schedule.instructors.join(", ")}\nPath Advisor: ${PathAdvisor.findPathTo(schedule.venue)}`,
