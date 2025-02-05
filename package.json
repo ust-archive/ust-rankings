@@ -5,7 +5,7 @@
   "scripts": {
     "update-data": "node scripts/update-data.mjs",
     "dev": "next dev",
-    "prebuild": "npm run update-data",
+    "prebuild": "pnpm run update-data",
     "build": "next build",
     "start": "next start",
     "lint": "next lint --fix"
