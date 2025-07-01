@@ -31,9 +31,7 @@ export type Course = {
   }[];
 };
 
-const courses = json as Course[];
-
-const catalog = _.keyBy(courses, (c) => c.courseCode);
+const catalog = _.keyBy(json, (c) => c.courseCode);
 
 export function course(subject: string, code: string): Course | undefined;
 export function course(courseCode: string): Course | undefined;

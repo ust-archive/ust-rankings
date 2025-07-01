@@ -11,15 +11,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { CriteriaName } from "@/data/ratings";
 import { QuestionMarkCircledIcon } from "@radix-ui/react-icons";
-import React, { type ChangeEvent, ReactElement } from "react";
+import React, { type ChangeEvent, ReactNode } from "react";
 
 export type SettingsCardProps = {
   formula: string;
   setFormula: (formula: string) => void;
 
-  tooltip: ReactElement<any>;
+  tooltip: ReactNode;
 };
 
 export function SettingsCard({
@@ -39,16 +38,18 @@ export function SettingsCard({
           <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown">
             <Textarea
               style={{
+                // @ts-expect-error I don't know why, fieldSizing is not recognized
+                // but it actually works
                 fieldSizing: "content",
               }}
-              className="h-fit font-mono"
+              className="font-mono"
               defaultValue={formula}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              onChange={(e) => {
                 setFormula(e.target.value);
               }}
-              autoComplete={false}
-              autoCorrect={false}
-              autoCapitalize={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
               spellCheck={false}
             />
             <TooltipProvider>

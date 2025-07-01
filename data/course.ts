@@ -1,11 +1,10 @@
-import ratingsCourseJson from "./ratings-course.json";
+import json from "./ratings-course.json";
 import { CourseRatings, Criteria } from "@/data/ratings";
 import Fuse from "fuse.js";
 import _ from "lodash";
 import * as mathjs from "mathjs";
 
-// @ts-ignore the json is large so typescript cannot infer the type
-export const ratingsCourse: CourseRatings[] = ratingsCourseJson;
+export const ratingsCourse: CourseRatings[] = json;
 
 export function search(q: string, t: number, f: string): CourseRatings[] {
   const courseObjs = ratingsCourse.filter((r) =>

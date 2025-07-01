@@ -4,8 +4,7 @@ import Fuse from "fuse.js";
 import _ from "lodash";
 import * as mathjs from "mathjs";
 
-// @ts-ignore the json is large so typescript cannot infer the type
-export const ratingsInstructor: InstructorRatings[] = ratingsInstructorJson;
+export const ratingsInstructor = ratingsInstructorJson;
 
 export function search(q: string, t: number, f: string): InstructorRatings[] {
   const instructorObjs = ratingsInstructor.filter((r) =>

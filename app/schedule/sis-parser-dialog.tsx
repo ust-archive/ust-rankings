@@ -72,7 +72,7 @@ export function SisParserDialog({
           placeholder="Paste Here"
           defaultValue={text}
           content={text}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          onChange={(e) => {
             setText(e.target.value);
           }}
         />
