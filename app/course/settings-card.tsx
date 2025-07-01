@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/tooltip";
 import { CriteriaName } from "@/data/ratings";
 import { QuestionMarkCircledIcon } from "@radix-ui/react-icons";
-import React, { type ChangeEvent, ReactElement, ReactNode } from "react";
+import React from "react";
 
 export type SettingsCardProps = {
   formula: string;

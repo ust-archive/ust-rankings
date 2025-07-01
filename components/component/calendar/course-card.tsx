@@ -22,7 +22,11 @@ type Cell = {
   className: string;
 };
 
-function newCell(data: ReactNode, key: string | any, className?: string): Cell {
+function newCell(
+  data: ReactNode,
+  key: string | object,
+  className?: string,
+): Cell {
   return {
     key: typeof key === "string" ? key : JSON.stringify(key),
     data,
@@ -112,7 +116,7 @@ function RoomCell({ venue }: { venue: string }) {
   } {
     const match = /(.*) \((\d+)\)/.exec(input);
     if (match) {
-      let segments = match[1].split(", ");
+      const segments = match[1].split(", ");
       return {
         segments: segments.map((segment, index) =>
           index === segments.length - 1 ? segment : segment + ", ",
@@ -121,7 +125,7 @@ function RoomCell({ venue }: { venue: string }) {
       };
     }
 
-    let segments = input.split(", ");
+    const segments = input.split(", ");
     return {
       segments: segments.map((segment, index) =>
         index === segments.length - 1 ? segment : segment + ", ",

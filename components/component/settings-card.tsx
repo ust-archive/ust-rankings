@@ -12,7 +12,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { QuestionMarkCircledIcon } from "@radix-ui/react-icons";
-import React, { type ChangeEvent, ReactNode } from "react";
+import React, { ReactNode } from "react";
 
 export type SettingsCardProps = {
   formula: string;
