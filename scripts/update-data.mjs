@@ -55,4 +55,17 @@ async function updateCQ() {
   await fs.writeFile("data/data-cq.json", JSON.stringify(cq, null, 2));
 }
 
-await Promise.all([updateInstructorData(), updateCourseData(), updateCQ()]);
+async function updateCourseCatalog() {
+  const catalog = await fetchText(
+    "https://raw.githubusercontent.com/ust-archive/ust-course-catalog/main/course-catalog.json",
+  );
+
+  await fs.writeFile("data/data-course-catalog.json", catalog);
+}
+
+await Promise.all([
+  updateInstructorData(),
+  updateCourseData(),
+  updateCQ(),
+  updateCourseCatalog(),
+]);

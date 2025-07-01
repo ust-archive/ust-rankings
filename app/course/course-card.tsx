@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { course } from "@/data/course-catalog";
 import { CourseRatings, Criteria, CriteriaName } from "@/data/ratings";
 import _ from "lodash";
 import React, { useMemo, useState } from "react";
@@ -132,6 +133,8 @@ export function CourseCard({ ratings, term }: CourseCardProps) {
     return _.uniq(is);
   }, [instructors, term]);
 
+  const courseName = course(subject, code)?.courseName;
+
   return (
     <Card
       className="flex cursor-pointer flex-col bg-white"
@@ -152,6 +155,12 @@ export function CourseCard({ ratings, term }: CourseCardProps) {
             <span className="inline-block group-hover:underline">{code}</span>
           </CardTitle>
           <CardDescription className="truncate">
+            {courseName && (
+              <>
+                <span className="font-semibold">{courseName}</span>
+                <br />
+              </>
+            )}
             <span className="font-semibold">{usSamples}</span> samples from
             ust.space. <span className="font-semibold">{sfqSamples}</span>{" "}
             samples from SFQ.
