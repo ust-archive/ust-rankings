@@ -1,4 +1,3 @@
-import { InstructorCourseLink } from "@/app/instructor-course-link";
 import { InstructorTrendChart } from "@/app/instructor-trend-chart";
 import {
   Card,
@@ -8,18 +7,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import {
-  type InstructorCourseObject,
-  type InstructorObject,
-  type SortBy,
-} from "@/data/instructor";
+import { Criteria, CriteriaName, InstructorRatings } from "@/data/ratings";
 import { stopPropagation } from "@/lib/events";
 import { naturalSort } from "@/lib/utils";
-import React from "react";
+import _ from "lodash";
+import React, { useMemo } from "react";
 
 type InstructorCardProps = {
-  instructorObj: InstructorObject;
-  sortBy: SortBy;
+  ratings: InstructorRatings;
+  term: number;
 };
 
 type Color = [number, number, number];
@@ -49,7 +45,10 @@ function letterGrade(percentile: number) {
 function gradeColor(ratio: number): Color {
   const colorStops = [
     { ratio: 0.0, color: [237, 27, 47] as Color },
-    { ratio: 0.25, color: [250, 166, 26] as Color },
+    {
+      ratio: 0.25,
+      color: [250, 166, 26] as Color,
+    },
     { ratio: 0.75, color: [163, 207, 98] as Color },
     { ratio: 1.0, color: [0, 154, 97] as Color },
   ];
@@ -84,56 +83,81 @@ function cssColor(color: Color) {
   return `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
 }
 
-function formatCourse(it: InstructorCourseObject) {
-  return `${it.subject} ${it.number}`;
+function formatNumber(num?: number): string {
+  if (num === undefined || isNaN(num)) {
+    return " - ";
+  }
+  return (num >= 0 ? "+" : "") + num.toFixed(2);
 }
 
-export function InstructorCard({ instructorObj, sortBy }: InstructorCardProps) {
-  const { instructor } = instructorObj;
-
+export function InstructorCard({ ratings, term }: InstructorCardProps) {
   const [open, setOpen] = React.useState(false);
 
-  const bgColor = gradeColor(instructorObj.percentile);
-
-  const { courses, historicalCourses, rank, percentile } = instructorObj;
-
   const {
-    score,
-    samples,
-    confidence,
-    ratingTeaching,
-    ratingInstructor,
-    ratingWorkload,
-    ratingContent,
-    ratingGrading,
-  } = instructorObj.scores[0];
+    meta: { name, courses },
+  } = ratings;
 
-  const scoreFmt = (instructorObj.scores[0][sortBy] * 100).toFixed(1);
+  const score = ratings.score!;
+  const rank = ratings.rank!;
+  const percentile = ratings.percentile!;
 
-  const historicalCoursesFmt = historicalCourses
-    .map(formatCourse)
-    .sort(naturalSort);
+  const r = Object.fromEntries(
+    Criteria.flatMap((c) => {
+      if (!ratings.ratings[c]) {
+        return [];
+      }
+      return [
+        [
+          c,
+          {
+            rating: ratings.ratings[c].rating[term] ?? NaN,
+            bayesian: ratings.ratings[c].bayesian[term] ?? NaN,
+            confidence: ratings.ratings[c].confidence[term] ?? NaN,
+            samples: _.sum(Object.values(ratings.ratings[c].samples)),
+          },
+        ],
+      ];
+    }),
+  );
 
-  const [familyName, givenName] = instructor.split(", ");
+  // If any is undefined, there is no samples for that criterion.
+  const usSamples = r["content"]?.samples ?? 0; // us: ust.space
+  const sfqSamples = r["course"]?.samples ?? 0; // sfq: aqa.hkust.edu.hk/sfq
+
+  const formattedScore = (score * 100).toFixed(1);
+
+  const [familyName, ...givenNames] = name.split(", ");
 
   const googleUrl = new URL(
     "https://www.google.com/search?" +
       new URLSearchParams({
-        q: `site:facultyprofiles.hkust.edu.hk ${instructor}`,
+        q: `site:facultyprofiles.hkust.edu.hk ${name}`,
       }).toString(),
   ).toString();
+
+  const currentCourses = useMemo(() => {
+    return courses[term].map((c) => `${c.subject} ${c.code}`).sort(naturalSort);
+  }, [courses, term]);
+  const historicalCourses = useMemo(() => {
+    const cs = Object.entries(courses)
+      .filter(([t]) => Number(t) < term)
+      .flatMap(([_, cs]) => cs)
+      .map((c) => `${c.subject} ${c.code}`)
+      .sort(naturalSort);
+    return _.uniq(cs);
+  }, [courses, term]);
 
   return (
     <Card
       className="flex cursor-pointer flex-col bg-white"
-      onClick={() => {
-        setOpen(!open);
-      }}
+      onClick={() => setOpen(!open)}
     >
       <CardHeader className="flex w-full flex-row items-center gap-4 p-4 lg:p-6 lg:pr-10">
         <CardTitle className="shrink-0 text-gray-600 lg:w-36">
           #{rank}{" "}
-          <span className="hidden font-medium lg:inline">({scoreFmt})</span>
+          <span className="hidden font-medium lg:inline">
+            ({formattedScore})
+          </span>
         </CardTitle>
         <div className="min-w-0 space-y-1 text-left">
           <CardTitle className="tracking-normal">
@@ -147,77 +171,83 @@ export function InstructorCard({ instructorObj, sortBy }: InstructorCardProps) {
                 {familyName},&nbsp;
               </span>
               <span className="inline-block group-hover:underline">
-                {givenName}
+                {givenNames.join(", ")}
               </span>
             </a>
           </CardTitle>
           <CardDescription className="truncate">
-            {samples} Reviews of {historicalCoursesFmt.join(", ")}
+            <span className="font-semibold">{usSamples}</span> samples from
+            ust.space. <span className="font-semibold">{sfqSamples}</span>{" "}
+            samples from SFQ.
           </CardDescription>
         </div>
         <Card
           className="!my-auto !ml-auto w-12 shrink-0 py-2 text-white"
-          style={{ backgroundColor: cssColor(bgColor) }}
+          style={{ backgroundColor: cssColor(gradeColor(percentile)) }}
         >
           <CardTitle>{letterGrade(percentile)}</CardTitle>
         </Card>
       </CardHeader>
       <Collapsible open={open}>
-        <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown">
+        <CollapsibleContent className="data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown">
           <CardContent>
             <div className="mx-6 mb-1 grid grid-cols-1 gap-2 text-left text-gray-500 lg:grid-cols-2">
-              <div className="grid auto-rows-min gap-x-2">
-                <span className="text-right">Rating (Teaching):</span>
-                <span className="col-start-2">{ratingTeaching.toFixed(3)}</span>
-
-                <span className="text-right">Rating (Workload):</span>
-                <span className="col-start-2">{ratingWorkload.toFixed(3)}</span>
-
-                <span className="text-right">Rating (Content):</span>
-                <span className="col-start-2">{ratingContent.toFixed(3)}</span>
-
-                <span className="text-right">Rating (Grading):</span>
-                <span className="col-start-2">{ratingGrading.toFixed(3)}</span>
-
-                <span className="text-right">Rating (Instructor):</span>
-                <span className="col-start-2">
-                  {ratingInstructor.toFixed(3)}
-                </span>
-
-                <span className="text-right">Overall Rating: </span>
-                <span className="col-start-2">{score.toFixed(3)}</span>
-
-                <span className="text-right">Confidence: </span>
-                <span className="col-start-2">{confidence.toFixed(3)}</span>
-
-                <span className="text-right">Percentile: </span>
-                <span className="col-start-2">
-                  {(percentile * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div className="grid auto-rows-min gap-x-2">
-                <span className="font-medium">Courses</span>
-                <div className="grid grid-cols-2 gap-x-2">
-                  {courses.map((it) => (
-                    <InstructorCourseLink key={formatCourse(it)} course={it} />
+              <table className="block w-fit whitespace-pre">
+                <thead>
+                  <tr>
+                    <th className="px-2 py-1 pt-0 text-left">Criteria</th>
+                    <th className="px-2 py-1 pt-0 text-left">Rating</th>
+                    <th className="px-2 py-1 pt-0 text-left">Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Criteria.map((c) => (
+                    <tr key={c}>
+                      <td className="px-2 py-1 font-medium">
+                        {CriteriaName[c].replace(" ", "\n")}
+                      </td>
+                      <td className="px-2 py-1 font-mono">
+                        {formatNumber(r[c]?.rating)}
+                      </td>
+                      <td className="px-2 py-1 font-mono">
+                        {formatNumber(r[c]?.confidence)}
+                      </td>
+                    </tr>
                   ))}
-                </div>
-                <span className="font-medium">Historical Courses</span>
-                <div className="grid grid-cols-2 gap-x-2">
-                  {historicalCourses.map(
-                    (it) =>
-                      courses.map(formatCourse).includes(formatCourse(it)) || (
-                        <InstructorCourseLink
-                          key={formatCourse(it)}
-                          course={it}
-                        />
-                      ),
-                  )}
+                </tbody>
+              </table>
+
+              <div className="grid auto-rows-min gap-2">
+                {currentCourses.length > 0 ? (
+                  <div>
+                    <span className="font-medium">Current Courses Taught</span>
+                    <div className="grid gap-x-2">
+                      {currentCourses.map((it) => (
+                        <span key={it} className="text-nowrap font-mono">
+                          {it}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <span className="font-medium">
+                    Instructor does not teach in this term.
+                  </span>
+                )}
+                <div>
+                  <span className="font-medium">Historical Courses Taught</span>
+                  <div className="grid gap-x-2">
+                    {historicalCourses.map((it) => (
+                      <span key={it} className="text-nowrap font-mono">
+                        {it}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <InstructorTrendChart scores={instructorObj.scores} />
+            <InstructorTrendChart ratings={ratings} />
           </CardContent>
         </CollapsibleContent>
       </Collapsible>

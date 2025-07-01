@@ -1,145 +1,67 @@
-import dataInstructorJSON from "./data-instructor.json";
+import ratingsInstructorJson from "./ratings-instructor.json";
+import { Criteria, InstructorRatings } from "@/data/ratings";
 import Fuse from "fuse.js";
 import _ from "lodash";
+import * as mathjs from "mathjs";
 
-export type InstructorScoreObject = {
-  instructor: string;
-  term: number;
+// @ts-ignore the json is large so typescript cannot infer the type
+export const ratingsInstructor: InstructorRatings[] = ratingsInstructorJson;
 
-  ratingContent: number;
-  ratingTeaching: number;
-  ratingGrading: number;
-  ratingWorkload: number;
-  ratingInstructor: number;
-  score: number;
-  samples: number;
+export function search(q: string, t: number, f: string): InstructorRatings[] {
+  const instructorObjs = ratingsInstructor.filter((r) =>
+    Criteria.every((c) => r.ratings[c]?.confidence[t] ?? 0 !== 0),
+  );
 
-  individualRatingContent: number;
-  individualRatingTeaching: number;
-  individualRatingGrading: number;
-  individualRatingWorkload: number;
-  individualRatingInstructor: number;
-  individualSamples: number;
+  const formula = mathjs.compile(f);
 
-  bayesianRatingContent: number;
-  bayesianRatingTeaching: number;
-  bayesianRatingGrading: number;
-  bayesianRatingWorkload: number;
-  bayesianRatingInstructor: number;
-  bayesianScore: number;
+  const searchObjs = _.chain(instructorObjs)
+    // Calculate the score by the given formula
+    .forEach((r) => {
+      const scope = Object.fromEntries(
+        Criteria.map((c) => [
+          c,
+          {
+            rating: r.ratings[c].rating[t] ?? 0,
+            bayesian: r.ratings[c].bayesian[t] ?? 0,
+          },
+        ]),
+      );
+      r.score = formula.evaluate(scope);
+      return r;
+    })
 
-  confidence: number;
-};
+    // Sort the courses by the given criterion
+    .sortBy((r) => -(r.score ?? 0))
 
-export type InstructorExtraObject = {
-  historicalCourses: InstructorCourseObject[];
-  courses: InstructorCourseObject[];
-};
+    // Assign the rank and percentile to each course
+    .forEach((r, i) => {
+      r.rank = i + 1;
+      r.percentile = 1 - i / instructorObjs.length;
+    })
 
-export type InstructorCourseObject = {
-  subject: string;
-  number: string;
-};
-
-export type InstructorObject = {
-  instructor: string;
-  scores: InstructorScoreObject[];
-  rank: number;
-  percentile: number;
-  historicalCourses: Array<{ subject: string; number: string }>;
-  courses: Array<{ subject: string; number: string }>;
-} & InstructorExtraObject;
-
-// @ts-expect-error initially, rank and percentile are not defined,
-//   but they will be added in the search function
-export const dataInstructorObjects: Record<string, InstructorObject> =
-  dataInstructorJSON;
-export const dataInstructorKeys = Object.keys(dataInstructorObjects);
-
-export type SortBy =
-  | "bayesianScore"
-  | "bayesianRatingContent"
-  | "bayesianRatingTeaching"
-  | "bayesianRatingGrading"
-  | "bayesianRatingWorkload"
-  | "bayesianRatingInstructor"
-  | "score"
-  | "ratingContent"
-  | "ratingTeaching"
-  | "ratingGrading"
-  | "ratingWorkload"
-  | "ratingInstructor";
-
-export type RatingType =
-  | "ratingContent"
-  | "ratingTeaching"
-  | "ratingGrading"
-  | "ratingWorkload"
-  | "ratingInstructor";
-
-export type ScoreWeights = Record<RatingType, number>;
-
-export function search(
-  query: string,
-  sortBy: SortBy,
-  scoreWeights: ScoreWeights,
-): InstructorObject[] {
-  const sortedInstructorObjects = _.chain(dataInstructorObjects)
-    .values()
-    .map((instructorObj) => ({
-      ...instructorObj,
-      scores: instructorObj.scores.map((score) => ({
-        ...score,
-        score:
-          scoreWeights.ratingContent * score.ratingContent +
-          scoreWeights.ratingTeaching * score.ratingTeaching +
-          scoreWeights.ratingGrading * score.ratingGrading +
-          scoreWeights.ratingWorkload * score.ratingWorkload +
-          scoreWeights.ratingInstructor * score.ratingInstructor,
-        bayesianScore:
-          scoreWeights.ratingContent * score.bayesianRatingContent +
-          scoreWeights.ratingTeaching * score.bayesianRatingTeaching +
-          scoreWeights.ratingGrading * score.bayesianRatingGrading +
-          scoreWeights.ratingWorkload * score.bayesianRatingWorkload +
-          scoreWeights.ratingInstructor * score.bayesianRatingInstructor,
-      })),
+    // Create searching indices
+    .map((r) => ({
+      name: r.meta.name,
+      courses: _.uniq(
+        Object.values(r.meta.courses)
+          .flat()
+          .map(({ subject, code }) => `${subject} ${code}`),
+      ),
+      obj: r,
     }))
-    .sortBy((instructor) => -instructor.scores[0][sortBy])
-    .map((instructorObj, i) => ({
-      ...instructorObj,
-      rank: i + 1,
-      percentile: 1 - i / dataInstructorKeys.length,
-    }))
-    .map((instructorObj) => ({
-      name: instructorObj.instructor,
-      courses: [
-        ...instructorObj.historicalCourses.map(
-          (course) => `${course.subject} ${course.number}`,
-        ),
-        ...instructorObj.historicalCourses.map(
-          (course) => `${course.subject}${course.number}`,
-        ),
-        ...instructorObj.courses.map(
-          (course) => `${course.subject} ${course.number} (A)`,
-        ),
-        ...instructorObj.courses.map(
-          (course) => `${course.subject}${course.number} (A)`,
-        ),
-      ],
-      obj: instructorObj,
-    }))
+
     .value();
 
-  if (query) {
-    const fuse = new Fuse(sortedInstructorObjects, {
+  if (q) {
+    const fuse = new Fuse(searchObjs, {
       keys: ["name", "courses"],
       shouldSort: false,
       useExtendedSearch: true,
       threshold: 0.1,
     });
 
-    return fuse.search(query).map((it) => it.item.obj);
+    return fuse.search(q).map((it) => it.item.obj);
   }
 
-  return sortedInstructorObjects.map((it) => it.obj);
+  return searchObjs.map((it) => it.obj);
 }

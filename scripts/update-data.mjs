@@ -3,28 +3,36 @@ import fetch from "node-fetch";
 
 async function fetchText(url) {
   const resp = await fetch(url);
+  if (!resp.ok)
+    throw new Error(
+      `Failed to fetch ${url}: ${resp.status} ${resp.statusText}`,
+    );
   return await resp.text();
 }
 
 async function fetchJSON(url) {
   const resp = await fetch(url);
+  if (!resp.ok)
+    throw new Error(
+      `Failed to fetch ${url}: ${resp.status} ${resp.statusText}`,
+    );
   return await resp.json();
 }
 
 async function updateInstructorData() {
   await fs.writeFile(
-    "data/data-instructor.json",
+    "data/ratings-instructor.json",
     await fetchText(
-      "https://raw.githubusercontent.com/ust-archive/ust-rankings-data/main/data-instructor.json",
+      "https://raw.githubusercontent.com/ust-archive/ust-rankings-data/data/ratings-instructor.json",
     ),
   );
 }
 
 async function updateCourseData() {
   await fs.writeFile(
-    "data/data-course.json",
+    "data/ratings-course.json",
     await fetchText(
-      "https://raw.githubusercontent.com/ust-archive/ust-rankings-data/main/data-course.json",
+      "https://raw.githubusercontent.com/ust-archive/ust-rankings-data/data/ratings-course.json",
     ),
   );
 }

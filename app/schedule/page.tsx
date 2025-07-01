@@ -3,40 +3,21 @@
 import { SisParserDialog } from "@/app/schedule/sis-parser-dialog";
 import { CourseCard } from "@/components/component/calendar/course-card";
 import { NewDomainBanner } from "@/components/component/new-domain-banner";
+import { TermSelect } from "@/components/component/term-select";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cqTerms, searchCourses } from "@/data/cq";
-import { cn } from "@/lib/utils";
-import {
-  CalendarPlus,
-  Check,
-  ChevronsUpDown,
-  Download,
-  HelpCircle,
-} from "lucide-react";
+import { CalendarPlus, Download, HelpCircle } from "lucide-react";
 import React, { type ChangeEvent, useState } from "react";
 import { toast } from "sonner";
 import { WindowVirtualizer } from "virtua";
 
+
 export default function Home() {
   const [term, setTerm] = useState(cqTerms.findLast(() => true)!.term);
   const [shoppingCart, setShoppingCart] = useState<Set<string>>(new Set());
-  const [comboBoxOpen, setComboBoxOpen] = useState(false);
 
   const isSectionInShoppingCart = (section: string) =>
     shoppingCart.has(section);
@@ -119,47 +100,7 @@ export default function Home() {
           >
             <CalendarPlus />
           </Button>
-          <Popover open={comboBoxOpen} onOpenChange={setComboBoxOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={comboBoxOpen}
-                className="w-[200px] justify-between"
-              >
-                {cqTerms.find((t) => t.term === term)?.termName}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[200px] p-0">
-              <Command>
-                <CommandInput placeholder="Search for term..." />
-                <CommandList>
-                  <CommandEmpty>No framework found.</CommandEmpty>
-                  <CommandGroup>
-                    {cqTerms.map((t) => (
-                      <CommandItem
-                        key={t.term}
-                        value={t.term}
-                        onSelect={(currentValue) => {
-                          setTerm(currentValue);
-                          setComboBoxOpen(false);
-                        }}
-                      >
-                        <Check
-                          className={cn(
-                            "mr-2 h-4 w-4",
-                            term === t.term ? "opacity-100" : "opacity-0",
-                          )}
-                        />
-                        {t.termName}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+          <TermSelect term={term} onTermChange={setTerm} />
         </div>
 
         <Collapsible open={showHelp}>

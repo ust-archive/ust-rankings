@@ -1,14 +1,14 @@
 import "./course-trend-chart.css";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { CourseScoreObject } from "@/data/course";
+import { CourseRatings, Criteria, CriteriaName } from "@/data/ratings";
 import { stopPropagation } from "@/lib/events";
 import { AreaChart, type CustomTooltipProps } from "@tremor/react";
 import ChartTooltip from "@tremor/react/dist/components/chart-elements/common/ChartTooltip";
 import _ from "lodash";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 
-type InstructorTrendChartProps = {
-  scores: CourseScoreObject[];
+type CourseTrendChartProps = {
+  ratings: CourseRatings;
 };
 
 export function formatTerm(n: number): string {
@@ -23,54 +23,56 @@ export function formatTerm(n: number): string {
   return `${year}-${year + 1} ${season}`;
 }
 
-function allScoresAreInRegularTerm(scores: CourseScoreObject[]): boolean {
-  // 0: Fall; 2: Spring
-  return scores.every((score) => score.term % 4 === 0 || score.term % 4 === 2);
-}
+export function CourseTrendChart({ ratings }: CourseTrendChartProps) {
+  const [showRatings, setShowRatings] = useState<string[]>([
+    CriteriaName["course"],
+  ]);
 
-export function CourseTrendChart(props: InstructorTrendChartProps) {
-  const [showRatings, setShowRatings] = useState<string[]>([]);
-
-  const { scores } = props;
-  if (scores.length === 0) {
-    return <div>No score available</div>;
-  }
-
-  const scoreMap = _.keyBy(scores, (score) => score.term);
-
-  // Asset non-null because there should be at least one score.
-  const maxTerm = _.max(scores.map((score) => score.term))!;
-  const minTerm = _.min(scores.map((score) => score.term))!;
-  let terms = _.range(minTerm, maxTerm + 1);
-
-  // If all scores are in regular term, we only show regular terms.
-  if (allScoresAreInRegularTerm(scores)) {
-    terms = terms.filter((term) => term % 4 === 0 || term % 4 === 2);
-  }
+  const terms = useMemo(
+    () =>
+      _.chain(Criteria)
+        .flatMap((c) => Object.entries(ratings.ratings[c].samples))
+        .filter(([, samples]) => samples > 0)
+        .map(([term]) => Number(term))
+        .uniq()
+        .sort()
+        .value(),
+    [ratings.ratings],
+  );
 
   const chartData = terms.map((term) => {
-    const score = scoreMap[term];
     return {
-      semester: formatTerm(term),
-      "Rating (Content)": score?.individualRatingContent ?? NaN,
-      "Rating (Teaching)": score?.individualRatingTeaching ?? NaN,
-      "Rating (Grading)": score?.individualRatingGrading ?? NaN,
-      "Rating (Workload)": score?.individualRatingWorkload ?? NaN,
-      Score: score?.score ?? NaN,
-      Samples: score?.individualSamples ?? 0,
+      term: formatTerm(term),
+      samplesUs: ratings.ratings["content"].samples[term] ?? 0,
+      samplesSfq: ratings.ratings["course"].samples[term] ?? 0,
+      instructors: ratings.meta.instructors[term] ?? [],
+      ...Object.fromEntries(
+        Criteria.map((c) => [
+          CriteriaName[c],
+          ratings.ratings[c].bayesian[term],
+        ]),
+      ),
     };
   });
 
   const valueFormatter = (v: number) => (isNaN(v) ? "N/A" : v.toFixed(3));
   const CustomToolTip = (props: CustomTooltipProps) => {
     const { payload, active, label } = props;
-    console.log(props);
     if (!payload) {
       return null;
     }
 
-    const samples = payload[0]?.payload?.Samples as number;
-    const newLabel = `${label} - Samples: ${samples}`;
+    const samplesUs = payload[0]?.payload?.samplesUs as number;
+    const samplesSfq = payload[0]?.payload?.samplesSfq as number;
+    const instructors = (
+      payload[0]?.payload?.instructors ?? ([] as string[])
+    ).join("; ");
+
+    const newLabel =
+      `${label}\n` +
+      `Samples (ust.space): ${samplesUs}\n` +
+      `Samples (SFQ): ${samplesSfq}\n` +
+      `Instructors: ${instructors}`;
     return (
       <ChartTooltip
         active={active}
@@ -94,28 +96,28 @@ export function CourseTrendChart(props: InstructorTrendChartProps) {
         onValueChange={setShowRatings}
         className="flex-wrap px-4 font-bold"
       >
-        <ToggleGroupItem className="font-semibold" value="Rating (Content)">
-          Content
-        </ToggleGroupItem>
-        <ToggleGroupItem className="font-semibold" value="Rating (Teaching)">
-          Teaching
-        </ToggleGroupItem>
-        <ToggleGroupItem className="font-semibold" value="Rating (Grading)">
-          Grading
-        </ToggleGroupItem>
-        <ToggleGroupItem className="font-semibold" value="Rating (Workload)">
-          Workload
-        </ToggleGroupItem>
+        {Criteria.map((c) => {
+          return (
+            <ToggleGroupItem
+              className="font-semibold"
+              key={c}
+              value={CriteriaName[c]}
+            >
+              {CriteriaName[c]}
+            </ToggleGroupItem>
+          );
+        })}
       </ToggleGroup>
       <AreaChart
         data={chartData}
-        index="semester"
-        categories={["Score", ...showRatings]}
+        index="term"
+        categories={[...showRatings]}
         rotateLabelX={{ angle: -60 }}
         curveType="monotone"
         connectNulls={true}
         valueFormatter={valueFormatter}
         customTooltip={CustomToolTip}
+        className="whitespace-pre-line"
       />
     </div>
   );

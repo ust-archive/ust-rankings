@@ -8,7 +8,8 @@
     "prebuild": "pnpm run update-data",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint --fix"
+    "lint": "next lint --fix",
+    "type-check": "tsc --pretty"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.18",
@@ -38,6 +39,7 @@
     "ics": "^3.7.2",
     "lodash": "^4.17.21",
     "lucide-react": "^0.316.0",
+    "mathjs": "^14.5.2",
     "next": "14.2.23",
     "next-themes": "^0.2.1",
     "node-ical": "^0.17.2",

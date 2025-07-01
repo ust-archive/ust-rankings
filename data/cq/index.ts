@@ -69,6 +69,8 @@ export const cqTerms: Term[] = cqTermsObj.sort((a, b) =>
   a.term.localeCompare(b.term),
 );
 
+export const currentTerm = cqTerms[cqTerms.length - 1];
+
 const cqMap = Object.fromEntries(
   cq.map((it) => {
     return [it.term, it.cq];
@@ -80,7 +82,7 @@ const fuseMap = Object.fromEntries(
     return [
       it.term,
       new Fuse(it.cq, {
-        keys: ["subject", "number", "code", "classes.number"],
+        keys: ["subject", "samples", "code", "classes.number"],
         shouldSort: false,
         useExtendedSearch: true,
         threshold: 0.2,

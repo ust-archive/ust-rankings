@@ -2,3 +2,7 @@
   /* Prevent X-Labels from Overflowing */
   overflow: visible;
 }
+
+.recharts-tooltip-wrapper {
+  @apply max-w-[50%] lg:max-w-[75%]
+}

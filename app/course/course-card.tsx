@@ -7,13 +7,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { CourseObject, CourseSortBy } from "@/data/course";
-import { stopPropagation } from "@/lib/events";
-import React, { useState } from "react";
+import { CourseRatings, Criteria, CriteriaName } from "@/data/ratings";
+import _ from "lodash";
+import React, { useMemo, useState } from "react";
 
 type CourseCardProps = {
-  courseObj: CourseObject;
-  sortBy: CourseSortBy;
+  ratings: CourseRatings;
+  term: number;
 };
 
 type Color = [number, number, number];
@@ -78,31 +78,59 @@ function cssColor(color: Color) {
   return `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
 }
 
-export function CourseCard({ courseObj, sortBy }: CourseCardProps) {
+function formatNumber(num?: number): string {
+  if (num === undefined || isNaN(num)) {
+    return " - ";
+  }
+  return (num >= 0 ? "+" : "") + num.toFixed(2);
+}
+
+export function CourseCard({ ratings, term }: CourseCardProps) {
   const [open, setOpen] = useState(false);
-  const {
-    subject,
-    number,
-    rank,
-    percentile,
-    instructors,
-    historicalInstructors,
-  } = courseObj;
 
   const {
-    score,
-    ratingContent,
-    ratingTeaching,
-    ratingGrading,
-    ratingWorkload,
-    confidence,
-    samples,
-  } = courseObj.scores[0];
+    meta: { subject, code, instructors },
+  } = ratings;
 
-  const sortByScore = courseObj.scores[0][sortBy];
-  const formattedScore = (sortByScore * 100).toFixed(1);
+  const score = ratings.score!;
+  const rank = ratings.rank!;
+  const percentile = ratings.percentile!;
 
-  const ustSpaceUrl = `https://ust.space/review/${subject}${number}`;
+  const r = Object.fromEntries(
+    Criteria.flatMap((c) => {
+      if (!ratings.ratings[c]) {
+        return [];
+      }
+      return [
+        [
+          c,
+          {
+            rating: ratings.ratings[c].rating[term] ?? NaN,
+            bayesian: ratings.ratings[c].bayesian[term] ?? NaN,
+            confidence: ratings.ratings[c].confidence[term] ?? NaN,
+            samples: _.sum(Object.values(ratings.ratings[c].samples)),
+          },
+        ],
+      ];
+    }),
+  );
+
+  // If any is undefined, there is no samples for that criterion.
+  const usSamples = r["content"]?.samples ?? 0; // us: ust.space
+  const sfqSamples = r["course"]?.samples ?? 0; // sfq: aqa.hkust.edu.hk/sfq
+
+  const formattedScore = (score * 100).toFixed(1);
+
+  const currentInstructors = useMemo(() => {
+    return instructors[term].sort();
+  }, [instructors, term]);
+  const historicalInstructors = useMemo(() => {
+    const is = Object.entries(instructors)
+      .filter(([t]) => Number(t) < term)
+      .flatMap(([_, is]) => is)
+      .sort();
+    return _.uniq(is);
+  }, [instructors, term]);
 
   return (
     <Card
@@ -118,22 +146,15 @@ export function CourseCard({ courseObj, sortBy }: CourseCardProps) {
         </CardTitle>
         <div className="min-w-0 space-y-1 text-left">
           <CardTitle className="tracking-normal">
-            <a
-              className="group pointer-events-auto"
-              href={ustSpaceUrl}
-              target="_blank"
-              onClick={stopPropagation}
-            >
-              <span className="inline-block group-hover:underline">
-                {subject}&nbsp;
-              </span>
-              <span className="inline-block group-hover:underline">
-                {number}
-              </span>
-            </a>
+            <span className="inline-block group-hover:underline">
+              {subject}&nbsp;
+            </span>
+            <span className="inline-block group-hover:underline">{code}</span>
           </CardTitle>
           <CardDescription className="truncate">
-            {samples} Reviews of {historicalInstructors.join("; ")}
+            <span className="font-semibold">{usSamples}</span> samples from
+            ust.space. <span className="font-semibold">{sfqSamples}</span>{" "}
+            samples from SFQ.
           </CardDescription>
         </div>
         <Card
@@ -144,57 +165,65 @@ export function CourseCard({ courseObj, sortBy }: CourseCardProps) {
         </Card>
       </CardHeader>
       <Collapsible open={open}>
-        <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown">
+        <CollapsibleContent className="data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown">
           <CardContent>
             <div className="mx-6 mb-1 grid grid-cols-1 gap-2 text-left text-gray-500 lg:grid-cols-2">
-              <div className="grid auto-rows-min gap-x-2">
-                <span className="text-right">Rating (Teaching):</span>
-                <span className="col-start-2">{ratingTeaching.toFixed(3)}</span>
-
-                <span className="text-right">Rating (Workload):</span>
-                <span className="col-start-2">{ratingWorkload.toFixed(3)}</span>
-
-                <span className="text-right">Rating (Content):</span>
-                <span className="col-start-2">{ratingContent.toFixed(3)}</span>
-
-                <span className="text-right">Rating (Grading):</span>
-                <span className="col-start-2">{ratingGrading.toFixed(3)}</span>
-
-                <span className="text-right">Overall Rating: </span>
-                <span className="col-start-2">{score.toFixed(3)}</span>
-
-                <span className="text-right">Confidence: </span>
-                <span className="col-start-2">{confidence.toFixed(3)}</span>
-
-                <span className="text-right">Percentile: </span>
-                <span className="col-start-2">
-                  {(percentile * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div className="grid auto-rows-min gap-x-2">
-                <span className="font-medium">Instructors</span>
-                <div className="grid gap-x-2">
-                  {instructors.map((it) => (
-                    <span key={it} className="text-nowrap underline">
-                      {it}
-                    </span>
+              <table className="block w-fit whitespace-pre">
+                <thead>
+                  <tr>
+                    <th className="px-2 py-1 pt-0 text-left">Criteria</th>
+                    <th className="px-2 py-1 pt-0 text-left">Rating</th>
+                    <th className="px-2 py-1 pt-0 text-left">Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Criteria.map((c) => (
+                    <tr key={c}>
+                      <td className="px-2 py-1 font-medium">
+                        {CriteriaName[c].replace(" ", "\n")}
+                      </td>
+                      <td className="px-2 py-1 font-mono">
+                        {formatNumber(r[c]?.rating)}
+                      </td>
+                      <td className="px-2 py-1 font-mono">
+                        {formatNumber(r[c]?.confidence)}
+                      </td>
+                    </tr>
                   ))}
-                </div>
-                <span className="font-medium">Historical Instructors</span>
-                <div className="grid gap-x-2">
-                  {historicalInstructors.map(
-                    (it) =>
-                      instructors.includes(it) || (
-                        <span key={it} className="text-nowrap underline">
+                </tbody>
+              </table>
+
+              <div className="grid auto-rows-min gap-2">
+                {currentInstructors.length > 0 ? (
+                  <div>
+                    <span className="font-medium">Current Instructors</span>
+                    <div className="grid gap-x-2">
+                      {currentInstructors.map((it) => (
+                        <span key={it} className="text-nowrap font-mono">
                           {it}
                         </span>
-                      ),
-                  )}
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <span className="font-medium">
+                    Course not offered in this term.
+                  </span>
+                )}
+                <div>
+                  <span className="font-medium">Historical Instructors</span>
+                  <div className="grid gap-x-2">
+                    {historicalInstructors.map((it) => (
+                      <span key={it} className="text-nowrap font-mono">
+                        {it}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <CourseTrendChart scores={courseObj.scores} />
+            <CourseTrendChart ratings={ratings} />
           </CardContent>
         </CollapsibleContent>
       </Collapsible>
