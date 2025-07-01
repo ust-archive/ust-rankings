@@ -5,7 +5,7 @@ import { SettingsCard } from "@/components/component/settings-card";
 import { TermSelect } from "@/components/component/term-select";
 import { Input } from "@/components/ui/input";
 import { search } from "@/data/course";
-import { cqTerms, currentTerm } from "@/data/cq";
+import { currentTerm } from "@/data/cq";
 import { CriteriaName, termCode2Num } from "@/data/ratings";
 import React, { type ChangeEvent, useState } from "react";
 import { WindowVirtualizer } from "virtua";

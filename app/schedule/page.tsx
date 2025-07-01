@@ -14,7 +14,6 @@ import React, { type ChangeEvent, useState } from "react";
 import { toast } from "sonner";
 import { WindowVirtualizer } from "virtua";
 
-
 export default function Home() {
   const [term, setTerm] = useState(cqTerms.findLast(() => true)!.term);
   const [shoppingCart, setShoppingCart] = useState<Set<string>>(new Set());

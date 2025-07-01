@@ -19,7 +19,7 @@ export type SettingsCardProps = {
   formula: string;
   setFormula: (formula: string) => void;
 
-  tooltip: ReactElement;
+  tooltip: ReactElement<any>;
 };
 
 export function SettingsCard({

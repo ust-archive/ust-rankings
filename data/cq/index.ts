@@ -64,6 +64,7 @@ export interface CourseClassSchedule {
   toTime: string | null;
 }
 
+// @ts-ignore the json is large so typescript cannot infer the type
 export const cq: CQ[] = cqObj;
 export const cqTerms: Term[] = cqTermsObj.sort((a, b) =>
   a.term.localeCompare(b.term),
