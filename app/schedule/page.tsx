@@ -2,7 +2,7 @@
 
 import { SisParserDialog } from "@/app/schedule/sis-parser-dialog";
 import { CourseCard } from "@/components/component/calendar/course-card";
-import { NewDomainBanner } from "@/components/component/new-domain-banner";
+import { NewReleaseBanner } from "@/components/component/new-release-banner";
 import { TermSelect } from "@/components/component/term-select";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
@@ -42,7 +42,7 @@ export default function Home() {
 
   return (
     <>
-      <NewDomainBanner className="-mt-12 max-w-sm lg:max-w-2xl" />
+      <NewReleaseBanner className="-mt-12" />
 
       <h1 className="text-logo-gradient max-w-sm text-7xl font-bold tracking-tighter lg:max-w-2xl">
         UST Schedule

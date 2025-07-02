@@ -45,13 +45,13 @@ export default function RootLayout({
             className="no-underline underline-offset-4 hover:underline"
             href="/"
           >
-            Instructor Rankings
+            Instructors
           </Link>
           <Link
             className="no-underline underline-offset-4 hover:underline"
             href="/course/"
           >
-            Course Rankings
+            Courses
           </Link>
           <Link
             className="no-underline underline-offset-4 hover:underline"
@@ -63,7 +63,7 @@ export default function RootLayout({
             <SiGithub className="h-7 w-7" />
           </Link>
         </header>
-        <main className="flex flex-col items-center space-y-8 py-32 text-center">
+        <main className="mx-auto flex max-w-sm flex-col items-center space-y-8 py-32 text-center lg:max-w-2xl">
           {children}
         </main>
         <Toaster />

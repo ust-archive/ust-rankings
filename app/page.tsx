@@ -1,6 +1,7 @@
 "use client";
 
 import { InstructorCard } from "@/app/instructor-card";
+import { NewReleaseBanner } from "@/components/component/new-release-banner";
 import { SettingsCard } from "@/components/component/settings-card";
 import { TermSelect } from "@/components/component/term-select";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ export default function Home() {
 
   return (
     <>
+      <NewReleaseBanner className="-mt-12" />
       <h1 className="text-logo-gradient max-w-sm text-7xl font-bold tracking-tighter lg:max-w-2xl">
         UST Rankings
       </h1>

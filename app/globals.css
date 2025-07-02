@@ -53,7 +53,7 @@ kbd {
 }
 
 article {
-  @apply space-y-2
+  @apply flex flex-col gap-2 leading-relaxed
 }
 
 article h1,
@@ -96,4 +96,9 @@ ul {
 
 article pre {
   @apply my-2 text-center;
+}
+
+.EmojiPickerReact.epr-main {
+  height: 32px;
+  --epr-emoji-size: 18px;
 }
