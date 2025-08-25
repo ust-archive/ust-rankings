@@ -8,7 +8,7 @@ export const ratingsInstructor = ratingsInstructorJson;
 
 export function search(q: string, t: number, f: string): InstructorRatings[] {
   const instructorObjs = ratingsInstructor.filter((r) =>
-    Criteria.every((c) => r.ratings[c]?.confidence[t] ?? 0 !== 0),
+    Criteria.some((c) => r.ratings[c]?.confidence[t] ?? 0 !== 0),
   );
 
   const formula = mathjs.compile(f);
@@ -20,8 +20,8 @@ export function search(q: string, t: number, f: string): InstructorRatings[] {
         Criteria.map((c) => [
           c,
           {
-            rating: r.ratings[c].rating[t] ?? 0,
-            bayesian: r.ratings[c].bayesian[t] ?? 0,
+            rating: r.ratings[c]?.rating[t] ?? 0,
+            bayesian: r.ratings[c]?.bayesian[t] ?? 0,
           },
         ]),
       );

@@ -31,7 +31,7 @@ export function InstructorTrendChart({ ratings }: InstructorTrendChartProps) {
   const terms = useMemo(
     () =>
       _.chain(Criteria)
-        .flatMap((c) => Object.entries(ratings.ratings[c].samples))
+        .flatMap((c) => Object.entries(ratings.ratings[c]?.samples ?? []))
         .filter(([, samples]) => samples > 0)
         .map(([term]) => Number(term))
         .uniq()
@@ -43,13 +43,13 @@ export function InstructorTrendChart({ ratings }: InstructorTrendChartProps) {
   const chartData = terms.map((term) => {
     return {
       term: formatTerm(term),
-      samplesUs: ratings.ratings["content"].samples[term] ?? 0,
-      samplesSfq: ratings.ratings["course"].samples[term] ?? 0,
+      samplesUs: ratings.ratings["content"]?.samples[term] ?? 0,
+      samplesSfq: ratings.ratings["course"]?.samples[term] ?? 0,
       courses: ratings.meta.courses[term] ?? [],
       ...Object.fromEntries(
         Criteria.map((c) => [
           CriteriaName[c],
-          ratings.ratings[c].bayesian[term],
+          ratings.ratings[c]?.bayesian[term],
         ]),
       ),
     };
