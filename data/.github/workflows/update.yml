@@ -90,4 +90,5 @@ jobs:
       - name: Push This
         uses: ad-m/github-push-action@master
         with:
+          branch: data
           directory: ./data
