@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   const term = request.nextUrl.searchParams.get("term");
-  const numbers = request.nextUrl.searchParams.getAll("samples");
+  const numbers = request.nextUrl.searchParams.getAll("number");
 
   const webcal = Boolean(request.nextUrl.searchParams.get("webcal"));
 
