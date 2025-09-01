@@ -70,7 +70,7 @@ export function generateEventAttributes(
             toTime.minute(),
           ],
           endInputType: "utc",
-          title: `${course.subject} ${course.number} ${courseClass.section} (${courseClass.number}) - ${course.name}`,
+          title: `${course.subject} ${course.number} ${courseClass.section} - ${course.name}`,
           location: schedule.venue,
           description: `Instructor: ${schedule.instructors.join(", ")}\nPath Advisor: ${PathAdvisor.findPathTo(schedule.venue)}`,
           recurrenceRule: rrule.toString().replace(/^RRULE:/, ""),
