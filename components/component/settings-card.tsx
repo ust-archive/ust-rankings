@@ -38,8 +38,6 @@ export function SettingsCard({
           <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown">
             <Textarea
               style={{
-                // @ts-expect-error I don't know why, fieldSizing is not recognized
-                // but it actually works
                 fieldSizing: "content",
               }}
               className="font-mono"

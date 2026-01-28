@@ -9,10 +9,8 @@
 - Grade instructors by A+, A, etc. for intuitive understanding.
 - Check trends on instructors' ratings.
 
-
 ![UST Rankings](https://github.com/Waver-Velvet/ust-rankings/assets/42676149/067b716a-7c74-4eb6-a232-cedf342d7dd0)
-*The actual names are redacted because the rankings are changing time-by-time.*
-
+_The actual names are redacted because the rankings are changing time-by-time._
 
 ## UST Schedule
 
@@ -25,7 +23,7 @@
 - Directly links the venue to Path Advisor.
 
 ![UST Schedule](https://github.com/Waver-Velvet/ust-rankings/assets/42676149/f553e971-bd62-4b0f-a487-8b77215e57ec)
-*This is the dark theme, for demonstrational purpose.*
+_This is the dark theme, for demonstrational purpose._
 
 ## Connect
 

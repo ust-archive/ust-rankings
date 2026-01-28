@@ -162,10 +162,10 @@ function SectionTable(props: SectionTableProps) {
   const { course, courseClasses } = props;
 
   const tableObj = courseClasses.flatMap((clazz) =>
-    clazz.schedule.flatMap((schedule) => {
+    clazz.schedule.flatMap((schedule, scheduleIndex) => {
       const selected = props.isSectionSelected(clazz.number);
       return {
-        key: JSON.stringify(clazz),
+        key: `${clazz.number}-${schedule.fromDate}-${schedule.toDate}-${schedule.weekdays.join("")}-${schedule.fromTime ?? ""}-${schedule.toTime ?? ""}-${schedule.venue}-${scheduleIndex}`,
         cells: [
           newCell(
             <SectionCell

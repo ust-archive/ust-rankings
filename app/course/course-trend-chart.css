@@ -4,5 +4,5 @@
 }
 
 .recharts-tooltip-wrapper {
-  @apply max-w-[50%] lg:max-w-[75%]
+  @apply max-w-[50%] lg:max-w-[75%];
 }

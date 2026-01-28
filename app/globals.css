@@ -53,7 +53,7 @@ kbd {
 }
 
 article {
-  @apply flex flex-col gap-2 leading-relaxed
+  @apply flex flex-col gap-2 leading-relaxed;
 }
 
 article h1,
