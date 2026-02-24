@@ -49,9 +49,13 @@ export function generateEventAttributes(
           .atDate(fromDate)
           .atZone(HongKongTZ)
           .withZoneSameInstant(ZoneOffset.UTC);
+        const untilTime = LocalTime.parse(schedule.toTime!)
+          .atDate(toDate)
+          .atZone(HongKongTZ)
+          .withZoneSameInstant(ZoneOffset.UTC);
         const rrule = new RRule({
           freq: RRule.WEEKLY,
-          until: convert(toDate).toDate(),
+          until: convert(untilTime).toDate(),
         });
         return {
           start: [
