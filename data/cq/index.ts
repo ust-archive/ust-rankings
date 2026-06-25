@@ -85,6 +85,7 @@ const fuseMap = Object.fromEntries(
         keys: ["subject", "samples", "code", "classes.number"],
         shouldSort: false,
         useExtendedSearch: true,
+        ignoreLocation: true,
         threshold: 0.2,
       }),
     ];

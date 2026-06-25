@@ -56,6 +56,7 @@ export function search(q: string, t: number, f: string): InstructorRatings[] {
       keys: ["name", "courses"],
       shouldSort: false,
       useExtendedSearch: true,
+      ignoreLocation: true,
       threshold: 0.1,
     });
 
