@@ -21,8 +21,8 @@ jobs:
 
       - run: |
           pnpm install
-          pnpm dlx vercel pull --yes --token=${VERCEL_TOKEN} --environment=production
-          pnpm dlx vercel build --prod
+          pnpm dlx vercel@latest pull --yes --token=${VERCEL_TOKEN} --environment=production
+          pnpm dlx vercel@latest build --prod
         env:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -32,5 +32,6 @@ jobs:
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }} # Required
           vercel-args: "--prod --prebuilt" #Optional
+          vercel-version: "latest" # Required because Vercel rejects outdated CLI versions.
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID}} #Required
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID}} #Required
