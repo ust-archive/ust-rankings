@@ -1,6 +1,11 @@
 import "./instructor-trend-chart.css";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Criteria, CriteriaName, InstructorRatings } from "@/data/ratings";
+import {
+  Criteria,
+  CriteriaName,
+  formatTerm,
+  InstructorRatings,
+} from "@/data/ratings";
 import { stopPropagation } from "@/lib/events";
 import { AreaChart, type CustomTooltipProps } from "@tremor/react";
 import ChartTooltip from "@tremor/react/dist/components/chart-elements/common/ChartTooltip";
@@ -10,18 +15,6 @@ import React, { useMemo, useState } from "react";
 type InstructorTrendChartProps = {
   ratings: InstructorRatings;
 };
-
-export function formatTerm(n: number): string {
-  const seasonMap = {
-    0: "Fall",
-    1: "Winter",
-    2: "Spring",
-    3: "Summer",
-  };
-  const year = 2000 + Math.floor(n / 4);
-  const season = seasonMap[n % 4] as string;
-  return `${year}-${year + 1} ${season}`;
-}
 
 export function InstructorTrendChart({ ratings }: InstructorTrendChartProps) {
   const [showRatings, setShowRatings] = useState<string[]>([
@@ -35,7 +28,7 @@ export function InstructorTrendChart({ ratings }: InstructorTrendChartProps) {
         .filter(([, samples]) => samples > 0)
         .map(([term]) => Number(term))
         .uniq()
-        .sort()
+        .sortBy((term) => term)
         .value(),
     [ratings.ratings],
   );

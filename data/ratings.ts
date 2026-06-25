@@ -110,3 +110,15 @@ export const CriteriaName = {
 export function termCode2Num(term: string): number {
   return parseInt(term.slice(0, 2)) * 4 + (parseInt(term.slice(2, 3)) - 1);
 }
+
+export function formatTerm(n: number): string {
+  const seasonMap = {
+    0: "Fall",
+    1: "Winter",
+    2: "Spring",
+    3: "Summer",
+  };
+  const year = 2000 + Math.floor(n / 4);
+  const season = seasonMap[n % 4] as string;
+  return `${year}-${year + 1} ${season}`;
+}
