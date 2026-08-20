@@ -14,3 +14,11 @@ and representative queries before serving the generation.
 Set `SCHEDULE_SEED_DIR` to a commit-named generation directory for isolated
 local validation and tests. Schedule refresh, last-known-good storage, and
 health automation are tracked separately by issue #40.
+
+## Public planner state
+
+`/schedule` keeps public planner state in `term`, bounded `q`, repeated
+sorted/deduplicated `class`, and `view` query values. Add, remove, search, view,
+and SIS-import actions produce the same shareable URL without authentication or
+server-side User state. Changing Term intentionally clears selected Classes so
+a Class Number reused in another Term cannot select a different Class.

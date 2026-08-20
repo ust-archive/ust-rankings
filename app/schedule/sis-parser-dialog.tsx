@@ -1,9 +1,10 @@
+"use client";
+
 import { Import } from "lucide-react";
-import React, { type HTMLAttributes } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -13,99 +14,74 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { type Course, type CourseClass, findClass } from "@/data/cq";
-import { SisParser, SisUrl } from "@/data/cq/sis-parser";
+import {
+  buildScheduleUrl,
+  MAX_SIS_TEXT_LENGTH,
+  type PlannerState,
+  parseSisImport,
+} from "@/lib/schedule/planner";
 
-type SisParserDialogProps = {
-  term: string;
-  callback: (classNumbers: string[]) => void;
-} & HTMLAttributes<HTMLDivElement>;
-
-export function SisParserDialog({
-  term,
-  callback,
-  ...props
-}: SisParserDialogProps) {
-  const [text, setText] = React.useState("");
-  const classNumbers = SisParser.parse(text);
-  const classes = classNumbers.map((it) => findClass(term, it));
-
-  function openSis() {
-    window.open(SisUrl, "sis", "popup=true");
-  }
+export function SisParserDialog({ state }: { state: PlannerState }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const parsed = parseSisImport(text);
 
   function handleSubmit() {
-    callback(classNumbers);
+    if (parsed.classNumbers.length === 0) return;
+    window.location.assign(
+      buildScheduleUrl({
+        ...state,
+        classNumbers: [...state.classNumbers, ...parsed.classNumbers],
+        view: "cart",
+      }),
+    );
     setText("");
+    setOpen(false);
   }
 
   return (
-    <Dialog {...props}>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="w-1/2">
-          <Import className="mr-2 h-4 w-4" /> Import from SIS
+        <Button variant="outline">
+          <Import aria-hidden="true" className="mr-2 h-4 w-4" /> Import from SIS
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Import from SIS</DialogTitle>
+          <DialogTitle>Import Classes from SIS</DialogTitle>
           <DialogDescription>
-            <ol className="mt-2 space-y-1">
-              <li>
-                Go to{" "}
-                <button type="button" className="underline" onClick={openSis}>
-                  SIS
-                </button>
-                .
-              </li>
-              <li>
-                Press <kbd>Ctrl/⌘</kbd> + <kbd>A</kbd> to select all text on the
-                page.
-              </li>
-              <li>
-                Press <kbd>Ctrl/⌘</kbd> + <kbd>C</kbd> to copy the text.
-              </li>
-              <li>
-                Press <kbd>Ctrl/⌘</kbd> + <kbd>V</kbd> to paste the text here.
-              </li>
-            </ol>
+            Copy the text on your SIS Student Center page and paste it below.
+            Imported Class Numbers join this public, shareable planner URL.
           </DialogDescription>
         </DialogHeader>
+        <Label htmlFor="sis-text">SIS page text</Label>
         <Textarea
-          className="w-full"
-          placeholder="Paste Here"
-          defaultValue={text}
-          content={text}
-          onChange={(e) => {
-            setText(e.target.value);
-          }}
+          aria-describedby="sis-import-status"
+          className="max-h-60 w-full"
+          id="sis-text"
+          maxLength={MAX_SIS_TEXT_LENGTH}
+          onChange={(event) => setText(event.target.value)}
+          placeholder="Paste SIS page text"
+          value={text}
         />
-        <div className="space-y-2">
-          <Label>Class Numbers</Label>
-          {classes.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              No classes found.
+        <div aria-live="polite" id="sis-import-status">
+          {parsed.classNumbers.length > 0 ? (
+            <p className="text-sm text-slate-600">
+              Found Class Numbers: {parsed.classNumbers.join(", ")}. They will
+              be validated against {state.termCode} after import.
             </p>
           ) : (
-            <ul className="font-mono text-sm text-gray-500 dark:text-gray-400">
-              {classes
-                .filter((it) => it !== undefined)
-                .map((it) => it as [Course, CourseClass])
-                .map(([course, section]) => (
-                  <li key={section.number}>
-                    {course.subject} {course.number} {section.section}{" "}
-                    <span>({section.number})</span>
-                  </li>
-                ))}
-            </ul>
+            <p className="text-sm text-amber-800">{parsed.message}</p>
           )}
         </div>
         <DialogFooter>
-          <DialogClose asChild>
-            <Button type="submit" onClick={handleSubmit}>
-              Submit!{" "}
-            </Button>
-          </DialogClose>
+          <Button
+            disabled={parsed.classNumbers.length === 0}
+            onClick={handleSubmit}
+            type="button"
+          >
+            Add to planner cart
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

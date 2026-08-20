@@ -37,6 +37,12 @@ test("the public Schedule route renders Term selection and dense searchable Clas
   expect(markup).toContain("UST Schedule");
   expect(markup).toContain('name="term"');
   expect(markup).toContain('name="q"');
+  expect(markup).toContain('name="view"');
+  expect(markup).toContain("Browse Classes");
+  expect(markup).toContain("Planner cart");
+  expect(markup).toContain("Add Class 1001");
+  expect(markup).toContain('href="/courses/COMP/2000/2510/L1">L1 · 1001</a>');
+  expect(markup).toContain("Import from SIS");
   expect(markup).toContain("2025-26 Fall");
   expect(markup).toContain("COMP 2000");
   expect(markup).toContain("Updated Course title");
@@ -55,6 +61,68 @@ test("the public Schedule route renders Term selection and dense searchable Clas
   expect(missingDates).not.toContain(">–</span>");
 });
 
+test("shareable planner state renders selected Classes and safe inline validation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "schedule-planner-route-"));
+  temporaryDirectories.push(root);
+  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(root);
+  const { default: SchedulePage } = await import("@/app/schedule/page");
+
+  const selected = renderToStaticMarkup(
+    await SchedulePage({
+      searchParams: Promise.resolve({
+        term: "2510",
+        q: "Room",
+        class: ["2001", "1001", "1001"],
+        view: "cart",
+      }),
+    }),
+  );
+  expect(selected).toContain("2 selected Classes");
+  expect(selected).toContain("Remove Class 1001");
+  expect(selected).toContain(
+    "/schedule?term=2510&amp;q=Room&amp;class=2001&amp;view=cart",
+  );
+
+  const invalid = renderToStaticMarkup(
+    await SchedulePage({
+      searchParams: Promise.resolve({
+        term: "9999",
+        class: ["1001", "9999"],
+        view: "unsupported",
+      }),
+    }),
+  );
+  expect(invalid).toContain('role="alert"');
+  expect(invalid).toContain("Unknown Term Code; showing the latest Term.");
+  expect(invalid).toContain(
+    "Selected Class Numbers are not available in this Term; the planner cart was reset.",
+  );
+  expect(invalid).toContain("Unknown Schedule view; showing Browse.");
+  expect(invalid).toContain("0 selected Classes");
+
+  const conflictRoot = await mkdtemp(
+    join(tmpdir(), "schedule-conflict-route-"),
+  );
+  temporaryDirectories.push(conflictRoot);
+  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(
+    conflictRoot,
+    "conflict",
+  );
+  const conflict = renderToStaticMarkup(
+    await SchedulePage({
+      searchParams: Promise.resolve({
+        term: "2510",
+        class: ["1001", "2001"],
+        view: "cart",
+      }),
+    }),
+  );
+  expect(conflict).toContain("Schedule conflict");
+  expect(conflict).toContain(
+    "Classes 1001 and 2001 have overlapping meeting times.",
+  );
+});
+
 test("Schedule query errors and unavailable data have accessible specific states", async () => {
   const root = await mkdtemp(join(tmpdir(), "schedule-states-"));
   temporaryDirectories.push(root);
@@ -66,7 +134,9 @@ test("Schedule query errors and unavailable data have accessible specific states
       searchParams: Promise.resolve({ term: "bad", q: "x".repeat(101) }),
     }),
   );
-  expect(invalid).toContain("Invalid Schedule query");
+  expect(invalid).toContain("Some Schedule values were not used");
+  expect(invalid).toContain("Invalid Term Code; showing the latest Term.");
+  expect(invalid).toContain("Search is limited to 100 characters.");
   expect(invalid).toContain('role="alert"');
 
   process.env.SCHEDULE_SEED_DIR = join(root, "missing");
