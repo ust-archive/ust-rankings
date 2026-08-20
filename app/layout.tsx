@@ -43,7 +43,7 @@ export default function RootLayout({
           <div className="m-auto" />
           <Link
             className="no-underline underline-offset-4 hover:underline"
-            href="/"
+            href="/rankings/instructors"
           >
             Instructors
           </Link>
