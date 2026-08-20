@@ -207,3 +207,144 @@ test("an invalid seed fails closed only on the Instructor ranking route", async 
   expect(markup).toContain("Instructor rankings are unavailable");
   expect(markup).toContain('role="alert"');
 });
+
+test("Course and Instructor Rankings retain the title, search, Term, and settings hierarchy", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "rankings-hierarchy-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR =
+    await makeRankingGeneration(temporaryDirectory);
+
+  const { default: InstructorsPage } = await import(
+    "@/app/rankings/instructors/page"
+  );
+  const instructors = renderToStaticMarkup(
+    await InstructorsPage({
+      searchParams: Promise.resolve({ term: "2510" }),
+    }),
+  );
+  expect(instructors).toContain("UST Rankings");
+  expect(instructors).toContain("Instructor Rankings");
+  expect(instructors).toContain('name="q"');
+  expect(instructors).toContain('type="search"');
+  expect(instructors).toContain('name="term"');
+  expect(instructors).toContain("Settings...");
+  expect(instructors).toContain('name="preset"');
+  expect(instructors).toContain('name="activity"');
+  expect(instructors).toContain('name="prefix"');
+  expect(instructors).toContain('name="course"');
+  expect(instructors.indexOf('name="q"')).toBeLessThan(
+    instructors.indexOf("Settings..."),
+  );
+  expect(instructors.indexOf('name="term"')).toBeLessThan(
+    instructors.indexOf("Settings..."),
+  );
+
+  const { default: CoursesPage } = await import("@/app/rankings/courses/page");
+  const courses = renderToStaticMarkup(
+    await CoursesPage({
+      searchParams: Promise.resolve({
+        term: "2510",
+        preset: "grade",
+        prefix: "COMP",
+        commonCore: "arts",
+      }),
+    }),
+  );
+  expect(courses).toContain("UST Rankings");
+  expect(courses).toContain("Course Rankings");
+  expect(courses).toContain("Grade-focused preset");
+  expect(courses).toContain("Settings...");
+  expect(courses).toContain('name="commonCore"');
+  expect(courses).toContain('name="weight_content"');
+});
+
+test("ranking results show identity, ranks, score, and grade and navigate to Details", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "rankings-cards-"));
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR =
+    await makeRankingGeneration(temporaryDirectory);
+
+  const { default: InstructorsPage } = await import(
+    "@/app/rankings/instructors/page"
+  );
+  const instructors = renderToStaticMarkup(
+    await InstructorsPage({
+      searchParams: Promise.resolve({ term: "2510", q: "Beta" }),
+    }),
+  );
+  expect(instructors).toContain("Beta Instructor");
+  expect(instructors).toContain("Global Rank 1 of 3");
+  expect(instructors).toContain("Local Rank 1 of 3");
+  expect(instructors).toContain("#1");
+  expect(instructors).toContain("A+");
+  expect(instructors).toContain('href="/instructors/beta"');
+  expect(instructors).not.toContain("Current Courses Taught");
+  expect(instructors).not.toContain("Historical Courses Taught");
+
+  const { default: CoursesPage } = await import("@/app/rankings/courses/page");
+  const courses = renderToStaticMarkup(
+    await CoursesPage({
+      searchParams: Promise.resolve({ term: "2510", q: "COMP 1000" }),
+    }),
+  );
+  expect(courses).toContain("COMP 1000 · Creative Computing");
+  expect(courses).toContain('href="/courses/COMP/1000"');
+  expect(courses).toContain("Global Rank");
+  expect(courses).not.toContain("Current Instructors");
+  expect(courses).not.toContain("Historical Instructors");
+});
+
+test("empty, invalid, and unavailable ranking states keep the restored structure", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "rankings-chrome-"));
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR =
+    await makeRankingGeneration(temporaryDirectory);
+  const { default: CoursesPage } = await import("@/app/rankings/courses/page");
+  const { default: InstructorsPage } = await import(
+    "@/app/rankings/instructors/page"
+  );
+
+  const invalid = renderToStaticMarkup(
+    await CoursesPage({
+      searchParams: Promise.resolve({
+        preset: "custom",
+        weight_content: "0",
+      }),
+    }),
+  );
+  expect(invalid).toContain("UST Rankings");
+  expect(invalid).toContain("Settings...");
+  expect(invalid).toContain('name="q"');
+  expect(invalid).toContain("Invalid ranking query");
+  expect(invalid).toContain('role="alert"');
+
+  const empty = renderToStaticMarkup(
+    await CoursesPage({
+      searchParams: Promise.resolve({ term: "2510", prefix: "ZZZZ" }),
+    }),
+  );
+  expect(empty).toContain("UST Rankings");
+  expect(empty).toContain("Settings...");
+  expect(empty).toContain(
+    "No eligible Courses match these structured filters.",
+  );
+
+  const unavailableDirectory = await mkdtemp(
+    join(tmpdir(), "rankings-unavailable-chrome-"),
+  );
+  temporaryDirectories.push(unavailableDirectory);
+  const generation = await makeRankingGeneration(unavailableDirectory);
+  const rankingsFile = join(generation, "instructor-rankings.parquet");
+  const bytes = await readFile(rankingsFile);
+  bytes[Math.floor(bytes.length / 2)] ^= 1;
+  await writeFile(rankingsFile, bytes);
+  process.env.RANKINGS_SEED_DIR = generation;
+  const unavailable = renderToStaticMarkup(
+    await InstructorsPage({ searchParams: Promise.resolve({}) }),
+  );
+  expect(unavailable).toContain("UST Rankings");
+  expect(unavailable).toContain("Instructor rankings are unavailable");
+  expect(unavailable).toContain('role="alert"');
+});
