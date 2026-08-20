@@ -27,13 +27,106 @@ const CRITERIA = [
 ] as const;
 type Criterion = (typeof CRITERIA)[number];
 
-const LEARNING_WEIGHTS: Record<Criterion, number> = {
-  content: (2 / 3) * 0.4,
-  teaching: (2 / 3) * 0.4,
-  grading: (2 / 3) * 0.15,
-  workload: (2 / 3) * 0.05,
-  course: (1 / 3) * 0.25,
-  instructor: (1 / 3) * 0.75,
+export type RankingPreset = "learning" | "grade";
+export type RankingWeights = Partial<Record<Criterion, number>>;
+export type CommonCoreCategory =
+  | "critical-thinking-data-literacy"
+  | "healthy-lifestyle-mindfulness-well-being"
+  | "english-communication"
+  | "chinese-communication"
+  | "arts"
+  | "humanities"
+  | "science"
+  | "technology"
+  | "social-analysis"
+  | "sustainability"
+  | "undergraduate-research"
+  | "undergraduate-teaching"
+  | "undergraduate-participation"
+  | "undergraduate-community";
+
+export const COMMON_CORE_CATEGORIES: ReadonlyArray<{
+  value: CommonCoreCategory;
+  label: string;
+}> = [
+  {
+    value: "critical-thinking-data-literacy",
+    label: "Critical Thinking and Data Literacy",
+  },
+  {
+    value: "healthy-lifestyle-mindfulness-well-being",
+    label: "Healthy Lifestyle, Mindfulness and Well-being",
+  },
+  { value: "english-communication", label: "English Communication" },
+  { value: "chinese-communication", label: "Chinese Communication" },
+  { value: "arts", label: "Arts" },
+  { value: "humanities", label: "Humanities" },
+  { value: "science", label: "Science" },
+  { value: "technology", label: "Technology" },
+  { value: "social-analysis", label: "Social Analysis" },
+  { value: "sustainability", label: "Sustainability" },
+  {
+    value: "undergraduate-research",
+    label: "Undergraduate Research Opportunity",
+  },
+  {
+    value: "undergraduate-teaching",
+    label: "Undergraduate Teaching Opportunity",
+  },
+  {
+    value: "undergraduate-participation",
+    label: "Undergraduate Participation Opportunity",
+  },
+  {
+    value: "undergraduate-community",
+    label: "Undergraduate Community Opportunity",
+  },
+];
+
+const commonCoreValues = new Map<CommonCoreCategory, string>(
+  COMMON_CORE_CATEGORIES.map(({ value }, index) => [value, String(index + 33)]),
+);
+
+const PRESET_WEIGHTS: Record<
+  "course" | "instructor",
+  Record<RankingPreset, Record<Criterion, number>>
+> = {
+  course: {
+    learning: {
+      content: 0.2667,
+      teaching: 0.2667,
+      grading: 0.1,
+      workload: 0.0333,
+      course: 0.25,
+      instructor: 0.0833,
+    },
+    grade: {
+      content: 0.0667,
+      teaching: 0.0667,
+      grading: 0.4,
+      workload: 0.1333,
+      course: 0.25,
+      instructor: 0.0833,
+    },
+  },
+  instructor: {
+    learning: {
+      content: 0.2667,
+      teaching: 0.2667,
+      grading: 0.1,
+      workload: 0.0333,
+      course: 0.0833,
+      instructor: 0.25,
+    },
+    grade: {
+      content: 0.0667,
+      teaching: 0.0667,
+      grading: 0.4,
+      workload: 0.1333,
+      course: 0.0833,
+      instructor: 0.25,
+    },
+  },
 };
 
 const ratingColumns = [
@@ -95,6 +188,7 @@ const schemas: Record<
 export type InstructorIdentity = {
   uuid: string;
   canonicalName: string;
+  itsc?: string;
   aliases: Array<{
     name: string;
     source: "schedule" | "review" | "sfq" | "ranking-generation";
@@ -119,33 +213,66 @@ type Generation = {
 };
 
 export type RankingsQuery = {
-  entity: "instructor";
+  entity: "course" | "instructor";
   termCode?: string;
-  preset?: "learning";
+  preset?: RankingPreset;
+  weights?: RankingWeights;
   activity?: "current" | "all";
   search?: string;
+  coursePrefix?: string;
+  commonCore?: CommonCoreCategory[];
+  course?: string;
   limit?: number;
+  cursor?: string;
 };
 
-export type InstructorRanking = {
-  uuid: string;
-  canonicalName: string;
+type RankFields = {
   score: number;
   globalRank: number;
+  globalPopulation: number;
+  globalPercentile: number;
   localRank: number;
-  percentile: number;
+  localPopulation: number;
+  localPercentile: number;
 };
 
-export type RankingsPage = {
+export type InstructorRanking = RankFields & {
+  entity: "instructor";
+  uuid: string;
+  canonicalName: string;
+  itsc?: string;
+};
+
+export type CourseRanking = RankFields & {
+  entity: "course";
+  coursePrefix: string;
+  courseNumber: string;
+  courseCode: string;
+  title?: string;
+  commonCore: CommonCoreCategory[];
+};
+
+export type RankingsPage<
+  Entity extends "course" | "instructor" = "course" | "instructor",
+> = {
   generation: string;
   population: {
-    entity: "instructor";
+    entity: Entity;
     termCode: string;
     activity: "current" | "all";
     size: number;
+    filteredSize: number;
   };
-  preset: "learning";
-  results: InstructorRanking[];
+  configuration: {
+    preset: RankingPreset | "custom";
+    weights: RankingWeights;
+  };
+  results: [Entity] extends ["course"]
+    ? CourseRanking[]
+    : [Entity] extends ["instructor"]
+      ? InstructorRanking[]
+      : Array<CourseRanking | InstructorRanking>;
+  nextCursor?: string;
 };
 
 export type Rankings = {
@@ -161,12 +288,27 @@ export type Rankings = {
 
 export class RankingsUnavailableError extends Error {
   constructor(options?: { cause?: unknown }) {
-    super("Instructor rankings are unavailable.", options);
+    super("Rankings are unavailable.", options);
     this.name = "RankingsUnavailableError";
   }
 }
 
+export class InvalidRankingsQueryError extends TypeError {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidRankingsQueryError";
+  }
+}
+
+export class StaleRankingsCursorError extends InvalidRankingsQueryError {
+  constructor() {
+    super("The ranking generation changed; restart pagination.");
+    this.name = "StaleRankingsCursorError";
+  }
+}
+
 const generations = new Map<string, Promise<Generation>>();
+const catalogs = new Map<string, Promise<Map<string, CatalogCourse>>>();
 
 function seedDirectory() {
   return (
@@ -309,17 +451,25 @@ function validateIdentities(manifest: Manifest, names: string[]) {
     throw new Error("Instructor registry does not match the generation");
   }
   const uuids = new Set<string>();
+  const itscs = new Set<string>();
   for (const identity of manifest.identities) {
     const canonicalName = identity.canonicalName?.trim().toLocaleLowerCase();
+    const itsc = identity.itsc?.trim().toLocaleLowerCase();
     if (
       !uuidPattern.test(identity.uuid) ||
       uuids.has(identity.uuid) ||
       !canonicalName ||
-      canonicalName === "tba"
+      canonicalName === "tba" ||
+      (identity.itsc !== undefined &&
+        (!itsc || !/^[a-z][a-z0-9._-]{1,31}$/.test(itsc) || itscs.has(itsc)))
     ) {
       throw new Error("Invalid Instructor identity");
     }
     uuids.add(identity.uuid);
+    if (itsc) {
+      identity.itsc = itsc;
+      itscs.add(itsc);
+    }
     if (
       !Array.isArray(identity.aliases) ||
       identity.aliases.length === 0 ||
@@ -400,103 +550,427 @@ function number(value: unknown) {
   return typeof value === "bigint" ? Number(value) : Number(value);
 }
 
+type CatalogCourse = {
+  coursePrefix: string;
+  courseNumber: string;
+  courseName?: string;
+  courseAttributes?: Array<{
+    courseAttribute: string;
+    courseAttributeValue: string;
+  }>;
+};
+
+type Candidate = {
+  key: string;
+  score: number;
+  searchText: string;
+  coursePrefix?: string;
+  courseCodes: Set<string>;
+  commonCore: CommonCoreCategory[];
+  result:
+    | Omit<CourseRanking, keyof RankFields | "commonCore">
+    | Omit<InstructorRanking, keyof RankFields>;
+};
+
+async function courseCatalog(directory: string) {
+  let loading = catalogs.get(directory);
+  if (!loading) {
+    loading = (async () => {
+      let contents: string | undefined;
+      for (const path of [
+        resolve(directory, "..", "course-catalog.json"),
+        resolve(process.cwd(), "data", "data-course-catalog.json"),
+      ]) {
+        try {
+          contents = await readFile(/* turbopackIgnore: true */ path, "utf8");
+          break;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+      }
+      if (!contents) return new Map<string, CatalogCourse>();
+      const courses = JSON.parse(contents) as CatalogCourse[];
+      if (!Array.isArray(courses)) throw new Error("Invalid Course catalog");
+      return new Map(
+        courses.map((course) => [
+          `${course.coursePrefix}${course.courseNumber}`,
+          course,
+        ]),
+      );
+    })();
+    catalogs.set(directory, loading);
+  }
+  return loading;
+}
+
+function normalizedWeights(query: RankingsQuery) {
+  if (query.weights !== undefined) {
+    const entries = Object.entries(query.weights);
+    if (
+      entries.some(
+        ([criterion, value]) =>
+          !CRITERIA.includes(criterion as Criterion) ||
+          typeof value !== "number" ||
+          !Number.isFinite(value) ||
+          value < 0,
+      )
+    ) {
+      throw new InvalidRankingsQueryError(
+        "Custom ranking weights must be finite and non-negative.",
+      );
+    }
+    const positive = entries.filter((entry) => entry[1] > 0) as Array<
+      [Criterion, number]
+    >;
+    const total = positive.reduce((sum, entry) => sum + entry[1], 0);
+    if (total === 0)
+      throw new InvalidRankingsQueryError(
+        "Custom ranking weights need at least one non-zero criterion.",
+      );
+    return {
+      preset: "custom" as const,
+      weights: Object.fromEntries(
+        positive.map(([criterion, value]) => [criterion, value / total]),
+      ) as RankingWeights,
+    };
+  }
+  const preset = query.preset ?? "learning";
+  if (preset !== "learning" && preset !== "grade")
+    throw new InvalidRankingsQueryError("Unknown Ranking Preset.");
+  return { preset, weights: PRESET_WEIGHTS[query.entity][preset] };
+}
+
+function percentile(rank: number, population: number) {
+  return population === 1 ? 1 : (population - rank) / (population - 1);
+}
+
+function ranks(candidates: Candidate[]) {
+  let rank = 0;
+  let previousScore: number | undefined;
+  return new Map(
+    candidates.map((candidate, index) => {
+      if (candidate.score !== previousScore) rank = index + 1;
+      previousScore = candidate.score;
+      return [
+        candidate.key,
+        {
+          rank,
+          population: candidates.length,
+          percentile: percentile(rank, candidates.length),
+        },
+      ];
+    }),
+  );
+}
+
+function decodeCursor(cursor: string) {
+  try {
+    if (cursor.length > 2048) throw new Error("cursor too long");
+    const value = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    if (
+      typeof value.g !== "string" ||
+      typeof value.q !== "string" ||
+      typeof value.p !== "string"
+    )
+      throw new Error("invalid cursor payload");
+    return value as { g: string; q: string; p: string };
+  } catch {
+    throw new InvalidRankingsQueryError("Invalid ranking cursor.");
+  }
+}
+
+export function queryRankings(
+  query: RankingsQuery & { entity: "course" },
+): Promise<RankingsPage<"course">>;
+export function queryRankings(
+  query: RankingsQuery & { entity: "instructor" },
+): Promise<RankingsPage<"instructor">>;
+export function queryRankings(query: RankingsQuery): Promise<RankingsPage>;
 export async function queryRankings(
   query: RankingsQuery,
 ): Promise<RankingsPage> {
+  if (query.entity !== "course" && query.entity !== "instructor")
+    throw new InvalidRankingsQueryError("Unknown ranking entity.");
+  const activity = query.activity ?? "current";
+  if (activity !== "current" && activity !== "all")
+    throw new InvalidRankingsQueryError("Invalid activity mode.");
+  const search = query.search?.trim().toLocaleLowerCase() || undefined;
+  if (search && search.length > 100)
+    throw new InvalidRankingsQueryError("Search is limited to 100 characters.");
+  const coursePrefix = query.coursePrefix?.trim().toUpperCase() || undefined;
+  if (coursePrefix && !/^[A-Z]{2,8}$/.test(coursePrefix))
+    throw new InvalidRankingsQueryError("Invalid Course Prefix.");
+  const course = query.course?.trim().toUpperCase() || undefined;
+  if (course && !/^[A-Z]{2,8} [0-9]{3,5}$/.test(course))
+    throw new InvalidRankingsQueryError("Invalid Course Code.");
+  const commonCore = [...new Set(query.commonCore ?? [])].sort();
+  if (commonCore.some((category) => !commonCoreValues.has(category)))
+    throw new InvalidRankingsQueryError("Invalid Common Core category.");
   if (
-    query.entity !== "instructor" ||
-    (query.preset && query.preset !== "learning")
+    (query.entity === "course" && course) ||
+    (query.entity === "instructor" && commonCore.length > 0)
   )
-    throw new TypeError("Unsupported ranking query");
+    throw new InvalidRankingsQueryError(
+      "Filter does not apply to this entity.",
+    );
+  const limit = Math.min(Math.max(Math.floor(query.limit ?? 100), 1), 100);
+  if (!Number.isFinite(limit))
+    throw new InvalidRankingsQueryError("Invalid ranking page size.");
+  const configuration = normalizedWeights(query);
   const accepted = await generation();
-  const source = sqlPath(accepted.directory, "instructor-ratings.parquet");
+  const entityFile = `${query.entity}-ratings.parquet` as const;
+  const rankingFile = `${query.entity}-rankings.parquet` as const;
+  const source = sqlPath(accepted.directory, entityFile);
   const latest = await queryRows(
     accepted.connection,
-    `SELECT term_code FROM read_parquet('${sqlPath(accepted.directory, "instructor-rankings.parquet")}') LIMIT 1`,
+    `SELECT term_code FROM read_parquet('${sqlPath(accepted.directory, rankingFile)}') LIMIT 1`,
   );
-  const termCode = query.termCode ?? String(latest[0]?.term_code);
-  if (!/^[0-9]{4}$/.test(termCode)) throw new TypeError("Invalid Term Code");
-  const activity = query.activity ?? "current";
-  const limit = Math.min(Math.max(query.limit ?? 100, 1), 100);
+  const termCode = query.termCode?.trim() || String(latest[0]?.term_code);
+  if (!/^[0-9]{4}$/.test(termCode))
+    throw new InvalidRankingsQueryError("Invalid Term Code.");
+  const termExists = await queryRows(
+    accepted.connection,
+    `SELECT 1 FROM read_parquet('${source}') WHERE term_code = $termCode LIMIT 1`,
+    { termCode },
+  );
+  if (termExists.length === 0)
+    throw new InvalidRankingsQueryError("Unknown Term Code.");
+
+  let catalog: Map<string, CatalogCourse>;
+  try {
+    catalog = await courseCatalog(accepted.directory);
+  } catch (error) {
+    throw new RankingsUnavailableError({ cause: error });
+  }
+  const linkRows = await queryRows(
+    accepted.connection,
+    `SELECT name, subject, code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE term_code = $termCode`,
+    { termCode },
+  );
+  const identitiesByCourse = new Map<string, InstructorIdentity[]>();
+  const coursesByInstructor = new Map<string, Set<string>>();
+  for (const row of linkRows) {
+    const courseKey = `${row.subject}${row.code}`;
+    const identity = accepted.identitiesByName.get(String(row.name));
+    if (identity) {
+      const identities = identitiesByCourse.get(courseKey) ?? [];
+      identities.push(identity);
+      identitiesByCourse.set(courseKey, identities);
+    }
+    const courses = coursesByInstructor.get(String(row.name)) ?? new Set();
+    courses.add(`${row.subject} ${row.code}`);
+    coursesByInstructor.set(String(row.name), courses);
+  }
+
+  const entityColumns = query.entity === "course" ? "subject, code" : "name";
+  const activityColumn =
+    query.entity === "course" ? "is_offered" : "is_teaching";
   const rows = await queryRows(
     accepted.connection,
-    `SELECT name, criterion, bayesian FROM read_parquet('${source}') WHERE term_code = $termCode AND ($current = false OR is_teaching) ORDER BY name, criterion`,
+    `SELECT ${entityColumns}, criterion, bayesian FROM read_parquet('${source}') WHERE term_code = $termCode AND ($current = false OR ${activityColumn}) ORDER BY ${entityColumns}, criterion`,
     { termCode, current: activity === "current" },
   );
   const evidence = new Map<string, Partial<Record<Criterion, number>>>();
   for (const row of rows) {
     const criterion = String(row.criterion) as Criterion;
     if (!CRITERIA.includes(criterion)) continue;
-    const values = evidence.get(String(row.name)) ?? {};
+    const key =
+      query.entity === "course"
+        ? `${row.subject}${row.code}`
+        : String(row.name);
+    const values = evidence.get(key) ?? {};
     values[criterion] = number(row.bayesian);
-    evidence.set(String(row.name), values);
+    evidence.set(key, values);
   }
-  const eligible = [...evidence]
-    .filter(([, values]) =>
-      CRITERIA.every(
-        (criterion) =>
-          LEARNING_WEIGHTS[criterion] === 0 || values[criterion] !== undefined,
-      ),
-    )
-    .map(([canonicalName, values]) => ({
-      identity: accepted.identitiesByName.get(canonicalName),
-      score: CRITERIA.reduce(
-        (score, criterion) =>
-          score + (values[criterion] ?? 0) * LEARNING_WEIGHTS[criterion],
-        0,
-      ),
-    }))
-    .filter(
-      (row): row is { identity: InstructorIdentity; score: number } =>
-        row.identity !== undefined,
-    )
-    .sort(
-      (left, right) =>
-        right.score - left.score ||
-        left.identity.uuid.localeCompare(right.identity.uuid),
-    );
 
-  let rank = 0;
-  let previousScore: number | undefined;
-  const ranked = eligible.map((row, index) => {
-    if (row.score !== previousScore) rank = index + 1;
-    previousScore = row.score;
-    return {
-      uuid: row.identity.uuid,
-      canonicalName: row.identity.canonicalName,
-      score: row.score,
-      globalRank: rank,
-      localRank: rank,
-      percentile:
-        eligible.length === 1
-          ? 1
-          : (eligible.length - rank) / (eligible.length - 1),
-    };
+  const weightedCriteria = Object.keys(configuration.weights) as Criterion[];
+  const eligible: Candidate[] = [];
+  for (const [key, values] of evidence) {
+    if (weightedCriteria.some((criterion) => values[criterion] === undefined))
+      continue;
+    const score = weightedCriteria.reduce(
+      (sum, criterion) =>
+        sum +
+        (values[criterion] as number) *
+          (configuration.weights[criterion] as number),
+      0,
+    );
+    if (query.entity === "course") {
+      const prefix = key.match(/^[A-Z]+/)?.[0];
+      const courseNumber = prefix ? key.slice(prefix.length) : "";
+      if (!prefix || !courseNumber) continue;
+      const metadata = catalog.get(key);
+      const categories = COMMON_CORE_CATEGORIES.filter(
+        ({ value }) =>
+          metadata?.courseAttributes?.some(
+            (attribute) =>
+              attribute.courseAttribute === "CC25" &&
+              attribute.courseAttributeValue === commonCoreValues.get(value),
+          ) ?? false,
+      ).map(({ value }) => value);
+      const associated = identitiesByCourse.get(key) ?? [];
+      eligible.push({
+        key,
+        score,
+        coursePrefix: prefix,
+        courseCodes: new Set([`${prefix} ${courseNumber}`]),
+        commonCore: categories,
+        searchText: [
+          prefix,
+          courseNumber,
+          `${prefix} ${courseNumber}`,
+          metadata?.courseName,
+          ...associated.flatMap((identity) => [
+            identity.uuid,
+            identity.canonicalName,
+            identity.itsc,
+            ...identity.aliases.map((alias) => alias.name),
+          ]),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase(),
+        result: {
+          entity: "course",
+          coursePrefix: prefix,
+          courseNumber,
+          courseCode: `${prefix} ${courseNumber}`,
+          title: metadata?.courseName,
+        },
+      });
+    } else {
+      const identity = accepted.identitiesByName.get(key);
+      if (!identity) continue;
+      const courseCodes = coursesByInstructor.get(key) ?? new Set();
+      eligible.push({
+        key: identity.uuid,
+        score,
+        courseCodes,
+        commonCore: [],
+        searchText: [
+          identity.uuid,
+          identity.canonicalName,
+          identity.itsc,
+          ...identity.aliases.map((alias) => alias.name),
+          ...[...courseCodes].flatMap((courseCode) => {
+            const [prefix, courseNumber] = courseCode.split(" ");
+            return [
+              courseCode,
+              catalog.get(`${prefix}${courseNumber}`)?.courseName,
+            ];
+          }),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase(),
+        result: {
+          entity: "instructor",
+          uuid: identity.uuid,
+          canonicalName: identity.canonicalName,
+          itsc: identity.itsc,
+        },
+      });
+    }
+  }
+  eligible.sort(
+    (left, right) =>
+      right.score - left.score || left.key.localeCompare(right.key),
+  );
+  const globalRanks = ranks(eligible);
+  const filtered = eligible.filter((candidate) => {
+    if (coursePrefix) {
+      const matchesPrefix =
+        query.entity === "course"
+          ? candidate.coursePrefix === coursePrefix
+          : [...candidate.courseCodes].some((code) =>
+              code.startsWith(`${coursePrefix} `),
+            );
+      if (!matchesPrefix) return false;
+    }
+    if (course && !candidate.courseCodes.has(course)) return false;
+    if (
+      commonCore.length > 0 &&
+      !commonCore.some((category) => candidate.commonCore.includes(category))
+    )
+      return false;
+    return true;
   });
-  const search = query.search?.trim().toLocaleLowerCase();
-  const results = (
-    search
-      ? ranked.filter((row) => {
-          const identity = accepted.identitiesByUuid.get(row.uuid);
-          return (
-            row.canonicalName.toLocaleLowerCase().includes(search) ||
-            identity?.aliases.some((alias) =>
-              alias.name.toLocaleLowerCase().includes(search),
-            )
-          );
-        })
-      : ranked
-  ).slice(0, limit);
+  const localRanks = ranks(filtered);
+  const searched = search
+    ? filtered.filter((candidate) => candidate.searchText.includes(search))
+    : filtered;
+
+  const normalizedQuery = JSON.stringify({
+    entity: query.entity,
+    termCode,
+    activity,
+    search,
+    coursePrefix,
+    commonCore,
+    course,
+    configuration,
+    limit,
+  });
+  const fingerprint = createHash("sha256")
+    .update(normalizedQuery)
+    .digest("base64url");
+  let start = 0;
+  if (query.cursor) {
+    const cursor = decodeCursor(query.cursor);
+    if (cursor.g !== accepted.sha) throw new StaleRankingsCursorError();
+    if (cursor.q !== fingerprint)
+      throw new InvalidRankingsQueryError(
+        "The cursor belongs to a different ranking query.",
+      );
+    const position = searched.findIndex(
+      (candidate) => candidate.key === cursor.p,
+    );
+    if (position < 0)
+      throw new InvalidRankingsQueryError("Invalid ranking cursor position.");
+    start = position + 1;
+  }
+  const page = searched.slice(start, start + limit);
+  const results = page.map((candidate) => {
+    const global = globalRanks.get(candidate.key);
+    const local = localRanks.get(candidate.key);
+    if (!global || !local) throw new Error("Missing rank");
+    return {
+      ...candidate.result,
+      commonCore:
+        candidate.result.entity === "course" ? candidate.commonCore : undefined,
+      score: candidate.score,
+      globalRank: global.rank,
+      globalPopulation: global.population,
+      globalPercentile: global.percentile,
+      localRank: local.rank,
+      localPopulation: local.population,
+      localPercentile: local.percentile,
+    } as CourseRanking | InstructorRanking;
+  });
+  const hasMore = start + page.length < searched.length;
+  const nextCursor = hasMore
+    ? Buffer.from(
+        JSON.stringify({
+          g: accepted.sha,
+          q: fingerprint,
+          p: page.at(-1)?.key,
+        }),
+      ).toString("base64url")
+    : undefined;
   return {
     generation: accepted.sha,
     population: {
-      entity: "instructor",
+      entity: query.entity,
       termCode,
       activity,
       size: eligible.length,
+      filteredSize: filtered.length,
     },
-    preset: "learning",
+    configuration,
     results,
+    nextCursor,
   };
 }
 

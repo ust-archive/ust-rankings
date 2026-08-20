@@ -20,6 +20,7 @@ const identities = [
   {
     uuid: "00000000-0000-4000-8000-000000000002",
     canonicalName: "Beta Instructor",
+    itsc: "beta",
     aliases: [
       { name: "Second Teacher", source: "sfq", sourceCommit: fixtureSha },
     ],
@@ -37,6 +38,17 @@ const identities = [
     aliases: [
       {
         name: "Gamma Instructor",
+        source: "schedule",
+        sourceCommit: fixtureSha,
+      },
+    ],
+  },
+  {
+    uuid: "00000000-0000-4000-8000-000000000005",
+    canonicalName: "Historical Instructor",
+    aliases: [
+      {
+        name: "Former Teacher",
         source: "schedule",
         sourceCommit: fixtureSha,
       },
@@ -69,9 +81,25 @@ type Malformation =
 export async function makeRankingGeneration(
   root: string,
   malformation?: Malformation,
+  options: { extraInstructors?: number } = {},
 ) {
   const directory = join(root, fixtureSha);
   await mkdir(directory, { recursive: true });
+  const fixtureIdentities = structuredClone(identities);
+  for (let index = 0; index < (options.extraInstructors ?? 0); index += 1) {
+    const suffix = String(index + 1).padStart(12, "0");
+    fixtureIdentities.push({
+      uuid: `10000000-0000-4000-8000-${suffix}`,
+      canonicalName: `Bulk Instructor ${String(index + 1).padStart(3, "0")}`,
+      aliases: [
+        {
+          name: `Bulk Instructor ${String(index + 1).padStart(3, "0")}`,
+          source: "schedule",
+          sourceCommit: fixtureSha,
+        },
+      ],
+    });
+  }
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
   const file = (name: string) => join(directory, name).replaceAll("\\", "/");
@@ -85,22 +113,40 @@ export async function makeRankingGeneration(
   };
 
   try {
-    await copy(
-      "course-ratings.parquet",
-      `SELECT ${castMeasures} FROM (VALUES
-        ('COMP', '1000', 99, '2440', true, 'content', 0.1, 0.1, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1),
-        ('COMP', '1000', 100, '2510', true, 'content', 0.2, 0.2, 1.0, 1::BIGINT, 2::BIGINT, 2.0, 0.5, 0.1)
-      ) AS t(subject, code, ${ratingColumns.replace("is_active", "is_offered")})`,
-    );
-    await copy(
-      "course-rankings.parquet",
-      `SELECT ${castMeasures} FROM (VALUES
-        ('COMP', '1000', 100, '2510', true, 'content', 0.2, 0.2, 1.0, 1::BIGINT, 2::BIGINT, 2.0, 0.5, 0.1)
-      ) AS t(subject, code, ${ratingColumns.replace("is_active", "is_offered")})`,
-    );
+    const courseRows: string[] = [];
+    for (const [prefix, courseNumber, isOffered, missingCriterion] of [
+      ["COMP", "1000", true, ""],
+      ["MATH", "2000", true, ""],
+      ["HIST", "3000", false, ""],
+      ["MISS", "4000", true, "instructor"],
+    ] as const) {
+      for (const criterion of [
+        "content",
+        "teaching",
+        "grading",
+        "workload",
+        "course",
+        "instructor",
+      ]) {
+        if (criterion === missingCriterion) continue;
+        const score =
+          prefix === "COMP"
+            ? Number(criterion === "content")
+            : prefix === "MATH"
+              ? 0.5
+              : 0.25;
+        courseRows.push(
+          `('${prefix}', '${courseNumber}', 100, '2510', ${isOffered}, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
+        );
+      }
+    }
+    const courseValues = courseRows.join(",\n");
+    const courses = `SELECT ${castMeasures} FROM (VALUES ${courseValues}) AS t(subject, code, ${ratingColumns.replace("is_active", "is_offered")})`;
+    await copy("course-ratings.parquet", courses);
+    await copy("course-rankings.parquet", courses);
 
     const rows: string[] = [];
-    for (const identity of identities) {
+    for (const identity of fixtureIdentities) {
       for (const criterion of [
         "content",
         "teaching",
@@ -117,11 +163,13 @@ export async function makeRankingGeneration(
         const score =
           identity.canonicalName === "Delta Instructor"
             ? Number(criterion === "content")
-            : identity.canonicalName === "Gamma Instructor"
+            : identity.canonicalName === "Gamma Instructor" ||
+                identity.canonicalName === "Historical Instructor"
               ? 0.5
               : 1;
+        const isTeaching = identity.canonicalName !== "Historical Instructor";
         rows.push(
-          `('${identity.canonicalName}', 100, '2510', true, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
+          `('${identity.canonicalName}', 100, '2510', ${isTeaching}, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
         );
       }
     }
@@ -144,9 +192,10 @@ export async function makeRankingGeneration(
       "course-instructors.parquet",
       `SELECT * FROM (VALUES
         ('Alpha Instructor', 100, '2510', 'COMP', '1000'),
-        ('Beta Instructor', 100, '2510', 'COMP', '1000'),
-        ('Delta Instructor', 100, '2510', 'COMP', '1000'),
-        ('Gamma Instructor', 100, '2510', 'COMP', '1000')
+        ('Beta Instructor', 100, '2510', 'MATH', '2000'),
+        ('Delta Instructor', 100, '2510', 'HIST', '3000'),
+        ('Gamma Instructor', 100, '2510', 'MISS', '4000'),
+        ('Historical Instructor', 100, '2510', 'COMP', '1000')
       ) AS t(name, term_num, term_code, subject, code)`,
     );
   } finally {
@@ -172,13 +221,44 @@ export async function makeRankingGeneration(
       ]),
     ),
   );
-  const fixtureIdentities = structuredClone(identities);
   if (malformation === "tba-alias") {
     fixtureIdentities[0].aliases[0].name = " TBA ";
   }
   await writeFile(
     join(directory, "manifest.json"),
     `${JSON.stringify({ schemaMajor: 0, sourceCommit: fixtureSha, artifacts, identities: fixtureIdentities }, null, 2)}\n`,
+  );
+  await writeFile(
+    join(root, "course-catalog.json"),
+    JSON.stringify([
+      {
+        coursePrefix: "COMP",
+        courseNumber: "1000",
+        courseCode: "COMP1000",
+        courseName: "Creative Computing",
+        courseAttributes: [
+          { courseAttribute: "CC25", courseAttributeValue: "37" },
+        ],
+      },
+      {
+        coursePrefix: "MATH",
+        courseNumber: "2000",
+        courseCode: "MATH2000",
+        courseName: "Mathematical Thinking",
+        courseAttributes: [
+          { courseAttribute: "CC25", courseAttributeValue: "39" },
+        ],
+      },
+      {
+        coursePrefix: "HIST",
+        courseNumber: "3000",
+        courseCode: "HIST3000",
+        courseName: "History and Society",
+        courseAttributes: [
+          { courseAttribute: "CC25", courseAttributeValue: "38" },
+        ],
+      },
+    ]),
   );
   return directory;
 }

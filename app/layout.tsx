@@ -49,7 +49,7 @@ export default function RootLayout({
           </Link>
           <Link
             className="no-underline underline-offset-4 hover:underline"
-            href="/course/"
+            href="/rankings/courses"
           >
             Courses
           </Link>

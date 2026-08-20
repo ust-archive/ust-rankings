@@ -47,7 +47,7 @@ test("the public Instructor ranking route renders accepted-generation results", 
 
   expect(markup).toContain("Instructor Rankings");
   expect(markup).toContain("Beta Instructor");
-  expect(markup).toContain("Global rank 1 of 3");
+  expect(markup).toContain("Global Rank 1 of 3");
   expect(markup).not.toContain("Alpha Instructor");
   expect(markup).toContain("0123456789abcdef0123456789abcdef01234567");
 });
@@ -79,8 +79,47 @@ test("a malformed Term Code renders an accessible validation message", async () 
     await InstructorsPage({ searchParams: Promise.resolve({ term: "25x0" }) }),
   );
 
+  expect(markup).toContain("Invalid ranking query");
   expect(markup).toContain("Invalid Term Code");
   expect(markup).toContain('role="alert"');
+});
+
+test("the public Course ranking route shares reproducible URL controls", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "course-route-"));
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR =
+    await makeRankingGeneration(temporaryDirectory);
+
+  const { default: CoursesPage } = await import("@/app/rankings/courses/page");
+  const markup = renderToStaticMarkup(
+    await CoursesPage({
+      searchParams: Promise.resolve({
+        term: "2510",
+        preset: "grade",
+        prefix: "COMP",
+        commonCore: "arts",
+        q: "Alpha Instructor",
+      }),
+    }),
+  );
+
+  expect(markup).toContain("Course Rankings");
+  expect(markup).toContain("COMP 1000 · Creative Computing");
+  expect(markup).toContain("Grade-focused preset");
+  expect(markup).toContain('name="commonCore"');
+  expect(markup).not.toContain("MATH 2000");
+});
+
+test("the legacy Course ranking route permanently redirects", async () => {
+  const { default: LegacyCourseRankings } = await import("@/app/course/page");
+  try {
+    LegacyCourseRankings();
+    throw new Error("legacy route did not redirect");
+  } catch (error) {
+    expect(String((error as { digest?: string }).digest)).toContain(
+      "NEXT_REDIRECT;replace;/rankings/courses;308;",
+    );
+  }
 });
 
 test("an invalid seed fails closed only on the Instructor ranking route", async () => {
