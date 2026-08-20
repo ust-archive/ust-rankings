@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { signIn } from "@/auth";
 import { safeReturnPath } from "@/lib/auth/policy";
 
@@ -61,6 +62,9 @@ export default async function SignInPage({
         account. Provider names and email addresses are mutable contact/profile
         data.
       </p>
+      <Link className="inline-block text-sm font-semibold" href={returnPath}>
+        Continue without signing in
+      </Link>
     </section>
   );
 }
