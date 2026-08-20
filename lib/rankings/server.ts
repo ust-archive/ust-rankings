@@ -8,6 +8,7 @@ import {
   DuckDBInstance,
   type DuckDBValue,
 } from "@duckdb/node-api";
+import defaultInstructorRegistry from "../../rankings/instructor-registry.json";
 
 const SEED_SHA = "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d";
 const ARTIFACTS = [
@@ -212,11 +213,47 @@ export type InstructorIdentity = {
   }>;
 };
 
+type AffectedInstructorAssociation = {
+  sourceCommit: string;
+  sourceName: string;
+  termCode?: string;
+  courseCode?: string;
+};
+
+export type InstructorIdentityEvent =
+  | {
+      type: "itsc-added";
+      uuid: string;
+      itsc: string;
+      sourceCommit: string;
+    }
+  | {
+      type: "merge";
+      retiredUuid: string;
+      survivorUuid: string;
+      sourceCommit: string;
+    }
+  | {
+      type: "split";
+      sourceUuid: string;
+      newUuid: string;
+      sourceCommit: string;
+      affectedAssociations: AffectedInstructorAssociation[];
+    };
+
+type InstructorIdentifierHistory = {
+  type: "itsc";
+  value: string;
+  status: "current" | "retired";
+  sourceCommit: string;
+};
+
 type Manifest = {
   schemaMajor: number;
   sourceCommit: string;
   artifacts: Record<string, { sha256: string; size: number }>;
   identities: InstructorIdentity[];
+  identityEvents?: InstructorIdentityEvent[];
 };
 
 type Generation = {
@@ -227,7 +264,11 @@ type Generation = {
   identitiesByCurrentName: Map<string, InstructorIdentity>;
   identitiesByObservedName: Map<string, InstructorIdentity[]>;
   identitiesByUuid: Map<string, InstructorIdentity>;
+  identitiesByItsc: Map<string, InstructorIdentity>;
   currentNameByUuid: Map<string, string>;
+  redirectByUuid: Map<string, string>;
+  identifiersByUuid: Map<string, InstructorIdentifierHistory[]>;
+  identityEvents: InstructorIdentityEvent[];
   readers: number;
   retired: boolean;
   closed: boolean;
@@ -366,8 +407,17 @@ export type Rankings = {
   generation: string;
   population: RankingsPage["population"];
   instructor: InstructorIdentity;
+  ranking?: InstructorRanking;
   terms: RankingTermEvidence[];
   courses: Array<{ termCode: string; courseCode: string }>;
+  route: { canonicalKey: string; redirect: boolean };
+  identityHistory: {
+    identifiers: InstructorIdentifierHistory[];
+    events: InstructorIdentityEvent[];
+    affectedAssociations: Array<
+      AffectedInstructorAssociation & { status: "needs-resolution" }
+    >;
+  };
 };
 
 export type CourseRankings = {
@@ -435,6 +485,34 @@ function seedDirectory() {
     process.env.RANKINGS_SEED_DIR ??
     resolve(process.cwd(), "rankings", "seed", SEED_SHA)
   );
+}
+
+async function configuredInstructorRegistry() {
+  const configuredPath = process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE;
+  const value = (
+    configuredPath
+      ? JSON.parse(
+          await readFile(
+            /* turbopackIgnore: true */ resolve(configuredPath),
+            "utf8",
+          ),
+        )
+      : defaultInstructorRegistry
+  ) as {
+    schemaMajor?: unknown;
+    identities?: unknown;
+    events?: unknown;
+  };
+  if (
+    value.schemaMajor !== 0 ||
+    !Array.isArray(value.identities) ||
+    !Array.isArray(value.events)
+  )
+    throw new Error("Invalid configured Instructor registry");
+  return {
+    identities: value.identities as InstructorIdentity[],
+    events: value.events as InstructorIdentityEvent[],
+  };
 }
 
 function sqlPath(directory: string, filename: string) {
@@ -600,33 +678,55 @@ function normalizedInstructorName(name: string) {
   return name.trim().toLocaleLowerCase();
 }
 
+function resolvedInstructorIdentity(
+  generation: Generation,
+  identity: InstructorIdentity,
+) {
+  let uuid = identity.uuid;
+  while (generation.redirectByUuid.has(uuid))
+    uuid = generation.redirectByUuid.get(uuid) as string;
+  return generation.identitiesByUuid.get(uuid) as InstructorIdentity;
+}
+
 function validateIdentities(manifest: Manifest, names: string[]) {
   const uuidPattern =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const itscPattern = /^[a-z][a-z0-9._-]{1,31}$/;
   const observedNames = new Map<string, InstructorIdentity[]>();
   const currentNames = new Map<string, InstructorIdentity>();
-  const uuids = new Set<string>();
-  const itscs = new Set<string>();
+  const identitiesByUuid = new Map<string, InstructorIdentity>();
+  const identitiesByItsc = new Map<string, InstructorIdentity>();
+  const identifiersByUuid = new Map<string, InstructorIdentifierHistory[]>();
+  const redirectByUuid = new Map<string, string>();
   const canonicalNames = new Set<string>();
+  const claimedItscs = new Map<string, string>();
+
   for (const identity of manifest.identities) {
     const canonicalName = identity.canonicalName?.trim().toLocaleLowerCase();
     const itsc = identity.itsc?.trim().toLocaleLowerCase();
     if (
       !uuidPattern.test(identity.uuid) ||
-      uuids.has(identity.uuid) ||
+      identitiesByUuid.has(identity.uuid) ||
       !canonicalName ||
       canonicalName === "tba" ||
       canonicalNames.has(canonicalName) ||
-      (identity.itsc !== undefined &&
-        (!itsc || !/^[a-z][a-z0-9._-]{1,31}$/.test(itsc) || itscs.has(itsc)))
-    ) {
+      (identity.itsc !== undefined && (!itsc || !itscPattern.test(itsc)))
+    )
       throw new Error("Invalid Instructor identity");
-    }
-    uuids.add(identity.uuid);
+    identitiesByUuid.set(identity.uuid, identity);
     canonicalNames.add(canonicalName);
     if (itsc) {
+      if (claimedItscs.has(itsc)) throw new Error("ITSC history is not unique");
       identity.itsc = itsc;
-      itscs.add(itsc);
+      claimedItscs.set(itsc, identity.uuid);
+      identifiersByUuid.set(identity.uuid, [
+        {
+          type: "itsc",
+          value: itsc,
+          status: "current",
+          sourceCommit: manifest.sourceCommit,
+        },
+      ]);
     }
     if (
       !Array.isArray(identity.aliases) ||
@@ -644,9 +744,9 @@ function validateIdentities(manifest: Manifest, names: string[]) {
             alias.sourceFile !== "instructor-ratings.parquet")
         );
       })
-    ) {
+    )
       throw new Error("Instructor aliases require source provenance");
-    }
+
     for (const observedName of [
       identity.canonicalName,
       ...identity.aliases.map((alias) => alias.name),
@@ -657,7 +757,7 @@ function validateIdentities(manifest: Manifest, names: string[]) {
         owners.push(identity);
       observedNames.set(normalized, owners);
     }
-    const currentObservedNames = [
+    for (const observedName of [
       identity.canonicalName,
       ...identity.aliases
         .filter(
@@ -666,8 +766,7 @@ function validateIdentities(manifest: Manifest, names: string[]) {
             alias.sourceCommit === manifest.sourceCommit,
         )
         .map((alias) => alias.name),
-    ];
-    for (const observedName of currentObservedNames) {
+    ]) {
       const normalized = normalizedInstructorName(observedName);
       const owner = currentNames.get(normalized);
       if (owner && owner.uuid !== identity.uuid)
@@ -675,6 +774,110 @@ function validateIdentities(manifest: Manifest, names: string[]) {
       currentNames.set(normalized, identity);
     }
   }
+
+  const identityEvents = manifest.identityEvents ?? [];
+  if (!Array.isArray(identityEvents))
+    throw new Error("Invalid Instructor identity event history");
+  const eventKeys = new Set<string>();
+  const splitTargets = new Set<string>();
+  const addedItscs = new Set<string>();
+  for (const event of identityEvents) {
+    const eventKey = JSON.stringify(event);
+    if (eventKeys.has(eventKey) || !/^[0-9a-f]{40}$/.test(event.sourceCommit))
+      throw new Error("Invalid Instructor identity event history");
+    eventKeys.add(eventKey);
+    if (event.type === "itsc-added") {
+      const identity = identitiesByUuid.get(event.uuid);
+      const itsc = event.itsc?.trim().toLocaleLowerCase();
+      const claimedBy = claimedItscs.get(itsc);
+      if (
+        !identity ||
+        !itscPattern.test(itsc) ||
+        (claimedBy !== undefined && claimedBy !== event.uuid) ||
+        addedItscs.has(itsc)
+      )
+        throw new Error("Invalid ITSC addition");
+      addedItscs.add(itsc);
+      const identifiers = identifiersByUuid.get(event.uuid) ?? [];
+      for (const identifier of identifiers) identifier.status = "retired";
+      const projected = identifiers.find(
+        (identifier) => identifier.value === itsc,
+      );
+      if (projected) {
+        projected.status = "current";
+        projected.sourceCommit = event.sourceCommit;
+      } else
+        identifiers.push({
+          type: "itsc",
+          value: itsc,
+          status: "current",
+          sourceCommit: event.sourceCommit,
+        });
+      identifiersByUuid.set(event.uuid, identifiers);
+      claimedItscs.set(itsc, event.uuid);
+      identity.itsc = itsc;
+    } else if (event.type === "merge") {
+      if (
+        event.retiredUuid === event.survivorUuid ||
+        !identitiesByUuid.has(event.retiredUuid) ||
+        !identitiesByUuid.has(event.survivorUuid) ||
+        redirectByUuid.has(event.retiredUuid)
+      )
+        throw new Error("Invalid Instructor merge");
+      redirectByUuid.set(event.retiredUuid, event.survivorUuid);
+    } else if (event.type === "split") {
+      if (
+        event.sourceUuid === event.newUuid ||
+        !identitiesByUuid.has(event.sourceUuid) ||
+        !identitiesByUuid.has(event.newUuid) ||
+        splitTargets.has(event.newUuid) ||
+        !Array.isArray(event.affectedAssociations) ||
+        event.affectedAssociations.length === 0 ||
+        event.affectedAssociations.some(
+          (association) =>
+            !association.sourceName?.trim() ||
+            !/^[0-9a-f]{40}$/.test(association.sourceCommit) ||
+            (association.termCode !== undefined &&
+              !/^[0-9]{4}$/.test(association.termCode)) ||
+            (association.courseCode !== undefined &&
+              !/^[A-Z]{2,8} [0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?$/.test(
+                association.courseCode,
+              )),
+        )
+      )
+        throw new Error("Invalid Instructor split");
+      splitTargets.add(event.newUuid);
+    } else {
+      throw new Error("Unknown Instructor identity event");
+    }
+  }
+
+  const finalUuid = (uuid: string) => {
+    const visited = new Set<string>();
+    let current = uuid;
+    while (redirectByUuid.has(current)) {
+      if (visited.has(current)) throw new Error("Cyclic Instructor merge");
+      visited.add(current);
+      current = redirectByUuid.get(current) as string;
+    }
+    return current;
+  };
+  for (const uuid of identitiesByUuid.keys()) finalUuid(uuid);
+  for (const [itsc, uuid] of claimedItscs) {
+    const identity = identitiesByUuid.get(uuid);
+    if (!identity) throw new Error("Unknown ITSC owner");
+    identitiesByItsc.set(itsc, identity);
+  }
+  for (const [uuid, identifiers] of identifiersByUuid) {
+    const final = finalUuid(uuid);
+    const preferred = identitiesByUuid.get(final)?.itsc;
+    for (const identifier of identifiers)
+      identifier.status =
+        uuid === final && identifier.value === preferred
+          ? "current"
+          : "retired";
+  }
+
   const currentNameByUuid = new Map<string, string>();
   for (const name of names) {
     const identity = currentNames.get(normalizedInstructorName(name));
@@ -685,7 +888,16 @@ function validateIdentities(manifest: Manifest, names: string[]) {
       throw new Error("Instructor has several current ranking names");
     currentNameByUuid.set(identity.uuid, name);
   }
-  return { currentNames, observedNames, currentNameByUuid };
+  return {
+    currentNames,
+    observedNames,
+    identitiesByUuid,
+    identitiesByItsc,
+    currentNameByUuid,
+    redirectByUuid,
+    identifiersByUuid,
+    identityEvents,
+  };
 }
 
 async function loadGeneration(
@@ -719,10 +931,12 @@ async function loadGeneration(
         connection,
         identitiesByCurrentName: identityNames.currentNames,
         identitiesByObservedName: identityNames.observedNames,
-        identitiesByUuid: new Map(
-          manifest.identities.map((identity) => [identity.uuid, identity]),
-        ),
+        identitiesByUuid: identityNames.identitiesByUuid,
+        identitiesByItsc: identityNames.identitiesByItsc,
         currentNameByUuid: identityNames.currentNameByUuid,
+        redirectByUuid: identityNames.redirectByUuid,
+        identifiersByUuid: identityNames.identifiersByUuid,
+        identityEvents: identityNames.identityEvents,
         readers: 0,
         retired: false,
         closed: false,
@@ -958,6 +1172,46 @@ async function prepareCandidateManifest(
     previous = await seedGeneration();
   }
   const retained = structuredClone([...previous.identitiesByUuid.values()]);
+  let identityEvents = structuredClone(previous.identityEvents);
+  const configured = await configuredInstructorRegistry();
+  for (const identity of configured.identities) {
+    const existing = retained.find(
+      (candidate) => candidate.uuid === identity.uuid,
+    );
+    if (existing) {
+      const { itsc: existingItsc, ...existingBase } = existing;
+      const { itsc: configuredItsc, ...configuredBase } = identity;
+      if (
+        JSON.stringify(existingBase) !== JSON.stringify(configuredBase) ||
+        (configuredItsc !== undefined && configuredItsc !== existingItsc)
+      )
+        throw new Error("Configured Instructor identity rewrites history");
+    } else retained.push(identity);
+  }
+  for (const identity of retained)
+    if (
+      identity.itsc &&
+      !identityEvents.some(
+        (event) =>
+          event.type === "itsc-added" &&
+          event.uuid === identity.uuid &&
+          event.itsc === identity.itsc,
+      )
+    )
+      identityEvents.push({
+        type: "itsc-added",
+        uuid: identity.uuid,
+        itsc: identity.itsc,
+        sourceCommit: previous.sha,
+      });
+  if (configured.events.length > 0) {
+    if (
+      JSON.stringify(configured.events.slice(0, identityEvents.length)) !==
+      JSON.stringify(identityEvents)
+    )
+      throw new Error("Configured Instructor events rewrite history");
+    identityEvents = structuredClone(configured.events);
+  }
   try {
     const instance = await DuckDBInstance.create(":memory:");
     const connection = await instance.connect();
@@ -1017,6 +1271,7 @@ async function prepareCandidateManifest(
           sourceCommit: candidate.sha,
           artifacts: candidate.artifacts,
           identities: retained,
+          identityEvents,
         },
         null,
         2,
@@ -1492,7 +1747,11 @@ async function queryRankingsWithGeneration(
     throw new InvalidRankingsQueryError("Unknown Term Code.");
 
   let catalogSnapshot: CourseCatalog | undefined;
-  if (query.entity === "course" || search) {
+  const exactInstructorUuid =
+    query.entity === "instructor" &&
+    search !== undefined &&
+    accepted.identitiesByUuid.has(search);
+  if (query.entity === "course" || (search && !exactInstructorUuid)) {
     try {
       catalogSnapshot = await courseCatalog(accepted.directory);
     } catch (error) {
@@ -1513,15 +1772,17 @@ async function queryRankingsWithGeneration(
     const observed = accepted.identitiesByObservedName.get(
       normalizedInstructorName(String(row.name)),
     );
-    const identity = observed?.length === 1 ? observed[0] : undefined;
-    if (identity) {
+    const observedIdentity = observed?.length === 1 ? observed[0] : undefined;
+    if (observedIdentity) {
+      const identity = resolvedInstructorIdentity(accepted, observedIdentity);
       const identities = identitiesByCourse.get(courseKey) ?? [];
-      identities.push(identity);
+      if (!identities.some((candidate) => candidate.uuid === identity.uuid))
+        identities.push(identity);
       identitiesByCourse.set(courseKey, identities);
+      const courses = coursesByInstructor.get(identity.uuid) ?? new Set();
+      courses.add(`${row.subject} ${row.code}`);
+      coursesByInstructor.set(identity.uuid, courses);
     }
-    const courses = coursesByInstructor.get(String(row.name)) ?? new Set();
-    courses.add(`${row.subject} ${row.code}`);
-    coursesByInstructor.set(String(row.name), courses);
   }
 
   const entityColumns = query.entity === "course" ? "subject, code" : "name";
@@ -1546,6 +1807,18 @@ async function queryRankingsWithGeneration(
   }
 
   const weightedCriteria = Object.keys(configuration.weights) as Criterion[];
+  const identitySearchValues = new Map<string, string[]>();
+  for (const identity of accepted.identitiesByUuid.values()) {
+    const resolved = resolvedInstructorIdentity(accepted, identity);
+    const values = identitySearchValues.get(resolved.uuid) ?? [];
+    values.push(
+      identity.uuid,
+      identity.canonicalName,
+      ...(identity.itsc ? [identity.itsc] : []),
+      ...identity.aliases.map((alias) => alias.name),
+    );
+    identitySearchValues.set(resolved.uuid, values);
+  }
   const candidates: Candidate[] = [];
   for (const [key, values] of evidence) {
     const score = weightedCriteria.some(
@@ -1603,21 +1876,20 @@ async function queryRankingsWithGeneration(
         },
       });
     } else {
-      const identity = accepted.identitiesByCurrentName.get(
+      const observedIdentity = accepted.identitiesByCurrentName.get(
         normalizedInstructorName(key),
       );
-      if (!identity) continue;
-      const courseCodes = coursesByInstructor.get(key) ?? new Set();
+      if (!observedIdentity) continue;
+      const identity = resolvedInstructorIdentity(accepted, observedIdentity);
+      if (identity.uuid !== observedIdentity.uuid) continue;
+      const courseCodes = coursesByInstructor.get(identity.uuid) ?? new Set();
       candidates.push({
         key: identity.uuid,
         score,
         courseCodes,
         commonCore: [],
         searchText: [
-          identity.uuid,
-          identity.canonicalName,
-          identity.itsc,
-          ...identity.aliases.map((alias) => alias.name),
+          ...(identitySearchValues.get(identity.uuid) ?? []),
           ...[...courseCodes].flatMap((courseCode) => {
             const [prefix, courseNumber] = courseCode.split(" ");
             return [
@@ -1764,7 +2036,9 @@ type RankingsOptions = {
 };
 
 export function getRankings(
-  entity: { type: "instructor"; uuid: string },
+  entity:
+    | { type: "instructor"; key: string }
+    | { type: "instructor"; uuid: string },
   options?: RankingsOptions,
 ): Promise<Rankings>;
 export function getRankings(
@@ -1777,6 +2051,7 @@ export function getRankings(
 ): Promise<CourseRankings>;
 export async function getRankings(
   entity:
+    | { type: "instructor"; key: string }
     | { type: "instructor"; uuid: string }
     | {
         type: "course";
@@ -1838,7 +2113,12 @@ export async function getRankings(
           normalizedInstructorName(String(row.name)),
         );
         return matches?.length === 1
-          ? [{ termCode: String(row.term_code), instructor: matches[0] }]
+          ? [
+              {
+                termCode: String(row.term_code),
+                instructor: resolvedInstructorIdentity(accepted, matches[0]),
+              },
+            ]
           : [];
       });
       const commonCore = COMMON_CORE_CATEGORIES.filter(
@@ -1865,16 +2145,38 @@ export async function getRankings(
       };
     }
 
-    const instructor = accepted.identitiesByUuid.get(entity.uuid.toLowerCase());
-    if (!instructor) throw new UnknownRankingsEntityError("Instructor");
-    const page = await queryRankingsWithGeneration(
+    const requestedKey = ("key" in entity ? entity.key : entity.uuid).trim();
+    const uuidKey = requestedKey.toLowerCase();
+    const normalizedKey =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        requestedKey,
+      )
+        ? uuidKey
+        : /^[a-z][a-z0-9._-]{1,31}$/i.test(requestedKey)
+          ? requestedKey.toLowerCase()
+          : undefined;
+    const requestedIdentity = normalizedKey
+      ? (accepted.identitiesByUuid.get(normalizedKey) ??
+        accepted.identitiesByItsc.get(normalizedKey))
+      : undefined;
+    if (!requestedIdentity) throw new UnknownRankingsEntityError("Instructor");
+    const family = new Set<string>();
+    const instructor = resolvedInstructorIdentity(accepted, requestedIdentity);
+    for (const identity of accepted.identitiesByUuid.values())
+      if (
+        resolvedInstructorIdentity(accepted, identity).uuid === instructor.uuid
+      )
+        family.add(identity.uuid);
+    const canonicalKey = instructor.itsc ?? instructor.uuid;
+    const page = (await queryRankingsWithGeneration(
       {
         entity: "instructor",
         activity: options.activity,
         termCode: options.termCode,
+        search: instructor.uuid,
       },
       accepted,
-    );
+    )) as RankingsPage<"instructor">;
     const name =
       accepted.currentNameByUuid.get(instructor.uuid) ??
       instructor.canonicalName;
@@ -1898,15 +2200,42 @@ export async function getRankings(
       `SELECT term_code, subject || ' ' || code AS course_code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE name = $name ORDER BY term_num, subject, code`,
       { name },
     );
+    const events = accepted.identityEvents.filter((event) => {
+      if (event.type === "itsc-added") return family.has(event.uuid);
+      if (event.type === "merge")
+        return family.has(event.retiredUuid) || family.has(event.survivorUuid);
+      return family.has(event.sourceUuid) || family.has(event.newUuid);
+    });
     return {
       generation: accepted.sha,
       population: page.population,
       instructor,
+      ranking: page.results.find(
+        (candidate) => candidate.uuid === instructor.uuid,
+      ),
       terms: [...terms.values()],
       courses: courses.map((row) => ({
         termCode: String(row.term_code),
         courseCode: String(row.course_code),
       })),
+      route: {
+        canonicalKey,
+        redirect: requestedKey !== canonicalKey,
+      },
+      identityHistory: {
+        identifiers: [...family].flatMap(
+          (uuid) => accepted.identifiersByUuid.get(uuid) ?? [],
+        ),
+        events,
+        affectedAssociations: events.flatMap((event) =>
+          event.type === "split"
+            ? event.affectedAssociations.map((association) => ({
+                ...association,
+                status: "needs-resolution" as const,
+              }))
+            : [],
+        ),
+      },
     };
   } finally {
     await lease.release();

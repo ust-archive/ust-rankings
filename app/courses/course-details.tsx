@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { instructorPath } from "@/app/instructors/routes";
 import type { CourseRankings } from "@/lib/rankings/server";
 import { buildScheduleUrl } from "@/lib/schedule/planner";
 import type {
@@ -33,7 +34,7 @@ function uniqueInstructors(
 ) {
   const instructors = new Map<
     string,
-    { name: string; uuid?: string; termCodes: Set<string> }
+    { name: string; uuid?: string; itsc?: string; termCodes: Set<string> }
   >();
   for (const offering of offerings)
     for (const meeting of offering.classes.flatMap((item) => item.meetings))
@@ -52,8 +53,10 @@ function uniqueInstructors(
     const current = instructors.get(instructor.uuid) ?? {
       name: instructor.canonicalName,
       uuid: instructor.uuid,
+      itsc: instructor.itsc,
       termCodes: new Set(),
     };
+    current.itsc ??= instructor.itsc;
     current.termCodes.add(association.termCode);
     instructors.set(instructor.uuid, current);
   }
@@ -451,7 +454,19 @@ export function CourseDetails({
               <ul className="mt-3 space-y-2">
                 {instructors.map((instructor) => (
                   <li key={instructor.uuid ?? instructor.name}>
-                    {instructor.name}{" "}
+                    {instructor.uuid ? (
+                      <Link
+                        className="font-semibold"
+                        href={instructorPath({
+                          uuid: instructor.uuid,
+                          itsc: instructor.itsc,
+                        })}
+                      >
+                        {instructor.name}
+                      </Link>
+                    ) : (
+                      instructor.name
+                    )}{" "}
                     <span className="text-xs text-slate-500">
                       ·{" "}
                       {instructor.uuid
@@ -519,15 +534,31 @@ export function CourseOfferingDetails({
           </div>
           <div>
             <h2 className="text-xl font-bold">Associated Instructors</h2>
-            <p className="mt-2 text-sm text-slate-700">
-              {instructors
-                .map((item) =>
-                  item.uuid
-                    ? item.name
-                    : `${item.name} (unresolved source name)`,
-                )
-                .join(" · ") || "No Instructor association is available."}
-            </p>
+            {instructors.length ? (
+              <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                {instructors.map((item) => (
+                  <li key={item.uuid ?? item.name}>
+                    {item.uuid ? (
+                      <Link
+                        className="font-semibold"
+                        href={instructorPath({
+                          uuid: item.uuid,
+                          itsc: item.itsc,
+                        })}
+                      >
+                        {item.name}
+                      </Link>
+                    ) : (
+                      `${item.name} (unresolved source name)`
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-slate-700">
+                No Instructor association is available.
+              </p>
+            )}
           </div>
         </div>
       }
@@ -614,16 +645,28 @@ export function ClassDetails({
           <p className="mt-2 text-sm text-slate-600">
             Course Basis · {scheduleClass.courseCode}
           </p>
-          <p className="mt-2 text-sm text-slate-600">
+          <div className="mt-2 text-sm text-slate-600">
             Instructor Basis ·{" "}
-            {[...instructors.values()]
-              .map((instructor) =>
-                instructor.uuid
-                  ? instructor.name
-                  : `${instructor.name} (unresolved source name)`,
-              )
-              .join(" · ") || "No Instructor association"}
-          </p>
+            {[...instructors.values()].length ? (
+              [...instructors.values()].map((instructor, index) => (
+                <span key={instructor.uuid ?? instructor.name}>
+                  {index > 0 ? " · " : ""}
+                  {instructor.uuid ? (
+                    <Link
+                      className="font-semibold"
+                      href={instructorPath(instructor.uuid)}
+                    >
+                      {instructor.name}
+                    </Link>
+                  ) : (
+                    `${instructor.name} (unresolved source name)`
+                  )}
+                </span>
+              ))
+            ) : (
+              <span>No Instructor association</span>
+            )}
+          </div>
           {scheduleClass.reservations.length ? (
             <ul className="mt-4 space-y-2">
               {scheduleClass.reservations.map((reservation) => (

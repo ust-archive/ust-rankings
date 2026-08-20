@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { coursePath } from "@/app/courses/routes";
+import { instructorPath } from "@/app/instructors/routes";
 import {
   COMMON_CORE_CATEGORIES,
   type CommonCoreCategory,
@@ -292,7 +293,9 @@ export async function RankingPage({
                         {result.title ? ` · ${result.title}` : ""}
                       </Link>
                     ) : (
-                      result.canonicalName
+                      <Link href={instructorPath(result)}>
+                        {result.canonicalName}
+                      </Link>
                     )}
                   </h2>
                   <strong>

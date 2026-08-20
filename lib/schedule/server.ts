@@ -212,6 +212,7 @@ export type SchedulePage = {
 
 export type ScheduleEntity =
   | { type: "course"; coursePrefix: string; courseNumber: string }
+  | { type: "instructor"; uuid: string }
   | {
       type: "course-offering";
       termCode: string;
@@ -231,6 +232,7 @@ export type ScheduleDetails =
       CourseOffering,
       "coursePrefix" | "courseNumber" | "courseCode"
     >)
+  | { type: "instructor"; instructorUuid: string; classes: ScheduleClass[] }
   | ({ type: "course-offering" } & CourseOffering)
   | ({ type: "class" } & ScheduleClass);
 
@@ -1103,6 +1105,29 @@ export async function getSchedule(
   entity: ScheduleEntity,
 ): Promise<ScheduleDetails> {
   return withAcceptedGeneration(async (accepted) => {
+    if (entity.type === "instructor") {
+      const instructorUuid = entity.uuid.trim().toLowerCase();
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+          instructorUuid,
+        )
+      )
+        throw new InvalidScheduleQueryError("Invalid Instructor UUID.");
+      const rows = await queryRows(
+        accepted.connection,
+        `${offeringSql(accepted.directory)} ORDER BY course.term_num, course.prefix, course.number, class.section`,
+      );
+      const classes = mapRows(rows, accepted)
+        .flatMap((offering) => offering.classes)
+        .filter((scheduleClass) =>
+          scheduleClass.meetings.some((meeting) =>
+            meeting.instructors.some(
+              (instructor) => instructor.uuid === instructorUuid,
+            ),
+          ),
+        );
+      return { type: "instructor", instructorUuid, classes };
+    }
     const { coursePrefix, courseNumber } = validateCourse(
       entity.coursePrefix,
       entity.courseNumber,

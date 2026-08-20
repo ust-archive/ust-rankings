@@ -1,6 +1,7 @@
 import { Search } from "lucide-react";
 import Link from "next/link";
 import { coursePath } from "@/app/courses/routes";
+import { instructorPath } from "@/app/instructors/routes";
 import { CalendarActions } from "@/app/schedule/calendar-actions";
 import { CanonicalScheduleUrl } from "@/app/schedule/canonical-schedule-url";
 import { SisParserDialog } from "@/app/schedule/sis-parser-dialog";
@@ -540,7 +541,17 @@ export default async function SchedulePage({
                                           className="block"
                                           key={instructor.sourceName}
                                         >
-                                          {instructor.sourceName}
+                                          {instructor.uuid ? (
+                                            <Link
+                                              href={instructorPath(
+                                                instructor.uuid,
+                                              )}
+                                            >
+                                              {instructor.sourceName}
+                                            </Link>
+                                          ) : (
+                                            instructor.sourceName
+                                          )}
                                         </span>
                                       ))
                                     : "TBA"}
