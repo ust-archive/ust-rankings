@@ -1,5 +1,6 @@
 import { Search } from "lucide-react";
 import Link from "next/link";
+import { coursePath } from "@/app/courses/routes";
 import { CalendarActions } from "@/app/schedule/calendar-actions";
 import { CanonicalScheduleUrl } from "@/app/schedule/canonical-schedule-url";
 import { SisParserDialog } from "@/app/schedule/sis-parser-dialog";
@@ -103,11 +104,28 @@ function ClassSummary({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="font-bold">
-            {scheduleClass.courseCode} · {scheduleClass.courseTitle}
+            <Link
+              href={coursePath(
+                scheduleClass.coursePrefix,
+                scheduleClass.courseNumber,
+                scheduleClass.termCode,
+              )}
+            >
+              {scheduleClass.courseCode} · {scheduleClass.courseTitle}
+            </Link>
           </p>
           <p className="mt-1 font-semibold">
             <span className="sr-only">Class details: </span>
-            {scheduleClass.section} · {scheduleClass.classNumber}
+            <Link
+              href={coursePath(
+                scheduleClass.coursePrefix,
+                scheduleClass.courseNumber,
+                scheduleClass.termCode,
+                scheduleClass.section,
+              )}
+            >
+              {scheduleClass.section} · {scheduleClass.classNumber}
+            </Link>
           </p>
         </div>
         <PlannerAction scheduleClass={scheduleClass} state={state} />
@@ -422,7 +440,15 @@ export default async function SchedulePage({
                 >
                   <header className="border-b bg-slate-50 px-5 py-4">
                     <h3 className="text-lg font-bold">
-                      {offering.courseCode} · {offering.title}
+                      <Link
+                        href={coursePath(
+                          offering.coursePrefix,
+                          offering.courseNumber,
+                          offering.termCode,
+                        )}
+                      >
+                        {offering.courseCode} · {offering.title}
+                      </Link>
                     </h3>
                     <p className="mt-1 text-sm text-slate-600">
                       {offering.credits} credits · {offering.career} ·{" "}
@@ -479,8 +505,17 @@ export default async function SchedulePage({
                                       <span className="sr-only">
                                         Class details:{" "}
                                       </span>
-                                      {scheduleClass.section} ·{" "}
-                                      {scheduleClass.classNumber}
+                                      <Link
+                                        href={coursePath(
+                                          scheduleClass.coursePrefix,
+                                          scheduleClass.courseNumber,
+                                          scheduleClass.termCode,
+                                          scheduleClass.section,
+                                        )}
+                                      >
+                                        {scheduleClass.section} ·{" "}
+                                        {scheduleClass.classNumber}
+                                      </Link>
                                     </span>
                                   </th>
                                 ) : null}

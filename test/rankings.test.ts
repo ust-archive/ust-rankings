@@ -127,6 +127,46 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
   expect(detail.terms[0]?.criteria.instructor?.bayesian).toBe(1);
 });
 
+test("getRankings exposes Course evidence and associated Instructors", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "course-details-"));
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
+    temporaryDirectory,
+    undefined,
+    { includeScheduleCourse: true },
+  );
+
+  const { getRankings } = await import("@/lib/rankings/server");
+  const details = await getRankings(
+    { type: "course", coursePrefix: "comp", courseNumber: "2000" },
+    { termCode: "2510" },
+  );
+
+  expect(details.course).toMatchObject({
+    coursePrefix: "COMP",
+    courseNumber: "2000",
+    courseCode: "COMP 2000",
+    title: "Updated Course title",
+  });
+  expect(details.ranking).toMatchObject({
+    entity: "course",
+    courseCode: "COMP 2000",
+  });
+  expect(details.terms[0]?.criteria.content).toEqual({
+    bayesian: 0.25,
+    samples: 1,
+  });
+  expect(details.instructors).toEqual([
+    {
+      termCode: "2510",
+      instructor: expect.objectContaining({
+        uuid: "00000000-0000-4000-8000-000000000001",
+        canonicalName: "Alpha Instructor",
+      }),
+    },
+  ]);
+});
+
 test("queryRankings serves Course presets and normalized custom weights", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "course-rankings-"));
   temporaryDirectories.push(temporaryDirectory);

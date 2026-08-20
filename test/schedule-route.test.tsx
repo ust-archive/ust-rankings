@@ -42,7 +42,10 @@ test("the public Schedule route renders Term selection and dense searchable Clas
   expect(markup).toContain("Planner cart");
   expect(markup).toContain("Add Class 1001");
   expect(markup).toContain("Class details:");
-  expect(markup).not.toContain('href="/courses/');
+  expect(markup).toContain(
+    'href="/courses/COMP/2000/2510">COMP 2000 · Updated Course title',
+  );
+  expect(markup).toContain('href="/courses/COMP/2000/2510/L1">L1 · 1001');
   expect(markup).toContain("Import from SIS");
   expect(markup).toContain("2025-26 Fall");
   expect(markup).toContain("COMP 2000");

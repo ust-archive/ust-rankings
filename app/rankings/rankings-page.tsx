@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { coursePath } from "@/app/courses/routes";
 import {
   COMMON_CORE_CATEGORIES,
   type CommonCoreCategory,
@@ -279,9 +281,19 @@ export async function RankingPage({
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h2 className="text-xl font-semibold text-slate-900">
-                    {result.entity === "course"
-                      ? `${result.courseCode}${result.title ? ` · ${result.title}` : ""}`
-                      : result.canonicalName}
+                    {result.entity === "course" ? (
+                      <Link
+                        href={coursePath(
+                          result.coursePrefix,
+                          result.courseNumber,
+                        )}
+                      >
+                        {result.courseCode}
+                        {result.title ? ` · ${result.title}` : ""}
+                      </Link>
+                    ) : (
+                      result.canonicalName
+                    )}
                   </h2>
                   <strong>
                     Global Rank {result.globalRank} of {result.globalPopulation}

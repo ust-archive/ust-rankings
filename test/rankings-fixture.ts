@@ -84,7 +84,7 @@ type Malformation =
 export async function makeRankingGeneration(
   root: string,
   malformation?: Malformation,
-  options: { extraInstructors?: number } = {},
+  options: { extraInstructors?: number; includeScheduleCourse?: boolean } = {},
 ) {
   const directory = join(root, fixtureSha);
   await mkdir(directory, { recursive: true });
@@ -117,13 +117,22 @@ export async function makeRankingGeneration(
 
   try {
     const courseRows: string[] = [];
-    for (const [prefix, courseNumber, isOffered, missingCriterion] of [
+    const fixtureCourses = [
       ["COMP", "1000", true, ""],
       ["COMP", "1029C", true, ""],
       ["MATH", "2000", true, ""],
       ["HIST", "3000", false, ""],
       ["MISS", "4000", true, "instructor"],
-    ] as const) {
+      ...(options.includeScheduleCourse
+        ? ([["COMP", "2000", true, ""]] as const)
+        : []),
+    ] as const;
+    for (const [
+      prefix,
+      courseNumber,
+      isOffered,
+      missingCriterion,
+    ] of fixtureCourses) {
       for (const criterion of [
         "content",
         "teaching",
@@ -205,6 +214,7 @@ export async function makeRankingGeneration(
         ('Delta Instructor', 100, '2510', 'HIST', '3000'),
         ('Gamma Instructor', 100, '2510', 'MISS', '4000'),
         ('Historical Instructor', 100, '2510', 'COMP', '1000')
+        ${options.includeScheduleCourse ? ", ('Alpha Instructor', 100, '2510', 'COMP', '2000')" : ""}
       ) AS t(name, term_num, term_code, subject, code)`,
     );
   } finally {
@@ -267,6 +277,17 @@ export async function makeRankingGeneration(
           { courseAttribute: "CC25", courseAttributeValue: "39" },
         ],
       },
+      ...(options.includeScheduleCourse
+        ? [
+            {
+              coursePrefix: "COMP",
+              courseNumber: "2000",
+              courseCode: "COMP2000",
+              courseName: "Updated Course title",
+              courseAttributes: [],
+            },
+          ]
+        : []),
       {
         coursePrefix: "HIST",
         courseNumber: "3000",

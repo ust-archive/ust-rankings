@@ -357,15 +357,32 @@ export type RankingsPage<
   unrankedMatchCount: number;
 };
 
+type RankingTermEvidence = {
+  termCode: string;
+  criteria: Partial<Record<Criterion, { bayesian: number; samples: number }>>;
+};
+
 export type Rankings = {
   generation: string;
   population: RankingsPage["population"];
   instructor: InstructorIdentity;
-  terms: Array<{
-    termCode: string;
-    criteria: Partial<Record<Criterion, { bayesian: number; samples: number }>>;
-  }>;
+  terms: RankingTermEvidence[];
   courses: Array<{ termCode: string; courseCode: string }>;
+};
+
+export type CourseRankings = {
+  generation: string;
+  population: RankingsPage<"course">["population"];
+  course: Pick<
+    CourseRanking,
+    "coursePrefix" | "courseNumber" | "courseCode" | "title" | "commonCore"
+  >;
+  ranking?: CourseRanking;
+  terms: RankingTermEvidence[];
+  instructors: Array<{
+    termCode: string;
+    instructor: InstructorIdentity;
+  }>;
 };
 
 export class RankingsUnavailableError extends Error {
@@ -1734,33 +1751,131 @@ async function queryRankingsWithGeneration(
   return response;
 }
 
-export async function getRankings(
+type RankingsOptions = {
+  activity?: "current" | "all";
+  termCode?: string;
+};
+
+export function getRankings(
   entity: { type: "instructor"; uuid: string },
-  options: { activity?: "current" | "all" } = {},
-): Promise<Rankings> {
+  options?: RankingsOptions,
+): Promise<Rankings>;
+export function getRankings(
+  entity: {
+    type: "course";
+    coursePrefix: string;
+    courseNumber: string;
+  },
+  options?: RankingsOptions,
+): Promise<CourseRankings>;
+export async function getRankings(
+  entity:
+    | { type: "instructor"; uuid: string }
+    | {
+        type: "course";
+        coursePrefix: string;
+        courseNumber: string;
+      },
+  options: RankingsOptions = {},
+): Promise<Rankings | CourseRankings> {
   const lease = await acquireGeneration();
   const accepted = lease.accepted;
   try {
+    if (entity.type === "course") {
+      const coursePrefix = entity.coursePrefix.trim().toUpperCase();
+      const courseNumber = entity.courseNumber.trim().toUpperCase();
+      if (
+        !/^[A-Z]{2,8}$/.test(coursePrefix) ||
+        !/^[0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?$/.test(courseNumber)
+      )
+        throw new TypeError("Unknown Course");
+      const catalog = await courseCatalog(accepted.directory);
+      const metadata = catalog.courses.get(`${coursePrefix}${courseNumber}`);
+      const ratings = await queryRows(
+        accepted.connection,
+        `SELECT term_code, criterion, bayesian, samples FROM read_parquet('${sqlPath(accepted.directory, "course-ratings.parquet")}') WHERE subject = $coursePrefix AND code = $courseNumber ORDER BY term_num, criterion`,
+        { coursePrefix, courseNumber },
+      );
+      if (!metadata && ratings.length === 0)
+        throw new TypeError("Unknown Course");
+      const page = (await queryRankingsWithGeneration(
+        {
+          entity: "course",
+          activity: options.activity,
+          termCode: options.termCode,
+        },
+        accepted,
+      )) as RankingsPage<"course">;
+      const courseCode = `${coursePrefix} ${courseNumber}`;
+      const ranking = page.results.find(
+        (candidate) => candidate.courseCode === courseCode,
+      );
+      const terms = new Map<string, RankingTermEvidence>();
+      for (const row of ratings) {
+        const termCode = String(row.term_code);
+        const term = terms.get(termCode) ?? { termCode, criteria: {} };
+        term.criteria[String(row.criterion) as Criterion] = {
+          bayesian: number(row.bayesian),
+          samples: number(row.samples),
+        };
+        terms.set(termCode, term);
+      }
+      const links = await queryRows(
+        accepted.connection,
+        `SELECT term_code, name FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE subject = $coursePrefix AND code = $courseNumber ORDER BY term_num, name`,
+        { coursePrefix, courseNumber },
+      );
+      const instructors = links.flatMap((row) => {
+        const matches = accepted.identitiesByObservedName.get(
+          normalizedInstructorName(String(row.name)),
+        );
+        return matches?.length === 1
+          ? [{ termCode: String(row.term_code), instructor: matches[0] }]
+          : [];
+      });
+      const commonCore = COMMON_CORE_CATEGORIES.filter(
+        ({ value }) =>
+          metadata?.courseAttributes.some(
+            (attribute) =>
+              attribute.courseAttribute === "CC25" &&
+              attribute.courseAttributeValue === commonCoreValues.get(value),
+          ) ?? false,
+      ).map(({ value }) => value);
+      return {
+        generation: accepted.sha,
+        population: page.population,
+        course: {
+          coursePrefix,
+          courseNumber,
+          courseCode,
+          title: metadata?.courseName,
+          commonCore,
+        },
+        ranking,
+        terms: [...terms.values()],
+        instructors,
+      };
+    }
+
     const instructor = accepted.identitiesByUuid.get(entity.uuid.toLowerCase());
-    if (entity.type !== "instructor" || !instructor)
-      throw new TypeError("Unknown Instructor");
+    if (!instructor) throw new TypeError("Unknown Instructor");
     const page = await queryRankingsWithGeneration(
       {
         entity: "instructor",
         activity: options.activity,
+        termCode: options.termCode,
       },
       accepted,
     );
+    const name =
+      accepted.currentNameByUuid.get(instructor.uuid) ??
+      instructor.canonicalName;
     const ratings = await queryRows(
       accepted.connection,
       `SELECT term_code, criterion, bayesian, samples FROM read_parquet('${sqlPath(accepted.directory, "instructor-ratings.parquet")}') WHERE name = $name ORDER BY term_num, criterion`,
-      {
-        name:
-          accepted.currentNameByUuid.get(instructor.uuid) ??
-          instructor.canonicalName,
-      },
+      { name },
     );
-    const terms = new Map<string, Rankings["terms"][number]>();
+    const terms = new Map<string, RankingTermEvidence>();
     for (const row of ratings) {
       const termCode = String(row.term_code);
       const term = terms.get(termCode) ?? { termCode, criteria: {} };
@@ -1773,11 +1888,7 @@ export async function getRankings(
     const courses = await queryRows(
       accepted.connection,
       `SELECT term_code, subject || ' ' || code AS course_code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE name = $name ORDER BY term_num, subject, code`,
-      {
-        name:
-          accepted.currentNameByUuid.get(instructor.uuid) ??
-          instructor.canonicalName,
-      },
+      { name },
     );
     return {
       generation: accepted.sha,

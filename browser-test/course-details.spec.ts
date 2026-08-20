@@ -1,0 +1,91 @@
+import { expect, test } from "@playwright/test";
+
+test("Schedule cross-links reach validated Offering and Class details with keyboard access", async ({
+  page,
+}) => {
+  await page.goto("/schedule");
+  const offeringLink = page.locator('h3 a[href^="/courses/"]').first();
+  await expect(offeringLink).toBeVisible();
+  await offeringLink.focus();
+  await page.keyboard.press("Enter");
+
+  await expect(
+    page.getByText("Course Offering", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Ranking evidence and trends" }),
+  ).toBeVisible();
+  const reviewsHeading = page.getByRole("heading", {
+    name: "Community Reviews",
+  });
+  await expect(reviewsHeading).toBeVisible();
+  const [desktopEvidence, desktopReviews, desktopActions] = await Promise.all([
+    page
+      .getByRole("heading", { name: "Ranking evidence and trends" })
+      .boundingBox(),
+    reviewsHeading.boundingBox(),
+    page
+      .getByRole("heading", { name: "Course Offering actions" })
+      .boundingBox(),
+  ]);
+  expect(desktopEvidence?.y).toBeLessThan(desktopReviews?.y ?? 0);
+  expect(desktopEvidence?.x).toBeLessThan(desktopActions?.x ?? 0);
+
+  const primary = page.getByRole("navigation", { name: "Primary navigation" });
+  await expect(
+    primary.getByRole("link", { name: "Instructors" }),
+  ).toBeVisible();
+  await expect(primary.getByRole("link", { name: "Courses" })).toBeVisible();
+  await expect(primary.getByRole("link", { name: "Schedule" })).toBeVisible();
+  const footer = page.getByRole("navigation", { name: "Footer navigation" });
+  await expect(footer.getByRole("link", { name: /Privacy/ })).toHaveAttribute(
+    "href",
+    "/privacy",
+  );
+  await expect(footer.getByRole("link", { name: "FAQ" })).toBeVisible();
+  await expect(footer.getByRole("link", { name: "Contact" })).toBeVisible();
+
+  await page.goBack();
+  const classLink = page
+    .locator('th[scope="row"] a[href^="/courses/"]')
+    .first();
+  await classLink.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Class", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/Class Number \d+/)).toBeVisible();
+  await expect(page.getByText(/not a signal target/)).toBeVisible();
+
+  await page.getByRole("link", { name: "Open in Schedule" }).click();
+  await expect(page).toHaveURL(/\/schedule\?term=\d{4}&class=\d+&view=cart$/);
+  await expect(
+    page.getByText("1 selected Class", { exact: true }),
+  ).toBeVisible();
+});
+
+test("mobile Course detail puts actions before evidence and Reviews", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/schedule");
+  await page.locator('h3 a[href^="/courses/"]').first().click();
+
+  const action = page.getByRole("heading", { name: "Course Offering actions" });
+  const evidence = page.getByRole("heading", {
+    name: "Ranking evidence and trends",
+  });
+  const reviews = page.getByRole("heading", { name: "Community Reviews" });
+  await expect(action).toBeVisible();
+  await expect(evidence).toBeVisible();
+  await expect(reviews).toBeVisible();
+
+  const [actionBox, evidenceBox, reviewsBox] = await Promise.all([
+    action.boundingBox(),
+    evidence.boundingBox(),
+    reviews.boundingBox(),
+  ]);
+  expect(actionBox?.y).toBeLessThan(evidenceBox?.y ?? 0);
+  expect(evidenceBox?.y).toBeLessThan(reviewsBox?.y ?? 0);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+});
