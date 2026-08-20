@@ -111,9 +111,9 @@ export function CourseTrendChart({ ratings }: CourseTrendChartProps) {
   }));
 
   return (
-    <div className="py-4">
+    // biome-ignore lint/a11y: This handler only prevents chart clicks from toggling the surrounding card.
+    <div className="py-4" onClick={stopPropagation}>
       <ToggleGroup
-        onClick={stopPropagation}
         type="multiple"
         variant="outline"
         size="lg"
@@ -138,7 +138,6 @@ export function CourseTrendChart({ ratings }: CourseTrendChartProps) {
             accessibilityLayer
             data={chartData}
             margin={{ top: 10, right: 24, bottom: 48, left: 0 }}
-            onClick={(_, event) => event.stopPropagation()}
           >
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis

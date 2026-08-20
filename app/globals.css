@@ -96,8 +96,3 @@ ul {
 article pre {
   @apply my-2 text-center;
 }
-
-.EmojiPickerReact.epr-main {
-  height: 32px;
-  --epr-emoji-size: 18px;
-}
