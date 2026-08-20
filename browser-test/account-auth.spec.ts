@@ -5,7 +5,14 @@ import postgres from "postgres";
 const USER_ID = "00000000-0000-4000-8000-000000000043";
 const databaseUrl = process.env.TEST_CONTRIBUTIONS_POSTGRES_URL;
 const authSecret = process.env.AUTH_SECRET;
-const accountBrowserReady = Boolean(databaseUrl && authSecret);
+const policyVersionsReady = Boolean(
+  process.env.PRIVACY_POLICY_VERSION &&
+    process.env.COMMUNITY_RULES_VERSION &&
+    process.env.REVIEW_POLICY_VERSION,
+);
+const accountBrowserReady = Boolean(
+  databaseUrl && authSecret && policyVersionsReady,
+);
 let sql: ReturnType<typeof postgres> | undefined;
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -102,7 +109,7 @@ test("signed-out sign-in keeps safe returns, errors, and keyboard order", async 
 test.describe("signed account routes", () => {
   test.skip(
     !accountBrowserReady,
-    "requires ephemeral PostgreSQL and a test Auth.js secret",
+    "requires ephemeral PostgreSQL, a test Auth.js secret, and non-production policy versions",
   );
 
   test.beforeAll(() => {
