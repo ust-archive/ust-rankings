@@ -95,6 +95,34 @@ test("Course Review composer is keyboard-accessible and explains attribution and
   await expect(open).toBeFocused();
 });
 
+test("public Course signals expose accessible aggregates without exposing participants", async ({
+  page,
+}) => {
+  test.skip(
+    !process.env.CONTRIBUTIONS_POSTGRES_URL,
+    "requires disposable contribution PostgreSQL",
+  );
+  await page.goto("/schedule");
+  const offeringPath = await page
+    .locator('h3 a[href^="/courses/"]')
+    .first()
+    .getAttribute("href");
+  const coursePath = offeringPath?.split("/").slice(0, 4).join("/");
+  await page.goto(coursePath as string);
+
+  await expect(page.getByText("Community pulse")).toBeVisible();
+  await expect(page.getByText("Separate from ranking scores")).toBeVisible();
+  await expect(page.getByText("Sign in to respond")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Thumbs up · 0" }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: "Love · 0" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  await expect(page.locator("body")).not.toContainText("participant list");
+});
+
 test("mobile Course detail puts actions before evidence and Reviews", async ({
   page,
 }) => {

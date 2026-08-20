@@ -5,6 +5,7 @@ import {
   instructorRedirect,
   normalizeInstructorRoute,
 } from "@/app/instructors/routes";
+import { loadSignals } from "@/app/signals/data";
 import {
   getInstructorIdentity,
   getRankings,
@@ -17,6 +18,8 @@ import {
   InvalidScheduleQueryError,
   ScheduleUnavailableError,
 } from "@/lib/schedule/server";
+
+export const dynamic = "force-dynamic";
 
 export default async function InstructorPage({
   params,
@@ -89,9 +92,13 @@ export default async function InstructorPage({
       throw error;
     },
   );
-  const [rankings, scheduleResult] = await Promise.all([
+  const [rankings, scheduleResult, signalResult] = await Promise.all([
     rankingsPromise,
     schedulePromise,
+    loadSignals({
+      type: "instructor",
+      instructorUuid: identity.instructor.uuid,
+    }),
   ]);
   const classes = scheduleResult.classes.filter(
     (scheduleClass) =>
@@ -120,6 +127,13 @@ export default async function InstructorPage({
       scheduleUnavailable={scheduleResult.unavailable}
       selectedTermCode={selectedTermCode}
       invalidTermCode={invalidTermCode}
+      signals={signalResult.summary}
+      signalsUnavailable={signalResult.unavailable}
+      signedIn={Boolean(signalResult.summary?.mine)}
+      signalUpdated={query.signal === "updated"}
+      signalError={
+        typeof query.signalError === "string" ? query.signalError : undefined
+      }
     />
   );
 }

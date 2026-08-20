@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { instructorPath } from "@/app/instructors/routes";
+import { SignalControls } from "@/app/signals/signal-controls";
 import type { PublicCourseReview } from "@/lib/contributions/reviews";
+import type { SignalSummary } from "@/lib/contributions/signals";
 import type { CourseRankings } from "@/lib/rankings/server";
 import { buildScheduleUrl } from "@/lib/schedule/planner";
 import type {
@@ -75,13 +77,17 @@ function uniqueInstructors(
 function ActionArea({
   type,
   scheduleHref,
-  instructorNames,
+  instructors,
   reviewComposer,
+  signalControls,
+  courseHref,
 }: {
   type: "Course" | "Course Offering" | "Class";
   scheduleHref?: string;
-  instructorNames: string[];
+  instructors: Array<{ name: string; href: string }>;
   reviewComposer?: ReactNode;
+  signalControls?: ReactNode;
+  courseHref?: string;
 }) {
   return (
     <aside className="order-1 space-y-4 lg:col-start-2 lg:row-start-1 lg:self-start">
@@ -108,31 +114,43 @@ function ActionArea({
                 controls belong to its Bases.
               </p>
               <div className="mt-3 flex flex-wrap gap-2 text-sm font-semibold">
-                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5">
-                  Course Basis
-                </span>
-                {instructorNames.map((name) => (
-                  <span
+                {courseHref ? (
+                  <Link
                     className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5"
-                    key={name}
+                    href={`${courseHref}#signals`}
                   >
-                    Instructor Basis · {name}
-                  </span>
+                    Course Basis signals
+                  </Link>
+                ) : null}
+                {instructors.map((instructor) => (
+                  <Link
+                    className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5"
+                    href={`${instructor.href}#signals`}
+                    key={instructor.href}
+                  >
+                    Instructor Basis · {instructor.name}
+                  </Link>
                 ))}
               </div>
             </>
-          ) : reviewComposer ? (
-            <>
-              <p className="mt-2 text-sm text-slate-600">
-                Publish one active attributed Review for this exact Course
-                Basis.
-              </p>
-              {reviewComposer}
-            </>
-          ) : (
+          ) : type === "Course Offering" ? (
             <p className="mt-2 text-sm text-slate-600">
-              Contribution controls are not available for this detail yet.
+              This Course Offering is not a signal target. Signals belong to its
+              Course or resolved Instructors.
             </p>
+          ) : (
+            <>
+              {signalControls}
+              {reviewComposer ? (
+                <>
+                  <p className="mt-5 border-t border-slate-200 pt-4 text-sm text-slate-600">
+                    Publish one active attributed Review for this exact Course
+                    Basis.
+                  </p>
+                  {reviewComposer}
+                </>
+              ) : null}
+            </>
           )}
         </div>
       </div>
@@ -434,6 +452,11 @@ export function CourseDetails({
   reviewsUnavailable = true,
   reviewPublished,
   reviewError,
+  signals,
+  signalsUnavailable = true,
+  signedIn = false,
+  signalUpdated,
+  signalError,
 }: {
   coursePrefix: string;
   courseNumber: string;
@@ -444,6 +467,11 @@ export function CourseDetails({
   reviewsUnavailable?: boolean;
   reviewPublished?: boolean;
   reviewError?: string;
+  signals?: SignalSummary;
+  signalsUnavailable?: boolean;
+  signedIn?: boolean;
+  signalUpdated?: boolean;
+  signalError?: string;
 }) {
   const offerings = schedule?.offerings ?? [];
   const selected = selectedTermCode
@@ -475,9 +503,25 @@ export function CourseDetails({
                 )
               : undefined
           }
-          instructorNames={instructors
+          instructors={instructors
             .filter((item) => item.uuid)
-            .map((item) => item.name)}
+            .map((item) => ({
+              name: item.name,
+              href: instructorPath({
+                uuid: item.uuid as string,
+                itsc: item.itsc,
+              }),
+            }))}
+          signalControls={
+            <SignalControls
+              error={signalError}
+              signedIn={signedIn}
+              summary={signals}
+              target={{ type: "course", coursePrefix, courseNumber }}
+              unavailable={signalsUnavailable}
+              updated={signalUpdated}
+            />
+          }
           reviewComposer={
             <CourseReviewComposer
               courseNumber={courseNumber}
@@ -586,9 +630,12 @@ export function CourseOfferingDetails({
         <ActionArea
           type="Course Offering"
           scheduleHref={scheduleUrl(offering.termCode, offering.classes)}
-          instructorNames={instructors
+          instructors={instructors
             .filter((item) => item.uuid)
-            .map((item) => item.name)}
+            .map((item) => ({
+              name: item.name,
+              href: instructorPath(item.uuid as string),
+            }))}
         />
       }
       evidence={
@@ -682,9 +729,16 @@ export function ClassDetails({
         <ActionArea
           type="Class"
           scheduleHref={scheduleUrl(scheduleClass.termCode, [scheduleClass])}
-          instructorNames={[...instructors.values()]
+          courseHref={coursePath(
+            scheduleClass.coursePrefix,
+            scheduleClass.courseNumber,
+          )}
+          instructors={[...instructors.values()]
             .filter((instructor) => instructor.uuid)
-            .map((instructor) => instructor.name)}
+            .map((instructor) => ({
+              name: instructor.name,
+              href: instructorPath(instructor.uuid as string),
+            }))}
         />
       }
       evidence={

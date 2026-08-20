@@ -1,0 +1,74 @@
+import { expect, mock, test } from "bun:test";
+import { ContributionsUnavailableError } from "@/lib/contributions/signals";
+
+mock.module("server-only", () => ({}));
+
+const target = {
+  type: "course" as const,
+  coursePrefix: "COMP",
+  courseNumber: "2000",
+};
+const summary = {
+  thumbs: { up: 5, down: 2 },
+  emoji: {
+    love: 3,
+    laugh: 0,
+    surprised: 0,
+    confused: 1,
+    sad: 0,
+    angry: 0,
+    fire: 2,
+  },
+};
+
+test("signal loading composes public aggregates with only the authenticated User's state", async () => {
+  const { loadSignals } = await import("@/app/signals/data");
+  const userId = "00000000-0000-4000-8000-000000000047";
+  const reads: Array<string | undefined> = [];
+  expect(
+    await loadSignals(
+      target,
+      async (_target, currentUserId) => {
+        reads.push(currentUserId);
+        return {
+          ...summary,
+          mine: { thumbs: "up" as const, emoji: ["love" as const] },
+        };
+      },
+      async () => userId,
+    ),
+  ).toEqual({
+    unavailable: false,
+    summary: {
+      ...summary,
+      mine: { thumbs: "up", emoji: ["love"] },
+    },
+  });
+  expect(reads).toEqual([userId]);
+});
+
+test("signal loading distinguishes provider failure from zero and keeps public reads available without Auth configuration", async () => {
+  const { loadSignals } = await import("@/app/signals/data");
+  expect(
+    await loadSignals(
+      target,
+      async () => summary,
+      async () => {
+        throw new Error("Auth unavailable");
+      },
+    ),
+  ).toEqual({ summary, unavailable: false });
+
+  expect(
+    await loadSignals(target, async () => {
+      throw new ContributionsUnavailableError();
+    }),
+  ).toEqual({ summary: undefined, unavailable: true });
+
+  const defect = new TypeError("unexpected defect");
+  await expect(
+    loadSignals(target, async () => {
+      throw defect;
+    }),
+  ).rejects.toBe(defect);
+});

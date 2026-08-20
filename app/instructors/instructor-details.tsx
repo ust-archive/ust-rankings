@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { coursePath } from "@/app/courses/routes";
+import { SignalControls } from "@/app/signals/signal-controls";
+import type { SignalSummary } from "@/lib/contributions/signals";
 import type { InstructorIdentityLookup, Rankings } from "@/lib/rankings/server";
 import { buildScheduleUrl } from "@/lib/schedule/planner";
 import type { ScheduleClass } from "@/lib/schedule/server";
@@ -30,10 +32,22 @@ function InstructorActions({
   selectedTermCode,
   classes,
   scheduleUnavailable,
+  instructorUuid,
+  signals,
+  signalsUnavailable,
+  signedIn,
+  signalUpdated,
+  signalError,
 }: {
   selectedTermCode?: string;
   classes: ScheduleClass[];
   scheduleUnavailable: boolean;
+  instructorUuid: string;
+  signals?: SignalSummary;
+  signalsUnavailable: boolean;
+  signedIn: boolean;
+  signalUpdated?: boolean;
+  signalError?: string;
 }) {
   return (
     <aside className="order-1 lg:col-start-2 lg:row-start-1 lg:self-start">
@@ -55,10 +69,14 @@ function InstructorActions({
         )}
         <div className="mt-5 border-t border-slate-200 pt-4">
           <p className="font-semibold">Contribution controls</p>
-          <p className="mt-2 text-sm text-slate-600">
-            Instructor signals and Review writing will appear here when
-            community contributions are available.
-          </p>
+          <SignalControls
+            error={signalError}
+            signedIn={signedIn}
+            summary={signals}
+            target={{ type: "instructor", instructorUuid }}
+            unavailable={signalsUnavailable}
+            updated={signalUpdated}
+          />
         </div>
       </div>
     </aside>
@@ -378,6 +396,11 @@ export function InstructorDetails({
   scheduleUnavailable,
   selectedTermCode,
   invalidTermCode,
+  signals,
+  signalsUnavailable = true,
+  signedIn = false,
+  signalUpdated,
+  signalError,
 }: {
   identity: InstructorIdentityLookup;
   rankings?: Rankings;
@@ -385,6 +408,11 @@ export function InstructorDetails({
   scheduleUnavailable: boolean;
   selectedTermCode?: string;
   invalidTermCode?: string;
+  signals?: SignalSummary;
+  signalsUnavailable?: boolean;
+  signedIn?: boolean;
+  signalUpdated?: boolean;
+  signalError?: string;
 }) {
   const selectedClasses = selectedTermCode
     ? classes.filter(
@@ -457,6 +485,12 @@ export function InstructorDetails({
           selectedTermCode={selectedTermCode}
           classes={selectedClasses}
           scheduleUnavailable={scheduleUnavailable}
+          instructorUuid={identity.instructor.uuid}
+          signals={signals}
+          signalsUnavailable={signalsUnavailable}
+          signedIn={signedIn}
+          signalUpdated={signalUpdated}
+          signalError={signalError}
         />
         <RankingEvidence
           rankings={rankings}

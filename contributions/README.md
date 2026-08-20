@@ -1,9 +1,10 @@
 # Contribution module
 
-Issues #43 and #44 introduce accounts and attributed Course Reviews. Application
-routes cross `lib/contributions/accounts.ts` and `lib/contributions/reviews.ts`;
-PostgreSQL transactions and objects remain in the adapter and forward migrations
-under `contributions/migrations`.
+Issues #43, #44, and #47 introduce accounts, attributed Course Reviews, and
+private-identity Course/Instructor signals. Application routes cross
+`lib/contributions/accounts.ts`, `lib/contributions/reviews.ts`, and
+`lib/contributions/signals.ts`; PostgreSQL transactions and objects remain in the
+adapter and forward migrations under `contributions/migrations`.
 
 ## Local setup
 
@@ -32,7 +33,27 @@ the PostgreSQL contract tests. They create and drop their own schemas. Apply
 migrations before serving the application; `0002_course_reviews.sql` adds the
 stable Review, immutable Review Revision, current pointer, Course Basis,
 captured attribution, policy version, publication state, and active-tuple
-uniqueness records used by the first text-only path.
+uniqueness records used by the first text-only path. `0003_signals.sql` adds separate portable relational
+keys for Course and Instructor Thumbs Votes and Emoji Reactions, aggregate-read
+indexes, the fixed Emoji palette, and durable Instructor merge redirects.
+
+Signal reads return only aggregate counts plus the requesting User's own current
+states. Pages are dynamic and never put session-specific state or participant
+identities in shared cache entries. Mutations send desired state, re-check active
+User status in the same PostgreSQL statement, and validate targets against the
+ranking module. Course Offerings, Classes, and Reviews are not accepted targets.
+
+When an approved Instructor registry correction merges UUIDs, run the idempotent
+deployment-controlled operation after applying migrations:
+
+```sh
+bun run contributions:merge-instructor-signals <retired-uuid> <survivor-uuid>
+```
+
+It moves signals to the survivor, keeps the most recently updated conflicting
+Thumbs state, deduplicates same-code Emoji Reactions, and records a redirect so a
+concurrent stale write cannot recreate rows on the retired UUID. Instructor
+splits require no signal operation and retain signals on the original UUID.
 
 ## Production gates outside source control
 
@@ -40,6 +61,8 @@ Production remains blocked until the owner supplies and verifies the production
 Entra registrations/secrets and exact origins, the pooled Singapore PostgreSQL
 connection, approved policy and Review-term versions/text and Privacy Contact
 details, and preview/production OIDC/PostgreSQL Review publication evidence.
-Never commit those values. Preview evidence must also verify Vercel Bun Server
-Actions preserve same-origin checks and that public Course pages remain dynamic
-across separate signed-in and signed-out requests.
+Never commit those values. Preview evidence must also verify Vercel Bun Server Actions preserve same-origin
+checks; public Course and Instructor pages remain dynamic across separate
+signed-in and signed-out requests; signal mutations never alter ranking results
+or generation cache identity; and the private database never exposes
+voter/reactor identities through rendered output or shared responses.

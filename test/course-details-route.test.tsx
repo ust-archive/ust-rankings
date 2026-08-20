@@ -157,6 +157,10 @@ test("Course Offering and Class routes validate nested relationships and preserv
   expect(classDetails).toContain(
     "This Class is Review Context, not a signal target",
   );
+  expect(classDetails).toContain('href="/courses/COMP/2000#signals"');
+  expect(classDetails).toContain(
+    'href="/instructors/00000000-0000-4000-8000-000000000001#signals"',
+  );
 });
 
 test("Course evidence remains visible when the independent Schedule provider is unavailable", async () => {

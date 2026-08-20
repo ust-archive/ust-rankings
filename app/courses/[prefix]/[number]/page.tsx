@@ -6,6 +6,7 @@ import {
   normalizeCourseRoute,
   type RouteSearchParams,
 } from "@/app/courses/routes";
+import { loadSignals } from "@/app/signals/data";
 import {
   getSchedule,
   InvalidScheduleQueryError,
@@ -53,9 +54,10 @@ export async function renderCoursePage(
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
       : scheduleResult.schedule?.offerings.at(-1)?.termCode;
-  const [rankings, community] = await Promise.all([
+  const [rankings, community, signalResult] = await Promise.all([
     loadCourseRankings(coursePrefix, courseNumber, selectedTerm),
     readReviews(coursePrefix, courseNumber),
+    loadSignals({ type: "course", coursePrefix, courseNumber }),
   ]);
   if (!rankings && !scheduleResult.schedule && !scheduleResult.unavailable)
     notFound();
@@ -72,6 +74,13 @@ export async function renderCoursePage(
       reviewPublished={query.review === "published"}
       reviewError={
         typeof query.reviewError === "string" ? query.reviewError : undefined
+      }
+      signals={signalResult.summary}
+      signalsUnavailable={signalResult.unavailable}
+      signedIn={Boolean(signalResult.summary?.mine)}
+      signalUpdated={query.signal === "updated"}
+      signalError={
+        typeof query.signalError === "string" ? query.signalError : undefined
       }
     />
   );

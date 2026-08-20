@@ -16,6 +16,16 @@ import {
   type PublishCourseReviewRecord,
   ReviewWriteError,
 } from "./reviews";
+import {
+  createSignalService,
+  EMOJI_CODES,
+  type EmojiCode,
+  type SignalRepository,
+  type SignalSummary,
+  type SignalTarget,
+  SignalWriteError,
+  type ThumbsState,
+} from "./signals";
 
 type AccountDatabaseRow = {
   id: string;
@@ -230,11 +240,314 @@ export class PostgresReviewRepository implements CourseReviewRepository {
   }
 }
 
+type SignalDatabaseRow = {
+  thumbsUp: number;
+  thumbsDown: number;
+  emoji: Partial<Record<EmojiCode, number>>;
+  mineThumbs: "up" | "down" | null;
+  mineEmoji: EmojiCode[];
+};
+
+function signalSummary(
+  row: SignalDatabaseRow,
+  authenticated: boolean,
+): SignalSummary {
+  const emoji = Object.fromEntries(
+    EMOJI_CODES.map((code) => [code, row.emoji[code] ?? 0]),
+  ) as Record<EmojiCode, number>;
+  return {
+    thumbs: { up: row.thumbsUp, down: row.thumbsDown },
+    emoji,
+    ...(authenticated
+      ? {
+          mine: {
+            thumbs: row.mineThumbs ?? "none",
+            emoji: row.mineEmoji,
+          },
+        }
+      : {}),
+  };
+}
+
+function rejectSignalUser(status: string | undefined): never {
+  if (!status)
+    throw new SignalWriteError("account-not-found", "User was not found");
+  if (status === "onboarding")
+    throw new SignalWriteError(
+      "onboarding-required",
+      "Complete onboarding before writing",
+    );
+  if (status === "suspended")
+    throw new SignalWriteError(
+      "account-suspended",
+      "This User is suspended from writing",
+    );
+  throw new SignalWriteError("account-closed", "This User account is closed");
+}
+
+export class PostgresSignalRepository implements SignalRepository {
+  constructor(private readonly sql: ReturnType<typeof postgres>) {}
+
+  async readSignals(target: SignalTarget, userId?: string) {
+    try {
+      const currentUser = userId ?? null;
+      const [row] =
+        target.type === "course"
+          ? await this.sql<SignalDatabaseRow[]>`
+              SELECT
+                (SELECT count(*)::int FROM course_thumbs_votes
+                 WHERE course_prefix = ${target.coursePrefix}
+                   AND course_number = ${target.courseNumber}
+                   AND state = 'up') AS "thumbsUp",
+                (SELECT count(*)::int FROM course_thumbs_votes
+                 WHERE course_prefix = ${target.coursePrefix}
+                   AND course_number = ${target.courseNumber}
+                   AND state = 'down') AS "thumbsDown",
+                COALESCE((SELECT jsonb_object_agg(code, total)
+                  FROM (SELECT code, count(*)::int AS total
+                        FROM course_emoji_reactions
+                        WHERE course_prefix = ${target.coursePrefix}
+                          AND course_number = ${target.courseNumber}
+                        GROUP BY code) counts), '{}'::jsonb) AS emoji,
+                (SELECT state FROM course_thumbs_votes
+                 WHERE user_id = ${currentUser}::uuid
+                   AND course_prefix = ${target.coursePrefix}
+                   AND course_number = ${target.courseNumber}) AS "mineThumbs",
+                COALESCE((SELECT array_agg(code ORDER BY array_position(
+                    ARRAY['love','laugh','surprised','confused','sad','angry','fire']::text[], code))
+                  FROM course_emoji_reactions
+                  WHERE user_id = ${currentUser}::uuid
+                    AND course_prefix = ${target.coursePrefix}
+                    AND course_number = ${target.courseNumber}), ARRAY[]::text[]) AS "mineEmoji"
+            `
+          : await this.sql<SignalDatabaseRow[]>`
+              SELECT
+                (SELECT count(*)::int FROM instructor_thumbs_votes
+                 WHERE instructor_uuid = ${target.instructorUuid}
+                   AND state = 'up') AS "thumbsUp",
+                (SELECT count(*)::int FROM instructor_thumbs_votes
+                 WHERE instructor_uuid = ${target.instructorUuid}
+                   AND state = 'down') AS "thumbsDown",
+                COALESCE((SELECT jsonb_object_agg(code, total)
+                  FROM (SELECT code, count(*)::int AS total
+                        FROM instructor_emoji_reactions
+                        WHERE instructor_uuid = ${target.instructorUuid}
+                        GROUP BY code) counts), '{}'::jsonb) AS emoji,
+                (SELECT state FROM instructor_thumbs_votes
+                 WHERE user_id = ${currentUser}::uuid
+                   AND instructor_uuid = ${target.instructorUuid}) AS "mineThumbs",
+                COALESCE((SELECT array_agg(code ORDER BY array_position(
+                    ARRAY['love','laugh','surprised','confused','sad','angry','fire']::text[], code))
+                  FROM instructor_emoji_reactions
+                  WHERE user_id = ${currentUser}::uuid
+                    AND instructor_uuid = ${target.instructorUuid}), ARRAY[]::text[]) AS "mineEmoji"
+            `;
+      return signalSummary(row, Boolean(userId));
+    } catch (error) {
+      throw new ContributionsUnavailableError(undefined, { cause: error });
+    }
+  }
+
+  async setThumbs(userId: string, target: SignalTarget, state: ThumbsState) {
+    let result: { status: string | null } | undefined;
+    if (target.type === "course") {
+      [result] =
+        state === "none"
+          ? await this.sql<{ status: string | null }[]>`
+              WITH account AS MATERIALIZED (
+                SELECT status FROM contribution_users
+                WHERE id = ${userId} FOR UPDATE
+              ), changed AS (
+                DELETE FROM course_thumbs_votes
+                WHERE user_id = ${userId}
+                  AND course_prefix = ${target.coursePrefix}
+                  AND course_number = ${target.courseNumber}
+                  AND EXISTS (SELECT 1 FROM account WHERE status = 'active')
+              )
+              SELECT (SELECT status FROM account) AS status
+            `
+          : await this.sql<{ status: string | null }[]>`
+              WITH account AS MATERIALIZED (
+                SELECT status FROM contribution_users
+                WHERE id = ${userId} FOR UPDATE
+              ), changed AS (
+                INSERT INTO course_thumbs_votes
+                  (user_id, course_prefix, course_number, state)
+                SELECT ${userId}, ${target.coursePrefix}, ${target.courseNumber}, ${state}
+                FROM account WHERE status = 'active'
+                ON CONFLICT (user_id, course_prefix, course_number)
+                DO UPDATE SET state = EXCLUDED.state, updated_at = now()
+              )
+              SELECT (SELECT status FROM account) AS status
+            `;
+    } else {
+      [result] =
+        state === "none"
+          ? await this.sql<{ status: string | null }[]>`
+              WITH RECURSIVE account AS MATERIALIZED (
+                SELECT status FROM contribution_users
+                WHERE id = ${userId} FOR UPDATE
+              ), target_lock AS MATERIALIZED (
+                SELECT pg_advisory_xact_lock(hashtextextended(${target.instructorUuid}, 47))
+              ), chain(uuid) AS (
+                SELECT ${target.instructorUuid}::uuid FROM target_lock
+                UNION
+                SELECT redirects.survivor_uuid
+                FROM instructor_signal_redirects redirects
+                JOIN chain ON redirects.retired_uuid = chain.uuid
+              ), resolved AS (
+                SELECT uuid FROM chain WHERE NOT EXISTS (
+                  SELECT 1 FROM instructor_signal_redirects
+                  WHERE retired_uuid = chain.uuid
+                ) LIMIT 1
+              ), changed AS (
+                DELETE FROM instructor_thumbs_votes
+                WHERE user_id = ${userId}
+                  AND instructor_uuid = (SELECT uuid FROM resolved)
+                  AND EXISTS (SELECT 1 FROM account WHERE status = 'active')
+              )
+              SELECT (SELECT status FROM account) AS status
+            `
+          : await this.sql<{ status: string | null }[]>`
+              WITH RECURSIVE account AS MATERIALIZED (
+                SELECT status FROM contribution_users
+                WHERE id = ${userId} FOR UPDATE
+              ), target_lock AS MATERIALIZED (
+                SELECT pg_advisory_xact_lock(hashtextextended(${target.instructorUuid}, 47))
+              ), chain(uuid) AS (
+                SELECT ${target.instructorUuid}::uuid FROM target_lock
+                UNION
+                SELECT redirects.survivor_uuid
+                FROM instructor_signal_redirects redirects
+                JOIN chain ON redirects.retired_uuid = chain.uuid
+              ), resolved AS (
+                SELECT uuid FROM chain WHERE NOT EXISTS (
+                  SELECT 1 FROM instructor_signal_redirects
+                  WHERE retired_uuid = chain.uuid
+                ) LIMIT 1
+              ), changed AS (
+                INSERT INTO instructor_thumbs_votes
+                  (user_id, instructor_uuid, state)
+                SELECT ${userId}, resolved.uuid, ${state}
+                FROM account CROSS JOIN resolved WHERE account.status = 'active'
+                ON CONFLICT (user_id, instructor_uuid)
+                DO UPDATE SET state = EXCLUDED.state, updated_at = now()
+              )
+              SELECT (SELECT status FROM account) AS status
+            `;
+    }
+    if (result?.status !== "active")
+      rejectSignalUser(result?.status ?? undefined);
+  }
+
+  async setEmoji(
+    userId: string,
+    target: SignalTarget,
+    code: EmojiCode,
+    selected: boolean,
+  ) {
+    let result: { status: string | null } | undefined;
+    if (target.type === "course") {
+      [result] = selected
+        ? await this.sql<{ status: string | null }[]>`
+            WITH account AS MATERIALIZED (
+              SELECT status FROM contribution_users
+              WHERE id = ${userId} FOR UPDATE
+            ), changed AS (
+              INSERT INTO course_emoji_reactions
+                (user_id, course_prefix, course_number, code)
+              SELECT ${userId}, ${target.coursePrefix}, ${target.courseNumber}, ${code}
+              FROM account WHERE status = 'active'
+              ON CONFLICT DO NOTHING
+            )
+            SELECT (SELECT status FROM account) AS status
+          `
+        : await this.sql<{ status: string | null }[]>`
+            WITH account AS MATERIALIZED (
+              SELECT status FROM contribution_users
+              WHERE id = ${userId} FOR UPDATE
+            ), changed AS (
+              DELETE FROM course_emoji_reactions
+              WHERE user_id = ${userId}
+                AND course_prefix = ${target.coursePrefix}
+                AND course_number = ${target.courseNumber}
+                AND code = ${code}
+                AND EXISTS (SELECT 1 FROM account WHERE status = 'active')
+            )
+            SELECT (SELECT status FROM account) AS status
+          `;
+    } else {
+      [result] = selected
+        ? await this.sql<{ status: string | null }[]>`
+            WITH RECURSIVE account AS MATERIALIZED (
+              SELECT status FROM contribution_users
+              WHERE id = ${userId} FOR UPDATE
+            ), target_lock AS MATERIALIZED (
+              SELECT pg_advisory_xact_lock(hashtextextended(${target.instructorUuid}, 47))
+            ), chain(uuid) AS (
+              SELECT ${target.instructorUuid}::uuid FROM target_lock
+              UNION
+              SELECT redirects.survivor_uuid
+              FROM instructor_signal_redirects redirects
+              JOIN chain ON redirects.retired_uuid = chain.uuid
+            ), resolved AS (
+              SELECT uuid FROM chain WHERE NOT EXISTS (
+                SELECT 1 FROM instructor_signal_redirects
+                WHERE retired_uuid = chain.uuid
+              ) LIMIT 1
+            ), changed AS (
+              INSERT INTO instructor_emoji_reactions
+                (user_id, instructor_uuid, code)
+              SELECT ${userId}, resolved.uuid, ${code}
+              FROM account CROSS JOIN resolved WHERE account.status = 'active'
+              ON CONFLICT DO NOTHING
+            )
+            SELECT (SELECT status FROM account) AS status
+          `
+        : await this.sql<{ status: string | null }[]>`
+            WITH RECURSIVE account AS MATERIALIZED (
+              SELECT status FROM contribution_users
+              WHERE id = ${userId} FOR UPDATE
+            ), target_lock AS MATERIALIZED (
+              SELECT pg_advisory_xact_lock(hashtextextended(${target.instructorUuid}, 47))
+            ), chain(uuid) AS (
+              SELECT ${target.instructorUuid}::uuid FROM target_lock
+              UNION
+              SELECT redirects.survivor_uuid
+              FROM instructor_signal_redirects redirects
+              JOIN chain ON redirects.retired_uuid = chain.uuid
+            ), resolved AS (
+              SELECT uuid FROM chain WHERE NOT EXISTS (
+                SELECT 1 FROM instructor_signal_redirects
+                WHERE retired_uuid = chain.uuid
+              ) LIMIT 1
+            ), changed AS (
+              DELETE FROM instructor_emoji_reactions
+              WHERE user_id = ${userId}
+                AND instructor_uuid = (SELECT uuid FROM resolved)
+                AND code = ${code}
+                AND EXISTS (SELECT 1 FROM account WHERE status = 'active')
+            )
+            SELECT (SELECT status FROM account) AS status
+          `;
+    }
+    if (result?.status !== "active")
+      rejectSignalUser(result?.status ?? undefined);
+  }
+
+  async mergeInstructorSignals(retiredUuid: string, survivorUuid: string) {
+    await this.sql`
+      SELECT merge_instructor_signals(${retiredUuid}, ${survivorUuid})
+    `;
+  }
+}
+
 let runtime:
   | {
       sql: ReturnType<typeof postgres>;
       accounts: ReturnType<typeof createAccountService>;
       reviews: ReturnType<typeof createReviewService>;
+      signals: ReturnType<typeof createSignalService>;
     }
   | undefined;
 
@@ -272,6 +585,35 @@ function initializeRuntime() {
         }
       },
     }),
+    signals: createSignalService(new PostgresSignalRepository(sql), {
+      async resolveTarget(target) {
+        const {
+          getInstructorIdentity,
+          getRankings,
+          RankingsUnavailableError,
+          UnknownRankingsEntityError,
+        } = await import("@/lib/rankings/server");
+        try {
+          if (target.type === "course") {
+            await getRankings(target);
+            return target;
+          }
+          const identity = await getInstructorIdentity(target.instructorUuid);
+          return {
+            type: "instructor" as const,
+            instructorUuid: identity.instructor.uuid,
+          };
+        } catch (error) {
+          if (error instanceof UnknownRankingsEntityError) return undefined;
+          if (error instanceof RankingsUnavailableError)
+            throw new SignalWriteError(
+              "rankings-unavailable",
+              "Signal target cannot be validated while Rankings Data is unavailable",
+            );
+          throw error;
+        }
+      },
+    }),
   };
   return runtime;
 }
@@ -284,6 +626,12 @@ export function getReviewService() {
   if (!process.env.CONTRIBUTIONS_POSTGRES_URL)
     throw new ContributionsUnavailableError();
   return initializeRuntime().reviews;
+}
+
+export function getSignalService() {
+  if (!process.env.CONTRIBUTIONS_POSTGRES_URL)
+    throw new ContributionsUnavailableError();
+  return initializeRuntime().signals;
 }
 
 export async function closeAccountRuntimeForTests() {
