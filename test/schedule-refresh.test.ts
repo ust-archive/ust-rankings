@@ -1,6 +1,13 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -170,6 +177,53 @@ test("refresh creates a private manifest from the two declared source files", as
     sourceCommit: scheduleFixtureSha,
     artifacts: manifest.artifacts,
   });
+});
+
+test("a rejected temporary Schedule candidate is cleaned after bounded retries", async () => {
+  const roots: string[] = [];
+  const dependencies = {
+    upstream: {
+      async download() {
+        const root = await mkdtemp(join(tmpdir(), "schedule-rejected-"));
+        roots.push(root);
+        const directory = await makeScheduleGeneration(root);
+        const bytes = await readFile(join(directory, "classes.parquet"));
+        bytes[Math.floor(bytes.length / 2)] ^= 1;
+        await writeFile(join(directory, "classes.parquet"), bytes);
+        return {
+          sha: scheduleFixtureSha,
+          sourceUpdatedAt: "2026-08-20T06:00:00.000Z",
+          directory,
+          temporary: true,
+        };
+      },
+    },
+    store: {
+      async readPointer() {
+        return undefined;
+      },
+      async downloadGeneration() {
+        return undefined;
+      },
+      async putGeneration() {},
+      async writePointer() {},
+      async readFailure() {
+        return undefined;
+      },
+      async writeFailure() {},
+    },
+    async withLock<T>(operation: () => Promise<T>) {
+      return operation();
+    },
+    async sleep() {},
+  } as ScheduleRefreshDependencies;
+  const { refreshSchedule } = await import("@/lib/schedule/server");
+
+  await expect(refreshSchedule({}, dependencies)).rejects.toThrow(
+    "Schedule refresh failed",
+  );
+  expect(roots).toHaveLength(3);
+  for (const root of roots) await expect(access(root)).rejects.toThrow();
 });
 
 test("startup rejects a damaged active Schedule generation and serves retained last-known-good", async () => {

@@ -673,8 +673,11 @@ export async function refreshSchedule(
       for (let attempt = 0; attempt < 3; attempt += 1) {
         if (attempt > 0) await dependencies.sleep(250 * 4 ** (attempt - 1));
         let accepted: Generation | undefined;
+        let candidate:
+          | Awaited<ReturnType<typeof dependencies.upstream.download>>
+          | undefined;
         try {
-          const candidate = await dependencies.upstream.download(options.sha);
+          candidate = await dependencies.upstream.download(options.sha);
           failureClass = "integrity";
           if (
             !/^[0-9a-f]{40}$/.test(candidate.sha) ||
@@ -742,6 +745,11 @@ export async function refreshSchedule(
           )
             failureClass = error.failureClass as ScheduleFailure["class"];
           if (accepted) await retireGeneration(Promise.resolve(accepted));
+          else if (candidate?.temporary)
+            await rm(resolve(candidate.directory, ".."), {
+              recursive: true,
+              force: true,
+            }).catch(() => undefined);
         }
       }
       const failure = {
