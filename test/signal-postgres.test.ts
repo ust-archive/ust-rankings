@@ -16,7 +16,31 @@ const COURSE = {
 };
 const SURVIVOR = "00000000-0000-4000-8000-000000000001";
 const RETIRED = "00000000-0000-4000-8000-000000000002";
+const TERMINAL = "00000000-0000-4000-8000-000000000003";
 const SPLIT = "00000000-0000-4000-8000-00000000000a";
+
+async function waitForGraphLock(
+  sql: ReturnType<typeof postgres>,
+  mode: "ShareLock" | "ExclusiveLock",
+  granted: boolean,
+) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const [row] = await sql<{ found: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_locks
+        WHERE locktype = 'advisory'
+          AND classid::bigint = 1431520338
+          AND objid::bigint = 47
+          AND objsubid = 2
+          AND mode = ${mode}
+          AND granted = ${granted}
+      ) AS found
+    `;
+    if (row?.found) return;
+    await Bun.sleep(10);
+  }
+  throw new Error(`Timed out waiting for ${mode} graph lock`);
+}
 
 if (!connection) {
   test.skip("Signal PostgreSQL contract (TEST_CONTRIBUTIONS_POSTGRES_URL is not configured)", () => {});
@@ -243,6 +267,48 @@ if (!connection) {
 
       await signals.mergeInstructorSignals(RETIRED, SURVIVOR);
       await signals.mergeInstructorSignals(RETIRED, SURVIVOR);
+
+      let reverseMergeError: unknown;
+      try {
+        await signals.mergeInstructorSignals(SURVIVOR, RETIRED);
+      } catch (error) {
+        reverseMergeError = error;
+      }
+      expect(String(reverseMergeError)).toContain(
+        "invalid or cyclic Instructor signal merge",
+      );
+
+      const commandUrl = new URL(connection);
+      commandUrl.searchParams.set("options", `-csearch_path=${schema}`);
+      const reverseCommand = Bun.spawn(
+        [
+          "bun",
+          "run",
+          "contributions:merge-instructor-signals",
+          SURVIVOR,
+          RETIRED,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CONTRIBUTIONS_POSTGRES_URL: commandUrl.toString(),
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const [reverseExit, reverseStdout, reverseStderr] = await Promise.all([
+        reverseCommand.exited,
+        new Response(reverseCommand.stdout).text(),
+        new Response(reverseCommand.stderr).text(),
+      ]);
+      expect(reverseExit).not.toBe(0);
+      expect(reverseStdout).not.toContain("Moved Instructor signals");
+      expect(reverseStderr).toContain(
+        "invalid or cyclic Instructor signal merge",
+      );
+
       expect(
         await signals.readSignals(
           { type: "instructor", instructorUuid: SURVIVOR },
@@ -263,8 +329,8 @@ if (!connection) {
         emoji: { love: 0, fire: 0 },
       });
 
-      // A write that resolved the retired UUID before the merge still follows
-      // the durable database redirect and cannot recreate retired signals.
+      // A stale target used after the merge follows the durable redirect and
+      // cannot recreate retired signal rows.
       await repository.setThumbs(
         activeId,
         {
@@ -289,6 +355,78 @@ if (!connection) {
         )::int AS count
       `;
       expect(retiredRows?.count).toBe(0);
+
+      const chainUserId = crypto.randomUUID();
+      await sql`
+        INSERT INTO contribution_users (id, status, public_display_name)
+        VALUES (${chainUserId}, 'active', 'Chain Student')
+      `;
+      await sql.unsafe(`
+        CREATE FUNCTION block_chained_signal_write() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(470047);
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER block_chained_signal_write
+        BEFORE INSERT ON instructor_thumbs_votes
+        FOR EACH ROW EXECUTE FUNCTION block_chained_signal_write();
+      `);
+      const blockerSql = postgres(connection, {
+        max: 1,
+        connection: { search_path: schema },
+        onnotice: () => {},
+      });
+      const writerSql = postgres(connection, {
+        max: 1,
+        connection: { search_path: schema },
+        onnotice: () => {},
+      });
+      const mergerSql = postgres(connection, {
+        max: 1,
+        connection: { search_path: schema },
+        onnotice: () => {},
+      });
+      const blocker = await blockerSql.reserve();
+      try {
+        await blocker`SELECT pg_advisory_lock(470047)`;
+        const writer = new PostgresSignalRepository(writerSql);
+        const merger = new PostgresSignalRepository(mergerSql);
+        const staleWrite = writer.setThumbs(
+          chainUserId,
+          { type: "instructor", instructorUuid: RETIRED },
+          "up",
+        );
+        await waitForGraphLock(sql, "ShareLock", true);
+        const chainedMerge = merger.mergeInstructorSignals(SURVIVOR, TERMINAL);
+        await waitForGraphLock(sql, "ExclusiveLock", false);
+        await blocker`SELECT pg_advisory_unlock(470047)`;
+        await Promise.all([staleWrite, chainedMerge]);
+      } finally {
+        await blocker`SELECT pg_advisory_unlock(470047)`;
+        blocker.release();
+        await Promise.all([
+          blockerSql.end({ timeout: 1 }),
+          writerSql.end({ timeout: 1 }),
+          mergerSql.end({ timeout: 1 }),
+        ]);
+      }
+      expect(
+        await signals.readSignals(
+          { type: "instructor", instructorUuid: TERMINAL },
+          chainUserId,
+        ),
+      ).toMatchObject({ mine: { thumbs: "up" } });
+      const [strandedRows] = await sql<{ count: number }[]>`
+        SELECT (
+          (SELECT count(*) FROM instructor_thumbs_votes
+           WHERE instructor_uuid IN (${RETIRED}, ${SURVIVOR})) +
+          (SELECT count(*) FROM instructor_emoji_reactions
+           WHERE instructor_uuid IN (${RETIRED}, ${SURVIVOR}))
+        )::int AS count
+      `;
+      expect(strandedRows?.count).toBe(0);
 
       // Instructor splits do not invoke merge and retain signals on the source UUID.
       expect(

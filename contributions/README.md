@@ -53,7 +53,10 @@ bun run contributions:merge-instructor-signals <retired-uuid> <survivor-uuid>
 It moves signals to the survivor, keeps the most recently updated conflicting
 Thumbs state, deduplicates same-code Emoji Reactions, and records a redirect so a
 concurrent stale write cannot recreate rows on the retired UUID. Instructor
-splits require no signal operation and retain signals on the original UUID.
+writes share one redirect-graph lock while merges take it exclusively, so stale
+writes remain safe across chained merges. Reversed/cyclic merge requests fail
+without printing success. Instructor splits require no signal operation and
+retain signals on the original UUID.
 
 ## Production gates outside source control
 

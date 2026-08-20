@@ -70,6 +70,8 @@ CREATE TABLE instructor_signal_redirects (
 CREATE INDEX instructor_signal_redirects_survivor_idx
 ON instructor_signal_redirects (survivor_uuid);
 
+-- Instructor writes take this key in shared mode; graph-changing merges take
+-- it exclusively before per-UUID locks so redirect chains cannot race writes.
 CREATE FUNCTION merge_instructor_signals(
   p_retired_uuid uuid,
   p_survivor_uuid uuid
@@ -78,6 +80,7 @@ LANGUAGE plpgsql AS $$
 DECLARE
   resolved_survivor uuid;
 BEGIN
+  PERFORM pg_advisory_xact_lock(1431520338, 47);
   PERFORM pg_advisory_xact_lock(
     hashtextextended(least(p_retired_uuid, p_survivor_uuid)::text, 47)
   );
@@ -100,7 +103,8 @@ BEGIN
   LIMIT 1;
 
   IF resolved_survivor IS NULL OR p_retired_uuid = resolved_survivor THEN
-    RETURN;
+    RAISE EXCEPTION 'invalid or cyclic Instructor signal merge'
+      USING ERRCODE = '22023';
   END IF;
 
   UPDATE instructor_signal_redirects

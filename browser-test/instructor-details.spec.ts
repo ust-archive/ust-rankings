@@ -24,6 +24,18 @@ test("Instructor ranking links open the evidence-first detail hierarchy", async 
   await expect(reviews).toBeVisible();
   await expect(actions).toBeVisible();
   await expect(associations).toBeVisible();
+  if (process.env.CONTRIBUTIONS_POSTGRES_URL) {
+    await expect(page.getByText("Community pulse")).toBeVisible();
+    await expect(page.getByText("Separate from ranking scores")).toBeVisible();
+    await expect(page.getByText("Sign in to respond")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Thumbs up · 0" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(
+      page.getByRole("button", { name: "Love · 0" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("body")).not.toContainText("participant list");
+  }
 
   const [evidenceBox, reviewsBox, actionsBox] = await Promise.all([
     evidence.boundingBox(),

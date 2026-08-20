@@ -387,8 +387,11 @@ export class PostgresSignalRepository implements SignalRepository {
               WITH RECURSIVE account AS MATERIALIZED (
                 SELECT status FROM contribution_users
                 WHERE id = ${userId} FOR UPDATE
+              ), graph_lock AS MATERIALIZED (
+                SELECT pg_advisory_xact_lock_shared(1431520338, 47)
               ), target_lock AS MATERIALIZED (
                 SELECT pg_advisory_xact_lock(hashtextextended(${target.instructorUuid}, 47))
+                FROM graph_lock
               ), chain(uuid) AS (
                 SELECT ${target.instructorUuid}::uuid FROM target_lock
                 UNION
@@ -412,8 +415,11 @@ export class PostgresSignalRepository implements SignalRepository {
               WITH RECURSIVE account AS MATERIALIZED (
                 SELECT status FROM contribution_users
                 WHERE id = ${userId} FOR UPDATE
+              ), graph_lock AS MATERIALIZED (
+                SELECT pg_advisory_xact_lock_shared(1431520338, 47)
               ), target_lock AS MATERIALIZED (
                 SELECT pg_advisory_xact_lock(hashtextextended(${target.instructorUuid}, 47))
+                FROM graph_lock
               ), chain(uuid) AS (
                 SELECT ${target.instructorUuid}::uuid FROM target_lock
                 UNION
@@ -482,8 +488,11 @@ export class PostgresSignalRepository implements SignalRepository {
             WITH RECURSIVE account AS MATERIALIZED (
               SELECT status FROM contribution_users
               WHERE id = ${userId} FOR UPDATE
+            ), graph_lock AS MATERIALIZED (
+              SELECT pg_advisory_xact_lock_shared(1431520338, 47)
             ), target_lock AS MATERIALIZED (
               SELECT pg_advisory_xact_lock(hashtextextended(${target.instructorUuid}, 47))
+              FROM graph_lock
             ), chain(uuid) AS (
               SELECT ${target.instructorUuid}::uuid FROM target_lock
               UNION
@@ -508,8 +517,11 @@ export class PostgresSignalRepository implements SignalRepository {
             WITH RECURSIVE account AS MATERIALIZED (
               SELECT status FROM contribution_users
               WHERE id = ${userId} FOR UPDATE
+            ), graph_lock AS MATERIALIZED (
+              SELECT pg_advisory_xact_lock_shared(1431520338, 47)
             ), target_lock AS MATERIALIZED (
               SELECT pg_advisory_xact_lock(hashtextextended(${target.instructorUuid}, 47))
+              FROM graph_lock
             ), chain(uuid) AS (
               SELECT ${target.instructorUuid}::uuid FROM target_lock
               UNION
