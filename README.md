@@ -25,6 +25,22 @@ _The actual names are redacted because the rankings are changing time-by-time._
 ![UST Schedule](https://github.com/Waver-Velvet/ust-rankings/assets/42676149/f553e971-bd62-4b0f-a487-8b77215e57ec)
 _This is the dark theme, for demonstrational purpose._
 
+## Development
+
+The repository uses Bun 1.3.14 for dependency installation, scripts, tests, the
+Next.js runtime, and the data workspace. Install from the repository root and
+run the complete local gate with:
+
+```sh
+bun install --frozen-lockfile
+bun run check
+bun run build
+```
+
+Use `bun run dev` for local development. Biome is the single formatter, linter,
+and import organizer (`bun run check:write`), while TypeScript remains a
+separate check (`bun run type-check`).
+
 ## Connect
 
 Should you have any suggestions, feel free to open an issue or email me.

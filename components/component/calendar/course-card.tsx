@@ -1,3 +1,6 @@
+import { DateTime } from "luxon";
+import React, { type ReactNode } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -6,12 +9,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { type Course, CourseClass, CourseClassSchedule } from "@/data/cq";
+import type { Course, CourseClass, CourseClassSchedule } from "@/data/cq";
 import { PathAdvisor } from "@/data/cq/path-advisor";
 import { cn } from "@/lib/utils";
-import { DateTimeFormatter, LocalTime } from "@js-joda/core";
-import React, { type ReactNode } from "react";
-import { toast } from "sonner";
 
 type Cell = {
   key: string | number;
@@ -93,7 +93,13 @@ function ScheduleCell({ schedule }: { schedule: CourseClassSchedule }) {
     5: "Fr",
     6: "Sa",
   };
-  const f = DateTimeFormatter.ofPattern("HH:mm");
+  const formatTime = (time: string) => {
+    const value = DateTime.fromISO(time, { zone: "Asia/Hong_Kong" });
+    if (!value.isValid) {
+      throw new Error(`Invalid Schedule time: ${time}`);
+    }
+    return value.toFormat("HH:mm");
+  };
   return (
     <>
       <span className="text-nowrap">
@@ -101,8 +107,7 @@ function ScheduleCell({ schedule }: { schedule: CourseClassSchedule }) {
       </span>{" "}
       {schedule.fromTime && schedule.toTime && (
         <span className="text-nowrap">
-          {LocalTime.parse(schedule.fromTime!).format(f)}-
-          {LocalTime.parse(schedule.toTime!).format(f)}
+          {formatTime(schedule.fromTime)}-{formatTime(schedule.toTime)}
         </span>
       )}
     </>
@@ -142,7 +147,12 @@ function RoomCell({ venue }: { venue: string }) {
   const hrefPathAdvisor = PathAdvisor.findPathTo(venue);
   return (
     <div className="flex flex-col">
-      <a href={hrefPathAdvisor} target="_blank" className="underline">
+      <a
+        href={hrefPathAdvisor}
+        target="_blank"
+        rel="noopener"
+        className="underline"
+      >
         {roomInfoEl}
       </a>
     </div>
@@ -196,10 +206,11 @@ function SectionTable(props: SectionTableProps) {
     const { cells } = row;
 
     for (let i = 0; i < cells.length; i++) {
-      if (!headerCell[i] || cells[i].key !== headerCell[i]!.key) {
+      const currentHeader = headerCell[i];
+      if (!currentHeader || cells[i].key !== currentHeader.key) {
         headerCell[i] = cells[i];
       } else {
-        headerCell[i]!.rowSpan++;
+        currentHeader.rowSpan++;
         cells[i].remove = true;
       }
     }
@@ -230,7 +241,7 @@ function SectionTable(props: SectionTableProps) {
               return (
                 <td
                   className={cn("h-[inherit] border p-2", cell.className)}
-                  key={i}
+                  key={cell.key}
                   rowSpan={cell.rowSpan}
                   colSpan={cell.colSpan}
                 >

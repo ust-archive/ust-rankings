@@ -14,14 +14,17 @@ schedule-only coverage from the retired CQ source does not.
 
 ## Run
 
-Requires Bun 1.3.14+ and access to the private `ust-archive/ust-space` and
-`ust-archive/sfq` datasets. Authenticate with either `HF_TOKEN` or a token in
-the standard Hugging Face cache. The `hf` CLI is needed only if you choose to
-create that cached token with `hf auth login`; it is not used by the runner.
+Requires the repository-pinned Bun 1.3.14 toolchain and access to the private
+`ust-archive/ust-space` and `ust-archive/sfq` datasets. Authenticate with either
+`HF_TOKEN` or a token in the standard Hugging Face cache. The `hf` CLI is needed
+only if you choose to create that cached token with `hf auth login`; it is not
+used by the runner.
+
+Install the repository workspace from the root, then run the pipeline:
 
 ```sh
-bun ci
-bun run run
+bun install --frozen-lockfile
+bun run data:run
 ```
 
 For an offline/local run, set `RANKINGS_DATA_DIR` to a directory with this

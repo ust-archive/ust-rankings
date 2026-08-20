@@ -1,5 +1,9 @@
 "use client";
 
+import { CalendarPlus, Download, HelpCircle } from "lucide-react";
+import React, { type ChangeEvent, useState } from "react";
+import { toast } from "sonner";
+import { WindowVirtualizer } from "virtua";
 import { SisParserDialog } from "@/app/schedule/sis-parser-dialog";
 import { CourseCard } from "@/components/component/calendar/course-card";
 import { NewReleaseBanner } from "@/components/component/new-release-banner";
@@ -9,10 +13,6 @@ import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cqTerms, searchCourses } from "@/data/cq";
-import { CalendarPlus, Download, HelpCircle } from "lucide-react";
-import React, { type ChangeEvent, useState } from "react";
-import { toast } from "sonner";
-import { WindowVirtualizer } from "virtua";
 
 export default function Home() {
   const [term, setTerm] = useState(cqTerms.findLast(() => true)!.term);

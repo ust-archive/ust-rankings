@@ -1,37 +1,46 @@
-import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { test } from 'bun:test'
-import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
+import { test } from "bun:test";
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 
-const root = resolve(import.meta.dir, '..')
+const root = resolve(import.meta.dir, "..");
 
 async function copyQuery(
   connection: DuckDBConnection,
   path: string,
   query: string,
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  await connection.run('SET VARIABLE fixture_path = $path', {
-    path: path.replaceAll('\\', '/'),
-  })
-  await connection.run(`COPY (${query}) TO (getvariable('fixture_path')) (FORMAT parquet)`)
+  await mkdir(dirname(path), { recursive: true });
+  await connection.run("SET VARIABLE fixture_path = $path", {
+    path: path.replaceAll("\\", "/"),
+  });
+  await connection.run(
+    `COPY (${query}) TO (getvariable('fixture_path')) (FORMAT parquet)`,
+  );
 }
 
 async function makeFixtures(dataDir: string): Promise<void> {
-  const instance = await DuckDBInstance.create(':memory:')
-  const connection = await instance.connect()
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
 
   try {
-    await copyQuery(connection, join(dataDir, 'schedule', 'courses.parquet'), `
+    await copyQuery(
+      connection,
+      join(dataDir, "schedule", "courses.parquet"),
+      `
       SELECT * FROM (VALUES
         (100, 'high', TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '1000', '2510'),
         (100, 'low',  TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '2000', '2510')
       ) AS courses(term_num, id, "timestamp", status, prefix, number, term_code)
-    `)
+    `,
+    );
 
-    await copyQuery(connection, join(dataDir, 'schedule', 'classes.parquet'), `
+    await copyQuery(
+      connection,
+      join(dataDir, "schedule", "classes.parquet"),
+      `
       SELECT * FROM (VALUES
         (100, 'class-high', TIMESTAMP '2025-01-01', 'ACTIVE',
           [{'instructors': [
@@ -41,9 +50,13 @@ async function makeFixtures(dataDir: string): Promise<void> {
         (100, 'class-low', TIMESTAMP '2025-01-01', 'ACTIVE',
           [{'instructors': ['Cara Gamma']}], 'low', 'E', 'LEC')
       ) AS classes(term_num, number, "timestamp", status, schedules, course_id, role, type)
-    `)
+    `,
+    );
 
-    await copyQuery(connection, join(dataDir, 'ust-space', 'reviews.parquet'), `
+    await copyQuery(
+      connection,
+      join(dataDir, "ust-space", "reviews.parquet"),
+      `
       SELECT * FROM (VALUES
         ('high-review', TIMESTAMP '2025-01-01', 'ACTIVE', '2025-26 Fall', 3, 4,
           5.0, 5.0, 5.0, 4.0, 'COMP', '1000', [{'name': 'ALPHA, ALICE BEATRICE'}]),
@@ -60,7 +73,8 @@ async function makeFixtures(dataDir: string): Promise<void> {
         content_rating, teaching_rating, grading_rating, workload_rating,
         subject, number, instructors
       )
-    `)
+    `,
+    );
 
     const sfqColumns = `
       version, term_num, term_code, school_code, department_code, prefix, number,
@@ -68,8 +82,11 @@ async function makeFixtures(dataDir: string): Promise<void> {
       response_rate, course_overall_mean, course_overall_sd,
       instructor_overall_mean, instructor_overall_sd, date_of_preparation,
       "timestamp", status, sha256
-    `
-    await copyQuery(connection, join(dataDir, 'sfq', 'canonical', 'instructor_records.parquet'), `
+    `;
+    await copyQuery(
+      connection,
+      join(dataDir, "sfq", "canonical", "instructor_records.parquet"),
+      `
       SELECT * FROM (VALUES
         ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'Alice Beatrice ALPHA', 1,
           100, false, 0.8, 4.8, 0.2, 4.9, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ia'),
@@ -84,15 +101,19 @@ async function makeFixtures(dataDir: string): Promise<void> {
         ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '2000', 'L1', 'Cara Gamma', 33,
           100, false, 0.8, 2.1, 0.2, 2.1, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ic')
       ) AS sfq(${sfqColumns})
-    `)
+    `,
+    );
 
     const sectionColumns = `
       version, term_num, term_code, school_code, department_code, prefix, number,
       section, num_invites, is_low_response_rate, response_rate,
       course_overall_mean, course_overall_sd, instructor_overall_mean,
       instructor_overall_sd, date_of_preparation, "timestamp", status, sha256
-    `
-    await copyQuery(connection, join(dataDir, 'sfq', 'canonical', 'section_records.parquet'), `
+    `;
+    await copyQuery(
+      connection,
+      join(dataDir, "sfq", "canonical", "section_records.parquet"),
+      `
       SELECT * FROM (VALUES
         ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '1000', 'L1',
           100, false, 0.8, 4.8, 0.2, 4.8, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'sa'),
@@ -103,167 +124,230 @@ async function makeFixtures(dataDir: string): Promise<void> {
         ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '2000', 'L1',
           100, false, 0.8, 2.1, 0.2, 2.1, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'sb')
       ) AS sfq_sections(${sectionColumns})
-    `)
-  }
-  finally {
-    connection.closeSync()
-    instance.closeSync()
+    `,
+    );
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
   }
 }
 
 function runPipeline(dataDir: string, runDir: string): string {
-  const outputDir = join(runDir, 'out')
+  const outputDir = join(runDir, "out");
   const result = Bun.spawnSync({
-    cmd: [process.execPath, join(root, 'src', 'run.ts')],
+    cmd: [process.execPath, join(root, "src", "run.ts")],
     cwd: root,
     env: {
       ...process.env,
       RANKINGS_DATA_DIR: dataDir,
       RANKINGS_OUTPUT_DIR: outputDir,
     },
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   assert.equal(
     result.exitCode,
     0,
     result.stderr.toString() || result.stdout.toString(),
-  )
-  return outputDir
+  );
+  return outputDir;
 }
 
 async function rows(sql: string) {
-  const instance = await DuckDBInstance.create(':memory:')
-  const connection = await instance.connect()
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
   try {
-    const reader = await connection.runAndReadAll(sql)
-    return reader.getRowObjectsJS()
-  }
-  finally {
-    connection.closeSync()
-    instance.closeSync()
+    const reader = await connection.runAndReadAll(sql);
+    return reader.getRowObjectsJS();
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
   }
 }
 
 function parquet(outputDir: string, name: string): string {
   return join(outputDir, `${name}.parquet`)
-    .replaceAll('\\', '/')
-    .replaceAll("'", "''")
+    .replaceAll("\\", "/")
+    .replaceAll("'", "''");
 }
 
 const outputColumns = {
-  'course-ratings': [
-    'subject', 'code', 'term_num', 'term_code', 'is_offered', 'criterion', 'rating', 'bayesian',
-    'confidence', 'samples', 'cumulative_samples', 'effective_samples',
-    'reliability', 'posterior_stddev',
+  "course-ratings": [
+    "subject",
+    "code",
+    "term_num",
+    "term_code",
+    "is_offered",
+    "criterion",
+    "rating",
+    "bayesian",
+    "confidence",
+    "samples",
+    "cumulative_samples",
+    "effective_samples",
+    "reliability",
+    "posterior_stddev",
   ],
-  'instructor-ratings': [
-    'name', 'term_num', 'term_code', 'is_teaching', 'criterion', 'rating', 'bayesian',
-    'confidence', 'samples', 'cumulative_samples', 'effective_samples',
-    'reliability', 'posterior_stddev',
+  "instructor-ratings": [
+    "name",
+    "term_num",
+    "term_code",
+    "is_teaching",
+    "criterion",
+    "rating",
+    "bayesian",
+    "confidence",
+    "samples",
+    "cumulative_samples",
+    "effective_samples",
+    "reliability",
+    "posterior_stddev",
   ],
-  'course-rankings': [
-    'subject', 'code', 'term_num', 'term_code', 'is_offered', 'criterion', 'rating', 'bayesian',
-    'confidence', 'samples', 'cumulative_samples', 'effective_samples',
-    'reliability', 'posterior_stddev',
+  "course-rankings": [
+    "subject",
+    "code",
+    "term_num",
+    "term_code",
+    "is_offered",
+    "criterion",
+    "rating",
+    "bayesian",
+    "confidence",
+    "samples",
+    "cumulative_samples",
+    "effective_samples",
+    "reliability",
+    "posterior_stddev",
   ],
-  'instructor-rankings': [
-    'name', 'term_num', 'term_code', 'is_teaching', 'criterion', 'rating', 'bayesian',
-    'confidence', 'samples', 'cumulative_samples', 'effective_samples',
-    'reliability', 'posterior_stddev',
+  "instructor-rankings": [
+    "name",
+    "term_num",
+    "term_code",
+    "is_teaching",
+    "criterion",
+    "rating",
+    "bayesian",
+    "confidence",
+    "samples",
+    "cumulative_samples",
+    "effective_samples",
+    "reliability",
+    "posterior_stddev",
   ],
-  'course-instructors': [
-    'name', 'term_num', 'term_code', 'subject', 'code',
-  ],
-} as const
+  "course-instructors": ["name", "term_num", "term_code", "subject", "code"],
+} as const;
 
 async function snapshot(outputDir: string, name: keyof typeof outputColumns) {
-  const path = parquet(outputDir, name)
-  const schema = await rows(`DESCRIBE SELECT * FROM read_parquet('${path}')`)
-  const data = await rows(`SELECT * FROM read_parquet('${path}') ORDER BY ALL`)
-  return { schema, data }
+  const path = parquet(outputDir, name);
+  const schema = await rows(`DESCRIBE SELECT * FROM read_parquet('${path}')`);
+  const data = await rows(`SELECT * FROM read_parquet('${path}') ORDER BY ALL`);
+  return { schema, data };
 }
 
-test('DuckDB pipeline writes reproducible relational marts', async () => {
-  const temp = await mkdtemp(join(tmpdir(), 'ust-rankings-'))
+test("DuckDB pipeline writes reproducible relational marts", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-"));
   try {
-    const dataDir = join(temp, 'data')
-    await makeFixtures(dataDir)
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
 
-    const first = runPipeline(dataDir, join(temp, 'first'))
-    const second = runPipeline(dataDir, join(temp, 'second'))
-    const courseRatings = parquet(first, 'course-ratings')
-    const instructorRatings = parquet(first, 'instructor-ratings')
-    const courseRankings = parquet(first, 'course-rankings')
-    const instructorRankings = parquet(first, 'instructor-rankings')
-    const courseInstructors = parquet(first, 'course-instructors')
+    const first = runPipeline(dataDir, join(temp, "first"));
+    const second = runPipeline(dataDir, join(temp, "second"));
+    const courseRatings = parquet(first, "course-ratings");
+    const instructorRatings = parquet(first, "instructor-ratings");
+    const courseRankings = parquet(first, "course-rankings");
+    const instructorRankings = parquet(first, "instructor-rankings");
+    const courseInstructors = parquet(first, "course-instructors");
 
     for (const [name, columns] of Object.entries(outputColumns)) {
-      const artifact = await snapshot(first, name as keyof typeof outputColumns)
+      const artifact = await snapshot(
+        first,
+        name as keyof typeof outputColumns,
+      );
       assert.deepEqual(
-        artifact.schema.map(column => column.column_name),
+        artifact.schema.map((column) => column.column_name),
         columns,
         `${name}.parquet schema`,
-      )
-      assert.ok(artifact.data.length > 0, `${name}.parquet is empty`)
+      );
+      assert.ok(artifact.data.length > 0, `${name}.parquet is empty`);
     }
 
-    assert.deepEqual(await rows(`
+    assert.deepEqual(
+      await rows(`
       SELECT count(*)::INTEGER AS count
       FROM read_parquet('${courseRatings}')
       WHERE subject = 'GONE'
-    `), [{ count: 0 }])
+    `),
+      [{ count: 0 }],
+    );
 
-    assert.deepEqual(await rows(`
+    assert.deepEqual(
+      await rows(`
       SELECT samples::INTEGER AS samples, round(confidence, 8) AS confidence
       FROM read_parquet('${courseRatings}')
       WHERE subject = 'COMP' AND code = '1000'
         AND term_num = 100 AND criterion = 'course'
-    `), [{ samples: 80, confidence: 864 }])
+    `),
+      [{ samples: 80, confidence: 864 }],
+    );
 
-    assert.deepEqual(await rows(`
+    assert.deepEqual(
+      await rows(`
       SELECT samples::INTEGER AS samples, round(confidence, 8) AS confidence
       FROM read_parquet('${instructorRatings}')
       WHERE name = 'ALPHA, Alice Beatrice'
         AND term_num = 100 AND criterion = 'instructor'
-    `), [{ samples: 80, confidence: 72 }])
+    `),
+      [{ samples: 80, confidence: 72 }],
+    );
 
     // Rows from one artifact are distinct evidence when their measurements differ.
-    assert.deepEqual(await rows(`
+    assert.deepEqual(
+      await rows(`
       SELECT samples::INTEGER AS samples, round(confidence, 8) AS confidence
       FROM read_parquet('${courseRatings}')
       WHERE subject = 'COMP' AND code = '2000'
         AND term_num = 100 AND criterion = 'course'
-    `), [{ samples: 160, confidence: 1728 }])
+    `),
+      [{ samples: 160, confidence: 1728 }],
+    );
 
-    assert.deepEqual(await rows(`
+    assert.deepEqual(
+      await rows(`
       SELECT samples::INTEGER AS samples, round(confidence, 8) AS confidence
       FROM read_parquet('${instructorRatings}')
       WHERE name = 'Cara Gamma'
         AND term_num = 100 AND criterion = 'instructor'
-    `), [{ samples: 160, confidence: 144 }])
+    `),
+      [{ samples: 160, confidence: 144 }],
+    );
 
-    assert.deepEqual(await rows(`
+    assert.deepEqual(
+      await rows(`
       SELECT subject, bool_and(is_offered) AS is_offered
       FROM read_parquet('${courseRankings}')
       WHERE subject IN ('COMP', 'HIST')
       GROUP BY subject
       ORDER BY subject
-    `), [
-      { subject: 'COMP', is_offered: true },
-      { subject: 'HIST', is_offered: false },
-    ])
+    `),
+      [
+        { subject: "COMP", is_offered: true },
+        { subject: "HIST", is_offered: false },
+      ],
+    );
 
-    assert.deepEqual(await rows(`
+    assert.deepEqual(
+      await rows(`
       SELECT name, bool_and(is_teaching) AS is_teaching
       FROM read_parquet('${instructorRankings}')
       WHERE name IN ('ALPHA, Alice Beatrice', 'Dora Delta')
       GROUP BY name
       ORDER BY name
-    `), [
-      { name: 'ALPHA, Alice Beatrice', is_teaching: true },
-      { name: 'Dora Delta', is_teaching: false },
-    ])
+    `),
+      [
+        { name: "ALPHA, Alice Beatrice", is_teaching: true },
+        { name: "Dora Delta", is_teaching: false },
+      ],
+    );
 
     const frontendOrder = await rows(`
       SELECT code, bayesian
@@ -271,17 +355,23 @@ test('DuckDB pipeline writes reproducible relational marts', async () => {
       WHERE subject = 'COMP' AND criterion = 'course'
         AND term_num = 100
       ORDER BY bayesian DESC, code
-    `)
-    assert.deepEqual(frontendOrder.map(row => row.code), ['1000', '2000'])
+    `);
+    assert.deepEqual(
+      frontendOrder.map((row) => row.code),
+      ["1000", "2000"],
+    );
 
     // The schedule spelling is preferred when review and SFQ aliases cluster.
-    assert.deepEqual(await rows(`
+    assert.deepEqual(
+      await rows(`
       SELECT
         bool_or(criterion = 'content') AS has_review,
         bool_or(criterion = 'instructor') AS has_sfq
       FROM read_parquet('${instructorRatings}')
       WHERE name = 'ALPHA, Alice Beatrice'
-    `), [{ has_review: true, has_sfq: true }])
+    `),
+      [{ has_review: true, has_sfq: true }],
+    );
 
     // The SFQ initials alias would match the higher-priority schedule name,
     // but they occur together in one SFQ section and must remain separate.
@@ -291,11 +381,11 @@ test('DuckDB pipeline writes reproducible relational marts', async () => {
       WHERE subject = 'COMP' AND code = '1000' AND term_num = 100
         AND name IN ('DELTA, A B', 'Adam Blake DELTA')
       ORDER BY name
-    `)
-    assert.deepEqual(ambiguousAssignments.map(row => row.name), [
-      'Adam Blake DELTA',
-      'DELTA, A B',
-    ])
+    `);
+    assert.deepEqual(
+      ambiguousAssignments.map((row) => row.name),
+      ["Adam Blake DELTA", "DELTA, A B"],
+    );
 
     const reversedNameAssignments = await rows(`
       SELECT name
@@ -303,35 +393,42 @@ test('DuckDB pipeline writes reproducible relational marts', async () => {
       WHERE subject = 'COMP' AND code = '1000' AND term_num = 100
         AND name IN ('WANG, Wei', 'WEI, Wang')
       ORDER BY name
-    `)
-    assert.deepEqual(reversedNameAssignments.map(row => row.name), [
-      'WANG, Wei',
-      'WEI, Wang',
-    ])
+    `);
+    assert.deepEqual(
+      reversedNameAssignments.map((row) => row.name),
+      ["WANG, Wei", "WEI, Wang"],
+    );
 
-    assert.deepEqual(await rows(`
+    assert.deepEqual(
+      await rows(`
       SELECT count(*)::INTEGER AS count
       FROM read_parquet('${courseInstructors}')
       WHERE lower(name) = 'tba'
-    `), [{ count: 0 }])
+    `),
+      [{ count: 0 }],
+    );
 
-    assert.deepEqual(await rows(`
+    assert.deepEqual(
+      await rows(`
       SELECT count(*)::INTEGER AS count
       FROM read_parquet('${courseInstructors}')
       WHERE lower(name) LIKE '%program%'
-    `), [{ count: 0 }])
+    `),
+      [{ count: 0 }],
+    );
 
     // Compare decoded schemas and ordered rows. Parquet container metadata may
     // legitimately differ even when two builds represent identical relations.
-    for (const name of Object.keys(outputColumns) as (keyof typeof outputColumns)[]) {
+    for (const name of Object.keys(
+      outputColumns,
+    ) as (keyof typeof outputColumns)[]) {
       assert.deepEqual(
         await snapshot(first, name),
         await snapshot(second, name),
         `${name}.parquet is not logically reproducible`,
-      )
+      );
     }
+  } finally {
+    await rm(temp, { recursive: true, force: true });
   }
-  finally {
-    await rm(temp, { recursive: true, force: true })
-  }
-})
+});

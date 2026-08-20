@@ -1,3 +1,5 @@
+import { QuestionMarkCircledIcon } from "@radix-ui/react-icons";
+import React, { type ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Collapsible,
@@ -11,8 +13,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { QuestionMarkCircledIcon } from "@radix-ui/react-icons";
-import React, { ReactNode } from "react";
 
 export type SettingsCardProps = {
   formula: string;

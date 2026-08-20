@@ -1,3 +1,5 @@
+import _ from "lodash";
+import React, { useMemo, useState } from "react";
 import { CourseTrendChart } from "@/app/course/course-trend-chart";
 import {
   Card,
@@ -8,9 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { course } from "@/data/course-catalog";
-import { CourseRatings, Criteria, CriteriaName } from "@/data/ratings";
-import _ from "lodash";
-import React, { useMemo, useState } from "react";
+import { type CourseRatings, Criteria, CriteriaName } from "@/data/ratings";
 
 type CourseCardProps = {
   ratings: CourseRatings;

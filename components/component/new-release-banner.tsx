@@ -1,9 +1,9 @@
 "use client";
 
+import { PartyPopper } from "lucide-react";
+import type { HTMLAttributes } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
-import { PartyPopper } from "lucide-react";
-import { type HTMLAttributes } from "react";
 
 type UstRankingsComBannerProps = HTMLAttributes<HTMLDivElement>;
 

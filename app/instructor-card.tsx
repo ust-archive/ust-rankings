@@ -1,3 +1,5 @@
+import _ from "lodash";
+import React, { useMemo } from "react";
 import { InstructorTrendChart } from "@/app/instructor-trend-chart";
 import {
   Card,
@@ -7,11 +9,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { Criteria, CriteriaName, InstructorRatings } from "@/data/ratings";
+import { Criteria, CriteriaName, type InstructorRatings } from "@/data/ratings";
 import { stopPropagation } from "@/lib/events";
 import { naturalSort } from "@/lib/utils";
-import _ from "lodash";
-import React, { useMemo } from "react";
 
 type InstructorCardProps = {
   ratings: InstructorRatings;
@@ -166,6 +166,7 @@ export function InstructorCard({ ratings, term }: InstructorCardProps) {
               href={googleUrl}
               target="_blank"
               onClick={stopPropagation}
+              rel="noopener"
             >
               <span className="inline-block group-hover:underline">
                 {familyName},&nbsp;

@@ -1,5 +1,7 @@
 "use client";
 
+import React, { type ChangeEvent, useState } from "react";
+import { WindowVirtualizer } from "virtua";
 import { InstructorCard } from "@/app/instructor-card";
 import { NewReleaseBanner } from "@/components/component/new-release-banner";
 import { SettingsCard } from "@/components/component/settings-card";
@@ -8,8 +10,6 @@ import { Input } from "@/components/ui/input";
 import { currentTerm } from "@/data/cq";
 import { search } from "@/data/instructor";
 import { CriteriaName, termCode2Num } from "@/data/ratings";
-import React, { type ChangeEvent, useState } from "react";
-import { WindowVirtualizer } from "virtua";
 
 export default function Home() {
   const [query, setQuery] = useState("");

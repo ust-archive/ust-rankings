@@ -1,5 +1,5 @@
-import json from "../data-course-catalog.json";
 import _ from "lodash";
+import json from "../data-course-catalog.json";
 
 export type Course = {
   coursePrefix: string;

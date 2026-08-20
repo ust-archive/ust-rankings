@@ -4,5 +4,11 @@
 }
 
 .recharts-tooltip-wrapper {
-  @apply max-w-[50%] lg:max-w-[75%];
+  max-width: 50%;
+}
+
+@media (min-width: 64rem) {
+  .recharts-tooltip-wrapper {
+    max-width: 75%;
+  }
 }

@@ -3,21 +3,20 @@
   "type": "module",
   "version": "4.0.0",
   "private": true,
-  "packageManager": "bun@1.3.14",
   "scripts": {
     "run": "bun src/run.ts",
     "test": "bun test ./test/pipeline.test.ts",
-    "type-check": "tsc"
+    "type-check": "tsc --noEmit"
   },
   "license": "MIT",
   "dependencies": {
-    "@duckdb/node-api": "^1.5.4-r.1"
+    "@duckdb/node-api": "^1.5.5-r.4"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
-    "typescript": "^5.8.3"
+    "typescript": "^7.0.2"
   },
   "engines": {
-    "bun": ">=1.3.14"
+    "bun": ">=1.3.14 <2"
   }
 }

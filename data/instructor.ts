@@ -1,14 +1,14 @@
-import ratingsInstructorJson from "./ratings-instructor.json";
-import { Criteria, InstructorRatings } from "@/data/ratings";
 import Fuse from "fuse.js";
 import _ from "lodash";
 import * as mathjs from "mathjs";
+import { Criteria, type InstructorRatings } from "@/data/ratings";
+import ratingsInstructorJson from "./ratings-instructor.json";
 
 export const ratingsInstructor = ratingsInstructorJson;
 
 export function search(q: string, t: number, f: string): InstructorRatings[] {
   const instructorObjs = ratingsInstructor.filter((r) =>
-    Criteria.some((c) => r.ratings[c]?.confidence[t] ?? 0 !== 0),
+    Criteria.some((c) => (r.ratings[c]?.confidence[t] ?? 0) !== 0),
   );
 
   const formula = mathjs.compile(f);
@@ -26,7 +26,6 @@ export function search(q: string, t: number, f: string): InstructorRatings[] {
         ]),
       );
       r.score = formula.evaluate(scope);
-      return r;
     })
 
     // Sort the courses by the given criterion

@@ -21,12 +21,14 @@ jobs:
         with:
           enable-cache: false
 
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
       - name: Build rankings data
         working-directory: data
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          bun ci
           bun run type-check
           bun run test
           bun run run

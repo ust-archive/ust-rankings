@@ -1,5 +1,4 @@
 import fs from "fs/promises";
-import fetch from "node-fetch";
 
 async function fetchText(url) {
   const resp = await fetch(url);

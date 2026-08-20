@@ -1,4 +1,6 @@
-import { Filter } from "@/app/course/filter";
+import { QuestionMarkCircledIcon } from "@radix-ui/react-icons";
+import React from "react";
+import type { Filter } from "@/app/course/filter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -15,8 +17,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { CriteriaName } from "@/data/ratings";
-import { QuestionMarkCircledIcon } from "@radix-ui/react-icons";
-import React from "react";
 
 export type SettingsCardProps = {
   formula: string;

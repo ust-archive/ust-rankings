@@ -1,6 +1,4 @@
 import "./globals.css";
-import { Toaster } from "@/components/ui/sonner";
-import { cn } from "@/lib/utils";
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import { Analytics } from "@vercel/analytics/react";
@@ -9,7 +7,9 @@ import { GraduationCapIcon } from "lucide-react";
 import type { Metadata } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import Link from "next/link";
-import React from "react";
+import type React from "react";
+import { Toaster } from "@/components/ui/sonner";
+import { cn } from "@/lib/utils";
 
 const inter = Inter({ subsets: ["latin"] });
 const roboto_mono = Roboto_Mono({

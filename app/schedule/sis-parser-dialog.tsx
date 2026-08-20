@@ -1,3 +1,5 @@
+import { Import } from "lucide-react";
+import React, { type HTMLAttributes } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,10 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Course, CourseClass, findClass } from "@/data/cq";
+import { type Course, type CourseClass, findClass } from "@/data/cq";
 import { SisParser, SisUrl } from "@/data/cq/sis-parser";
-import { Import } from "lucide-react";
-import React, { type HTMLAttributes } from "react";
 
 type SisParserDialogProps = {
   term: string;
@@ -52,7 +52,11 @@ export function SisParserDialog({
           <DialogDescription>
             <ol className="mt-2 space-y-1">
               <li>
-                Go to <a onClick={openSis}>SIS</a>.
+                Go to{" "}
+                <button type="button" className="underline" onClick={openSis}>
+                  SIS
+                </button>
+                .
               </li>
               <li>
                 Press <kbd>Ctrl/⌘</kbd> + <kbd>A</kbd> to select all text on the

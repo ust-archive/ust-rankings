@@ -1,104 +1,109 @@
-import { mkdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
-import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
+import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 
-const root = resolve(import.meta.dir, '..')
-const outputDir = resolve(root, process.env.RANKINGS_OUTPUT_DIR ?? 'out')
-const localDataDir = process.env.RANKINGS_DATA_DIR
+const root = resolve(import.meta.dir, "..");
+const outputDir = resolve(root, process.env.RANKINGS_OUTPUT_DIR ?? "out");
+const localDataDir = process.env.RANKINGS_DATA_DIR;
 
 const revisions = {
-  schedule: process.env.SCHEDULE_REVISION ?? 'main',
-  reviews: process.env.REVIEWS_REVISION ?? 'main',
-  sfq: process.env.SFQ_REVISION ?? 'main',
-} satisfies Record<string, string>
+  schedule: process.env.SCHEDULE_REVISION ?? "main",
+  reviews: process.env.REVIEWS_REVISION ?? "main",
+  sfq: process.env.SFQ_REVISION ?? "main",
+} satisfies Record<string, string>;
 
 function sqlPath(path: string): string {
-  return path.replaceAll('\\', '/')
+  return path.replaceAll("\\", "/");
 }
 
 function source(localPath: string, remotePath: string): string {
-  return localDataDir
-    ? sqlPath(resolve(localDataDir, localPath))
-    : remotePath
+  return localDataDir ? sqlPath(resolve(localDataDir, localPath)) : remotePath;
 }
 
 const sources = {
   schedule_classes: source(
-    'schedule/classes.parquet',
+    "schedule/classes.parquet",
     `hf://datasets/ust-archive/schedule@${revisions.schedule}/classes.parquet`,
   ),
   schedule_courses: source(
-    'schedule/courses.parquet',
+    "schedule/courses.parquet",
     `hf://datasets/ust-archive/schedule@${revisions.schedule}/courses.parquet`,
   ),
   reviews: source(
-    'ust-space/reviews.parquet',
+    "ust-space/reviews.parquet",
     `hf://datasets/ust-archive/ust-space@${revisions.reviews}/reviews.parquet`,
   ),
   sfq_instructors: source(
-    'sfq/canonical/instructor_records.parquet',
+    "sfq/canonical/instructor_records.parquet",
     `hf://datasets/ust-archive/sfq@${revisions.sfq}/canonical/instructor_records.parquet`,
   ),
   sfq_sections: source(
-    'sfq/canonical/section_records.parquet',
+    "sfq/canonical/section_records.parquet",
     `hf://datasets/ust-archive/sfq@${revisions.sfq}/canonical/section_records.parquet`,
   ),
-}
+};
 
 const outputs = {
-  course_ratings_parquet: sqlPath(resolve(outputDir, 'course-ratings.parquet')),
-  instructor_ratings_parquet: sqlPath(resolve(outputDir, 'instructor-ratings.parquet')),
-  course_rankings_parquet: sqlPath(resolve(outputDir, 'course-rankings.parquet')),
-  instructor_rankings_parquet: sqlPath(resolve(outputDir, 'instructor-rankings.parquet')),
-  course_instructors_parquet: sqlPath(resolve(outputDir, 'course-instructors.parquet')),
-}
+  course_ratings_parquet: sqlPath(resolve(outputDir, "course-ratings.parquet")),
+  instructor_ratings_parquet: sqlPath(
+    resolve(outputDir, "instructor-ratings.parquet"),
+  ),
+  course_rankings_parquet: sqlPath(
+    resolve(outputDir, "course-rankings.parquet"),
+  ),
+  instructor_rankings_parquet: sqlPath(
+    resolve(outputDir, "instructor-rankings.parquet"),
+  ),
+  course_instructors_parquet: sqlPath(
+    resolve(outputDir, "course-instructors.parquet"),
+  ),
+};
 
 async function executeFile(
   connection: DuckDBConnection,
   file: string,
 ): Promise<void> {
-  const sql = await Bun.file(resolve(root, 'sql', file)).text()
-  await connection.run(sql)
+  const sql = await Bun.file(resolve(root, "sql", file)).text();
+  await connection.run(sql);
 }
 
-await mkdir(outputDir, { recursive: true })
+await mkdir(outputDir, { recursive: true });
 
-const instance = await DuckDBInstance.create()
-const connection = await instance.connect()
-const startedAt = performance.now()
+const instance = await DuckDBInstance.create();
+const connection = await instance.connect();
+const startedAt = performance.now();
 
 try {
   // Keep floating-point aggregates reproducible across repeated builds.
-  await connection.run('SET threads = 1')
+  await connection.run("SET threads = 1");
 
   if (!localDataDir) {
-    await connection.run('INSTALL httpfs; LOAD httpfs;')
+    await connection.run("INSTALL httpfs; LOAD httpfs;");
     if (process.env.HF_TOKEN) {
       await connection.run(
-        'CREATE SECRET hf_token (TYPE huggingface, TOKEN $token)',
+        "CREATE SECRET hf_token (TYPE huggingface, TOKEN $token)",
         { token: process.env.HF_TOKEN },
-      )
-    }
-    else {
+      );
+    } else {
       await connection.run(
-        'CREATE SECRET hf_token (TYPE huggingface, PROVIDER credential_chain)',
-      )
+        "CREATE SECRET hf_token (TYPE huggingface, PROVIDER credential_chain)",
+      );
     }
   }
 
   for (const [name, value] of Object.entries({ ...sources, ...outputs })) {
-    await connection.run(`SET VARIABLE ${name} = $value`, { value })
+    await connection.run(`SET VARIABLE ${name} = $value`, { value });
   }
 
   for (const file of [
-    '00_sources.sql',
-    '10_observations.sql',
-    '20_ratings.sql',
+    "00_sources.sql",
+    "10_observations.sql",
+    "20_ratings.sql",
   ]) {
-    await executeFile(connection, file)
+    await executeFile(connection, file);
   }
 
-  await executeFile(connection, '30_export.sql')
+  await executeFile(connection, "30_export.sql");
 
   const summary = await connection.runAndReadAll(`
     SELECT
@@ -107,11 +112,12 @@ try {
       (SELECT count(*) FROM instructor_entities) AS instructors,
       (SELECT count(*) FROM course_ratings) AS course_rating_terms,
       (SELECT count(*) FROM instructor_ratings) AS instructor_rating_terms
-  `)
-  console.table(summary.getRowObjectsJson())
-  console.log(`Built rating data in ${((performance.now() - startedAt) / 1000).toFixed(1)}s`)
-}
-finally {
-  connection.closeSync()
-  instance.closeSync()
+  `);
+  console.table(summary.getRowObjectsJson());
+  console.log(
+    `Built rating data in ${((performance.now() - startedAt) / 1000).toFixed(1)}s`,
+  );
+} finally {
+  connection.closeSync();
+  instance.closeSync();
 }

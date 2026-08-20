@@ -1,9 +1,19 @@
 article.faq {
-  @apply max-w-sm;
-  @apply lg:max-w-3xl;
-  @apply space-y-8 px-4 text-left;
+  max-width: 24rem;
+  padding-inline: 1rem;
+  text-align: left;
 }
 
-article.faq section {
-  @apply space-y-4;
+article.faq > :not(:last-child) {
+  margin-bottom: 2rem;
+}
+
+article.faq section > :not(:last-child) {
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 64rem) {
+  article.faq {
+    max-width: 48rem;
+  }
 }

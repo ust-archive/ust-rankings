@@ -1,3 +1,5 @@
+import { Check, ChevronsUpDown } from "lucide-react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -14,8 +16,6 @@ import {
 } from "@/components/ui/popover";
 import { cqTerms } from "@/data/cq";
 import { cn } from "@/lib/utils";
-import { Check, ChevronsUpDown } from "lucide-react";
-import React, { useState } from "react";
 
 export interface TermSelectProps {
   term: string;

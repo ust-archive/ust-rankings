@@ -1,7 +1,9 @@
 "use client";
 
+import React, { type ChangeEvent, useState } from "react";
+import { WindowVirtualizer } from "virtua";
 import { CourseCard } from "@/app/course/course-card";
-import { compileFilter, Filter } from "@/app/course/filter";
+import { compileFilter, type Filter } from "@/app/course/filter";
 import { SettingsCard } from "@/app/course/settings-card";
 import { NewReleaseBanner } from "@/components/component/new-release-banner";
 import { TermSelect } from "@/components/component/term-select";
@@ -9,8 +11,6 @@ import { Input } from "@/components/ui/input";
 import { search } from "@/data/course";
 import { currentTerm } from "@/data/cq";
 import { termCode2Num } from "@/data/ratings";
-import React, { type ChangeEvent, useState } from "react";
-import { WindowVirtualizer } from "virtua";
 
 export default function Course() {
   const [query, setQuery] = useState("");

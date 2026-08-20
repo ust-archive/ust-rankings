@@ -1,5 +1,5 @@
 import { course } from "@/data/course-catalog";
-import { CourseRatings } from "@/data/ratings";
+import type { CourseRatings } from "@/data/ratings";
 
 export type Filter = {
   // Utility Filters

@@ -1,6 +1,6 @@
-import cqTermsObj from "../data-cq-terms.json";
-import cqObj from "../data-cq.json";
 import Fuse from "fuse.js";
+import cqObj from "../data-cq.json";
+import cqTermsObj from "../data-cq-terms.json";
 
 export type Term = {
   term: string;

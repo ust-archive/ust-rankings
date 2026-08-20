@@ -1,4 +1,3 @@
-/* eslint-disable react/no-unescaped-entities */
 import styles from "./styles.module.css";
 
 const Email = "mailto:waver_velvet@hotmail.com";
@@ -126,7 +125,7 @@ export default function Faq() {
         <h2>Any Feedbacks? </h2>
         <p>
           Please send email to <a href={Email}>me</a>, or open an issue on{" "}
-          <a href={Issue} target="_blank">
+          <a href={Issue} target="_blank" rel="noopener">
             GitHub
           </a>
           .

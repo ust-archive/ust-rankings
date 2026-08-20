@@ -1,7 +1,7 @@
-import { Course, CourseClass, findClass } from "@/data/cq";
-import { generateEventAttributes } from "@/data/cq/calendar-event";
 import * as ics from "ics";
-import { type NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
+import { type Course, type CourseClass, findClass } from "@/data/cq";
+import { generateEventAttributes } from "@/data/cq/calendar-event";
 
 export const dynamic = "force-dynamic";
 
