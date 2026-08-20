@@ -1,10 +1,12 @@
 import { Search } from "lucide-react";
 import Link from "next/link";
+import { CalendarActions } from "@/app/schedule/calendar-actions";
 import { CanonicalScheduleUrl } from "@/app/schedule/canonical-schedule-url";
 import { SisParserDialog } from "@/app/schedule/sis-parser-dialog";
 import { NewReleaseBanner } from "@/components/component/new-release-banner";
 import { PathAdvisor } from "@/data/cq/path-advisor";
 import {
+  buildCalendarUrl,
   buildScheduleUrl,
   findPlannerConflicts,
   MAX_PLANNER_CLASSES,
@@ -328,6 +330,11 @@ export default async function SchedulePage({
               {state.classNumbers.length} selected Class
               {state.classNumbers.length === 1 ? "" : "es"}
             </p>
+            {state.classNumbers.length > 0 ? (
+              <CalendarActions
+                url={buildCalendarUrl(state.termCode, state.classNumbers)}
+              />
+            ) : null}
             <SisParserDialog state={state} />
           </div>
         </div>

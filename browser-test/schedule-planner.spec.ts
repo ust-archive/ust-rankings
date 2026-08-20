@@ -72,6 +72,29 @@ test("signed-out planner state is canonical, reloadable, shareable, and uses his
   await expect(page).toHaveURL(/q=ACCT.*view=cart$/);
 });
 
+test("selected Classes expose canonical subscription and download actions", async ({
+  page,
+}) => {
+  await page.goto("/schedule");
+  await page
+    .getByRole("link", { name: /Add Class \d+ to planner cart/ })
+    .first()
+    .click();
+
+  const subscription = page.getByRole("link", {
+    name: "Subscribe to selected Classes",
+  });
+  await expect(subscription).toHaveAttribute(
+    "href",
+    /^webcal:\/\/[^/]+\/schedule\/calendar\.ics\?term=\d{4}&class=\d+$/,
+  );
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download calendar" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("ust-schedule.ics");
+});
+
 test("invalid Term state cannot substitute a latest-Term Class", async ({
   page,
 }) => {

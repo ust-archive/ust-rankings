@@ -16,8 +16,9 @@ async function digest(path: string) {
 export async function makeScheduleGeneration(
   root: string,
   malformation?: ScheduleFixtureVariant,
+  sourceCommit = scheduleFixtureSha,
 ) {
-  const directory = join(root, scheduleFixtureSha);
+  const directory = join(root, sourceCommit);
   await mkdir(directory, { recursive: true });
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
@@ -104,7 +105,7 @@ export async function makeScheduleGeneration(
     `${JSON.stringify(
       {
         schemaMajor: 0,
-        sourceCommit: scheduleFixtureSha,
+        sourceCommit,
         artifacts,
         instructors: [
           {

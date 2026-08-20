@@ -83,6 +83,13 @@ test("shareable planner state renders selected Classes and safe inline validatio
   expect(selected).toContain(
     "/schedule?term=2510&amp;q=Room&amp;class=2001&amp;view=cart",
   );
+  expect(selected).toContain("Subscribe to selected Classes");
+  expect(selected).toContain(
+    "/schedule/calendar.ics?term=2510&amp;class=1001&amp;class=2001",
+  );
+  expect(selected).toContain(
+    "/schedule/calendar.ics?term=2510&amp;class=1001&amp;class=2001&amp;download=1",
+  );
 
   const invalid = renderToStaticMarkup(
     await SchedulePage({
