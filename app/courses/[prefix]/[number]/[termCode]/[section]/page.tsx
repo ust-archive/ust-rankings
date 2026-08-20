@@ -36,7 +36,7 @@ export default async function ClassPage({
         termCode,
         section,
       }),
-      loadCourseRankings(coursePrefix, courseNumber),
+      loadCourseRankings(coursePrefix, courseNumber, termCode),
     ]);
     if (scheduleClass.type !== "class") notFound();
     return <ClassDetails scheduleClass={scheduleClass} rankings={rankings} />;

@@ -84,7 +84,11 @@ type Malformation =
 export async function makeRankingGeneration(
   root: string,
   malformation?: Malformation,
-  options: { extraInstructors?: number; includeScheduleCourse?: boolean } = {},
+  options: {
+    extraCourses?: number;
+    extraInstructors?: number;
+    includeScheduleCourse?: boolean;
+  } = {},
 ) {
   const directory = join(root, fixtureSha);
   await mkdir(directory, { recursive: true });
@@ -117,16 +121,17 @@ export async function makeRankingGeneration(
 
   try {
     const courseRows: string[] = [];
-    const fixtureCourses = [
+    const fixtureCourses: Array<readonly [string, string, boolean, string]> = [
       ["COMP", "1000", true, ""],
       ["COMP", "1029C", true, ""],
       ["MATH", "2000", true, ""],
       ["HIST", "3000", false, ""],
       ["MISS", "4000", true, "instructor"],
-      ...(options.includeScheduleCourse
-        ? ([["COMP", "2000", true, ""]] as const)
-        : []),
-    ] as const;
+    ];
+    if (options.includeScheduleCourse)
+      fixtureCourses.push(["COMP", "2000", true, ""]);
+    for (let index = 0; index < (options.extraCourses ?? 0); index += 1)
+      fixtureCourses.push(["BULK", String(1000 + index), true, ""]);
     for (const [
       prefix,
       courseNumber,
@@ -147,16 +152,33 @@ export async function makeRankingGeneration(
             ? Number(criterion === "content")
             : prefix === "MATH"
               ? 0.5
-              : 0.25;
+              : prefix === "BULK"
+                ? 0.125
+                : 0.25;
         courseRows.push(
           `('${prefix}', '${courseNumber}', 100, '2510', ${isOffered}, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
         );
       }
     }
+    if (options.includeScheduleCourse)
+      for (const criterion of [
+        "content",
+        "teaching",
+        "grading",
+        "workload",
+        "course",
+        "instructor",
+      ])
+        courseRows.push(
+          `('COMP', '2000', 99, '2430', true, '${criterion}', 0.1, 0.1, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
+        );
     const courseValues = courseRows.join(",\n");
     const courses = `SELECT ${castMeasures} FROM (VALUES ${courseValues}) AS t(subject, code, ${ratingColumns.replace("is_active", "is_offered")})`;
     await copy("course-ratings.parquet", courses);
-    await copy("course-rankings.parquet", courses);
+    await copy(
+      "course-rankings.parquet",
+      `SELECT * FROM (${courses}) WHERE term_num = 100`,
+    );
 
     const rows: string[] = [];
     for (const identity of fixtureIdentities) {
@@ -214,7 +236,7 @@ export async function makeRankingGeneration(
         ('Delta Instructor', 100, '2510', 'HIST', '3000'),
         ('Gamma Instructor', 100, '2510', 'MISS', '4000'),
         ('Historical Instructor', 100, '2510', 'COMP', '1000')
-        ${options.includeScheduleCourse ? ", ('Alpha Instructor', 100, '2510', 'COMP', '2000')" : ""}
+        ${options.includeScheduleCourse ? ", ('Alpha Instructor', 100, '2510', 'COMP', '2000'), ('Alpha Instructor', 99, '2430', 'COMP', '2000')" : ""}
       ) AS t(name, term_num, term_code, subject, code)`,
     );
   } finally {
@@ -288,6 +310,13 @@ export async function makeRankingGeneration(
             },
           ]
         : []),
+      ...Array.from({ length: options.extraCourses ?? 0 }, (_, index) => ({
+        coursePrefix: "BULK",
+        courseNumber: String(1000 + index),
+        courseCode: `BULK${1000 + index}`,
+        courseName: `Bulk Course ${1000 + index}`,
+        courseAttributes: [],
+      })),
       {
         coursePrefix: "HIST",
         courseNumber: "3000",

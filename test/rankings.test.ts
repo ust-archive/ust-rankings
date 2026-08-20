@@ -152,11 +152,20 @@ test("getRankings exposes Course evidence and associated Instructors", async () 
     entity: "course",
     courseCode: "COMP 2000",
   });
-  expect(details.terms[0]?.criteria.content).toEqual({
+  expect(
+    details.terms.find((term) => term.termCode === "2510")?.criteria.content,
+  ).toEqual({
     bayesian: 0.25,
     samples: 1,
   });
   expect(details.instructors).toEqual([
+    {
+      termCode: "2430",
+      instructor: expect.objectContaining({
+        uuid: "00000000-0000-4000-8000-000000000001",
+        canonicalName: "Alpha Instructor",
+      }),
+    },
     {
       termCode: "2510",
       instructor: expect.objectContaining({
@@ -165,6 +174,38 @@ test("getRankings exposes Course evidence and associated Instructors", async () 
       }),
     },
   ]);
+});
+
+test("Course details retain exact Global Rank beyond the first 100 results", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "course-detail-rank-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
+    temporaryDirectory,
+    undefined,
+    { extraCourses: 110 },
+  );
+
+  const { getRankings, queryRankings } = await import("@/lib/rankings/server");
+  const firstPage = await queryRankings({
+    entity: "course",
+    termCode: "2510",
+  });
+  expect(firstPage.results).toHaveLength(100);
+  expect(firstPage.results.some((row) => row.courseCode === "BULK 1109")).toBe(
+    false,
+  );
+
+  const details = await getRankings(
+    { type: "course", coursePrefix: "BULK", courseNumber: "1109" },
+    { termCode: "2510" },
+  );
+  expect(details.ranking).toMatchObject({
+    courseCode: "BULK 1109",
+    globalRank: 4,
+    globalPopulation: 113,
+  });
 });
 
 test("queryRankings serves Course presets and normalized custom weights", async () => {

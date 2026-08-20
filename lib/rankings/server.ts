@@ -399,6 +399,13 @@ export class InvalidRankingsQueryError extends TypeError {
   }
 }
 
+export class UnknownRankingsEntityError extends TypeError {
+  constructor(entity: "Course" | "Instructor") {
+    super(`Unknown ${entity}`);
+    this.name = "UnknownRankingsEntityError";
+  }
+}
+
 export class StaleRankingsCursorError extends InvalidRankingsQueryError {
   constructor() {
     super("The ranking snapshot changed; restart pagination.");
@@ -1788,7 +1795,7 @@ export async function getRankings(
         !/^[A-Z]{2,8}$/.test(coursePrefix) ||
         !/^[0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?$/.test(courseNumber)
       )
-        throw new TypeError("Unknown Course");
+        throw new UnknownRankingsEntityError("Course");
       const catalog = await courseCatalog(accepted.directory);
       const metadata = catalog.courses.get(`${coursePrefix}${courseNumber}`);
       const ratings = await queryRows(
@@ -1797,16 +1804,17 @@ export async function getRankings(
         { coursePrefix, courseNumber },
       );
       if (!metadata && ratings.length === 0)
-        throw new TypeError("Unknown Course");
+        throw new UnknownRankingsEntityError("Course");
+      const courseCode = `${coursePrefix} ${courseNumber}`;
       const page = (await queryRankingsWithGeneration(
         {
           entity: "course",
           activity: options.activity,
           termCode: options.termCode,
+          search: courseCode,
         },
         accepted,
       )) as RankingsPage<"course">;
-      const courseCode = `${coursePrefix} ${courseNumber}`;
       const ranking = page.results.find(
         (candidate) => candidate.courseCode === courseCode,
       );
@@ -1858,7 +1866,7 @@ export async function getRankings(
     }
 
     const instructor = accepted.identitiesByUuid.get(entity.uuid.toLowerCase());
-    if (!instructor) throw new TypeError("Unknown Instructor");
+    if (!instructor) throw new UnknownRankingsEntityError("Instructor");
     const page = await queryRankingsWithGeneration(
       {
         entity: "instructor",

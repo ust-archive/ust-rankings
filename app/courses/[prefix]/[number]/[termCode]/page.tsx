@@ -35,7 +35,7 @@ export default async function CourseOfferingPage({
         courseNumber,
         termCode,
       }),
-      loadCourseRankings(coursePrefix, courseNumber),
+      loadCourseRankings(coursePrefix, courseNumber, termCode),
     ]);
     if (offering.type !== "course-offering") notFound();
     return <CourseOfferingDetails offering={offering} rankings={rankings} />;

@@ -132,7 +132,7 @@ function RankingEvidence({
       ? rankings.ranking
       : undefined;
   return (
-    <section className="order-2 space-y-4 lg:col-start-1 lg:row-start-1">
+    <section className="order-2 min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
       <div>
         <h2 className="text-2xl font-bold">Ranking evidence and trends</h2>
         <p className="mt-1 text-sm text-slate-600">
@@ -189,10 +189,47 @@ function RankingEvidence({
             ))}
           </dl>
           {rankings.terms.length > 1 ? (
-            <p className="text-sm text-slate-600">
-              Evidence trend spans {rankings.terms.length} Terms:{" "}
-              {rankings.terms.map((term) => term.termCode).join(" · ")}.
-            </p>
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <table className="w-full min-w-[44rem] border-collapse text-sm">
+                <caption className="p-4 text-left font-bold">
+                  Historical criterion evidence by Term
+                </caption>
+                <thead>
+                  <tr className="border-t border-slate-200 bg-slate-50 text-left">
+                    <th className="px-3 py-2" scope="col">
+                      Term
+                    </th>
+                    {Object.entries(criterionLabels).map(
+                      ([criterion, label]) => (
+                        <th className="px-3 py-2" key={criterion} scope="col">
+                          {label}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rankings.terms.map((term) => (
+                    <tr
+                      className="border-t border-slate-200"
+                      key={term.termCode}
+                    >
+                      <th className="px-3 py-2" scope="row">
+                        {term.termCode}
+                        {term.termCode === termCode ? " (selected)" : ""}
+                      </th>
+                      {Object.keys(criterionLabels).map((criterion) => (
+                        <td className="px-3 py-2 tabular-nums" key={criterion}>
+                          {term.criteria[
+                            criterion as keyof typeof criterionLabels
+                          ]?.bayesian.toFixed(2) ?? "—"}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : null}
         </>
       )}
@@ -343,11 +380,18 @@ export function CourseDetails({
   selectedTermCode?: string;
 }) {
   const offerings = schedule?.offerings ?? [];
-  const selected =
-    offerings.find((offering) => offering.termCode === selectedTermCode) ??
-    offerings.at(-1);
+  const selected = selectedTermCode
+    ? offerings.find((offering) => offering.termCode === selectedTermCode)
+    : offerings.at(-1);
+  const scheduleSelection = selected ?? offerings.at(-1);
+  const evidenceTermCode =
+    selectedTermCode ??
+    scheduleSelection?.termCode ??
+    rankings?.population.termCode;
   const title =
-    selected?.title ?? rankings?.course.title ?? "Catalog details unavailable";
+    scheduleSelection?.title ??
+    rankings?.course.title ??
+    "Catalog details unavailable";
   const instructors = uniqueInstructors(offerings, rankings);
   return (
     <DetailShell
@@ -358,8 +402,11 @@ export function CourseDetails({
         <ActionArea
           type="Course"
           scheduleHref={
-            selected
-              ? scheduleUrl(selected.termCode, selected.classes)
+            scheduleSelection
+              ? scheduleUrl(
+                  scheduleSelection.termCode,
+                  scheduleSelection.classes,
+                )
               : undefined
           }
           instructorNames={instructors
@@ -368,7 +415,7 @@ export function CourseDetails({
         />
       }
       evidence={
-        <RankingEvidence rankings={rankings} termCode={selected?.termCode} />
+        <RankingEvidence rankings={rankings} termCode={evidenceTermCode} />
       }
       associations={
         <div className="space-y-6 rounded-2xl border bg-white p-5 shadow-sm">
@@ -525,7 +572,7 @@ export function ClassDetails({
         />
       }
       evidence={
-        <section className="order-2 space-y-6 lg:col-start-1 lg:row-start-1">
+        <section className="order-2 min-w-0 space-y-6 lg:col-start-1 lg:row-start-1">
           <div>
             <h2 className="text-2xl font-bold">Class schedule and quota</h2>
             <p className="mt-2 font-semibold">

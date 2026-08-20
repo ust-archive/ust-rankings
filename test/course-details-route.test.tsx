@@ -94,6 +94,10 @@ test("Course Offering and Class routes validate nested relationships and preserv
   expect(offering).toContain("2024-25 Spring");
   expect(offering).toContain("Earlier Offering");
   expect(offering).toContain("Class 3001");
+  expect(offering).toContain("Selected-Term evidence for 2430");
+  expect(offering).toContain("Global Rank");
+  expect(offering).toContain("Historical criterion evidence by Term");
+  expect(offering).toMatch(/2430[\s\S]*0\.10/);
 
   const classDetails = renderToStaticMarkup(
     await ClassPage({
@@ -115,6 +119,50 @@ test("Course Offering and Class routes validate nested relationships and preserv
   expect(classDetails).toContain(
     "This Class is Review Context, not a signal target",
   );
+});
+
+test("Course evidence remains visible when the independent Schedule provider is unavailable", async () => {
+  const rankingRoot = await mkdtemp(
+    join(tmpdir(), "course-details-ranking-only-"),
+  );
+  temporaryDirectories.push(rankingRoot);
+  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
+    rankingRoot,
+    undefined,
+    { includeScheduleCourse: true },
+  );
+  process.env.SCHEDULE_SEED_DIR = join(rankingRoot, "missing-schedule");
+  const { default: CoursePage } = await import(
+    "@/app/courses/[prefix]/[number]/page"
+  );
+
+  const markup = renderToStaticMarkup(
+    await CoursePage({
+      params: Promise.resolve({ prefix: "COMP", number: "2000" }),
+      searchParams: Promise.resolve({}),
+    }),
+  );
+
+  expect(markup).toContain("Selected-Term evidence for 2510");
+  expect(markup).toContain("Global Rank");
+  expect(markup).toContain("Course Offerings are unavailable");
+  expect(markup).not.toContain(
+    "Select a Course Offering to inspect Term evidence",
+  );
+});
+
+test("ranking detail loading propagates unexpected programming errors", async () => {
+  await configureDetails();
+  const { loadCourseRankings } = await import("@/app/courses/data");
+  const unexpected = new TypeError("unexpected implementation defect");
+  const readRankings = async () => {
+    throw unexpected;
+  };
+
+  await expect(
+    loadCourseRankings("COMP", "2000", "2510", readRankings),
+  ).rejects.toBe(unexpected);
+  expect(await loadCourseRankings("ZZZZ", "9999")).toBeUndefined();
 });
 
 test("detail routes permanently normalize Course Prefix and Section while retaining query state", async () => {

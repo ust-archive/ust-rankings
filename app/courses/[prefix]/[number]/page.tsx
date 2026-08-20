@@ -23,26 +23,32 @@ export default async function CoursePage({
     await params,
     query,
   );
+  const scheduleResult = await getSchedule({
+    type: "course",
+    coursePrefix,
+    courseNumber,
+  }).then(
+    (schedule) => ({
+      schedule: schedule.type === "course" ? schedule : undefined,
+      unavailable: false as const,
+    }),
+    (error) => {
+      if (error instanceof ScheduleUnavailableError)
+        return { schedule: undefined, unavailable: true as const };
+      if (error instanceof InvalidScheduleQueryError)
+        return { schedule: undefined, unavailable: false as const };
+      throw error;
+    },
+  );
   const selectedTerm =
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
-      : undefined;
-  const [rankings, scheduleResult] = await Promise.all([
-    loadCourseRankings(coursePrefix, courseNumber),
-    getSchedule({ type: "course", coursePrefix, courseNumber }).then(
-      (schedule) => ({
-        schedule: schedule.type === "course" ? schedule : undefined,
-        unavailable: false as const,
-      }),
-      (error) => {
-        if (error instanceof ScheduleUnavailableError)
-          return { schedule: undefined, unavailable: true as const };
-        if (error instanceof InvalidScheduleQueryError)
-          return { schedule: undefined, unavailable: false as const };
-        throw error;
-      },
-    ),
-  ]);
+      : scheduleResult.schedule?.offerings.at(-1)?.termCode;
+  const rankings = await loadCourseRankings(
+    coursePrefix,
+    courseNumber,
+    selectedTerm,
+  );
   if (!rankings && !scheduleResult.schedule && !scheduleResult.unavailable)
     notFound();
 
