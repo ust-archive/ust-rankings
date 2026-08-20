@@ -14,6 +14,7 @@ type SearchParams = Record<string, string | string[] | undefined>;
 
 type ParsedPlannerQuery = Omit<PlannerState, "termCode"> & {
   termCode?: string;
+  termInvalid: boolean;
   messages: string[];
 };
 
@@ -26,10 +27,13 @@ export function parsePlannerQuery(
 ): ParsedPlannerQuery {
   const messages: string[] = [];
   const rawTerm = one(parameters.term);
+  const termInvalid =
+    Array.isArray(parameters.term) ||
+    Boolean(rawTerm && !/^[0-9]{4}$/.test(rawTerm));
   let termCode: string | undefined;
   if (Array.isArray(parameters.term))
     messages.push("Use exactly one Term Code.");
-  else if (rawTerm && !/^[0-9]{4}$/.test(rawTerm))
+  else if (termInvalid)
     messages.push("Invalid Term Code; showing the latest Term.");
   else termCode = rawTerm;
 
@@ -73,7 +77,22 @@ export function parsePlannerQuery(
     messages.push("Unknown Schedule view; showing Browse.");
   else if (rawView === "cart") view = "cart";
 
-  return { termCode, search, classNumbers, view, messages };
+  return { termCode, search, classNumbers, view, termInvalid, messages };
+}
+
+export function mergePlannerClassNumbers(
+  current: ReadonlyArray<number>,
+  additions: ReadonlyArray<number>,
+): { classNumbers: number[]; error?: string } {
+  const classNumbers = [...new Set([...current, ...additions])].sort(
+    (left, right) => left - right,
+  );
+  if (classNumbers.length > MAX_PLANNER_CLASSES)
+    return {
+      classNumbers: [...current],
+      error: `The planner cart is limited to ${MAX_PLANNER_CLASSES} Classes.`,
+    };
+  return { classNumbers };
 }
 
 export function buildScheduleUrl(state: PlannerState) {

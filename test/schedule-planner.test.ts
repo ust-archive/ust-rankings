@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   buildScheduleUrl,
   findPlannerConflicts,
+  mergePlannerClassNumbers,
   parsePlannerQuery,
   parseSisImport,
 } from "@/lib/schedule/planner";
@@ -19,6 +20,7 @@ test("planner query state is bounded, deduplicated, sorted, and canonical", () =
     search: "COMP",
     classNumbers: [1001, 2001],
     view: "cart",
+    termInvalid: false,
     messages: [],
   });
 
@@ -48,6 +50,7 @@ test("unsupported planner values use safe defaults with validation messages", ()
     search: undefined,
     classNumbers: [],
     view: "browse",
+    termInvalid: true,
     messages: [
       "Use exactly one Term Code.",
       "Search is limited to 100 characters.",
@@ -59,10 +62,22 @@ test("unsupported planner values use safe defaults with validation messages", ()
   const mixed = parsePlannerQuery({
     class: ["1001", "not-a-number", "2001"],
   });
+  expect(mixed.termInvalid).toBeFalse();
   expect(mixed.classNumbers).toEqual([1001, 2001]);
   expect(mixed.messages).toEqual([
     'Ignored invalid Class Number "not-a-number".',
   ]);
+});
+
+test("adding or importing at the planner limit preserves the existing cart", () => {
+  const fullCart = Array.from({ length: 50 }, (_, index) => index + 1001);
+  expect(mergePlannerClassNumbers(fullCart, [1001])).toEqual({
+    classNumbers: fullCart,
+  });
+  expect(mergePlannerClassNumbers(fullCart, [1051])).toEqual({
+    classNumbers: fullCart,
+    error: "The planner cart is limited to 50 Classes.",
+  });
 });
 
 test("planner conflicts require overlapping dates, weekday, and times", () => {

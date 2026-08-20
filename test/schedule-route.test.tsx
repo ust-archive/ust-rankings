@@ -41,7 +41,8 @@ test("the public Schedule route renders Term selection and dense searchable Clas
   expect(markup).toContain("Browse Classes");
   expect(markup).toContain("Planner cart");
   expect(markup).toContain("Add Class 1001");
-  expect(markup).toContain('href="/courses/COMP/2000/2510/L1">L1 · 1001</a>');
+  expect(markup).toContain("Class details:");
+  expect(markup).not.toContain('href="/courses/');
   expect(markup).toContain("Import from SIS");
   expect(markup).toContain("2025-26 Fall");
   expect(markup).toContain("COMP 2000");
@@ -99,6 +100,23 @@ test("shareable planner state renders selected Classes and safe inline validatio
   );
   expect(invalid).toContain("Unknown Schedule view; showing Browse.");
   expect(invalid).toContain("0 selected Classes");
+
+  for (const term of ["bad", ["2510", "2520"]]) {
+    const malformedTerm = renderToStaticMarkup(
+      await SchedulePage({
+        searchParams: Promise.resolve({
+          term,
+          class: "1001",
+          view: "cart",
+        }),
+      }),
+    );
+    expect(malformedTerm).toContain("0 selected Classes");
+    expect(malformedTerm).toContain(
+      "Selected Class Numbers are not available in this Term; the planner cart was reset.",
+    );
+    expect(malformedTerm).not.toContain("Remove Class 1001");
+  }
 
   const conflictRoot = await mkdtemp(
     join(tmpdir(), "schedule-conflict-route-"),

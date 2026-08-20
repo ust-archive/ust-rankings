@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  agentRules: false,
   serverExternalPackages: ["@duckdb/node-api"],
   outputFileTracingIncludes: {
     "/rankings/instructors": [

@@ -1,11 +1,13 @@
 import { Search } from "lucide-react";
 import Link from "next/link";
+import { CanonicalScheduleUrl } from "@/app/schedule/canonical-schedule-url";
 import { SisParserDialog } from "@/app/schedule/sis-parser-dialog";
 import { NewReleaseBanner } from "@/components/component/new-release-banner";
 import { PathAdvisor } from "@/data/cq/path-advisor";
 import {
   buildScheduleUrl,
   findPlannerConflicts,
+  MAX_PLANNER_CLASSES,
   type PlannerState,
   parsePlannerQuery,
 } from "@/lib/schedule/planner";
@@ -44,10 +46,6 @@ function ErrorState({ title, message }: { title: string; message: string }) {
   );
 }
 
-function classUrl(scheduleClass: ScheduleClass) {
-  return `/courses/${scheduleClass.coursePrefix}/${scheduleClass.courseNumber}/${scheduleClass.termCode}/${scheduleClass.section}`;
-}
-
 function selectedUrl(
   state: PlannerState,
   classNumber: number,
@@ -69,6 +67,17 @@ function PlannerAction({
   state: PlannerState;
 }) {
   const selected = state.classNumbers.includes(scheduleClass.classNumber);
+  if (!selected && state.classNumbers.length >= MAX_PLANNER_CLASSES)
+    return (
+      <button
+        aria-label={`Cannot add Class ${scheduleClass.classNumber}; planner cart is full`}
+        className="inline-flex min-h-10 items-center rounded-lg border border-slate-300 px-3 py-2 font-semibold text-slate-500"
+        disabled
+        type="button"
+      >
+        Limit reached
+      </button>
+    );
   return (
     <Link
       aria-label={`${selected ? "Remove" : "Add"} Class ${scheduleClass.classNumber}${selected ? " from" : " to"} planner cart`}
@@ -94,12 +103,10 @@ function ClassSummary({
           <p className="font-bold">
             {scheduleClass.courseCode} · {scheduleClass.courseTitle}
           </p>
-          <Link
-            className="mt-1 inline-block font-semibold underline underline-offset-2"
-            href={classUrl(scheduleClass)}
-          >
+          <p className="mt-1 font-semibold">
+            <span className="sr-only">Class details: </span>
             {scheduleClass.section} · {scheduleClass.classNumber}
-          </Link>
+          </p>
         </div>
         <PlannerAction scheduleClass={scheduleClass} state={state} />
       </div>
@@ -127,7 +134,7 @@ export default async function SchedulePage({
   const plannerQuery = parsePlannerQuery(await searchParams);
   const messages = [...plannerQuery.messages];
   let page: Awaited<ReturnType<typeof querySchedule>>;
-  let unknownTerm = false;
+  let unknownTerm = plannerQuery.termInvalid;
 
   try {
     page = await querySchedule({
@@ -202,6 +209,7 @@ export default async function SchedulePage({
 
   return (
     <>
+      <CanonicalScheduleUrl url={buildScheduleUrl(state)} />
       <NewReleaseBanner className="-mt-12" />
       <header className="w-[calc(100vw-2rem)] max-w-5xl text-left">
         <h1 className="text-logo-gradient text-6xl font-bold tracking-tighter sm:text-7xl">
@@ -324,6 +332,16 @@ export default async function SchedulePage({
           </div>
         </div>
 
+        {state.classNumbers.length >= MAX_PLANNER_CLASSES ? (
+          <p
+            className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950"
+            role="status"
+          >
+            The planner cart is limited to {MAX_PLANNER_CLASSES} Classes. Remove
+            a Class before adding or importing another.
+          </p>
+        ) : null}
+
         {conflicts.length > 0 ? (
           <section
             className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-950"
@@ -397,12 +415,7 @@ export default async function SchedulePage({
                 >
                   <header className="border-b bg-slate-50 px-5 py-4">
                     <h3 className="text-lg font-bold">
-                      <Link
-                        className="underline-offset-2 hover:underline"
-                        href={`/courses/${offering.coursePrefix}/${offering.courseNumber}/${offering.termCode}`}
-                      >
-                        {offering.courseCode} · {offering.title}
-                      </Link>
+                      {offering.courseCode} · {offering.title}
                     </h3>
                     <p className="mt-1 text-sm text-slate-600">
                       {offering.credits} credits · {offering.career} ·{" "}
@@ -455,13 +468,13 @@ export default async function SchedulePage({
                                     rowSpan={meetings.length}
                                     scope="row"
                                   >
-                                    <Link
-                                      className="underline underline-offset-2"
-                                      href={classUrl(scheduleClass)}
-                                    >
+                                    <span>
+                                      <span className="sr-only">
+                                        Class details:{" "}
+                                      </span>
                                       {scheduleClass.section} ·{" "}
                                       {scheduleClass.classNumber}
-                                    </Link>
+                                    </span>
                                   </th>
                                 ) : null}
                                 <td className="px-4 py-3 align-top">

@@ -20,5 +20,7 @@ health automation are tracked separately by issue #40.
 `/schedule` keeps public planner state in `term`, bounded `q`, repeated
 sorted/deduplicated `class`, and `view` query values. Add, remove, search, view,
 and SIS-import actions produce the same shareable URL without authentication or
-server-side User state. Changing Term intentionally clears selected Classes so
-a Class Number reused in another Term cannot select a different Class.
+server-side User state. Incoming state is replaced with its canonical URL after
+validation, and the cart is capped at 50 Classes without discarding an existing
+valid selection. Changing or supplying an invalid Term clears selected Classes
+so a Class Number reused in another Term cannot select a different Class.

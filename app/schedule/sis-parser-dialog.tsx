@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   buildScheduleUrl,
   MAX_SIS_TEXT_LENGTH,
+  mergePlannerClassNumbers,
   type PlannerState,
   parseSisImport,
 } from "@/lib/schedule/planner";
@@ -25,13 +26,17 @@ export function SisParserDialog({ state }: { state: PlannerState }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const parsed = parseSisImport(text);
+  const merged = mergePlannerClassNumbers(
+    state.classNumbers,
+    parsed.classNumbers,
+  );
 
   function handleSubmit() {
-    if (parsed.classNumbers.length === 0) return;
+    if (parsed.classNumbers.length === 0 || merged.error) return;
     window.location.assign(
       buildScheduleUrl({
         ...state,
-        classNumbers: [...state.classNumbers, ...parsed.classNumbers],
+        classNumbers: merged.classNumbers,
         view: "cart",
       }),
     );
@@ -65,7 +70,9 @@ export function SisParserDialog({ state }: { state: PlannerState }) {
           value={text}
         />
         <div aria-live="polite" id="sis-import-status">
-          {parsed.classNumbers.length > 0 ? (
+          {merged.error ? (
+            <p className="text-sm text-amber-800">{merged.error}</p>
+          ) : parsed.classNumbers.length > 0 ? (
             <p className="text-sm text-slate-600">
               Found Class Numbers: {parsed.classNumbers.join(", ")}. They will
               be validated against {state.termCode} after import.
@@ -76,7 +83,7 @@ export function SisParserDialog({ state }: { state: PlannerState }) {
         </div>
         <DialogFooter>
           <Button
-            disabled={parsed.classNumbers.length === 0}
+            disabled={parsed.classNumbers.length === 0 || Boolean(merged.error)}
             onClick={handleSubmit}
             type="button"
           >
