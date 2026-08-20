@@ -1,7 +1,11 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-### Data
-data/**/*.json
+### Generated web data
+data/data-course-catalog.json
+data/data-cq-terms.json
+data/data-cq.json
+data/ratings-course.json
+data/ratings-instructor.json
 
 # dependencies
 /node_modules
