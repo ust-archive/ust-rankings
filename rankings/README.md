@@ -37,3 +37,41 @@ course catalog refreshed by `bun run update-data` (and by `prebuild`). The
 ranking module validates required catalog fields before serving dependent
 queries. Ranking scores and Course–Instructor associations continue to come
 only from the validated immutable ranking generation.
+
+## Runtime refresh and retention
+
+`GET` and `POST /api/rankings/refresh` are the same idempotent refresh
+operation. Both require a Bearer token matching `CRON_SECRET` (or the local
+`RANKINGS_REFRESH_SECRET` alias). `POST` accepts `{ "sha": "<40 hex>" }` from
+the upstream publication workflow; `GET` resolves the current full SHA for the
+daily Vercel fallback. Configure the GitHub `RANKINGS_REFRESH_URL` secret and
+set its `RANKINGS_REFRESH_SECRET` secret to the same high-entropy value as the
+deployment's `CRON_SECRET`.
+
+The operation verifies the immutable Hugging Face revision and expanded tree,
+streams exactly the five LFS objects within configured resource bounds, checks
+each declared SHA-256 and size, builds the provenance-bearing Instructor
+registry, and runs the same schema, grain, finite-value, latest-Term, and smoke
+validation used for the seed. It retries three times with bounded backoff.
+
+Complete generations are written under immutable private Space keys before a
+single active pointer is replaced. A PostgreSQL advisory lock excludes jobs
+across instances, and the source publication time prevents an older immutable
+commit from regressing that pointer. The pointer retains the previous accepted
+SHA. Readers bind one generation for an entire query; a failed refresh leaves
+the pointer untouched and serves the in-memory generation, active/previous
+Space generation, or validated seed in that order. `/tmp` and process memory
+are caches only.
+
+Required deployment variables are listed in `.env.example`. The Space must be
+private and use restricted credentials; do not reuse attachment-publication
+credentials. `GET /api/health/rankings` reports only status, active SHA,
+freshness timestamps, and the bounded failure class. It never returns Space
+keys, endpoints, database details, or credentials.
+
+The owner must create the private SGP1 Space, restricted key, PostgreSQL URL,
+and deployment/GitHub secrets before production activation. Release readiness
+must still verify Vercel Bun native DuckDB loading, memory high-water, query and
+refresh duration, cold/warm Space downloads, daily cron authentication, and
+concurrent refresh behavior in a preview deployment; no local test invents
+those credentials or deployment results.

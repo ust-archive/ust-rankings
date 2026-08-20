@@ -51,3 +51,23 @@ jobs:
             --type dataset \
             --delete "*.parquet" \
             --commit-message "update(v0): $(TZ='Asia/Hong_Kong' date --iso-8601=seconds)"
+
+      - name: Trigger commit-pinned runtime refresh
+        env:
+          RANKINGS_REFRESH_URL: ${{ secrets.RANKINGS_REFRESH_URL }}
+          RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
+        run: |
+          if [[ -z "$RANKINGS_REFRESH_URL" || -z "$RANKINGS_REFRESH_SECRET" ]]; then
+            echo "Runtime refresh secrets are not configured; the daily fallback remains active."
+            exit 0
+          fi
+          sha="$(curl --fail --silent --show-error \
+            https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main \
+            | jq -r .sha)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $RANKINGS_REFRESH_SECRET" \
+            --header "Content-Type: application/json" \
+            --data "{\"sha\":\"$sha\"}" \
+            "${RANKINGS_REFRESH_URL%/}/api/rankings/refresh"

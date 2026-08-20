@@ -75,7 +75,10 @@ async function hash(path: string) {
 type Malformation =
   | "invalid-schema"
   | "duplicate-grain"
+  | "non-finite"
   | "null-samples"
+  | "wrong-latest-term"
+  | "failed-smoke-query"
   | "tba-alias";
 
 export async function makeRankingGeneration(
@@ -187,11 +190,15 @@ export async function makeRankingGeneration(
           ? `WITH rankings AS (${instructorRankings}) SELECT * FROM rankings UNION ALL SELECT * FROM rankings`
           : malformation === "null-samples"
             ? `SELECT * REPLACE (NULL::BIGINT AS samples, NULL::BIGINT AS cumulative_samples) FROM (${instructorRankings})`
-            : instructorRankings;
+            : malformation === "non-finite"
+              ? `SELECT * REPLACE ('NaN'::DOUBLE AS bayesian) FROM (${instructorRankings})`
+              : malformation === "wrong-latest-term"
+                ? `SELECT * REPLACE (99::INTEGER AS term_num) FROM (${instructorRankings})`
+                : instructorRankings;
     await copy("instructor-rankings.parquet", malformedInstructorRankings);
     await copy(
       "course-instructors.parquet",
-      `SELECT * FROM (VALUES
+      `SELECT ${malformation === "failed-smoke-query" ? "* REPLACE ('No ' || name AS name)" : "*"} FROM (VALUES
         ('Alpha Instructor', 100, '2510', 'COMP', '1000'),
         ('Beta Instructor', 100, '2510', 'MATH', '2000'),
         ('Beta Instructor', 100, '2510', 'COMP', '1029C'),

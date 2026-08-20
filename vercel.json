@@ -3,7 +3,7 @@
   "bunVersion": "1.x",
   "crons": [
     {
-      "path": "/api/cron/deploy",
+      "path": "/api/rankings/refresh",
       "schedule": "0 20 * * *"
     }
   ]

@@ -1,7 +1,7 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import {
   type DuckDBConnection,
@@ -227,6 +227,64 @@ type Generation = {
   identitiesByUuid: Map<string, InstructorIdentity>;
 };
 
+export type GenerationPointer = {
+  activeSha: string;
+  previousSha?: string;
+  acceptedAt: string;
+  sourceUpdatedAt: string;
+};
+
+export type RankingFailure = {
+  class:
+    | "configuration"
+    | "upstream"
+    | "integrity"
+    | "storage"
+    | "lock"
+    | "internal";
+  at: string;
+};
+
+export type RankingRefreshDependencies = {
+  upstream: {
+    download(sha?: string): Promise<{
+      sha: string;
+      sourceUpdatedAt: string;
+      directory: string;
+      artifacts?: Record<string, { sha256: string; size: number }>;
+      temporary?: boolean;
+    }>;
+  };
+  store: {
+    readPointer(): Promise<GenerationPointer | undefined>;
+    downloadGeneration(sha: string): Promise<string | undefined>;
+    putGeneration(sha: string, directory: string): Promise<void>;
+    writePointer(pointer: GenerationPointer): Promise<void>;
+    readFailure(): Promise<RankingFailure | undefined>;
+    writeFailure(failure: RankingFailure | undefined): Promise<void>;
+  };
+  withLock<T>(operation: () => Promise<T>): Promise<T | undefined>;
+  sleep(milliseconds: number): Promise<void>;
+};
+
+export type RankingRefreshResult = {
+  status: "activated" | "current" | "superseded" | "busy";
+  generation?: string;
+};
+
+export class RankingsRefreshError extends Error {
+  readonly failureClass: RankingFailure["class"];
+
+  constructor(
+    failureClass: RankingFailure["class"],
+    options?: { cause?: unknown },
+  ) {
+    super("Rankings refresh failed; last-known-good remains active.", options);
+    this.name = "RankingsRefreshError";
+    this.failureClass = failureClass;
+  }
+}
+
 export type RankingsQuery = {
   entity: "course" | "instructor";
   termCode?: string;
@@ -325,6 +383,15 @@ export class StaleRankingsCursorError extends InvalidRankingsQueryError {
 
 const generations = new Map<string, Promise<Generation>>();
 const catalogs = new Map<string, Promise<CourseCatalog>>();
+const queryQueues = new WeakMap<DuckDBConnection, Promise<void>>();
+const queuedQueryCounts = new WeakMap<DuckDBConnection, number>();
+const serializedQueries = new Map<string, string>();
+let runtimeActive: Promise<Generation> | undefined;
+let runtimeActiveSha: string | undefined;
+let runtimeCheckedAt = 0;
+let runtimeDependencies: RankingRefreshDependencies | undefined;
+let runtimeDiscovery: Promise<Generation> | undefined;
+let explicitSeedDirectory: string | undefined;
 
 function seedDirectory() {
   return (
@@ -344,8 +411,41 @@ async function queryRows(
   sql: string,
   parameters?: Record<string, DuckDBValue>,
 ) {
-  const reader = await connection.runAndReadAll(sql, parameters);
-  return reader.getRowObjectsJS() as Array<Record<string, unknown>>;
+  const queuedCount = queuedQueryCounts.get(connection) ?? 0;
+  if (queuedCount >= 8) throw new RankingsUnavailableError();
+  queuedQueryCounts.set(connection, queuedCount + 1);
+  const previous = queryQueues.get(connection) ?? Promise.resolve();
+  let release = () => {};
+  const queued = new Promise<void>((resolveQueue) => {
+    release = resolveQueue;
+  });
+  queryQueues.set(
+    connection,
+    previous.then(() => queued),
+  );
+  await previous;
+  const query = connection.runAndReadAll(sql, parameters);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const reader = await Promise.race([
+      query,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          connection.interrupt();
+          reject(new RankingsUnavailableError());
+        }, 5_000);
+      }),
+    ]);
+    return reader.getRowObjectsJS() as Array<Record<string, unknown>>;
+  } finally {
+    if (timer) clearTimeout(timer);
+    await query.catch(() => undefined);
+    queuedQueryCounts.set(
+      connection,
+      Math.max((queuedQueryCounts.get(connection) ?? 1) - 1, 0),
+    );
+    release();
+  }
 }
 
 async function validateFiles(directory: string, manifest: Manifest) {
@@ -429,6 +529,10 @@ async function validateRelations(
     `SELECT name, term_num, criterion FROM read_parquet('${instructors}') GROUP BY ALL HAVING count(*) > 1`,
     `SELECT name, term_num, criterion FROM read_parquet('${instructorRanks}') GROUP BY ALL HAVING count(*) > 1`,
     `SELECT name, term_num, subject, code FROM read_parquet('${links}') GROUP BY ALL HAVING count(*) > 1`,
+    `SELECT term_num FROM read_parquet(['${courses}', '${courseRanks}', '${instructors}', '${instructorRanks}', '${links}'], union_by_name=true) GROUP BY term_num HAVING count(DISTINCT term_code) <> 1`,
+    `SELECT term_code FROM read_parquet(['${courses}', '${courseRanks}', '${instructors}', '${instructorRanks}', '${links}'], union_by_name=true) GROUP BY term_code HAVING count(DISTINCT term_num) <> 1`,
+    `SELECT 1 FROM read_parquet('${courseRanks}') rankings LEFT JOIN read_parquet('${courses}') ratings USING (subject, code, term_num, term_code, criterion) WHERE ratings.subject IS NULL`,
+    `SELECT 1 FROM read_parquet('${instructorRanks}') rankings LEFT JOIN read_parquet('${instructors}') ratings USING (name, term_num, term_code, criterion) WHERE ratings.name IS NULL`,
     `SELECT 1 FROM read_parquet(['${courses}', '${courseRanks}'], union_by_name=true) WHERE subject IS NULL OR code IS NULL OR term_num IS NULL OR term_code IS NULL OR is_offered IS NULL`,
     `SELECT 1 FROM read_parquet(['${instructors}', '${instructorRanks}'], union_by_name=true) WHERE name IS NULL OR term_num IS NULL OR term_code IS NULL OR is_teaching IS NULL`,
     `SELECT 1 FROM read_parquet('${links}') WHERE name IS NULL OR term_num IS NULL OR term_code IS NULL OR subject IS NULL OR code IS NULL`,
@@ -458,16 +562,10 @@ async function validateRelations(
 function validateIdentities(manifest: Manifest, names: string[]) {
   const uuidPattern =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-  const sortedNames = [...names].sort();
-  if (
-    JSON.stringify(
-      manifest.identities.map((identity) => identity.canonicalName).sort(),
-    ) !== JSON.stringify(sortedNames)
-  ) {
-    throw new Error("Instructor registry does not match the generation");
-  }
+  const identityNames = new Map<string, string>();
   const uuids = new Set<string>();
   const itscs = new Set<string>();
+  const canonicalNames = new Set<string>();
   for (const identity of manifest.identities) {
     const canonicalName = identity.canonicalName?.trim().toLocaleLowerCase();
     const itsc = identity.itsc?.trim().toLocaleLowerCase();
@@ -476,12 +574,14 @@ function validateIdentities(manifest: Manifest, names: string[]) {
       uuids.has(identity.uuid) ||
       !canonicalName ||
       canonicalName === "tba" ||
+      canonicalNames.has(canonicalName) ||
       (identity.itsc !== undefined &&
         (!itsc || !/^[a-z][a-z0-9._-]{1,31}$/.test(itsc) || itscs.has(itsc)))
     ) {
       throw new Error("Invalid Instructor identity");
     }
     uuids.add(identity.uuid);
+    canonicalNames.add(canonicalName);
     if (itsc) {
       identity.itsc = itsc;
       itscs.add(itsc);
@@ -497,7 +597,7 @@ function validateIdentities(manifest: Manifest, names: string[]) {
           !["schedule", "review", "sfq", "ranking-generation"].includes(
             alias.source,
           ) ||
-          alias.sourceCommit !== manifest.sourceCommit ||
+          !/^[0-9a-f]{40}$/.test(alias.sourceCommit) ||
           (alias.source === "ranking-generation" &&
             alias.sourceFile !== "instructor-ratings.parquet")
         );
@@ -505,7 +605,19 @@ function validateIdentities(manifest: Manifest, names: string[]) {
     ) {
       throw new Error("Instructor aliases require source provenance");
     }
+    for (const observedName of [
+      identity.canonicalName,
+      ...identity.aliases.map((alias) => alias.name),
+    ]) {
+      const normalized = observedName.trim().toLocaleLowerCase();
+      const owner = identityNames.get(normalized);
+      if (owner && owner !== identity.uuid)
+        throw new Error("Instructor Alias resolves to several identities");
+      identityNames.set(normalized, identity.uuid);
+    }
   }
+  if (names.some((name) => !identityNames.has(name.trim().toLocaleLowerCase())))
+    throw new Error("Instructor registry does not match the generation");
 }
 
 async function loadGeneration(directory: string): Promise<Generation> {
@@ -533,9 +645,9 @@ async function loadGeneration(directory: string): Promise<Generation> {
         directory,
         connection,
         identitiesByName: new Map(
-          manifest.identities.map((identity) => [
-            identity.canonicalName,
-            identity,
+          manifest.identities.flatMap((identity) => [
+            [identity.canonicalName, identity] as const,
+            ...identity.aliases.map((alias) => [alias.name, identity] as const),
           ]),
         ),
         identitiesByUuid: new Map(
@@ -552,14 +664,345 @@ async function loadGeneration(directory: string): Promise<Generation> {
   }
 }
 
-function generation() {
-  const directory = seedDirectory();
+function localGeneration(directory: string) {
   let loading = generations.get(directory);
   if (!loading) {
     loading = loadGeneration(directory);
     generations.set(directory, loading);
   }
   return loading;
+}
+
+async function discoverGeneration() {
+  const existing = runtimeActive;
+  try {
+    runtimeDependencies ??= (
+      await import("./runtime")
+    ).productionRankingRefreshDependencies();
+    const pointer = await runtimeDependencies.store.readPointer();
+    if (pointer) {
+      for (const sha of [pointer.activeSha, pointer.previousSha]) {
+        if (!sha) continue;
+        if (sha === runtimeActiveSha && runtimeActive) return runtimeActive;
+        try {
+          const directory =
+            await runtimeDependencies.store.downloadGeneration(sha);
+          if (!directory) continue;
+          const loading = localGeneration(directory);
+          await loading;
+          runtimeActive = loading;
+          runtimeActiveSha = sha;
+          return loading;
+        } catch {
+          // Try the retained previous generation before the validated seed.
+        }
+      }
+    }
+  } catch {
+    if (existing) return existing;
+  }
+  if (existing) return existing;
+  const seed = localGeneration(seedDirectory());
+  await seed;
+  runtimeActive = seed;
+  runtimeActiveSha = (await seed).sha;
+  return seed;
+}
+
+function generation() {
+  if (process.env.RANKINGS_SEED_DIR) {
+    const directory = seedDirectory();
+    if (explicitSeedDirectory !== directory) {
+      explicitSeedDirectory = directory;
+      serializedQueries.clear();
+    }
+    return localGeneration(directory);
+  }
+  if (
+    runtimeActive &&
+    runtimeDependencies &&
+    Date.now() - runtimeCheckedAt < 60_000
+  )
+    return runtimeActive;
+  const storageConfigured =
+    Boolean(runtimeDependencies) ||
+    [
+      "RANKINGS_SPACE_ENDPOINT",
+      "RANKINGS_SPACE_BUCKET",
+      "RANKINGS_SPACE_ACCESS_KEY_ID",
+      "RANKINGS_SPACE_SECRET_ACCESS_KEY",
+    ].every((name) => process.env[name]?.trim());
+  if (!storageConfigured) return localGeneration(seedDirectory());
+  if (runtimeActive && Date.now() - runtimeCheckedAt < 60_000)
+    return runtimeActive;
+  if (!runtimeDiscovery) {
+    runtimeCheckedAt = Date.now();
+    runtimeDiscovery = discoverGeneration().finally(() => {
+      runtimeDiscovery = undefined;
+    });
+  }
+  return runtimeDiscovery;
+}
+
+async function prepareCandidateManifest(candidate: {
+  sha: string;
+  directory: string;
+  artifacts?: Record<string, { sha256: string; size: number }>;
+}) {
+  try {
+    await stat(resolve(candidate.directory, "manifest.json"));
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (
+    !candidate.artifacts ||
+    JSON.stringify(Object.keys(candidate.artifacts).sort()) !==
+      JSON.stringify(ARTIFACTS)
+  )
+    throw new Error("Upstream tree declarations are incomplete");
+  let previous: Generation | undefined;
+  try {
+    previous = await (runtimeActive ?? generation());
+  } catch {}
+  const retained = previous
+    ? structuredClone([...previous.identitiesByUuid.values()])
+    : [];
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  let names: string[];
+  try {
+    const rows = await queryRows(
+      connection,
+      `SELECT DISTINCT name FROM read_parquet('${sqlPath(candidate.directory, "instructor-ratings.parquet")}') ORDER BY name`,
+    );
+    names = rows.map((row) => String(row.name));
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
+  }
+  for (const name of names) {
+    const normalized = name.trim().toLocaleLowerCase();
+    const matches = retained.filter(
+      (identity) =>
+        identity.canonicalName.trim().toLocaleLowerCase() === normalized ||
+        identity.aliases.some(
+          (alias) => alias.name.trim().toLocaleLowerCase() === normalized,
+        ),
+    );
+    if (matches.length > 1)
+      throw new Error("Instructor Alias resolves to several identities");
+    const identity = matches[0];
+    if (identity) {
+      if (
+        identity.canonicalName !== name &&
+        !identity.aliases.some((alias) => alias.name === name)
+      )
+        identity.aliases.push({
+          name,
+          source: "ranking-generation",
+          sourceCommit: candidate.sha,
+          sourceFile: "instructor-ratings.parquet",
+        });
+    } else {
+      retained.push({
+        uuid: randomUUID(),
+        canonicalName: name,
+        aliases: [
+          {
+            name,
+            source: "ranking-generation",
+            sourceCommit: candidate.sha,
+            sourceFile: "instructor-ratings.parquet",
+          },
+        ],
+      });
+    }
+  }
+  await writeFile(
+    resolve(candidate.directory, "manifest.json"),
+    `${JSON.stringify(
+      {
+        schemaMajor: 0,
+        sourceCommit: candidate.sha,
+        artifacts: candidate.artifacts,
+        identities: retained,
+      },
+      null,
+      2,
+    )}\n`,
+    { flag: "wx" },
+  );
+}
+
+export async function refreshRankings(
+  options: { sha?: string },
+  dependencies: RankingRefreshDependencies,
+): Promise<RankingRefreshResult> {
+  if (options.sha !== undefined && !/^[0-9a-f]{40}$/.test(options.sha))
+    throw new InvalidRankingsQueryError(
+      "A full immutable commit SHA is required.",
+    );
+  let result: RankingRefreshResult | undefined;
+  try {
+    result = await dependencies.withLock(async () => {
+      const current = await dependencies.store.readPointer();
+      if (options.sha && current?.activeSha === options.sha)
+        return { status: "current", generation: options.sha } as const;
+      let lastError: unknown;
+      let failureClass: RankingFailure["class"] = "upstream";
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (attempt > 0) await dependencies.sleep(250 * 4 ** (attempt - 1));
+        let candidate:
+          | Awaited<ReturnType<typeof dependencies.upstream.download>>
+          | undefined;
+        try {
+          candidate = await dependencies.upstream.download(options.sha);
+          failureClass = "integrity";
+          if (!/^[0-9a-f]{40}$/.test(candidate.sha))
+            throw new Error(
+              "Upstream did not resolve to a full immutable commit SHA",
+            );
+          if (options.sha && candidate.sha !== options.sha)
+            throw new Error(
+              "Upstream generation does not match the requested commit",
+            );
+          if (!Number.isFinite(Date.parse(candidate.sourceUpdatedAt)))
+            throw new Error("Upstream publication time is invalid");
+          await prepareCandidateManifest(candidate);
+          const loading = loadGeneration(candidate.directory);
+          const accepted = await loading;
+          if (accepted.sha !== candidate.sha)
+            throw new Error("Candidate files are from a mixed commit");
+          if (
+            current &&
+            Date.parse(candidate.sourceUpdatedAt) <=
+              Date.parse(current.sourceUpdatedAt)
+          ) {
+            if (candidate.temporary)
+              await rm(resolve(candidate.directory, ".."), {
+                recursive: true,
+                force: true,
+              }).catch(() => undefined);
+            return {
+              status:
+                candidate.sha === current.activeSha ? "current" : "superseded",
+              generation: current.activeSha,
+            } as const;
+          }
+          failureClass = "storage";
+          await dependencies.store.putGeneration(
+            candidate.sha,
+            candidate.directory,
+          );
+          const pointer = {
+            activeSha: candidate.sha,
+            previousSha: current?.activeSha,
+            acceptedAt: new Date().toISOString(),
+            sourceUpdatedAt: candidate.sourceUpdatedAt,
+          };
+          await dependencies.store.writePointer(pointer);
+          generations.set(candidate.directory, loading);
+          runtimeActive = loading;
+          runtimeActiveSha = candidate.sha;
+          runtimeCheckedAt = Date.now();
+          runtimeDependencies = dependencies;
+          await dependencies.store
+            .writeFailure(undefined)
+            .catch(() => undefined);
+          return { status: "activated", generation: candidate.sha } as const;
+        } catch (error) {
+          lastError = error;
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            "failureClass" in error &&
+            ["upstream", "integrity", "storage", "internal"].includes(
+              String(error.failureClass),
+            )
+          )
+            failureClass = error.failureClass as RankingFailure["class"];
+          if (candidate?.temporary)
+            await rm(resolve(candidate.directory, ".."), {
+              recursive: true,
+              force: true,
+            }).catch(() => undefined);
+        }
+      }
+      const failure = {
+        class: failureClass,
+        at: new Date().toISOString(),
+      } as const;
+      try {
+        await dependencies.store.writeFailure(failure);
+      } catch {
+        // The active pointer is deliberately untouched even when health storage fails.
+      }
+      throw new RankingsRefreshError(failureClass, { cause: lastError });
+    });
+  } catch (error) {
+    if (error instanceof RankingsRefreshError) throw error;
+    const failure = { class: "lock", at: new Date().toISOString() } as const;
+    await dependencies.store.writeFailure(failure).catch(() => undefined);
+    throw new RankingsRefreshError("lock", { cause: error });
+  }
+  return result ?? { status: "busy" };
+}
+
+export async function getRankingsHealth(
+  dependencies?: RankingRefreshDependencies,
+) {
+  try {
+    const selected =
+      dependencies ??
+      runtimeDependencies ??
+      (await import("./runtime")).productionRankingRefreshDependencies();
+    const [pointer, failure] = await Promise.all([
+      selected.store.readPointer(),
+      selected.store.readFailure(),
+    ]);
+    if (!pointer)
+      return {
+        status: "unavailable" as const,
+        activeGeneration: undefined,
+        acceptedAt: undefined,
+        sourceUpdatedAt: undefined,
+        failureClass: failure?.class ?? "configuration",
+        failureAt: failure?.at,
+      };
+    const stale =
+      Boolean(failure) ||
+      Date.now() - Date.parse(pointer.sourceUpdatedAt) > 36 * 60 * 60 * 1000;
+    return {
+      status: stale ? ("stale" as const) : ("healthy" as const),
+      activeGeneration: pointer.activeSha,
+      acceptedAt: pointer.acceptedAt,
+      sourceUpdatedAt: pointer.sourceUpdatedAt,
+      failureClass: failure?.class,
+      failureAt: failure?.at,
+    };
+  } catch {
+    return {
+      status: "unavailable" as const,
+      activeGeneration: runtimeActiveSha,
+      acceptedAt: undefined,
+      sourceUpdatedAt: undefined,
+      failureClass: "configuration" as const,
+      failureAt: undefined,
+    };
+  }
+}
+
+export async function resetRankingsRuntimeForTests(
+  dependencies?: RankingRefreshDependencies,
+) {
+  runtimeActive = undefined;
+  runtimeActiveSha = undefined;
+  runtimeCheckedAt = 0;
+  runtimeDependencies = dependencies;
+  runtimeDiscovery = undefined;
+  explicitSeedDirectory = undefined;
+  serializedQueries.clear();
 }
 
 function number(value: unknown) {
@@ -681,9 +1124,13 @@ function normalizedWeights(query: RankingsQuery) {
         "Custom ranking weights must be finite and non-negative.",
       );
     }
-    const positive = entries.filter((entry) => entry[1] > 0) as Array<
-      [Criterion, number]
-    >;
+    const positive = entries
+      .filter((entry) => entry[1] > 0)
+      .sort(
+        ([left], [right]) =>
+          CRITERIA.indexOf(left as Criterion) -
+          CRITERIA.indexOf(right as Criterion),
+      ) as Array<[Criterion, number]>;
     const maximum = Math.max(...positive.map((entry) => entry[1]));
     if (positive.length === 0)
       throw new InvalidRankingsQueryError(
@@ -999,6 +1446,9 @@ export async function queryRankings(
   const fingerprint = createHash("sha256")
     .update(normalizedQuery)
     .digest("base64url");
+  const cacheKey = `${accepted.sha}:${catalogDigest}:${fingerprint}:${query.cursor ?? ""}`;
+  const cached = serializedQueries.get(cacheKey);
+  if (cached) return JSON.parse(cached) as RankingsPage;
   let start = 0;
   if (query.cursor) {
     const cursor = decodeCursor(query.cursor);
@@ -1044,7 +1494,7 @@ export async function queryRankings(
         }),
       ).toString("base64url")
     : undefined;
-  return {
+  const response: RankingsPage = {
     generation: accepted.sha,
     population: {
       entity: query.entity,
@@ -1058,6 +1508,10 @@ export async function queryRankings(
     nextCursor,
     unrankedMatchCount,
   };
+  serializedQueries.set(cacheKey, JSON.stringify(response));
+  if (serializedQueries.size > 256)
+    serializedQueries.delete(serializedQueries.keys().next().value as string);
+  return response;
 }
 
 export async function getRankings(

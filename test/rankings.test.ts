@@ -18,6 +18,19 @@ afterEach(async () => {
   );
 });
 
+test("no valid generation fails only the ranking module", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "no-rankings-"));
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR = join(temporaryDirectory, "missing");
+  const { queryRankings, RankingsUnavailableError } = await import(
+    "@/lib/rankings/server"
+  );
+
+  await expect(queryRankings({ entity: "instructor" })).rejects.toBeInstanceOf(
+    RankingsUnavailableError,
+  );
+});
+
 test("the shipped runtime seed is accepted before it is served", async () => {
   const { queryRankings } = await import("@/lib/rankings/server");
   const page = await queryRankings({
@@ -446,7 +459,10 @@ test("ranking pages stop at 100 rows and continue after the last position", asyn
 for (const [malformation, label] of [
   ["invalid-schema", "an incompatible schema"],
   ["duplicate-grain", "a duplicate documented grain"],
+  ["non-finite", "a non-finite measure"],
   ["null-samples", "missing sample evidence"],
+  ["wrong-latest-term", "an invalid latest-Term relation"],
+  ["failed-smoke-query", "a failed representative smoke query"],
   ["tba-alias", "a TBA Instructor Alias"],
 ] as const) {
   test(`queryRankings rejects ${label}`, async () => {
