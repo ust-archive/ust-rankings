@@ -467,3 +467,24 @@ test("Review edits validate identifiers, attribution, Markdown, and reassociatio
   expect(validations).toBe(1);
   expect(edits).toBe(0);
 });
+
+test("Review text can publish without Attachments and rejects a fifth Attachment", async () => {
+  const { reviews, published } = service();
+  await reviews.publishReview(USER_ID, {
+    associations: { course: { coursePrefix: "COMP", courseNumber: "2000" } },
+    markdown: "Text while an upload is pending.",
+  });
+  expect(published[0]?.markdown).toBe("Text while an upload is pending.");
+  expect(published[0]?.attachments).toBeUndefined();
+  await expect(
+    reviews.publishReview(USER_ID, {
+      associations: { course: { coursePrefix: "COMP", courseNumber: "2000" } },
+      markdown: "Too many files.",
+      attachments: Array.from({ length: 5 }, () => ({
+        storedFileId: "00000000-0000-4000-8000-000000000248",
+        filename: "photo.jpg",
+        description: "Lab",
+      })),
+    }),
+  ).rejects.toMatchObject({ code: "invalid-review" });
+});

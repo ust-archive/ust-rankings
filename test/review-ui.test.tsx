@@ -193,6 +193,55 @@ test("a Review author receives optimistic edit and withdrawal controls at the pu
   );
 });
 
+test("Review composer warns that metadata is preserved and files are not scanned", async () => {
+  const { ReviewComposer } = await import("@/app/courses/course-reviews");
+  const markup = renderToStaticMarkup(
+    <ReviewComposer
+      courses={[{ coursePrefix: "COMP", courseNumber: "2000" }]}
+      initialCourse={{ coursePrefix: "COMP", courseNumber: "2000" }}
+      instructors={[
+        { instructorUuid: review.instructorUuid, name: "Ada Instructor" },
+      ]}
+    />,
+  );
+  expect(markup).toContain("Embedded metadata is preserved");
+  expect(markup).toContain(
+    "does not resize, strip, transcode, or malware-scan",
+  );
+  expect(markup).toContain("32 MiB");
+  expect(markup).toContain("at most four Attachments");
+  expect(markup).toContain("publish while an upload is pending");
+  expect(markup).not.toMatch(/malware-scanned files are safe/i);
+});
+
+test("public Reviews render authorized Image Attachments inline and in the file list", async () => {
+  const { Reviews } = await import("@/app/courses/course-reviews");
+  const attachment = {
+    id: "00000000-0000-4000-8000-000000000348",
+    storedFileId: "00000000-0000-4000-8000-000000000248",
+    filename: "lab.jpg",
+    description: "Lab bench",
+    mime: "image/jpeg",
+  };
+  const markup = renderToStaticMarkup(
+    <Reviews
+      reviews={[
+        {
+          ...review,
+          markdown: `See ![ignored](/attachments/${attachment.id}) and ![nope](https://evil.example/x.png)`,
+          attachments: [attachment],
+        },
+      ]}
+    />,
+  );
+  expect(markup).toContain(`src="/attachments/${attachment.id}"`);
+  expect(markup).toContain('alt="Lab bench"');
+  expect(markup).toContain(">lab.jpg</a>");
+  expect(markup).toContain("Lab bench");
+  expect(markup).not.toContain("evil.example");
+  expect(markup).not.toContain("ignored");
+});
+
 test("historical Review editing preserves unsupported Context and blocks implicit publication", async () => {
   const { Reviews } = await import("@/app/courses/course-reviews");
   const retiredInstructorUuid = "00000000-0000-4000-8000-000000000099";

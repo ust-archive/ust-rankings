@@ -1,6 +1,9 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import type { ImageAttachment } from "@/lib/attachments/attachments";
+import { AttachmentWriteError } from "@/lib/attachments/attachments";
+import { PostgresAttachmentRepository } from "@/lib/attachments/postgres";
 import {
   type AccountRepository,
   type AccountRow,
@@ -163,6 +166,7 @@ type ReviewDatabaseRow = {
   instructorAssociationStatus:
     | PublicReview["instructorAssociationStatus"]
     | null;
+  attachments?: ImageAttachment[] | null;
 };
 
 function publicReview(row: ReviewDatabaseRow): PublicReview {
@@ -195,6 +199,7 @@ function publicReview(row: ReviewDatabaseRow): PublicReview {
     ...(row.instructorAssociationStatus
       ? { instructorAssociationStatus: row.instructorAssociationStatus }
       : {}),
+    ...(row.attachments?.length ? { attachments: row.attachments } : {}),
   };
 }
 
@@ -210,6 +215,8 @@ function mapReviewWriteError(error: unknown): never {
         "duplicate-review",
         "This User already has an active Review for this exact Review Basis and Review Context tuple",
       );
+    if (error instanceof AttachmentWriteError)
+      throw new ReviewWriteError("invalid-review", error.message);
     if ("message" in error && typeof error.message === "string") {
       const code = [
         "account-not-found",
@@ -231,6 +238,25 @@ function mapReviewWriteError(error: unknown): never {
   throw error;
 }
 
+async function attachDrafts(
+  sql: ReturnType<typeof postgres>,
+  userId: string,
+  revisionId: string,
+  drafts: PublishReviewRecord["attachments"],
+) {
+  if (!drafts?.length) return [];
+  return new PostgresAttachmentRepository(sql).attachToRevision({
+    userId,
+    revisionId,
+    attachments: drafts.map((draft) => ({
+      id: draft.id ?? randomUUID(),
+      storedFileId: draft.storedFileId,
+      filename: draft.filename,
+      description: draft.description,
+    })),
+  });
+}
+
 export class PostgresReviewRepository implements ReviewRepository {
   constructor(private readonly sql: ReturnType<typeof postgres>) {}
 
@@ -239,27 +265,37 @@ export class PostgresReviewRepository implements ReviewRepository {
     const revisionId = randomUUID();
     const { course, instructorUuid, termCode, section } = input.associations;
     try {
-      const [published] = await this.sql<ReviewDatabaseRow[]>`
-        SELECT review_id AS id,
-               revision_id AS "revisionId",
-               ${course?.coursePrefix ?? null}::text AS "coursePrefix",
-               ${course?.courseNumber ?? null}::text AS "courseNumber",
-               ${instructorUuid ?? null}::uuid AS "instructorUuid",
-               ${termCode ?? null}::text AS "termCode",
-               ${section ?? null}::text AS section,
-               ${input.markdown}::text AS markdown,
-               attribution,
-               captured_display_name AS "capturedDisplayName",
-               published_at AS "publishedAt",
-               ${instructorUuid ? "resolved" : null}::text AS "instructorAssociationStatus"
-        FROM publish_review(
-          ${reviewId}, ${revisionId}, ${input.userId},
-          ${course?.coursePrefix ?? null}, ${course?.courseNumber ?? null},
-          ${instructorUuid ?? null}, ${termCode ?? null}, ${section ?? null},
-          ${input.markdown}, ${input.attribution}, ${input.policyVersion}
-        )
-      `;
-      return publicReview(published);
+      return await this.sql.begin(async (sql) => {
+        const [published] = await sql<ReviewDatabaseRow[]>`
+          SELECT review_id AS id,
+                 revision_id AS "revisionId",
+                 ${course?.coursePrefix ?? null}::text AS "coursePrefix",
+                 ${course?.courseNumber ?? null}::text AS "courseNumber",
+                 ${instructorUuid ?? null}::uuid AS "instructorUuid",
+                 ${termCode ?? null}::text AS "termCode",
+                 ${section ?? null}::text AS section,
+                 ${input.markdown}::text AS markdown,
+                 attribution,
+                 captured_display_name AS "capturedDisplayName",
+                 published_at AS "publishedAt",
+                 ${instructorUuid ? "resolved" : null}::text AS "instructorAssociationStatus"
+          FROM publish_review(
+            ${reviewId}, ${revisionId}, ${input.userId},
+            ${course?.coursePrefix ?? null}, ${course?.courseNumber ?? null},
+            ${instructorUuid ?? null}, ${termCode ?? null}, ${section ?? null},
+            ${input.markdown}, ${input.attribution}, ${input.policyVersion}
+          )
+        `;
+        return publicReview({
+          ...published,
+          attachments: await attachDrafts(
+            sql as unknown as ReturnType<typeof postgres>,
+            input.userId,
+            published.revisionId,
+            input.attachments,
+          ),
+        });
+      });
     } catch (error) {
       mapReviewWriteError(error);
     }
@@ -269,29 +305,39 @@ export class PostgresReviewRepository implements ReviewRepository {
     const revisionId = randomUUID();
     const { course, instructorUuid, termCode, section } = input.associations;
     try {
-      const [edited] = await this.sql<ReviewDatabaseRow[]>`
-        SELECT review_id AS id,
-               revision_id AS "revisionId",
-               ${course?.coursePrefix ?? null}::text AS "coursePrefix",
-               ${course?.courseNumber ?? null}::text AS "courseNumber",
-               ${instructorUuid ?? null}::uuid AS "instructorUuid",
-               ${termCode ?? null}::text AS "termCode",
-               ${section ?? null}::text AS section,
-               ${input.markdown}::text AS markdown,
-               attribution,
-               captured_display_name AS "capturedDisplayName",
-               published_at AS "publishedAt",
-               ${instructorUuid ? "resolved" : null}::text AS "instructorAssociationStatus",
-               true AS "viewerCanEdit"
-        FROM edit_review(
-          ${input.reviewId}, ${revisionId}, ${input.expectedRevisionId},
-          ${input.userId}, ${course?.coursePrefix ?? null},
-          ${course?.courseNumber ?? null}, ${instructorUuid ?? null},
-          ${termCode ?? null}, ${section ?? null}, ${input.markdown},
-          ${input.attribution}, ${input.policyVersion}
-        )
-      `;
-      return publicReview(edited);
+      return await this.sql.begin(async (sql) => {
+        const [edited] = await sql<ReviewDatabaseRow[]>`
+          SELECT review_id AS id,
+                 revision_id AS "revisionId",
+                 ${course?.coursePrefix ?? null}::text AS "coursePrefix",
+                 ${course?.courseNumber ?? null}::text AS "courseNumber",
+                 ${instructorUuid ?? null}::uuid AS "instructorUuid",
+                 ${termCode ?? null}::text AS "termCode",
+                 ${section ?? null}::text AS section,
+                 ${input.markdown}::text AS markdown,
+                 attribution,
+                 captured_display_name AS "capturedDisplayName",
+                 published_at AS "publishedAt",
+                 ${instructorUuid ? "resolved" : null}::text AS "instructorAssociationStatus",
+                 true AS "viewerCanEdit"
+          FROM edit_review(
+            ${input.reviewId}, ${revisionId}, ${input.expectedRevisionId},
+            ${input.userId}, ${course?.coursePrefix ?? null},
+            ${course?.courseNumber ?? null}, ${instructorUuid ?? null},
+            ${termCode ?? null}, ${section ?? null}, ${input.markdown},
+            ${input.attribution}, ${input.policyVersion}
+          )
+        `;
+        return publicReview({
+          ...edited,
+          attachments: await attachDrafts(
+            sql as unknown as ReturnType<typeof postgres>,
+            input.userId,
+            edited.revisionId,
+            input.attachments,
+          ),
+        });
+      });
     } catch (error) {
       mapReviewWriteError(error);
     }
@@ -325,7 +371,17 @@ export class PostgresReviewRepository implements ReviewRepository {
                rr.published_at AS "publishedAt",
                r.instructor_association_status AS "instructorAssociationStatus",
                (${viewerUserId ?? null}::uuid IS NOT NULL
-                 AND r.author_user_id = ${viewerUserId ?? null}::uuid) AS "viewerCanEdit"
+                 AND r.author_user_id = ${viewerUserId ?? null}::uuid) AS "viewerCanEdit",
+               COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                 'id', a.id,
+                 'storedFileId', a.stored_file_id,
+                 'filename', a.public_filename,
+                 'description', a.description,
+                 'mime', sf.detected_mime
+               ) ORDER BY a.created_at, a.id)
+               FROM attachments a
+               JOIN stored_files sf ON sf.id = a.stored_file_id
+               WHERE a.revision_id = rr.id), '[]'::jsonb) AS attachments
         FROM reviews r
         JOIN review_revisions rr ON rr.id = r.current_revision_id
         LEFT JOIN review_course_bases rcb ON rcb.revision_id = rr.id
@@ -355,7 +411,17 @@ export class PostgresReviewRepository implements ReviewRepository {
                rr.published_at AS "publishedAt",
                r.instructor_association_status AS "instructorAssociationStatus",
                (${viewerUserId ?? null}::uuid IS NOT NULL
-                 AND r.author_user_id = ${viewerUserId ?? null}::uuid) AS "viewerCanEdit"
+                 AND r.author_user_id = ${viewerUserId ?? null}::uuid) AS "viewerCanEdit",
+               COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                 'id', a.id,
+                 'storedFileId', a.stored_file_id,
+                 'filename', a.public_filename,
+                 'description', a.description,
+                 'mime', sf.detected_mime
+               ) ORDER BY a.created_at, a.id)
+               FROM attachments a
+               JOIN stored_files sf ON sf.id = a.stored_file_id
+               WHERE a.revision_id = rr.id), '[]'::jsonb) AS attachments
         FROM reviews r
         JOIN review_revisions rr ON rr.id = r.current_revision_id
         LEFT JOIN review_course_bases rcb ON rcb.revision_id = rr.id

@@ -7,6 +7,7 @@ import { courseReviewPath, isSameOriginWrite } from "@/lib/contributions/http";
 import { getReviewService } from "@/lib/contributions/postgres";
 import type {
   ReviewAssociations,
+  ReviewAttachmentDraft,
   ReviewAttribution,
 } from "@/lib/contributions/reviews";
 import { ReviewWriteError } from "@/lib/contributions/reviews";
@@ -17,6 +18,18 @@ const UUID =
 function stringEntry(formData: FormData, name: string) {
   const value = formData.get(name);
   return typeof value === "string" ? value : undefined;
+}
+
+function parseAttachments(formData: FormData) {
+  const raw = stringEntry(formData, "attachments");
+  if (raw === undefined || raw === "") return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return "invalid" as const;
+    return parsed as ReviewAttachmentDraft[];
+  } catch {
+    return "invalid" as const;
+  }
 }
 
 function parseReviewForm(formData: FormData) {
@@ -85,11 +98,15 @@ export async function publishReview(formData: FormData) {
     redirect(`${parsed.path}?reviewError=invalid-context#reviews`);
   if (attribution !== "attributed" && attribution !== "identity-hidden")
     redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
+  const attachments = parseAttachments(formData);
+  if (attachments === "invalid")
+    redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
   try {
     await getReviewService().publishReview(userId, {
       associations: parsed.associations,
       markdown,
       attribution,
+      attachments,
     });
   } catch (error) {
     redirectReviewError(error, parsed.path);
@@ -117,12 +134,16 @@ export async function editReview(formData: FormData) {
     redirect(`${parsed.path}?reviewError=invalid-basis#reviews`);
   if (parsed.invalidContext)
     redirect(`${parsed.path}?reviewError=invalid-context#reviews`);
+  const attachments = parseAttachments(formData);
+  if (attachments === "invalid")
+    redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
   try {
     await getReviewService().editReview(userId, reviewId, {
       expectedRevisionId,
       associations: parsed.associations,
       markdown,
       attribution: attribution as ReviewAttribution,
+      attachments,
     });
   } catch (error) {
     redirectReviewError(error, parsed.path);

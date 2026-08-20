@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { authorizedInlineImage } from "@/lib/attachments/attachments";
 import type {
   PublicReview,
   ReviewAssociations,
@@ -26,9 +27,42 @@ function courseValue(course: ReviewCourseOption) {
   return `${course.coursePrefix}|${course.courseNumber}`;
 }
 
-function SafeMarkdown({ markdown }: { markdown: string }) {
+type DraftAttachment = {
+  id: string;
+  storedFileId: string;
+  filename: string;
+  description: string;
+  status: "ready" | "pending" | "failed";
+};
+
+function SafeMarkdown({
+  markdown,
+  attachments = [],
+}: {
+  markdown: string;
+  attachments?: Array<{ id: string; description: string }>;
+}) {
   return (
-    <ReactMarkdown components={{ img: () => null }} skipHtml>
+    <ReactMarkdown
+      components={{
+        img: ({ src }) => {
+          const attachment = authorizedInlineImage(
+            typeof src === "string" ? src : undefined,
+            attachments,
+          );
+          if (!attachment) return null;
+          return (
+            // Exact Attachment bytes must not pass through next/image.
+            // biome-ignore lint/performance/noImgElement: preserve unmodified raster bytes
+            <img
+              alt={attachment.description}
+              src={`/attachments/${attachment.id}`}
+            />
+          );
+        },
+      }}
+      skipHtml
+    >
       {markdown}
     </ReactMarkdown>
   );
@@ -67,7 +101,27 @@ export function ReviewComposer({
   );
   const [termCode, setTermCode] = useState(review?.termCode ?? "");
   const [section, setSection] = useState(review?.section ?? "");
-  const [markdown, setMarkdown] = useState(review?.markdown ?? "");
+  const [attachments, setAttachments] = useState<DraftAttachment[]>(() =>
+    (review?.attachments ?? []).map((attachment) => ({
+      id: crypto.randomUUID(),
+      storedFileId: attachment.storedFileId,
+      filename: attachment.filename,
+      description: attachment.description,
+      status: "ready" as const,
+    })),
+  );
+  const [markdown, setMarkdown] = useState(() => {
+    let value = review?.markdown ?? "";
+    for (const [index, attachment] of (review?.attachments ?? []).entries()) {
+      const draft = attachments[index];
+      if (draft)
+        value = value.replaceAll(
+          `/attachments/${attachment.id}`,
+          `/attachments/${draft.id}`,
+        );
+    }
+    return value;
+  });
   const [mode, setMode] = useState<"write" | "preview">("write");
   const [attribution, setAttribution] = useState<ReviewAttribution>(
     review?.attribution ?? "attributed",
@@ -183,6 +237,68 @@ export function ReviewComposer({
   }, [review, termCode, section, terms, sections]);
 
   const hasBasis = courseEnabled || instructorEnabled;
+  const readyAttachments = attachments.filter(
+    (attachment) => attachment.status === "ready" && attachment.storedFileId,
+  );
+  async function addImageFiles(fileList: FileList | null) {
+    if (!fileList) return;
+    const room = 4 - attachments.length;
+    for (const file of [...fileList].slice(0, room)) {
+      const id = crypto.randomUUID();
+      setAttachments((current) => [
+        ...current,
+        {
+          id,
+          storedFileId: "",
+          filename: file.name,
+          description: file.name.replace(/\.[^.]+$/u, "") || file.name,
+          status: "pending",
+        },
+      ]);
+      try {
+        const reserved = await fetch("/api/attachments/uploads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            byteSize: file.size,
+            filename: file.name,
+            contentType: file.type || "application/octet-stream",
+          }),
+        });
+        if (!reserved.ok) throw new Error("reserve");
+        const body = (await reserved.json()) as {
+          intentId: string;
+          uploadUrl: string;
+          uploadHeaders: Record<string, string>;
+        };
+        const uploaded = await fetch(body.uploadUrl, {
+          method: "PUT",
+          headers: body.uploadHeaders,
+          body: file,
+        });
+        if (!uploaded.ok) throw new Error("put");
+        const completed = await fetch(
+          `/api/attachments/uploads/${body.intentId}/complete`,
+          { method: "POST" },
+        );
+        if (!completed.ok) throw new Error("complete");
+        const stored = (await completed.json()) as { id: string };
+        setAttachments((current) =>
+          current.map((item) =>
+            item.id === id
+              ? { ...item, storedFileId: stored.id, status: "ready" }
+              : item,
+          ),
+        );
+      } catch {
+        setAttachments((current) =>
+          current.map((item) =>
+            item.id === id ? { ...item, status: "failed" } : item,
+          ),
+        );
+      }
+    }
+  }
   const inputId = review ? `review-markdown-${review.id}` : "review-markdown";
   const titleId = review
     ? `review-composer-title-${review.id}`
@@ -375,17 +491,97 @@ export function ReviewComposer({
                 className="prose prose-slate mt-2 min-h-40 max-w-none rounded-xl border border-slate-300 p-3"
               >
                 {markdown ? (
-                  <SafeMarkdown markdown={markdown} />
+                  <SafeMarkdown
+                    attachments={readyAttachments}
+                    markdown={markdown}
+                  />
                 ) : (
                   <p className="text-slate-500">Nothing to preview.</p>
                 )}
               </div>
             ) : null}
             <p className="mt-2 text-xs text-slate-600" id={`${inputId}-help`}>
-              Raw HTML is not rendered. Remote images are prohibited and are not
-              rendered in preview or public output.
+              Raw HTML is not rendered. Remote images are prohibited. Inline
+              images may reference only an Image Attachment on this Revision as
+              <code>{`/attachments/{id}`}</code>; the Attachment description is
+              used as alt text.
             </p>
           </div>
+          <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4">
+            <legend className="px-1 font-bold">Image Attachments</legend>
+            <input
+              name="attachments"
+              type="hidden"
+              value={JSON.stringify(
+                readyAttachments.map(
+                  ({ id, storedFileId, filename, description }) => ({
+                    id,
+                    storedFileId,
+                    filename,
+                    description,
+                  }),
+                ),
+              )}
+            />
+            <p className="text-sm text-amber-950">
+              Embedded metadata is preserved and may expose names, device
+              information, or location. UST Rankings does not resize, strip,
+              transcode, or malware-scan files. Accepted JPEG, PNG, GIF, WebP,
+              and HEIC/HEIF images count toward a 32 MiB distinct Stored File
+              quota, including pending uploads. A Revision has at most four
+              Attachments. Review text can publish while an upload is pending.
+            </p>
+            <input
+              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif"
+              disabled={attachments.length >= 4}
+              onChange={(event) => {
+                void addImageFiles(event.target.files);
+                event.target.value = "";
+              }}
+              type="file"
+            />
+            {attachments.map((attachment) => (
+              <div className="grid gap-2 sm:grid-cols-2" key={attachment.id}>
+                <p className="text-sm">
+                  {attachment.filename} · {attachment.status}
+                </p>
+                <label className="text-sm font-semibold">
+                  Description
+                  <input
+                    className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3"
+                    onChange={(event) =>
+                      setAttachments((current) =>
+                        current.map((item) =>
+                          item.id === attachment.id
+                            ? { ...item, description: event.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                    value={attachment.description}
+                  />
+                </label>
+                {attachment.status === "ready" ? (
+                  <button
+                    className="justify-self-start text-sm font-semibold text-blue-800"
+                    onClick={() =>
+                      setMarkdown(
+                        `${markdown}${markdown.endsWith("\n") || !markdown ? "" : "\n"}![](/attachments/${attachment.id})\n`,
+                      )
+                    }
+                    type="button"
+                  >
+                    Insert inline
+                  </button>
+                ) : null}
+              </div>
+            ))}
+            <p className="text-xs text-slate-600">
+              Attachments are not licensed under CC BY 4.0. You warrant you have
+              the right to upload them and grant UST Rankings a non-exclusive
+              license to store, deliver, display, and moderate them.
+            </p>
+          </fieldset>
           <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4">
             <legend className="px-1 font-bold">Public identity</legend>
             <label className="flex items-start gap-3">
@@ -539,8 +735,24 @@ export function Reviews({
               </p>
             ) : null}
             <div className="prose prose-slate mt-4 max-w-none leading-7">
-              <SafeMarkdown markdown={review.markdown} />
+              <SafeMarkdown
+                attachments={review.attachments}
+                markdown={review.markdown}
+              />
             </div>
+            {review.attachments?.length ? (
+              <ul className="mt-4 space-y-1 text-sm">
+                {review.attachments.map((attachment) => (
+                  <li key={attachment.id}>
+                    <a href={`/attachments/${attachment.id}`}>
+                      {attachment.filename}
+                    </a>
+                    {" — "}
+                    {attachment.description}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <p className="mt-4 text-xs text-slate-500">
               {identityHidden
                 ? "Identity-hidden Review Revision"

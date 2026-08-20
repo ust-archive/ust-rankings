@@ -9,6 +9,10 @@
     {
       "path": "/api/schedule/refresh",
       "schedule": "30 20 * * *"
+    },
+    {
+      "path": "/api/attachments/cleanup",
+      "schedule": "0 21 * * *"
     }
   ]
 }
