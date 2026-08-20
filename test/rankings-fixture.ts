@@ -60,7 +60,16 @@ async function hash(path: string) {
     .digest("hex");
 }
 
-export async function makeRankingGeneration(root: string) {
+type Malformation =
+  | "invalid-schema"
+  | "duplicate-grain"
+  | "null-samples"
+  | "tba-alias";
+
+export async function makeRankingGeneration(
+  root: string,
+  malformation?: Malformation,
+) {
   const directory = join(root, fixtureSha);
   await mkdir(directory, { recursive: true });
   const instance = await DuckDBInstance.create(":memory:");
@@ -91,12 +100,6 @@ export async function makeRankingGeneration(root: string) {
     );
 
     const rows: string[] = [];
-    const scores: Record<string, number> = {
-      "Alpha Instructor": 1,
-      "Beta Instructor": 1,
-      "Delta Instructor": 0,
-      "Gamma Instructor": 0.5,
-    };
     for (const identity of identities) {
       for (const criterion of [
         "content",
@@ -111,8 +114,14 @@ export async function makeRankingGeneration(root: string) {
           criterion === "instructor"
         )
           continue;
+        const score =
+          identity.canonicalName === "Delta Instructor"
+            ? Number(criterion === "content")
+            : identity.canonicalName === "Gamma Instructor"
+              ? 0.5
+              : 1;
         rows.push(
-          `('${identity.canonicalName}', 100, '2510', true, '${criterion}', ${scores[identity.canonicalName]}, ${scores[identity.canonicalName]}, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
+          `('${identity.canonicalName}', 100, '2510', true, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
         );
       }
     }
@@ -121,10 +130,16 @@ export async function makeRankingGeneration(root: string) {
       "instructor-ratings.parquet",
       `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(name, ${ratingColumns.replace("is_active", "is_teaching")})`,
     );
-    await copy(
-      "instructor-rankings.parquet",
-      `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(name, ${ratingColumns.replace("is_active", "is_teaching")})`,
-    );
+    const instructorRankings = `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(name, ${ratingColumns.replace("is_active", "is_teaching")})`;
+    const malformedInstructorRankings =
+      malformation === "invalid-schema"
+        ? `SELECT * EXCLUDE (posterior_stddev) FROM (${instructorRankings})`
+        : malformation === "duplicate-grain"
+          ? `WITH rankings AS (${instructorRankings}) SELECT * FROM rankings UNION ALL SELECT * FROM rankings`
+          : malformation === "null-samples"
+            ? `SELECT * REPLACE (NULL::BIGINT AS samples, NULL::BIGINT AS cumulative_samples) FROM (${instructorRankings})`
+            : instructorRankings;
+    await copy("instructor-rankings.parquet", malformedInstructorRankings);
     await copy(
       "course-instructors.parquet",
       `SELECT * FROM (VALUES
@@ -157,9 +172,13 @@ export async function makeRankingGeneration(root: string) {
       ]),
     ),
   );
+  const fixtureIdentities = structuredClone(identities);
+  if (malformation === "tba-alias") {
+    fixtureIdentities[0].aliases[0].name = " TBA ";
+  }
   await writeFile(
     join(directory, "manifest.json"),
-    `${JSON.stringify({ schemaMajor: 0, sourceCommit: fixtureSha, artifacts, identities }, null, 2)}\n`,
+    `${JSON.stringify({ schemaMajor: 0, sourceCommit: fixtureSha, artifacts, identities: fixtureIdentities }, null, 2)}\n`,
   );
   return directory;
 }

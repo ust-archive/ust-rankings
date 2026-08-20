@@ -66,6 +66,7 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
   ]);
   expect(page.results[0]?.uuid).toBe("00000000-0000-4000-8000-000000000001");
   expect(page.results[0]?.score).toBe(1);
+  expect(page.results[2]?.score).toBe((2 / 3) * 0.4);
   expect(page.results[0]?.percentile).toBe(1);
 
   const searched = await queryRankings({
@@ -97,3 +98,28 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
   ]);
   expect(detail.terms[0]?.criteria.instructor?.bayesian).toBe(1);
 });
+
+for (const [malformation, label] of [
+  ["invalid-schema", "an incompatible schema"],
+  ["duplicate-grain", "a duplicate documented grain"],
+  ["null-samples", "missing sample evidence"],
+  ["tba-alias", "a TBA Instructor Alias"],
+] as const) {
+  test(`queryRankings rejects ${label}`, async () => {
+    const temporaryDirectory = await mkdtemp(
+      join(tmpdir(), `rankings-${malformation}-`),
+    );
+    temporaryDirectories.push(temporaryDirectory);
+    process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
+      temporaryDirectory,
+      malformation,
+    );
+
+    const { queryRankings, RankingsUnavailableError } = await import(
+      "@/lib/rankings/server"
+    );
+    await expect(
+      queryRankings({ entity: "instructor", preset: "learning" }),
+    ).rejects.toBeInstanceOf(RankingsUnavailableError);
+  });
+}

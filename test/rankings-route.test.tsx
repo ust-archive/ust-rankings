@@ -52,6 +52,37 @@ test("the public Instructor ranking route renders accepted-generation results", 
   expect(markup).toContain("0123456789abcdef0123456789abcdef01234567");
 });
 
+test("a blank Term Code renders the latest Instructor Ranking Population", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "rankings-blank-term-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR =
+    await makeRankingGeneration(temporaryDirectory);
+
+  const { default: InstructorsPage } = await import(
+    "@/app/rankings/instructors/page"
+  );
+  const markup = renderToStaticMarkup(
+    await InstructorsPage({ searchParams: Promise.resolve({ term: "  " }) }),
+  );
+
+  expect(markup).toContain("2510 · 3 eligible Instructors");
+  expect(markup).not.toContain("Invalid Term Code");
+});
+
+test("a malformed Term Code renders an accessible validation message", async () => {
+  const { default: InstructorsPage } = await import(
+    "@/app/rankings/instructors/page"
+  );
+  const markup = renderToStaticMarkup(
+    await InstructorsPage({ searchParams: Promise.resolve({ term: "25x0" }) }),
+  );
+
+  expect(markup).toContain("Invalid Term Code");
+  expect(markup).toContain('role="alert"');
+});
+
 test("an invalid seed fails closed only on the Instructor ranking route", async () => {
   const temporaryDirectory = await mkdtemp(
     join(tmpdir(), "rankings-unavailable-"),

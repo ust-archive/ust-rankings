@@ -28,12 +28,12 @@ const CRITERIA = [
 type Criterion = (typeof CRITERIA)[number];
 
 const LEARNING_WEIGHTS: Record<Criterion, number> = {
-  content: 0.2667,
-  teaching: 0.2667,
-  grading: 0.1,
-  workload: 0.0333,
-  course: 0.0833,
-  instructor: 0.25,
+  content: (2 / 3) * 0.4,
+  teaching: (2 / 3) * 0.4,
+  grading: (2 / 3) * 0.15,
+  workload: (2 / 3) * 0.05,
+  course: (1 / 3) * 0.25,
+  instructor: (1 / 3) * 0.75,
 };
 
 const ratingColumns = [
@@ -274,7 +274,7 @@ async function validateRelations(
     `SELECT 1 FROM read_parquet(['${courses}', '${courseRanks}'], union_by_name=true) WHERE subject IS NULL OR code IS NULL OR term_num IS NULL OR term_code IS NULL OR is_offered IS NULL`,
     `SELECT 1 FROM read_parquet(['${instructors}', '${instructorRanks}'], union_by_name=true) WHERE name IS NULL OR term_num IS NULL OR term_code IS NULL OR is_teaching IS NULL`,
     `SELECT 1 FROM read_parquet('${links}') WHERE name IS NULL OR term_num IS NULL OR term_code IS NULL OR subject IS NULL OR code IS NULL`,
-    `SELECT 1 FROM read_parquet(['${courses}', '${courseRanks}', '${instructors}', '${instructorRanks}'], union_by_name=true) WHERE criterion IS NULL OR criterion NOT IN ('content', 'teaching', 'grading', 'workload', 'course', 'instructor') OR rating IS NULL OR bayesian IS NULL OR confidence IS NULL OR effective_samples IS NULL OR reliability IS NULL OR posterior_stddev IS NULL OR NOT isfinite(rating) OR NOT isfinite(bayesian) OR NOT isfinite(confidence) OR NOT isfinite(effective_samples) OR NOT isfinite(reliability) OR NOT isfinite(posterior_stddev)`,
+    `SELECT 1 FROM read_parquet(['${courses}', '${courseRanks}', '${instructors}', '${instructorRanks}'], union_by_name=true) WHERE criterion IS NULL OR criterion NOT IN ('content', 'teaching', 'grading', 'workload', 'course', 'instructor') OR rating IS NULL OR bayesian IS NULL OR confidence IS NULL OR samples IS NULL OR cumulative_samples IS NULL OR effective_samples IS NULL OR reliability IS NULL OR posterior_stddev IS NULL OR NOT isfinite(rating) OR NOT isfinite(bayesian) OR NOT isfinite(confidence) OR NOT isfinite(effective_samples) OR NOT isfinite(reliability) OR NOT isfinite(posterior_stddev)`,
     `SELECT 1 FROM read_parquet('${instructorRanks}') WHERE name = 'TBA' OR lower(trim(name)) = 'tba'`,
     `SELECT 1 FROM read_parquet('${links}') WHERE name = 'TBA' OR lower(trim(name)) = 'tba'`,
     `SELECT 1 WHERE (SELECT count(DISTINCT term_num) FROM read_parquet('${courseRanks}')) <> 1 OR (SELECT min(term_num) FROM read_parquet('${courseRanks}')) <> (SELECT max(term_num) FROM read_parquet('${courses}'))`,
@@ -310,26 +310,32 @@ function validateIdentities(manifest: Manifest, names: string[]) {
   }
   const uuids = new Set<string>();
   for (const identity of manifest.identities) {
+    const canonicalName = identity.canonicalName?.trim().toLocaleLowerCase();
     if (
       !uuidPattern.test(identity.uuid) ||
       uuids.has(identity.uuid) ||
-      identity.canonicalName.toLowerCase() === "tba"
+      !canonicalName ||
+      canonicalName === "tba"
     ) {
-      throw new Error("Invalid Instructor UUID");
+      throw new Error("Invalid Instructor identity");
     }
     uuids.add(identity.uuid);
     if (
+      !Array.isArray(identity.aliases) ||
       identity.aliases.length === 0 ||
-      identity.aliases.some(
-        (alias) =>
-          !alias.name ||
+      identity.aliases.some((alias) => {
+        const aliasName = alias.name?.trim().toLocaleLowerCase();
+        return (
+          !aliasName ||
+          aliasName === "tba" ||
           !["schedule", "review", "sfq", "ranking-generation"].includes(
             alias.source,
           ) ||
           alias.sourceCommit !== manifest.sourceCommit ||
           (alias.source === "ranking-generation" &&
-            alias.sourceFile !== "instructor-ratings.parquet"),
-      )
+            alias.sourceFile !== "instructor-ratings.parquet")
+        );
+      })
     ) {
       throw new Error("Instructor aliases require source provenance");
     }

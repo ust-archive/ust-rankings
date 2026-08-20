@@ -6,11 +6,33 @@ type Props = {
 
 export default async function InstructorsPage({ searchParams }: Props) {
   const { term, q } = await searchParams;
+  const termCode = term?.trim() || undefined;
+  if (termCode && !/^[0-9]{4}$/.test(termCode)) {
+    return (
+      <section
+        className="w-full rounded-xl border border-red-300 bg-red-50 p-6 text-left"
+        role="alert"
+      >
+        <h1 className="text-2xl font-bold text-slate-900">Invalid Term Code</h1>
+        <p className="mt-2 text-slate-700">
+          Enter a four-digit Term Code or leave the field blank to use the
+          latest Term.
+        </p>
+        <a
+          className="mt-4 inline-block font-semibold text-blue-800 underline"
+          href="/rankings/instructors"
+        >
+          View the latest Instructor rankings
+        </a>
+      </section>
+    );
+  }
+
   try {
     const rankings = await queryRankings({
       entity: "instructor",
       preset: "learning",
-      termCode: term,
+      termCode,
       search: q,
     });
 
