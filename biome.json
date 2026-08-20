@@ -16,7 +16,8 @@
       "!!data/data-cq.json",
       "!!data/ratings-course.json",
       "!!data/ratings-instructor.json",
-      "!!rankings/seed"
+      "!!rankings/seed",
+      "!!schedule/seed"
     ]
   },
   "formatter": {

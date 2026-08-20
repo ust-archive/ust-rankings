@@ -10,6 +10,7 @@ const nextConfig = {
       "./rankings/seed/**/*",
       "./data/data-course-catalog.json",
     ],
+    "/schedule": ["./schedule/seed/**/*"],
   },
 };
 
