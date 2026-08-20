@@ -9,7 +9,10 @@ const review = {
   instructorUuid: "00000000-0000-4000-8000-000000000045",
   termCode: "2510",
   markdown: "Useful labs.",
+  attribution: "attributed" as const,
+  attributionCredit: "Captured Student",
   capturedDisplayName: "Captured Student",
+  license: "CC BY 4.0" as const,
   publishedAt: new Date("2026-08-20T12:00:00.000Z"),
   instructorAssociationStatus: "resolved" as const,
 };
@@ -36,4 +39,29 @@ test("Review reads cross one contribution seam and distinguish provider unavaila
       throw programmingError;
     }),
   ).rejects.toBe(programmingError);
+});
+
+test("Review reads reveal edit capability only to the authenticated author query", async () => {
+  const userId = "00000000-0000-4000-8000-000000000044";
+  const calls: unknown[] = [];
+  const result = await loadReviews(
+    { type: "course", coursePrefix: "COMP", courseNumber: "2000" },
+    async (query, viewerUserId) => {
+      calls.push({ query, viewerUserId });
+      return [{ ...review, viewerCanEdit: viewerUserId === userId }];
+    },
+    async () => userId,
+  );
+
+  expect(calls).toEqual([
+    {
+      query: {
+        type: "course",
+        coursePrefix: "COMP",
+        courseNumber: "2000",
+      },
+      viewerUserId: userId,
+    },
+  ]);
+  expect(result.reviews[0]?.viewerCanEdit).toBe(true);
 });

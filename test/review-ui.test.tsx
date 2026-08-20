@@ -12,7 +12,10 @@ const review = {
   section: "L1",
   markdown:
     "Useful **labs**. <script>alert('xss')</script> ![tracking](https://evil.example/pixel.png) [bad](javascript:alert(1))",
+  attribution: "attributed" as const,
+  attributionCredit: "Captured Student",
   capturedDisplayName: "Captured Student",
+  license: "CC BY 4.0" as const,
   publishedAt: new Date("2026-08-20T12:00:00.000Z"),
   instructorAssociationStatus: "needs-resolution" as const,
 };
@@ -99,9 +102,71 @@ test("responsive Review composer exposes dependent Basis and Context controls an
   expect(markup).toContain("Review Context");
   expect(markup).toContain("Section requires a Course Basis and Term");
   expect(markup).toContain("Publish Revision");
-  expect(markup).toContain("Attributed Review Revision");
   expect(markup).toContain("Public Display Name");
+  expect(markup).toContain("Identity hidden");
+  expect(markup).toContain("not anonymous to UST Rankings");
+  expect(markup).toContain("authorized operator can link");
+  expect(markup).toContain("Write");
+  expect(markup).toContain("Preview");
   expect(markup).toContain("CC BY 4.0");
   expect(markup).toContain("non-exclusive site license");
+  expect(markup).toContain("cannot be recalled");
   expect(markup).not.toMatch(/vote|reaction/i);
+});
+
+test("Identity-hidden public Review output redacts author names and emits CC credit metadata", async () => {
+  const { Reviews } = await import("@/app/courses/course-reviews");
+  const markup = renderToStaticMarkup(
+    <Reviews
+      reviews={[
+        {
+          ...review,
+          attribution: "identity-hidden",
+          attributionCredit: "UST Rankings contributor",
+          capturedDisplayName: "Must Never Render",
+          license: "CC BY 4.0",
+        },
+      ]}
+    />,
+  );
+
+  expect(markup).not.toContain("Must Never Render");
+  expect(markup).toContain("Identity-hidden Review Revision");
+  expect(markup).toContain("UST Rankings contributor");
+  expect(markup).toContain("CC BY 4.0");
+  expect(markup).toContain("Review permalink");
+});
+
+test("a Review author receives optimistic edit and withdrawal controls at the public seam", async () => {
+  const { Reviews } = await import("@/app/courses/course-reviews");
+  const markup = renderToStaticMarkup(
+    <Reviews
+      editor={{
+        courses: [{ coursePrefix: "COMP", courseNumber: "2000" }],
+        instructors: [
+          { instructorUuid: review.instructorUuid, name: "Ada Instructor" },
+        ],
+        contexts: [
+          {
+            course: review.course,
+            instructorUuid: review.instructorUuid,
+            termCode: "2510",
+            section: "L1",
+          },
+        ],
+      }}
+      reviews={[{ ...review, viewerCanEdit: true }]}
+    />,
+  );
+
+  expect(markup).toContain("Edit Review");
+  expect(markup).toContain("Withdraw Review");
+  expect(markup).toContain(`name="reviewId" value="${review.id}"`);
+  expect(markup).toContain(
+    `name="expectedRevisionId" value="${review.revisionId}"`,
+  );
+  expect(markup).toContain("Useful **labs**.");
+  expect(markup).toContain(
+    "Publishing this edit creates a new immutable Review Revision",
+  );
 });

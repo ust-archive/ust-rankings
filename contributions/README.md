@@ -1,7 +1,8 @@
 # Contribution module
 
-Issues #43, #44, #45, and #47 introduce accounts, complete attributed Reviews,
-and private-identity Course/Instructor signals. Application routes cross
+Issues #43–#47 introduce accounts, complete Review Bases and Context,
+optimistic immutable Review editing, per-Revision attribution, author
+withdrawal, and private-identity Course/Instructor signals. Application routes cross
 `lib/contributions/accounts.ts`, `lib/contributions/reviews.ts`, and
 `lib/contributions/signals.ts`; PostgreSQL transactions and objects remain in the
 adapter and forward migrations under `contributions/migrations`.
@@ -40,8 +41,18 @@ Instructor merge redirects. `0004_complete_review_associations.sql` expands the
 same Review seam to optional Course and Instructor Bases, Term and Section
 Context snapshots, exact null-aware active-tuple uniqueness, Context lookup
 indexes, and an explicit needs-resolution state for uncertain Instructor
-identity corrections. Apply every migration in order; historical Revision
-associations are never revalidated or guessed when current source data changes.
+identity corrections. `0005_review_lifecycle.sql` adds Attributed and
+Identity-hidden Revision snapshots, expected-current optimistic editing,
+transactional reassociation, active-tuple collision protection, and author-only
+withdrawal. Apply every migration in order; historical Revision associations
+are never revalidated or guessed when current source data changes.
+
+Identity-hidden public reads emit no captured Public Display Name and use `UST
+Rankings contributor` plus the Review permalink for CC BY 4.0 credit. The
+internal Review-to-User link remains available only through controlled
+contribution storage. Withdrawal removes the current Review from public reads
+without deleting immutable Revisions. It does not recall CC BY 4.0 rights from
+copies already obtained.
 
 Signal reads return only aggregate counts plus the requesting User's own current
 states. Pages are dynamic and never put session-specific state or participant
@@ -68,8 +79,10 @@ retain signals on the original UUID.
 
 Production remains blocked until the owner supplies and verifies the production
 Entra registrations/secrets and exact origins, the pooled Singapore PostgreSQL
-connection, approved policy and Review-term versions/text and Privacy Contact
-details, and preview/production OIDC/PostgreSQL Review publication evidence.
+connection, human-approved privacy/community/Review and CC BY 4.0 licensing
+text, approved Privacy Contact role/title, correspondence address, and email,
+and preview/production OIDC/PostgreSQL Review lifecycle evidence. Local copy
+and tests are implementation prerequisites only and do not claim legal approval.
 Never commit those values. Preview evidence must also verify Vercel Bun Server Actions preserve same-origin
 checks; complete Review Basis/Context association validation uses accepted
 Rankings and Schedule generations; dual-Basis Reviews appear once on each

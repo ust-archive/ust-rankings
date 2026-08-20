@@ -72,6 +72,7 @@ export async function renderCoursePage(
       reviews={community.reviews}
       reviewsUnavailable={community.unavailable}
       reviewPublished={query.review === "published"}
+      reviewWithdrawn={query.review === "withdrawn"}
       reviewError={
         typeof query.reviewError === "string" ? query.reviewError : undefined
       }

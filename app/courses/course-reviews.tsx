@@ -5,8 +5,9 @@ import ReactMarkdown from "react-markdown";
 import type {
   PublicReview,
   ReviewAssociations,
+  ReviewAttribution,
 } from "@/lib/contributions/reviews";
-import { publishReview } from "./review-actions";
+import { editReview, publishReview, withdrawReview } from "./review-actions";
 
 export type ReviewCourseOption = {
   coursePrefix: string;
@@ -15,9 +16,22 @@ export type ReviewCourseOption = {
 };
 export type ReviewInstructorOption = { instructorUuid: string; name: string };
 export type ReviewContextOption = ReviewAssociations & { termName?: string };
+export type ReviewEditorOptions = {
+  courses: ReviewCourseOption[];
+  instructors: ReviewInstructorOption[];
+  contexts?: ReviewContextOption[];
+};
 
 function courseValue(course: ReviewCourseOption) {
   return `${course.coursePrefix}|${course.courseNumber}`;
+}
+
+function SafeMarkdown({ markdown }: { markdown: string }) {
+  return (
+    <ReactMarkdown components={{ img: () => null }} skipHtml>
+      {markdown}
+    </ReactMarkdown>
+  );
 }
 
 export function ReviewComposer({
@@ -26,28 +40,38 @@ export function ReviewComposer({
   contexts = [],
   initialCourse,
   initialInstructorUuid,
-}: {
-  courses: ReviewCourseOption[];
-  instructors: ReviewInstructorOption[];
-  contexts?: ReviewContextOption[];
+  review,
+}: ReviewEditorOptions & {
   initialCourse?: ReviewCourseOption;
   initialInstructorUuid?: string;
+  review?: PublicReview;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [courseEnabled, setCourseEnabled] = useState(Boolean(initialCourse));
+  const edit = Boolean(review);
+  const selectedInitialCourse = review?.course ?? initialCourse;
+  const selectedInitialInstructor =
+    review?.instructorUuid ?? initialInstructorUuid;
+  const [courseEnabled, setCourseEnabled] = useState(
+    Boolean(selectedInitialCourse),
+  );
   const [instructorEnabled, setInstructorEnabled] = useState(
-    Boolean(initialInstructorUuid),
+    Boolean(selectedInitialInstructor),
   );
   const [course, setCourse] = useState(
-    initialCourse
-      ? courseValue(initialCourse)
+    selectedInitialCourse
+      ? courseValue(selectedInitialCourse)
       : courseValue(courses[0] ?? { coursePrefix: "", courseNumber: "" }),
   );
   const [instructorUuid, setInstructorUuid] = useState(
-    initialInstructorUuid ?? instructors[0]?.instructorUuid ?? "",
+    selectedInitialInstructor ?? instructors[0]?.instructorUuid ?? "",
   );
-  const [termCode, setTermCode] = useState("");
-  const [section, setSection] = useState("");
+  const [termCode, setTermCode] = useState(review?.termCode ?? "");
+  const [section, setSection] = useState(review?.section ?? "");
+  const [markdown, setMarkdown] = useState(review?.markdown ?? "");
+  const [mode, setMode] = useState<"write" | "preview">("write");
+  const [attribution, setAttribution] = useState<ReviewAttribution>(
+    review?.attribution ?? "attributed",
+  );
   const [selectedCoursePrefix, selectedCourseNumber] = courseEnabled
     ? course.split("|")
     : [];
@@ -102,6 +126,10 @@ export function ReviewComposer({
   }, [termCode, section, terms, sections]);
 
   const hasBasis = courseEnabled || instructorEnabled;
+  const inputId = review ? `review-markdown-${review.id}` : "review-markdown";
+  const titleId = review
+    ? `review-composer-title-${review.id}`
+    : "review-composer-title";
   return (
     <>
       <button
@@ -109,20 +137,33 @@ export function ReviewComposer({
         onClick={() => dialog.current?.showModal()}
         type="button"
       >
-        Write a Review
+        {edit ? "Edit Review" : "Write a Review"}
       </button>
       <dialog
-        aria-labelledby="review-composer-title"
+        aria-labelledby={titleId}
         className="m-auto max-h-[calc(100%-2rem)] w-[min(42rem,calc(100%-2rem))] overflow-y-auto rounded-2xl p-0 text-left shadow-2xl backdrop:bg-slate-950/60"
         ref={dialog}
       >
-        <form action={publishReview} className="space-y-5 p-6 sm:p-8">
+        <form
+          action={edit ? editReview : publishReview}
+          className="space-y-5 p-6 sm:p-8"
+        >
+          {review ? (
+            <>
+              <input name="reviewId" type="hidden" value={review.id} />
+              <input
+                name="expectedRevisionId"
+                type="hidden"
+                value={review.revisionId}
+              />
+            </>
+          ) : null}
           <header>
             <p className="text-xs font-bold uppercase tracking-widest text-blue-700">
               Your experience
             </p>
-            <h2 className="mt-1 text-2xl font-black" id="review-composer-title">
-              Write your Review
+            <h2 className="mt-1 text-2xl font-black" id={titleId}>
+              {edit ? "Edit your Review" : "Write your Review"}
             </h2>
             <p className="mt-2 text-sm text-slate-600">
               Choose one or two co-equal Review Bases, then optional Review
@@ -232,33 +273,98 @@ export function ReviewComposer({
             </p>
           </fieldset>
           <div>
-            <label className="font-bold" htmlFor="review-markdown">
-              Review · Markdown
-            </label>
+            <div className="flex items-end justify-between gap-3">
+              <label className="font-bold" htmlFor={inputId}>
+                Review · Markdown
+              </label>
+              <fieldset className="flex">
+                <legend className="sr-only">Markdown mode</legend>
+                {(["write", "preview"] as const).map((value) => (
+                  <button
+                    aria-pressed={mode === value}
+                    className="min-h-11 rounded-lg px-3 text-sm font-semibold capitalize aria-pressed:bg-blue-100"
+                    key={value}
+                    onClick={() => setMode(value)}
+                    type="button"
+                  >
+                    {value === "write" ? "Write" : "Preview"}
+                  </button>
+                ))}
+              </fieldset>
+            </div>
             <textarea
-              aria-describedby="review-markdown-help"
-              className="mt-2 min-h-40 w-full rounded-xl border border-slate-300 p-3"
-              id="review-markdown"
+              aria-describedby={`${inputId}-help`}
+              className={`mt-2 min-h-40 w-full rounded-xl border border-slate-300 p-3 ${mode === "preview" ? "sr-only" : ""}`}
+              id={inputId}
               name="markdown"
+              onChange={(event) => setMarkdown(event.target.value)}
               required
+              value={markdown}
             />
-            <p
-              className="mt-2 text-xs text-slate-600"
-              id="review-markdown-help"
-            >
-              Text only. Raw HTML and remote images are not displayed.
+            {mode === "preview" ? (
+              <div
+                aria-live="polite"
+                className="prose prose-slate mt-2 min-h-40 max-w-none rounded-xl border border-slate-300 p-3"
+              >
+                {markdown ? (
+                  <SafeMarkdown markdown={markdown} />
+                ) : (
+                  <p className="text-slate-500">Nothing to preview.</p>
+                )}
+              </div>
+            ) : null}
+            <p className="mt-2 text-xs text-slate-600" id={`${inputId}-help`}>
+              Raw HTML is not rendered. Remote images are prohibited and are not
+              rendered in preview or public output.
             </p>
           </div>
+          <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4">
+            <legend className="px-1 font-bold">Public identity</legend>
+            <label className="flex items-start gap-3">
+              <input
+                checked={attribution === "attributed"}
+                name="attribution"
+                onChange={() => setAttribution("attributed")}
+                type="radio"
+                value="attributed"
+              />
+              <span>
+                <strong>Attributed</strong> — capture and display your current
+                Public Display Name for this Revision.
+              </span>
+            </label>
+            <label className="flex items-start gap-3">
+              <input
+                checked={attribution === "identity-hidden"}
+                name="attribution"
+                onChange={() => setAttribution("identity-hidden")}
+                type="radio"
+                value="identity-hidden"
+              />
+              <span>
+                <strong>Identity hidden</strong> — display no author name.
+              </span>
+            </label>
+            <p className="text-sm text-slate-700">
+              Identity hidden is not anonymous to UST Rankings. An authorized
+              operator can link this Review to your account for moderation,
+              security, rights, and legal purposes.
+            </p>
+          </fieldset>
           <div className="rounded-xl bg-blue-50 p-4 text-sm leading-6 text-blue-950">
-            Publishing creates an Attributed Review Revision. Your current
-            Public Display Name is captured for this Revision; later account
-            changes do not rewrite it.
+            {edit
+              ? "Publishing this edit creates a new immutable Review Revision. Earlier Revisions remain internal."
+              : "Publishing creates an immutable Review Revision."}{" "}
+            Attribution is selected independently for each Revision.
           </div>
           <div className="rounded-xl bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-            Review text is published under CC BY 4.0 with your captured name and
-            Review permalink as attribution. You also grant UST Rankings a
-            non-exclusive site license to host, format, display, and moderate
-            it. CC BY 4.0 rights already granted to copies cannot be recalled.
+            Review text is published under CC BY 4.0. Attributed credit uses
+            your captured Public Display Name plus the Review permalink;
+            Identity-hidden credit uses “UST Rankings contributor” plus the
+            permalink. You also grant UST Rankings a non-exclusive site license
+            to host, format, display, and moderate it. CC BY 4.0 rights already
+            granted to obtained copies cannot be recalled, even after
+            withdrawal.
           </div>
           <div className="flex items-center justify-between gap-4 border-t border-slate-200 pt-5">
             <button
@@ -282,7 +388,30 @@ export function ReviewComposer({
   );
 }
 
-export function Reviews({ reviews }: { reviews: PublicReview[] }) {
+function associationFields(review: PublicReview) {
+  return (
+    <>
+      {review.course ? (
+        <input name="course" type="hidden" value={courseValue(review.course)} />
+      ) : null}
+      {review.instructorUuid ? (
+        <input
+          name="instructorUuid"
+          type="hidden"
+          value={review.instructorUuid}
+        />
+      ) : null}
+    </>
+  );
+}
+
+export function Reviews({
+  reviews,
+  editor,
+}: {
+  reviews: PublicReview[];
+  editor?: ReviewEditorOptions;
+}) {
   if (reviews.length === 0)
     return (
       <p className="mt-2 text-slate-600">No Reviews have been published yet.</p>
@@ -293,6 +422,10 @@ export function Reviews({ reviews }: { reviews: PublicReview[] }) {
         const permalink = review.course
           ? `/courses/${review.course.coursePrefix}/${review.course.courseNumber}#review-${review.id}`
           : `/instructors/${review.instructorUuid}#review-${review.id}`;
+        const identityHidden = review.attribution === "identity-hidden";
+        const credit = identityHidden
+          ? "UST Rankings contributor"
+          : (review.capturedDisplayName ?? review.attributionCredit);
         return (
           <li
             className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
@@ -300,7 +433,7 @@ export function Reviews({ reviews }: { reviews: PublicReview[] }) {
             key={review.id}
           >
             <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 pb-3">
-              <p className="font-bold">{review.capturedDisplayName}</p>
+              <p className="font-bold">{credit}</p>
               <time
                 className="text-xs text-slate-500"
                 dateTime={review.publishedAt.toISOString()}
@@ -340,14 +473,40 @@ export function Reviews({ reviews }: { reviews: PublicReview[] }) {
               </p>
             ) : null}
             <div className="prose prose-slate mt-4 max-w-none leading-7">
-              <ReactMarkdown components={{ img: () => null }} skipHtml>
-                {review.markdown}
-              </ReactMarkdown>
+              <SafeMarkdown markdown={review.markdown} />
             </div>
             <p className="mt-4 text-xs text-slate-500">
-              Attributed Review Revision · Review text licensed CC BY 4.0 ·{" "}
+              {identityHidden
+                ? "Identity-hidden Review Revision"
+                : "Attributed Review Revision"}{" "}
+              · Review text licensed {review.license ?? "CC BY 4.0"} ·{" "}
               <a href={permalink}>Review permalink</a>
             </p>
+            {review.viewerCanEdit && editor ? (
+              <div className="mt-4 border-t border-slate-200 pt-4">
+                <ReviewComposer {...editor} review={review} />
+                <form action={withdrawReview} className="mt-3">
+                  <input name="reviewId" type="hidden" value={review.id} />
+                  <input
+                    name="expectedRevisionId"
+                    type="hidden"
+                    value={review.revisionId}
+                  />
+                  {associationFields(review)}
+                  <p className="text-xs text-slate-600">
+                    Withdrawal removes the current Review from public display;
+                    justified immutable Revisions remain internal, and obtained
+                    CC BY 4.0 copies cannot be recalled.
+                  </p>
+                  <button
+                    className="mt-2 min-h-11 rounded-xl border border-red-300 px-4 py-2 font-bold text-red-800"
+                    type="submit"
+                  >
+                    Withdraw Review
+                  </button>
+                </form>
+              </div>
+            ) : null}
           </li>
         );
       })}

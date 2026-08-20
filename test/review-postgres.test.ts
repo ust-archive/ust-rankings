@@ -65,6 +65,18 @@ if (!connection) {
           await client.end({ timeout: 0 });
         }
       };
+      const expectWriteCode = async (
+        run: () => Promise<unknown>,
+        code: string,
+      ) => {
+        let caught: unknown;
+        try {
+          await run();
+        } catch (error) {
+          caught = error;
+        }
+        expect(caught).toMatchObject({ code });
+      };
       const activeId = crypto.randomUUID();
       await sql`
         INSERT INTO contribution_users (id, status, public_display_name)
@@ -173,6 +185,150 @@ if (!connection) {
           "Review Revisions are immutable",
         );
       }
+
+      const lifecycleUserId = crypto.randomUUID();
+      const wrongOwnerId = crypto.randomUUID();
+      await sql`
+        INSERT INTO contribution_users (id, status, public_display_name)
+        VALUES
+          (${lifecycleUserId}, 'active', 'First Captured Name'),
+          (${wrongOwnerId}, 'active', 'Wrong Owner')
+      `;
+      const lifecycleOriginal = await publish(lifecycleUserId, { course });
+      await sql`
+        UPDATE contribution_users
+        SET public_display_name = 'Later Display Name'
+        WHERE id = ${lifecycleUserId}
+      `;
+      const identityHidden = await reviews.editReview(
+        lifecycleUserId,
+        lifecycleOriginal.id,
+        {
+          expectedRevisionId: lifecycleOriginal.revisionId,
+          associations: { course, termCode: "2510" },
+          markdown: "Identity-hidden edit.",
+          attribution: "identity-hidden",
+        },
+      );
+      expect(identityHidden).toMatchObject({
+        attribution: "identity-hidden",
+        attributionCredit: "UST Rankings contributor",
+      });
+      expect("capturedDisplayName" in identityHidden).toBe(false);
+      const [historyAfterHidden] = await sql<
+        { revisions: number; capturedNames: string[] }[]
+      >`
+        SELECT count(*)::int AS revisions,
+               array_remove(array_agg(captured_display_name ORDER BY published_at), NULL) AS "capturedNames"
+        FROM review_revisions WHERE review_id = ${lifecycleOriginal.id}
+      `;
+      expect(historyAfterHidden).toEqual({
+        revisions: 2,
+        capturedNames: ["First Captured Name"],
+      });
+      const publicAfterHidden = await reviews.listReviews({
+        type: "course",
+        ...course,
+      });
+      const publicIdentityHidden = publicAfterHidden.find(
+        (review) => review.id === lifecycleOriginal.id,
+      );
+      expect(publicIdentityHidden).toMatchObject({
+        id: lifecycleOriginal.id,
+        revisionId: identityHidden.revisionId,
+        attribution: "identity-hidden",
+        attributionCredit: "UST Rankings contributor",
+      });
+      expect("capturedDisplayName" in (publicIdentityHidden ?? {})).toBe(false);
+      expect("viewerCanEdit" in (publicIdentityHidden ?? {})).toBe(false);
+      expect(
+        (
+          await reviews.listReviews(
+            { type: "course", ...course },
+            lifecycleUserId,
+          )
+        ).find((review) => review.id === lifecycleOriginal.id),
+      ).toMatchObject({ viewerCanEdit: true });
+      await expectWriteCode(
+        () =>
+          reviews.editReview(lifecycleUserId, lifecycleOriginal.id, {
+            expectedRevisionId: lifecycleOriginal.revisionId,
+            associations: { course },
+            markdown: "Stale overwrite.",
+            attribution: "attributed",
+          }),
+        "stale-review",
+      );
+      await expectWriteCode(
+        () =>
+          reviews.editReview(wrongOwnerId, lifecycleOriginal.id, {
+            expectedRevisionId: identityHidden.revisionId,
+            associations: { course },
+            markdown: "Wrong owner overwrite.",
+            attribution: "attributed",
+          }),
+        "wrong-owner",
+      );
+
+      const attributedAgain = await reviews.editReview(
+        lifecycleUserId,
+        lifecycleOriginal.id,
+        {
+          expectedRevisionId: identityHidden.revisionId,
+          associations: { course },
+          markdown: "Attributed again.",
+          attribution: "attributed",
+        },
+      );
+      expect(attributedAgain).toMatchObject({
+        attribution: "attributed",
+        attributionCredit: "Later Display Name",
+        capturedDisplayName: "Later Display Name",
+      });
+      await publish(lifecycleUserId, { instructorUuid: INSTRUCTOR_UUID });
+      await expectWriteCode(
+        () =>
+          reviews.editReview(lifecycleUserId, lifecycleOriginal.id, {
+            expectedRevisionId: attributedAgain.revisionId,
+            associations: { instructorUuid: INSTRUCTOR_UUID },
+            markdown: "Colliding reassociation.",
+            attribution: "attributed",
+          }),
+        "duplicate-review",
+      );
+      await expectWriteCode(
+        () =>
+          reviews.withdrawReview(
+            wrongOwnerId,
+            lifecycleOriginal.id,
+            attributedAgain.revisionId,
+          ),
+        "wrong-owner",
+      );
+      await reviews.withdrawReview(
+        lifecycleUserId,
+        lifecycleOriginal.id,
+        attributedAgain.revisionId,
+      );
+      expect(
+        (await reviews.listReviews({ type: "course", ...course })).some(
+          (review) => review.id === lifecycleOriginal.id,
+        ),
+      ).toBe(false);
+      const [withdrawnHistory] = await sql<
+        { publicationState: string; revisions: number }[]
+      >`
+        SELECT r.publication_state AS "publicationState",
+               count(rr.id)::int AS revisions
+        FROM reviews r
+        JOIN review_revisions rr ON rr.review_id = r.id
+        WHERE r.id = ${lifecycleOriginal.id}
+        GROUP BY r.publication_state
+      `;
+      expect(withdrawnHistory).toEqual({
+        publicationState: "withdrawn",
+        revisions: 3,
+      });
 
       const rollbackUserId = crypto.randomUUID();
       await sql`

@@ -12,7 +12,11 @@ import type {
   ScheduleDetails,
   ScheduleMeeting,
 } from "@/lib/schedule/server";
-import { ReviewComposer, Reviews } from "./course-reviews";
+import {
+  ReviewComposer,
+  type ReviewEditorOptions,
+  Reviews,
+} from "./course-reviews";
 import { coursePath } from "./routes";
 
 const criterionLabels = {
@@ -280,12 +284,16 @@ function CommunityArea({
   reviews,
   unavailable = true,
   published,
+  withdrawn,
   error,
+  editor,
 }: {
   reviews?: PublicReview[];
   unavailable?: boolean;
   published?: boolean;
+  withdrawn?: boolean;
   error?: string;
+  editor?: ReviewEditorOptions;
 }) {
   return (
     <section
@@ -304,6 +312,14 @@ function CommunityArea({
           Review Revision published.
         </p>
       ) : null}
+      {withdrawn ? (
+        <p
+          className="mt-4 rounded-lg bg-green-50 p-3 text-green-900"
+          role="status"
+        >
+          Review withdrawn from public display.
+        </p>
+      ) : null}
       {error ? (
         <p className="mt-4 rounded-lg bg-red-50 p-3 text-red-900" role="alert">
           Review could not be published ({error}).
@@ -318,7 +334,7 @@ function CommunityArea({
           Reviews.
         </p>
       ) : (
-        <Reviews reviews={reviews ?? []} />
+        <Reviews editor={editor} reviews={reviews ?? []} />
       )}
     </section>
   );
@@ -451,6 +467,7 @@ export function CourseDetails({
   reviews = [],
   reviewsUnavailable = true,
   reviewPublished,
+  reviewWithdrawn,
   reviewError,
   signals,
   signalsUnavailable = true,
@@ -466,6 +483,7 @@ export function CourseDetails({
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
   reviewPublished?: boolean;
+  reviewWithdrawn?: boolean;
   reviewError?: string;
   signals?: SignalSummary;
   signalsUnavailable?: boolean;
@@ -487,6 +505,58 @@ export function CourseDetails({
     rankings?.course.title ??
     "Catalog details unavailable";
   const instructors = uniqueInstructors(offerings, rankings);
+  const reviewEditor: ReviewEditorOptions = {
+    courses: [{ coursePrefix, courseNumber }],
+    instructors: instructors
+      .filter((item) => item.uuid)
+      .map((item) => ({
+        instructorUuid: item.uuid as string,
+        name: item.name,
+      })),
+    contexts: offerings.flatMap((offering) => {
+      const course = { coursePrefix, courseNumber };
+      const courseContexts = [
+        {
+          course,
+          termCode: offering.termCode,
+          termName: offering.termName,
+        },
+        ...offering.classes.map((item) => ({
+          course,
+          termCode: offering.termCode,
+          termName: offering.termName,
+          section: item.section,
+        })),
+      ];
+      const instructorContexts =
+        rankings?.instructors
+          .filter((item) => item.termCode === offering.termCode)
+          .flatMap((item) => [
+            {
+              course,
+              instructorUuid: item.instructor.uuid,
+              termCode: offering.termCode,
+              termName: offering.termName,
+            },
+            ...offering.classes
+              .filter((scheduleClass) =>
+                scheduleClass.meetings.some((meeting) =>
+                  meeting.instructors.some(
+                    (instructor) => instructor.uuid === item.instructor.uuid,
+                  ),
+                ),
+              )
+              .map((scheduleClass) => ({
+                course,
+                instructorUuid: item.instructor.uuid,
+                termCode: offering.termCode,
+                termName: offering.termName,
+                section: scheduleClass.section,
+              })),
+          ]) ?? [];
+      return [...courseContexts, ...instructorContexts];
+    }),
+  };
   return (
     <DetailShell
       eyebrow="Course"
@@ -524,58 +594,8 @@ export function CourseDetails({
           }
           reviewComposer={
             <ReviewComposer
-              courses={[{ coursePrefix, courseNumber }]}
+              {...reviewEditor}
               initialCourse={{ coursePrefix, courseNumber }}
-              instructors={instructors
-                .filter((item) => item.uuid)
-                .map((item) => ({
-                  instructorUuid: item.uuid as string,
-                  name: item.name,
-                }))}
-              contexts={offerings.flatMap((offering) => {
-                const course = { coursePrefix, courseNumber };
-                const courseContexts = [
-                  {
-                    course,
-                    termCode: offering.termCode,
-                    termName: offering.termName,
-                  },
-                  ...offering.classes.map((item) => ({
-                    course,
-                    termCode: offering.termCode,
-                    termName: offering.termName,
-                    section: item.section,
-                  })),
-                ];
-                const instructorContexts =
-                  rankings?.instructors
-                    .filter((item) => item.termCode === offering.termCode)
-                    .flatMap((item) => [
-                      {
-                        course,
-                        instructorUuid: item.instructor.uuid,
-                        termCode: offering.termCode,
-                        termName: offering.termName,
-                      },
-                      ...offering.classes
-                        .filter((scheduleClass) =>
-                          scheduleClass.meetings.some((meeting) =>
-                            meeting.instructors.some(
-                              (instructor) =>
-                                instructor.uuid === item.instructor.uuid,
-                            ),
-                          ),
-                        )
-                        .map((scheduleClass) => ({
-                          course,
-                          instructorUuid: item.instructor.uuid,
-                          termCode: offering.termCode,
-                          termName: offering.termName,
-                          section: scheduleClass.section,
-                        })),
-                    ]) ?? [];
-                return [...courseContexts, ...instructorContexts];
-              })}
             />
           }
         />
@@ -585,8 +605,10 @@ export function CourseDetails({
       }
       community={
         <CommunityArea
+          editor={reviewEditor}
           error={reviewError}
           published={reviewPublished}
+          withdrawn={reviewWithdrawn}
           reviews={reviews}
           unavailable={reviewsUnavailable}
         />

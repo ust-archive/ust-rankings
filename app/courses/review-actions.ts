@@ -5,7 +5,10 @@ import { redirect } from "next/navigation";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { courseReviewPath, isSameOriginWrite } from "@/lib/contributions/http";
 import { getReviewService } from "@/lib/contributions/postgres";
-import type { ReviewAssociations } from "@/lib/contributions/reviews";
+import type {
+  ReviewAssociations,
+  ReviewAttribution,
+} from "@/lib/contributions/reviews";
 import { ReviewWriteError } from "@/lib/contributions/reviews";
 
 const UUID =
@@ -16,7 +19,7 @@ function stringEntry(formData: FormData, name: string) {
   return typeof value === "string" ? value : undefined;
 }
 
-export async function publishReview(formData: FormData) {
+function parseReviewForm(formData: FormData) {
   const rawCourse = formData.get("course");
   const rawInstructor = formData.get("instructorUuid");
   const rawTermCode = formData.get("termCode");
@@ -26,7 +29,6 @@ export async function publishReview(formData: FormData) {
   const [coursePrefix = "", courseNumber = ""] = courseParts;
   const instructorEntry = stringEntry(formData, "instructorUuid");
   const instructorUuid = instructorEntry?.trim().toLowerCase();
-  const markdown = stringEntry(formData, "markdown");
   const termCode = stringEntry(formData, "termCode")?.trim() || undefined;
   const section = stringEntry(formData, "section")?.trim() || undefined;
   const path = courseEntry
@@ -34,25 +36,13 @@ export async function publishReview(formData: FormData) {
     : instructorUuid && UUID.test(instructorUuid)
       ? `/instructors/${instructorUuid}`
       : "/rankings/courses";
-  const requestHeaders = await headers();
-  const host =
-    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-  if (!isSameOriginWrite(requestHeaders.get("origin"), host))
-    redirect(`${path}?reviewError=cross-origin#reviews`);
-  if (markdown === undefined)
-    redirect(`${path}?reviewError=invalid-review#reviews`);
-  if (
+  const invalidBasis =
     (rawCourse !== null && typeof rawCourse !== "string") ||
     (rawInstructor !== null && typeof rawInstructor !== "string") ||
-    (courseEntry !== undefined && courseParts.length !== 2)
-  )
-    redirect(`${path}?reviewError=invalid-basis#reviews`);
-  if (
+    (courseEntry !== undefined && courseParts.length !== 2);
+  const invalidContext =
     (rawTermCode !== null && typeof rawTermCode !== "string") ||
-    (rawSection !== null && typeof rawSection !== "string")
-  )
-    redirect(`${path}?reviewError=invalid-context#reviews`);
-
+    (rawSection !== null && typeof rawSection !== "string");
   const associations: ReviewAssociations = {
     ...(courseEntry ? { course: { coursePrefix, courseNumber } } : {}),
     ...(instructorEntry !== undefined
@@ -61,15 +51,105 @@ export async function publishReview(formData: FormData) {
     ...(termCode ? { termCode } : {}),
     ...(section ? { section } : {}),
   };
+  return { path, associations, invalidBasis, invalidContext };
+}
+
+async function authorizeWrite(path: string) {
+  const requestHeaders = await headers();
+  const host =
+    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  if (!isSameOriginWrite(requestHeaders.get("origin"), host))
+    redirect(`${path}?reviewError=cross-origin#reviews`);
   const userId = await authenticatedUserId();
   if (!userId) redirect(`/sign-in?r=${encodeURIComponent(path)}`);
+  return userId;
+}
+
+function redirectReviewError(error: unknown, path: string): never {
+  if (!(error instanceof ReviewWriteError)) throw error;
+  if (error.code === "onboarding-required")
+    redirect(`/onboarding?r=${encodeURIComponent(path)}`);
+  redirect(`${path}?reviewError=${error.code}#reviews`);
+}
+
+export async function publishReview(formData: FormData) {
+  const parsed = parseReviewForm(formData);
+  const userId = await authorizeWrite(parsed.path);
+  const markdown = stringEntry(formData, "markdown");
+  const attribution = stringEntry(formData, "attribution") ?? "attributed";
+  if (markdown === undefined)
+    redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
+  if (parsed.invalidBasis)
+    redirect(`${parsed.path}?reviewError=invalid-basis#reviews`);
+  if (parsed.invalidContext)
+    redirect(`${parsed.path}?reviewError=invalid-context#reviews`);
+  if (attribution !== "attributed" && attribution !== "identity-hidden")
+    redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
   try {
-    await getReviewService().publishReview(userId, { associations, markdown });
+    await getReviewService().publishReview(userId, {
+      associations: parsed.associations,
+      markdown,
+      attribution,
+    });
   } catch (error) {
-    if (!(error instanceof ReviewWriteError)) throw error;
-    if (error.code === "onboarding-required")
-      redirect(`/onboarding?r=${encodeURIComponent(path)}`);
-    redirect(`${path}?reviewError=${error.code}#reviews`);
+    redirectReviewError(error, parsed.path);
   }
-  redirect(`${path}?review=published#reviews`);
+  redirect(`${parsed.path}?review=published#reviews`);
+}
+
+export async function editReview(formData: FormData) {
+  const parsed = parseReviewForm(formData);
+  const userId = await authorizeWrite(parsed.path);
+  const reviewId = stringEntry(formData, "reviewId");
+  const expectedRevisionId = stringEntry(formData, "expectedRevisionId");
+  const markdown = stringEntry(formData, "markdown");
+  const attribution = stringEntry(formData, "attribution");
+  if (
+    !reviewId ||
+    !UUID.test(reviewId) ||
+    !expectedRevisionId ||
+    !UUID.test(expectedRevisionId) ||
+    markdown === undefined ||
+    (attribution !== "attributed" && attribution !== "identity-hidden")
+  )
+    redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
+  if (parsed.invalidBasis)
+    redirect(`${parsed.path}?reviewError=invalid-basis#reviews`);
+  if (parsed.invalidContext)
+    redirect(`${parsed.path}?reviewError=invalid-context#reviews`);
+  try {
+    await getReviewService().editReview(userId, reviewId, {
+      expectedRevisionId,
+      associations: parsed.associations,
+      markdown,
+      attribution: attribution as ReviewAttribution,
+    });
+  } catch (error) {
+    redirectReviewError(error, parsed.path);
+  }
+  redirect(`${parsed.path}?review=published#reviews`);
+}
+
+export async function withdrawReview(formData: FormData) {
+  const parsed = parseReviewForm(formData);
+  const userId = await authorizeWrite(parsed.path);
+  const reviewId = stringEntry(formData, "reviewId");
+  const expectedRevisionId = stringEntry(formData, "expectedRevisionId");
+  if (
+    !reviewId ||
+    !UUID.test(reviewId) ||
+    !expectedRevisionId ||
+    !UUID.test(expectedRevisionId)
+  )
+    redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
+  try {
+    await getReviewService().withdrawReview(
+      userId,
+      reviewId,
+      expectedRevisionId,
+    );
+  } catch (error) {
+    redirectReviewError(error, parsed.path);
+  }
+  redirect(`${parsed.path}?review=withdrawn#reviews`);
 }

@@ -5,6 +5,8 @@ let origin: string | null = "https://rankings.example";
 let userId: string | undefined;
 let publicationError: unknown;
 const published: unknown[] = [];
+const edited: unknown[] = [];
+const withdrawn: unknown[] = [];
 
 mock.module("next/headers", () => ({
   headers: async () =>
@@ -21,6 +23,18 @@ mock.module("@/lib/contributions/postgres", () => ({
     async publishReview(id: string, input: unknown) {
       if (publicationError) throw publicationError;
       published.push({ id, input });
+    },
+    async editReview(id: string, reviewId: string, input: unknown) {
+      if (publicationError) throw publicationError;
+      edited.push({ id, reviewId, input });
+    },
+    async withdrawReview(
+      id: string,
+      reviewId: string,
+      expectedRevisionId: string,
+    ) {
+      if (publicationError) throw publicationError;
+      withdrawn.push({ id, reviewId, expectedRevisionId });
     },
     async listReviews() {
       const { ContributionsUnavailableError } = await import(
@@ -113,6 +127,7 @@ test("Review action publishes for an authenticated User and routes onboarding fa
           course: { coursePrefix: "COMP", courseNumber: "2000" },
         },
         markdown: "Useful labs.",
+        attribution: "attributed",
       },
     },
   ]);
@@ -123,6 +138,86 @@ test("Review action publishes for an authenticated User and routes onboarding fa
   );
   expect(await redirectOf(() => publishReview(form()))).toContain(
     "/onboarding?r=%2Fcourses%2FCOMP%2F2000",
+  );
+  publicationError = undefined;
+});
+
+test("Review actions edit optimistically and withdraw through the authorizing contribution seam", async () => {
+  const { editReview, withdrawReview } = await import(
+    "@/app/courses/review-actions"
+  );
+  origin = "https://rankings.example";
+  userId = "00000000-0000-4000-8000-000000000044";
+  publicationError = undefined;
+  edited.length = 0;
+  withdrawn.length = 0;
+  const reviewId = "00000000-0000-4000-8000-000000000144";
+  const expectedRevisionId = "00000000-0000-4000-8000-000000000244";
+  const editForm = form("Edited text.");
+  editForm.set("reviewId", reviewId);
+  editForm.set("expectedRevisionId", expectedRevisionId);
+  editForm.set("attribution", "identity-hidden");
+
+  expect(await redirectOf(() => editReview(editForm))).toContain(
+    "/courses/COMP/2000?review=published#reviews",
+  );
+  expect(edited).toEqual([
+    {
+      id: userId,
+      reviewId,
+      input: {
+        expectedRevisionId,
+        associations: {
+          course: { coursePrefix: "COMP", courseNumber: "2000" },
+        },
+        markdown: "Edited text.",
+        attribution: "identity-hidden",
+      },
+    },
+  ]);
+
+  const withdrawForm = new FormData();
+  withdrawForm.set("course", "COMP|2000");
+  withdrawForm.set("reviewId", reviewId);
+  withdrawForm.set("expectedRevisionId", expectedRevisionId);
+  expect(await redirectOf(() => withdrawReview(withdrawForm))).toContain(
+    "/courses/COMP/2000?review=withdrawn#reviews",
+  );
+  expect(withdrawn).toEqual([{ id: userId, reviewId, expectedRevisionId }]);
+});
+
+test("Review edit and withdrawal actions reject cross-origin, malformed, and wrong-owner writes", async () => {
+  const { editReview, withdrawReview } = await import(
+    "@/app/courses/review-actions"
+  );
+  userId = "00000000-0000-4000-8000-000000000044";
+  const editForm = form("Edited text.");
+  editForm.set("reviewId", "bad");
+  editForm.set("expectedRevisionId", "00000000-0000-4000-8000-000000000244");
+  editForm.set("attribution", "attributed");
+  expect(await redirectOf(() => editReview(editForm))).toContain(
+    "reviewError=invalid-review",
+  );
+
+  const withdrawForm = new FormData();
+  withdrawForm.set("course", "COMP|2000");
+  withdrawForm.set("reviewId", "00000000-0000-4000-8000-000000000144");
+  withdrawForm.set(
+    "expectedRevisionId",
+    "00000000-0000-4000-8000-000000000244",
+  );
+  origin = "https://evil.example";
+  expect(await redirectOf(() => withdrawReview(withdrawForm))).toContain(
+    "reviewError=cross-origin",
+  );
+
+  origin = "https://rankings.example";
+  publicationError = new ReviewWriteError(
+    "wrong-owner",
+    "Only the Review author can change it",
+  );
+  expect(await redirectOf(() => withdrawReview(withdrawForm))).toContain(
+    "reviewError=wrong-owner",
   );
   publicationError = undefined;
 });

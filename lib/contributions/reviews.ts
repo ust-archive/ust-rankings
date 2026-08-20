@@ -15,12 +15,18 @@ export type InstructorAssociationStatus =
   | "historical"
   | "needs-resolution";
 
+export type ReviewAttribution = "attributed" | "identity-hidden";
+
 export type PublicReview = ReviewAssociations & {
   id: string;
   revisionId: string;
   markdown: string;
-  capturedDisplayName: string;
+  attribution: ReviewAttribution;
+  attributionCredit: string;
+  capturedDisplayName?: string;
+  license: "CC BY 4.0";
   publishedAt: Date;
+  viewerCanEdit?: boolean;
   instructorAssociationStatus?: InstructorAssociationStatus;
 };
 
@@ -28,7 +34,19 @@ export type PublishReviewRecord = {
   userId: string;
   associations: ReviewAssociations;
   markdown: string;
+  attribution: ReviewAttribution;
   policyVersion: string;
+};
+
+export type EditReviewRecord = PublishReviewRecord & {
+  reviewId: string;
+  expectedRevisionId: string;
+};
+
+export type WithdrawReviewRecord = {
+  userId: string;
+  reviewId: string;
+  expectedRevisionId: string;
 };
 
 export type ReviewListQuery =
@@ -41,7 +59,12 @@ export type ReviewListQuery =
 
 export interface ReviewRepository {
   publishReview(input: PublishReviewRecord): Promise<PublicReview>;
-  listReviews(query: ReviewListQuery): Promise<PublicReview[]>;
+  editReview(input: EditReviewRecord): Promise<PublicReview>;
+  withdrawReview(input: WithdrawReviewRecord): Promise<void>;
+  listReviews(
+    query: ReviewListQuery,
+    viewerUserId?: string,
+  ): Promise<PublicReview[]>;
 }
 
 export type ReviewWriteErrorCode =
@@ -51,6 +74,10 @@ export type ReviewWriteErrorCode =
   | "account-closed"
   | "cross-origin"
   | "duplicate-review"
+  | "review-not-found"
+  | "wrong-owner"
+  | "stale-review"
+  | "review-withdrawn"
   | "invalid-basis"
   | "invalid-context"
   | "invalid-association"
@@ -144,6 +171,26 @@ function normalizeAssociations(input: ReviewAssociations): ReviewAssociations {
   return { course, instructorUuid, termCode, section };
 }
 
+function normalizeRevisionInput(input: {
+  associations: ReviewAssociations;
+  markdown: string;
+  attribution?: ReviewAttribution;
+}) {
+  const associations = normalizeAssociations(input.associations);
+  if (typeof input.markdown !== "string" || !input.markdown.trim())
+    throw new ReviewWriteError(
+      "invalid-review",
+      "Review Markdown must not be empty",
+    );
+  const attribution = input.attribution ?? "attributed";
+  if (attribution !== "attributed" && attribution !== "identity-hidden")
+    throw new ReviewWriteError(
+      "invalid-review",
+      "Review attribution is malformed",
+    );
+  return { associations, markdown: input.markdown, attribution };
+}
+
 export function createReviewService(
   repository: ReviewRepository,
   options: {
@@ -159,17 +206,18 @@ export function createReviewService(
   return {
     async publishReview(
       userId: string,
-      input: { associations: ReviewAssociations; markdown: string },
+      input: {
+        associations: ReviewAssociations;
+        markdown: string;
+        attribution?: ReviewAttribution;
+      },
     ) {
       if (!UUID.test(userId))
         throw new ReviewWriteError("account-not-found", "User was not found");
-      const associations = normalizeAssociations(input.associations);
-      if (typeof input.markdown !== "string" || !input.markdown.trim())
-        throw new ReviewWriteError(
-          "invalid-review",
-          "Review Markdown must not be empty",
-        );
-      const validated = await options.validateAssociations(associations);
+      const normalized = normalizeRevisionInput(input);
+      const validated = await options.validateAssociations(
+        normalized.associations,
+      );
       if (!validated)
         throw new ReviewWriteError(
           "invalid-association",
@@ -183,12 +231,74 @@ export function createReviewService(
       return repository.publishReview({
         userId,
         associations: validated,
-        markdown: input.markdown,
+        markdown: normalized.markdown,
+        attribution: normalized.attribution,
         policyVersion: options.reviewPolicyVersion,
       });
     },
 
-    async listReviews(query: ReviewListQuery) {
+    async editReview(
+      userId: string,
+      reviewId: string,
+      input: {
+        expectedRevisionId: string;
+        associations: ReviewAssociations;
+        markdown: string;
+        attribution: ReviewAttribution;
+      },
+    ) {
+      if (!UUID.test(userId))
+        throw new ReviewWriteError("account-not-found", "User was not found");
+      if (!UUID.test(reviewId) || !UUID.test(input.expectedRevisionId))
+        throw new ReviewWriteError(
+          "invalid-review",
+          "Review or expected Review Revision is malformed",
+        );
+      const normalized = normalizeRevisionInput(input);
+      const validated = await options.validateAssociations(
+        normalized.associations,
+      );
+      if (!validated)
+        throw new ReviewWriteError(
+          "invalid-association",
+          "Review Bases and Review Context are not associated in source data",
+        );
+      if (!options.reviewPolicyVersion)
+        throw new ReviewWriteError(
+          "policy-unavailable",
+          "Review publication terms are not configured",
+        );
+      return repository.editReview({
+        userId,
+        reviewId,
+        expectedRevisionId: input.expectedRevisionId,
+        associations: validated,
+        markdown: normalized.markdown,
+        attribution: normalized.attribution,
+        policyVersion: options.reviewPolicyVersion,
+      });
+    },
+
+    async withdrawReview(
+      userId: string,
+      reviewId: string,
+      expectedRevisionId: string,
+    ) {
+      if (!UUID.test(userId))
+        throw new ReviewWriteError("account-not-found", "User was not found");
+      if (!UUID.test(reviewId) || !UUID.test(expectedRevisionId))
+        throw new ReviewWriteError(
+          "invalid-review",
+          "Review or expected Review Revision is malformed",
+        );
+      await repository.withdrawReview({
+        userId,
+        reviewId,
+        expectedRevisionId,
+      });
+    },
+
+    async listReviews(query: ReviewListQuery, viewerUserId?: string) {
       const instructorUuids =
         query.type === "instructor" && Array.isArray(query.instructorUuids)
           ? [
@@ -217,12 +327,15 @@ export function createReviewService(
       );
       let reviews: PublicReview[];
       if (query.type === "course" && context.course)
-        reviews = await repository.listReviews({
-          type: "course",
-          ...context.course,
-          termCode: context.termCode,
-          section: context.section,
-        });
+        reviews = await repository.listReviews(
+          {
+            type: "course",
+            ...context.course,
+            termCode: context.termCode,
+            section: context.section,
+          },
+          viewerUserId && UUID.test(viewerUserId) ? viewerUserId : undefined,
+        );
       else if (
         query.type === "instructor" &&
         context.instructorUuid &&
@@ -230,11 +343,14 @@ export function createReviewService(
           Boolean(instructorUuid),
         )
       )
-        reviews = await repository.listReviews({
-          type: "instructor",
-          instructorUuids,
-          termCode: context.termCode,
-        });
+        reviews = await repository.listReviews(
+          {
+            type: "instructor",
+            instructorUuids,
+            termCode: context.termCode,
+          },
+          viewerUserId && UUID.test(viewerUserId) ? viewerUserId : undefined,
+        );
       else
         throw new ReviewWriteError(
           "invalid-basis",

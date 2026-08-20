@@ -1,6 +1,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ReviewComposer, Reviews } from "@/app/courses/course-reviews";
+import {
+  ReviewComposer,
+  type ReviewEditorOptions,
+  Reviews,
+} from "@/app/courses/course-reviews";
 import { coursePath } from "@/app/courses/routes";
 import { SignalControls } from "@/app/signals/signal-controls";
 import type { PublicReview } from "@/lib/contributions/reviews";
@@ -214,12 +218,16 @@ function CommunityArea({
   reviews,
   unavailable,
   published,
+  withdrawn,
   error,
+  editor,
 }: {
   reviews: PublicReview[];
   unavailable: boolean;
   published?: boolean;
+  withdrawn?: boolean;
   error?: string;
+  editor?: ReviewEditorOptions;
 }) {
   return (
     <section
@@ -238,6 +246,14 @@ function CommunityArea({
           Review Revision published.
         </p>
       ) : null}
+      {withdrawn ? (
+        <p
+          className="mt-4 rounded-lg bg-green-50 p-3 text-green-900"
+          role="status"
+        >
+          Review withdrawn from public display.
+        </p>
+      ) : null}
       {error ? (
         <p className="mt-4 rounded-lg bg-red-50 p-3 text-red-900" role="alert">
           Review could not be published ({error}).
@@ -252,7 +268,7 @@ function CommunityArea({
           Reviews.
         </p>
       ) : (
-        <Reviews reviews={reviews} />
+        <Reviews editor={editor} reviews={reviews} />
       )}
     </section>
   );
@@ -449,6 +465,7 @@ export function InstructorDetails({
   reviews = [],
   reviewsUnavailable = true,
   reviewPublished,
+  reviewWithdrawn,
   reviewError,
 }: {
   identity: InstructorIdentityLookup;
@@ -465,6 +482,7 @@ export function InstructorDetails({
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
   reviewPublished?: boolean;
+  reviewWithdrawn?: boolean;
   reviewError?: string;
 }) {
   const selectedClasses = selectedTermCode
@@ -509,6 +527,16 @@ export function InstructorDetails({
       },
     ]),
   ];
+  const reviewEditor: ReviewEditorOptions = {
+    courses,
+    contexts,
+    instructors: [
+      {
+        instructorUuid: identity.instructor.uuid,
+        name: identity.instructor.canonicalName,
+      },
+    ],
+  };
   return (
     <div className="w-full space-y-8 text-left text-slate-900">
       <header className="border-b border-slate-200 pb-7">
@@ -580,15 +608,8 @@ export function InstructorDetails({
           signalError={signalError}
           reviewComposer={
             <ReviewComposer
-              courses={courses}
-              contexts={contexts}
+              {...reviewEditor}
               initialInstructorUuid={identity.instructor.uuid}
-              instructors={[
-                {
-                  instructorUuid: identity.instructor.uuid,
-                  name: identity.instructor.canonicalName,
-                },
-              ]}
             />
           }
         />
@@ -597,8 +618,10 @@ export function InstructorDetails({
           selectedTermCode={selectedTermCode}
         />
         <CommunityArea
+          editor={reviewEditor}
           error={reviewError}
           published={reviewPublished}
+          withdrawn={reviewWithdrawn}
           reviews={reviews}
           unavailable={reviewsUnavailable}
         />

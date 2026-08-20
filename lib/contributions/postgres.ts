@@ -14,11 +14,13 @@ import {
 import {
   ContributionsUnavailableError,
   createReviewService,
+  type EditReviewRecord,
   type PublicReview,
   type PublishReviewRecord,
   type ReviewListQuery,
   type ReviewRepository,
   ReviewWriteError,
+  type WithdrawReviewRecord,
 } from "./reviews";
 import {
   createSignalService,
@@ -154,8 +156,10 @@ type ReviewDatabaseRow = {
   termCode: string | null;
   section: string | null;
   markdown: string;
-  capturedDisplayName: string;
+  attribution: "attributed" | "identity-hidden";
+  capturedDisplayName: string | null;
   publishedAt: Date;
+  viewerCanEdit?: boolean;
   instructorAssociationStatus:
     | PublicReview["instructorAssociationStatus"]
     | null;
@@ -177,12 +181,54 @@ function publicReview(row: ReviewDatabaseRow): PublicReview {
     ...(row.termCode ? { termCode: row.termCode } : {}),
     ...(row.section ? { section: row.section } : {}),
     markdown: row.markdown,
-    capturedDisplayName: row.capturedDisplayName,
+    attribution: row.attribution,
+    attributionCredit:
+      row.attribution === "attributed"
+        ? (row.capturedDisplayName as string)
+        : "UST Rankings contributor",
+    ...(row.capturedDisplayName
+      ? { capturedDisplayName: row.capturedDisplayName }
+      : {}),
+    license: "CC BY 4.0",
     publishedAt: row.publishedAt,
+    ...(row.viewerCanEdit ? { viewerCanEdit: true } : {}),
     ...(row.instructorAssociationStatus
       ? { instructorAssociationStatus: row.instructorAssociationStatus }
       : {}),
   };
+}
+
+function mapReviewWriteError(error: unknown): never {
+  if (typeof error === "object" && error !== null) {
+    if (
+      "code" in error &&
+      error.code === "23505" &&
+      "constraint_name" in error &&
+      error.constraint_name === "reviews_active_association_tuple_idx"
+    )
+      throw new ReviewWriteError(
+        "duplicate-review",
+        "This User already has an active Review for this exact Review Basis and Review Context tuple",
+      );
+    if ("message" in error && typeof error.message === "string") {
+      const code = [
+        "account-not-found",
+        "onboarding-required",
+        "account-suspended",
+        "account-closed",
+        "review-not-found",
+        "wrong-owner",
+        "stale-review",
+        "review-withdrawn",
+      ].find((code) => error.message === code);
+      if (code)
+        throw new ReviewWriteError(
+          code as ReviewWriteError["code"],
+          "This User cannot change this Review",
+        );
+    }
+  }
+  throw error;
 }
 
 export class PostgresReviewRepository implements ReviewRepository {
@@ -202,48 +248,68 @@ export class PostgresReviewRepository implements ReviewRepository {
                ${termCode ?? null}::text AS "termCode",
                ${section ?? null}::text AS section,
                ${input.markdown}::text AS markdown,
+               attribution,
                captured_display_name AS "capturedDisplayName",
                published_at AS "publishedAt",
                ${instructorUuid ? "resolved" : null}::text AS "instructorAssociationStatus"
-        FROM publish_attributed_review(
+        FROM publish_review(
           ${reviewId}, ${revisionId}, ${input.userId},
           ${course?.coursePrefix ?? null}, ${course?.courseNumber ?? null},
           ${instructorUuid ?? null}, ${termCode ?? null}, ${section ?? null},
-          ${input.markdown}, ${input.policyVersion}
+          ${input.markdown}, ${input.attribution}, ${input.policyVersion}
         )
       `;
       return publicReview(published);
     } catch (error) {
-      if (typeof error === "object" && error !== null) {
-        if (
-          "code" in error &&
-          error.code === "23505" &&
-          "constraint_name" in error &&
-          error.constraint_name === "reviews_active_association_tuple_idx"
-        )
-          throw new ReviewWriteError(
-            "duplicate-review",
-            "This User already has an active Review for this exact Review Basis and Review Context tuple",
-          );
-        if ("message" in error && typeof error.message === "string") {
-          const code = [
-            "account-not-found",
-            "onboarding-required",
-            "account-suspended",
-            "account-closed",
-          ].find((code) => error.message === code);
-          if (code)
-            throw new ReviewWriteError(
-              code as ReviewWriteError["code"],
-              "This User cannot publish a Review",
-            );
-        }
-      }
-      throw error;
+      mapReviewWriteError(error);
     }
   }
 
-  async listReviews(query: ReviewListQuery) {
+  async editReview(input: EditReviewRecord) {
+    const revisionId = randomUUID();
+    const { course, instructorUuid, termCode, section } = input.associations;
+    try {
+      const [edited] = await this.sql<ReviewDatabaseRow[]>`
+        SELECT review_id AS id,
+               revision_id AS "revisionId",
+               ${course?.coursePrefix ?? null}::text AS "coursePrefix",
+               ${course?.courseNumber ?? null}::text AS "courseNumber",
+               ${instructorUuid ?? null}::uuid AS "instructorUuid",
+               ${termCode ?? null}::text AS "termCode",
+               ${section ?? null}::text AS section,
+               ${input.markdown}::text AS markdown,
+               attribution,
+               captured_display_name AS "capturedDisplayName",
+               published_at AS "publishedAt",
+               ${instructorUuid ? "resolved" : null}::text AS "instructorAssociationStatus",
+               true AS "viewerCanEdit"
+        FROM edit_review(
+          ${input.reviewId}, ${revisionId}, ${input.expectedRevisionId},
+          ${input.userId}, ${course?.coursePrefix ?? null},
+          ${course?.courseNumber ?? null}, ${instructorUuid ?? null},
+          ${termCode ?? null}, ${section ?? null}, ${input.markdown},
+          ${input.attribution}, ${input.policyVersion}
+        )
+      `;
+      return publicReview(edited);
+    } catch (error) {
+      mapReviewWriteError(error);
+    }
+  }
+
+  async withdrawReview(input: WithdrawReviewRecord) {
+    try {
+      await this.sql`
+        SELECT withdraw_review(
+          ${input.reviewId}, ${input.expectedRevisionId}, ${input.userId}
+        )
+      `;
+    } catch (error) {
+      mapReviewWriteError(error);
+    }
+  }
+
+  async listReviews(query: ReviewListQuery, viewerUserId?: string) {
     try {
       const rows = await this.sql<ReviewDatabaseRow[]>`
         SELECT r.id,
@@ -254,16 +320,18 @@ export class PostgresReviewRepository implements ReviewRepository {
                rc.term_code AS "termCode",
                rc.section,
                rr.markdown,
+               rr.attribution,
                rr.captured_display_name AS "capturedDisplayName",
                rr.published_at AS "publishedAt",
-               r.instructor_association_status AS "instructorAssociationStatus"
+               r.instructor_association_status AS "instructorAssociationStatus",
+               (${viewerUserId ?? null}::uuid IS NOT NULL
+                 AND r.author_user_id = ${viewerUserId ?? null}::uuid) AS "viewerCanEdit"
         FROM reviews r
         JOIN review_revisions rr ON rr.id = r.current_revision_id
         LEFT JOIN review_course_bases rcb ON rcb.revision_id = rr.id
         LEFT JOIN review_instructor_bases rib ON rib.revision_id = rr.id
         LEFT JOIN review_contexts rc ON rc.revision_id = rr.id
         WHERE r.publication_state = 'active'
-          AND rr.attribution = 'attributed'
           AND (${query.type} = 'course' AND rcb.course_prefix = ${query.type === "course" ? query.coursePrefix : null}
                AND rcb.course_number = ${query.type === "course" ? query.courseNumber : null}
             OR ${query.type} = 'instructor' AND rib.instructor_uuid = ANY(${query.type === "instructor" ? query.instructorUuids : []}::uuid[]))

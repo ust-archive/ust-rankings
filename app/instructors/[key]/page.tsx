@@ -149,6 +149,7 @@ export async function renderInstructorPage(
       reviews={reviewResult.reviews}
       reviewsUnavailable={reviewResult.unavailable}
       reviewPublished={query.review === "published"}
+      reviewWithdrawn={query.review === "withdrawn"}
       reviewError={
         typeof query.reviewError === "string" ? query.reviewError : undefined
       }
