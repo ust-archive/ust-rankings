@@ -2,8 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 export const maxDuration = 300;
 
-function authenticated(request: Request) {
-  const secret = process.env.SCHEDULE_REFRESH_SECRET ?? process.env.CRON_SECRET;
+function authenticated(request: Request, secret: string | undefined) {
   const authorization = request.headers.get("authorization");
   if (!secret || secret.length < 32 || !authorization?.startsWith("Bearer "))
     return false;
@@ -20,9 +19,7 @@ type RefreshOperation = (options: { sha?: string }) => Promise<{
 }>;
 
 export function createScheduleRefreshHandlers(operation: RefreshOperation) {
-  async function handle(request: Request, sha?: string) {
-    if (!authenticated(request))
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
+  async function handle(sha?: string) {
     try {
       const result = await operation({ sha });
       return Response.json(result, {
@@ -51,10 +48,17 @@ export function createScheduleRefreshHandlers(operation: RefreshOperation) {
 
   return {
     GET(request: Request) {
-      return handle(request);
+      if (!authenticated(request, process.env.CRON_SECRET))
+        return Response.json({ error: "Unauthorized" }, { status: 401 });
+      return handle();
     },
     async POST(request: Request) {
-      if (!authenticated(request))
+      if (
+        !authenticated(
+          request,
+          process.env.SCHEDULE_REFRESH_SECRET ?? process.env.CRON_SECRET,
+        )
+      )
         return Response.json({ error: "Unauthorized" }, { status: 401 });
       if (Number(request.headers.get("content-length") ?? 0) > 1024)
         return Response.json(
@@ -73,7 +77,7 @@ export function createScheduleRefreshHandlers(operation: RefreshOperation) {
           : undefined;
       if (sha !== undefined && typeof sha !== "string")
         return Response.json({ error: "Invalid commit SHA." }, { status: 400 });
-      return handle(request, sha);
+      return handle(sha);
     },
   };
 }

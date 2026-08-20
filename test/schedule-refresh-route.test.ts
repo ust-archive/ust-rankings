@@ -3,13 +3,15 @@ import { afterEach, expect, mock, test } from "bun:test";
 mock.module("server-only", () => ({}));
 
 const secret = "correct-secret-with-enough-entropy";
+const cronSecret = "distinct-cron-secret-with-enough-entropy";
 
 afterEach(() => {
   delete process.env.SCHEDULE_REFRESH_SECRET;
   delete process.env.CRON_SECRET;
 });
 
-test("authenticated daily and commit-pinned requests invoke Schedule refresh", async () => {
+test("distinct daily and manual secrets invoke the intended Schedule refresh", async () => {
+  process.env.CRON_SECRET = cronSecret;
   process.env.SCHEDULE_REFRESH_SECRET = secret;
   const calls: Array<{ sha?: string }> = [];
   const operation = mock(async (options: { sha?: string }) => {
@@ -23,17 +25,18 @@ test("authenticated daily and commit-pinned requests invoke Schedule refresh", a
     "@/app/api/schedule/refresh/route"
   );
   const handlers = createScheduleRefreshHandlers(operation);
-  const authorization = { authorization: `Bearer ${secret}` };
-
   const daily = await handlers.GET(
     new Request("https://example.test/api/schedule/refresh", {
-      headers: authorization,
+      headers: { authorization: `Bearer ${cronSecret}` },
     }),
   );
   const pinned = await handlers.POST(
     new Request("https://example.test/api/schedule/refresh", {
       method: "POST",
-      headers: { ...authorization, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${secret}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
         sha: "0123456789abcdef0123456789abcdef01234567",
       }),
@@ -42,6 +45,29 @@ test("authenticated daily and commit-pinned requests invoke Schedule refresh", a
 
   expect(daily.status).toBe(200);
   expect(pinned.status).toBe(200);
+  expect(
+    (
+      await handlers.GET(
+        new Request("https://example.test/api/schedule/refresh", {
+          headers: { authorization: `Bearer ${secret}` },
+        }),
+      )
+    ).status,
+  ).toBe(401);
+  expect(
+    (
+      await handlers.POST(
+        new Request("https://example.test/api/schedule/refresh", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${cronSecret}`,
+            "content-type": "application/json",
+          },
+          body: "{}",
+        }),
+      )
+    ).status,
+  ).toBe(401);
   expect(calls).toEqual([
     { sha: undefined },
     { sha: "0123456789abcdef0123456789abcdef01234567" },

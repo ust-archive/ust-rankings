@@ -266,12 +266,12 @@ function parseStoredManifest(value: unknown, sha: string) {
   return artifacts as Record<string, { sha256: string; size: number }>;
 }
 
-class SpacesScheduleStore {
+export class SpacesScheduleStore {
   private readonly client: S3Client;
   private readonly bucket: string;
   private readonly prefix: string;
 
-  constructor() {
+  constructor(client?: S3Client) {
     const endpoint = new URL(requireEnvironment("SCHEDULE_SPACE_ENDPOINT"));
     if (endpoint.protocol !== "https:")
       throw new Error("SCHEDULE_SPACE_ENDPOINT must use HTTPS");
@@ -280,15 +280,19 @@ class SpacesScheduleStore {
       /^\/+|\/+$/g,
       "",
     );
-    this.client = new S3Client({
-      endpoint: endpoint.toString(),
-      region: process.env.SCHEDULE_SPACE_REGION ?? "sgp1",
-      forcePathStyle: false,
-      credentials: {
-        accessKeyId: requireEnvironment("SCHEDULE_SPACE_ACCESS_KEY_ID"),
-        secretAccessKey: requireEnvironment("SCHEDULE_SPACE_SECRET_ACCESS_KEY"),
-      },
-    });
+    this.client =
+      client ??
+      new S3Client({
+        endpoint: endpoint.toString(),
+        region: process.env.SCHEDULE_SPACE_REGION ?? "sgp1",
+        forcePathStyle: false,
+        credentials: {
+          accessKeyId: requireEnvironment("SCHEDULE_SPACE_ACCESS_KEY_ID"),
+          secretAccessKey: requireEnvironment(
+            "SCHEDULE_SPACE_SECRET_ACCESS_KEY",
+          ),
+        },
+      });
   }
 
   private key(suffix: string) {
@@ -464,24 +468,31 @@ class SpacesScheduleStore {
   }
 
   private async put(key: string, body: Uint8Array, immutable: boolean) {
-    if (immutable) {
-      const existing = await this.bytes(key, body.length);
-      if (existing) {
-        if (!Buffer.from(existing).equals(Buffer.from(body)))
-          throw new Error(
-            "Immutable Schedule object already exists with different bytes",
-          );
-        return;
-      }
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: this.key(key),
+          Body: body,
+          ContentType: "application/octet-stream",
+          IfNoneMatch: immutable ? "*" : undefined,
+        }),
+      );
+      return;
+    } catch (error) {
+      if (
+        !immutable ||
+        ((error as { name?: string }).name !== "PreconditionFailed" &&
+          (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+            ?.httpStatusCode !== 412)
+      )
+        throw error;
     }
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: this.key(key),
-        Body: body,
-        ContentType: "application/octet-stream",
-      }),
-    );
+    const existing = await this.bytes(key, body.length);
+    if (!existing || !Buffer.from(existing).equals(Buffer.from(body)))
+      throw new Error(
+        "Immutable Schedule object already exists with different bytes",
+      );
   }
 }
 

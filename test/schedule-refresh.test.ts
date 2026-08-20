@@ -391,6 +391,108 @@ test("concurrent Schedule refresh invocation reports busy without downloading", 
   expect(downloaded).toBeFalse();
 });
 
+test("a validated current Schedule generation clears a retained failure", async () => {
+  const root = await mkdtemp(join(tmpdir(), "schedule-current-recovery-"));
+  temporaryDirectories.push(root);
+  const directory = await makeScheduleGeneration(root);
+  const now = new Date().toISOString();
+  const pointer: ScheduleGenerationPointer = {
+    activeSha: scheduleFixtureSha,
+    acceptedAt: now,
+    sourceUpdatedAt: now,
+  };
+  let failure: Awaited<
+    ReturnType<ScheduleRefreshDependencies["store"]["readFailure"]>
+  > = { class: "integrity", at: now };
+  let downloads = 0;
+  const dependencies: ScheduleRefreshDependencies = {
+    upstream: {
+      async download() {
+        downloads += 1;
+        return {
+          sha: scheduleFixtureSha,
+          sourceUpdatedAt: now,
+          directory,
+        };
+      },
+    },
+    store: {
+      async readPointer() {
+        return pointer;
+      },
+      async downloadGeneration() {
+        return directory;
+      },
+      async putGeneration() {},
+      async writePointer() {},
+      async readFailure() {
+        return failure;
+      },
+      async writeFailure(value) {
+        failure = value;
+      },
+    },
+    async withLock<T>(operation: () => Promise<T>) {
+      return operation();
+    },
+    async sleep() {},
+  };
+  const { getScheduleHealth, refreshSchedule } = await import(
+    "@/lib/schedule/server"
+  );
+
+  await expect(
+    refreshSchedule({ sha: scheduleFixtureSha }, dependencies),
+  ).resolves.toEqual({ status: "current", generation: scheduleFixtureSha });
+  expect(downloads).toBe(1);
+  expect(failure).toBeUndefined();
+  expect(await getScheduleHealth(dependencies)).toMatchObject({
+    status: "healthy",
+    activeGeneration: scheduleFixtureSha,
+    failureClass: undefined,
+  });
+});
+
+test("Schedule pointer storage errors are not mislabeled as lock failures", async () => {
+  let failure: Awaited<
+    ReturnType<ScheduleRefreshDependencies["store"]["readFailure"]>
+  >;
+  const dependencies = {
+    upstream: {
+      async download() {
+        throw new Error("not used");
+      },
+    },
+    store: {
+      async readPointer() {
+        throw new Error("Space unavailable");
+      },
+      async downloadGeneration() {
+        return undefined;
+      },
+      async putGeneration() {},
+      async writePointer() {},
+      async readFailure() {
+        return failure;
+      },
+      async writeFailure(value: typeof failure) {
+        failure = value;
+      },
+    },
+    async withLock<T>(operation: () => Promise<T>) {
+      return operation();
+    },
+    async sleep() {},
+  } as ScheduleRefreshDependencies;
+  const { refreshSchedule } = await import("@/lib/schedule/server");
+
+  await expect(refreshSchedule({}, dependencies)).rejects.toMatchObject({
+    name: "ScheduleRefreshError",
+    failureClass: "storage",
+  });
+  expect(failure).toMatchObject({ class: "storage" });
+});
+
 test("a failed Schedule refresh keeps last-known-good active and reports stale health", async () => {
   const firstRoot = await mkdtemp(join(tmpdir(), "schedule-first-"));
   const secondRoot = await mkdtemp(join(tmpdir(), "schedule-second-"));

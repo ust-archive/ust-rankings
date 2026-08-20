@@ -665,9 +665,17 @@ export async function refreshSchedule(
   let result: ScheduleRefreshResult | undefined;
   try {
     result = await dependencies.withLock(async () => {
-      const current = await dependencies.store.readPointer();
-      if (options.sha && current?.activeSha === options.sha)
-        return { status: "current", generation: options.sha } as const;
+      let current: ScheduleGenerationPointer | undefined;
+      try {
+        current = await dependencies.store.readPointer();
+      } catch (error) {
+        const failure = {
+          class: "storage",
+          at: new Date().toISOString(),
+        } as const;
+        await dependencies.store.writeFailure(failure).catch(() => undefined);
+        throw new ScheduleRefreshError("storage", { cause: error });
+      }
       let lastError: unknown;
       let failureClass: ScheduleFailure["class"] = "upstream";
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -703,6 +711,8 @@ export async function refreshSchedule(
             Date.parse(candidate.sourceUpdatedAt) <=
               Date.parse(current.sourceUpdatedAt)
           ) {
+            failureClass = "storage";
+            await dependencies.store.writeFailure(undefined);
             await retireGeneration(Promise.resolve(accepted));
             return {
               status:
@@ -729,9 +739,7 @@ export async function refreshSchedule(
           );
           runtimeDependencies = dependencies;
           runtimeCheckedAt = Date.now();
-          await dependencies.store
-            .writeFailure(undefined)
-            .catch(() => undefined);
+          await dependencies.store.writeFailure(undefined);
           return { status: "activated", generation: candidate.sha } as const;
         } catch (error) {
           lastError = error;
