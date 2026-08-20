@@ -2,7 +2,7 @@
 
 import { PartyPopper } from "lucide-react";
 import type { HTMLAttributes } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 
 type UstRankingsComBannerProps = HTMLAttributes<HTMLDivElement>;
@@ -10,8 +10,8 @@ type UstRankingsComBannerProps = HTMLAttributes<HTMLDivElement>;
 export function NewReleaseBanner(props: UstRankingsComBannerProps) {
   return (
     <Alert {...props} className={cn("text-left", props.className)}>
-      <PartyPopper className="h-4 w-4" />
-      <AlertTitle>Bug Fixes...</AlertTitle>
+      <PartyPopper aria-hidden="true" className="h-4 w-4" />
+      <p className="mb-1 font-medium leading-none tracking-tight">Bug Fixes…</p>
       <AlertDescription>
         <article>
           <p>

@@ -4,7 +4,7 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { GraduationCapIcon } from "lucide-react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import Link from "next/link";
 import type React from "react";
@@ -22,6 +22,10 @@ export const metadata: Metadata = {
   description: "The Rankings of Instructors at HKUST. ",
 };
 
+export const viewport: Viewport = {
+  themeColor: "#003366",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -36,6 +40,12 @@ export default function RootLayout({
       <body
         className={cn(inter.className, roboto_mono.variable, "min-h-screen")}
       >
+        <a
+          className="sr-only z-50 rounded-md bg-white px-4 py-2 font-semibold text-slate-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:outline-none focus:ring-2 focus:ring-[#003366] focus:ring-offset-2"
+          href="#main-content"
+        >
+          Skip to Main Content
+        </a>
         <header className="bg-gradient-to-r from-[#003366] via-[#2b6297] to-[#003366] text-white dark:from-[#003366] dark:via-[#224e77] dark:to-[#003366]">
           <div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center gap-4 px-4 py-3 sm:px-6">
             <Link
@@ -43,7 +53,7 @@ export default function RootLayout({
               className="flex items-center gap-2 font-bold no-underline"
               href="/"
             >
-              <GraduationCapIcon className="h-8 w-8" />
+              <GraduationCapIcon aria-hidden="true" className="h-8 w-8" />
               <span className="hidden sm:inline">UST Rankings</span>
             </Link>
             <nav
@@ -77,7 +87,10 @@ export default function RootLayout({
             </nav>
           </div>
         </header>
-        <main className="mx-auto flex w-full max-w-7xl flex-col items-center space-y-8 px-4 py-12 text-center sm:px-6 lg:py-16">
+        <main
+          className="mx-auto flex w-full max-w-7xl flex-col items-center space-y-8 px-4 py-12 text-center sm:px-6 lg:py-16"
+          id="main-content"
+        >
           {children}
         </main>
         <footer className="border-t border-slate-200 bg-white text-slate-700">

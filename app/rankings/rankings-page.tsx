@@ -30,6 +30,11 @@ const criteria = [
   ["course", "Course SFQ"],
   ["instructor", "Instructor SFQ"],
 ] as const;
+const scoreFormat = new Intl.NumberFormat("en", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+const countFormat = new Intl.NumberFormat("en");
 
 function rankingPath(entity: Entity) {
   return `/rankings/${entity === "course" ? "courses" : "instructors"}`;
@@ -125,24 +130,22 @@ function letterGrade(percentile: number) {
 }
 
 function gradeColor(ratio: number): Color {
-  const colorStops = [
-    { ratio: 0.0, color: [237, 27, 47] as Color },
+  const stops = [
+    { ratio: 0, color: [237, 27, 47] as Color },
     { ratio: 0.25, color: [250, 166, 26] as Color },
     { ratio: 0.75, color: [163, 207, 98] as Color },
-    { ratio: 1.0, color: [0, 154, 97] as Color },
+    { ratio: 1, color: [0, 154, 97] as Color },
   ];
-  for (let i = 0; i < colorStops.length - 1; i++) {
-    const currentStop = colorStops[i];
-    const nextStop = colorStops[i + 1];
-    if (ratio >= currentStop.ratio && ratio <= nextStop.ratio) {
-      const t =
-        (ratio - currentStop.ratio) / (nextStop.ratio - currentStop.ratio);
-      return [
-        Math.round(currentStop.color[0] * (1 - t) + nextStop.color[0] * t),
-        Math.round(currentStop.color[1] * (1 - t) + nextStop.color[1] * t),
-        Math.round(currentStop.color[2] * (1 - t) + nextStop.color[2] * t),
-      ];
-    }
+  for (let index = 0; index < stops.length - 1; index += 1) {
+    const current = stops[index];
+    const next = stops[index + 1];
+    if (ratio < current.ratio || ratio > next.ratio) continue;
+    const progress = (ratio - current.ratio) / (next.ratio - current.ratio);
+    return current.color.map((channel, channelIndex) =>
+      Math.round(
+        channel * (1 - progress) + next.color[channelIndex] * progress,
+      ),
+    ) as Color;
   }
   return [0, 0, 0];
 }
@@ -153,41 +156,65 @@ function detailsHref(result: CourseRanking | InstructorRanking) {
     : instructorPath(result);
 }
 
+function sampleCount(value: number, source: string) {
+  return `${countFormat.format(value)} ${value === 1 ? "sample" : "samples"} from ${source}`;
+}
+
 function RankingResultCard({
   result,
 }: {
   result: CourseRanking | InstructorRanking;
 }) {
   const grade = letterGrade(result.globalPercentile);
-  const identity =
-    result.entity === "course"
-      ? `${result.courseCode}${result.title ? ` · ${result.title}` : ""}`
-      : result.canonicalName;
+  const score = scoreFormat.format(result.score * 100);
+  const hasLocalContext =
+    result.localRank !== result.globalRank ||
+    result.localPopulation !== result.globalPopulation;
   return (
-    <li>
+    <li
+      style={{
+        containIntrinsicSize: "auto 7rem",
+        contentVisibility: "auto",
+      }}
+    >
       <Link
-        className="group block rounded-lg no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]"
+        className="group block touch-manipulation rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]"
         href={detailsHref(result)}
+        style={{ textDecoration: "none" }}
       >
-        <Card className="flex flex-col bg-white">
-          <div className="flex w-full flex-row flex-wrap items-center gap-4 p-4 lg:p-6 lg:pr-10">
-            <p className="shrink-0 text-2xl font-semibold text-gray-600 lg:w-36">
-              #{result.localRank}{" "}
-              <span className="font-medium">
-                ({(result.score * 100).toFixed(1)})
-              </span>
-            </p>
-            <div className="min-w-0 flex-1 space-y-1 text-left">
-              <h2 className="text-2xl font-semibold tracking-normal wrap-break-word group-hover:underline">
-                {identity}
+        <Card className="bg-white transition-shadow hover:border-slate-300 hover:shadow-md group-focus-visible:border-slate-400">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-4 sm:gap-5 sm:p-6">
+            <div className="w-20 shrink-0 text-slate-600 sm:w-32">
+              <p className="text-xl font-semibold tabular-nums sm:text-2xl">
+                #{result.localRank}{" "}
+                <span className="hidden font-medium sm:inline">({score})</span>
+              </p>
+              <p className="text-xs tabular-nums sm:hidden">Score {score}</p>
+            </div>
+            <div className="min-w-0 text-left">
+              <h2 className="wrap-break-word text-xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-2xl">
+                {result.entity === "course"
+                  ? result.courseCode
+                  : result.canonicalName}
               </h2>
-              <p className="text-sm text-gray-500">
-                Global Rank {result.globalRank} of {result.globalPopulation} ·
-                Local Rank {result.localRank} of {result.localPopulation}
+              {result.entity === "course" && result.title ? (
+                <p className="text-sm font-semibold text-slate-600">
+                  {result.title}
+                </p>
+              ) : null}
+              <p className="text-xs leading-snug text-slate-600 sm:text-sm">
+                {sampleCount(result.ustSpaceSamples, "ust.space")}.{" "}
+                {sampleCount(result.sfqSamples, "SFQ")}.
+              </p>
+              <p className="text-xs leading-snug text-slate-500 tabular-nums">
+                Global Rank {result.globalRank} of {result.globalPopulation}
+                {hasLocalContext
+                  ? ` · Local Rank ${result.localRank} of ${result.localPopulation}`
+                  : ""}
               </p>
             </div>
             <div
-              className="my-auto ml-auto w-12 shrink-0 rounded-lg py-2 text-center text-2xl font-semibold text-white"
+              className="w-12 shrink-0 rounded-lg py-2 text-center text-xl font-semibold text-white shadow-sm sm:text-2xl"
               style={{
                 backgroundColor: `rgb(${gradeColor(result.globalPercentile).join(", ")})`,
               }}
@@ -212,6 +239,26 @@ function selectedPreset(
   return query?.preset ?? first(searchParams, "preset") ?? "learning";
 }
 
+function fallbackTermName(termCode: string) {
+  if (!/^[0-9]{4}$/.test(termCode)) return termCode;
+  const year = 2000 + Number(termCode.slice(0, 2));
+  const season = ["Fall", "Winter", "Spring", "Summer"][
+    Number(termCode.slice(2, 3)) - 1
+  ];
+  return season ? `${year}-${String(year + 1).slice(-2)} ${season}` : termCode;
+}
+
+function ApplyButton({ children }: { children: ReactNode }) {
+  return (
+    <button
+      className="min-h-11 rounded-md bg-[#003366] px-5 py-2.5 font-semibold text-white hover:bg-[#174f82] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]"
+      type="submit"
+    >
+      {children}
+    </button>
+  );
+}
+
 function RankingForm({
   entity,
   searchParams,
@@ -233,120 +280,109 @@ function RankingForm({
           ? [searchParams.commonCore]
           : []),
   );
+  const rawTerm = rankings?.population.termCode ?? first(searchParams, "term");
+  const terms =
+    rankings?.terms ??
+    (rawTerm
+      ? [{ termCode: rawTerm, termName: fallbackTermName(rawTerm) }]
+      : []);
   return (
     <form
       action={rankingPath(entity)}
       className="w-full space-y-4"
       method="get"
     >
-      <div className="flex w-full flex-wrap items-center gap-4">
+      <div className="flex w-full items-center gap-4">
         <Input
           aria-label={`Search ${label}s`}
-          className="text-md h-12 min-w-[10rem] flex-1 rounded-full focus-visible:ring-gray-700"
+          autoComplete="off"
+          className="text-md h-12 min-w-0 flex-1 rounded-full focus-visible:ring-gray-700"
           defaultValue={query?.search ?? first(searchParams, "q")}
           id="ranking-search"
           maxLength={100}
           name="q"
           placeholder={
             entity === "course"
-              ? "Search for courses by name / instructor / etc."
-              : "Search for instructors by name / course / etc."
+              ? "Search for courses by name / instructor / etc…"
+              : "Search for instructors by name / course / etc…"
           }
+          spellCheck={false}
           type="search"
         />
-        <Input
-          aria-label="Term"
-          className="h-12 w-[7.5rem] shrink-0 focus-visible:ring-gray-700"
-          defaultValue={
-            rankings?.population.termCode ?? first(searchParams, "term")
-          }
+        <label className="sr-only" htmlFor="ranking-term">
+          Term
+        </label>
+        <select
+          className="h-11 w-[10.75rem] shrink-0 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-700 focus-visible:ring-offset-2"
+          defaultValue={rawTerm ?? ""}
           id="ranking-term"
-          inputMode="numeric"
           name="term"
-          pattern="[0-9]{4}"
-        />
+        >
+          {terms.length === 0 ? <option value="">Latest Term</option> : null}
+          {terms.map((term) => (
+            <option key={term.termCode} value={term.termCode}>
+              {term.termName}
+            </option>
+          ))}
+        </select>
       </div>
+
       <Card>
-        <div className="relative space-y-2 p-4">
-          <details className="space-y-2">
-            <summary className="cursor-pointer text-left text-sm font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]">
-              Settings...
-            </summary>
-            <div className="grid gap-4 pt-2 md:grid-cols-2">
-              <label
-                className="grid gap-1 font-medium"
-                htmlFor="ranking-preset"
-              >
-                Ranking Preset
-                <select
-                  className="h-11 rounded-md border border-slate-300 px-3 font-normal"
-                  defaultValue={preset}
-                  id="ranking-preset"
-                  name="preset"
-                >
-                  <option value="learning">Learning-focused</option>
-                  <option value="grade">Grade-focused</option>
-                  <option value="custom">Custom weights</option>
-                </select>
-              </label>
-              <label
-                className="grid gap-1 font-medium"
-                htmlFor="ranking-activity"
-              >
-                Activity
-                <select
-                  className="h-11 rounded-md border border-slate-300 px-3 font-normal"
-                  defaultValue={
-                    query?.activity ??
-                    first(searchParams, "activity") ??
-                    "current"
-                  }
-                  id="ranking-activity"
-                  name="activity"
-                >
-                  <option value="current">Active in this Term</option>
-                  <option value="all">Include historical or inactive</option>
-                </select>
-              </label>
-              <label className="grid gap-1 font-medium" htmlFor="course-prefix">
-                {entity === "course" ? "Course Prefix" : "Taught Course Prefix"}
-                <input
-                  className="h-11 rounded-md border border-slate-300 px-3 font-normal uppercase"
-                  defaultValue={
-                    query?.coursePrefix ?? first(searchParams, "prefix")
-                  }
-                  id="course-prefix"
-                  maxLength={8}
-                  name="prefix"
-                />
-              </label>
-              {entity === "instructor" && (
+        <div className="space-y-1 p-4">
+          {entity === "course" ? (
+            <details className="group/filter">
+              <summary className="flex min-h-5 cursor-pointer touch-manipulation items-center rounded-sm text-left text-sm font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]">
+                Filter…
+              </summary>
+              <div className="grid gap-4 border-t border-slate-100 pt-4 md:grid-cols-2">
                 <label
                   className="grid gap-1 font-medium"
-                  htmlFor="instructor-course"
+                  htmlFor="ranking-activity"
                 >
-                  Course Code
+                  Activity
+                  <select
+                    className="h-11 rounded-md border border-slate-300 bg-white px-3 font-normal text-slate-950"
+                    defaultValue={
+                      query?.activity ??
+                      first(searchParams, "activity") ??
+                      "current"
+                    }
+                    id="ranking-activity"
+                    name="activity"
+                  >
+                    <option value="current">Active in this Term</option>
+                    <option value="all">Include historical or inactive</option>
+                  </select>
+                </label>
+                <label
+                  className="grid gap-1 font-medium"
+                  htmlFor="course-prefix"
+                >
+                  Course Prefix
                   <input
+                    autoComplete="off"
                     className="h-11 rounded-md border border-slate-300 px-3 font-normal uppercase"
                     defaultValue={
-                      query?.course ?? first(searchParams, "course")
+                      query?.coursePrefix ?? first(searchParams, "prefix")
                     }
-                    id="instructor-course"
-                    maxLength={15}
-                    name="course"
-                    placeholder="COMP 1000"
+                    id="course-prefix"
+                    maxLength={8}
+                    name="prefix"
+                    spellCheck={false}
                   />
                 </label>
-              )}
-              {entity === "course" && (
                 <fieldset className="space-y-2 md:col-span-2">
                   <legend className="font-medium">
-                    Current Common Core categories
+                    Current Common Core Categories
                   </legend>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {COMMON_CORE_CATEGORIES.map((category) => (
-                      <label className="flex gap-2" key={category.value}>
+                      <label
+                        className="flex min-h-8 items-start gap-2"
+                        key={category.value}
+                      >
                         <input
+                          className="mt-1"
                           defaultChecked={selectedCategories.has(
                             category.value,
                           )}
@@ -359,23 +395,114 @@ function RankingForm({
                     ))}
                   </div>
                 </fieldset>
-              )}
-              <fieldset className="space-y-2 md:col-span-2">
+                <div className="md:col-span-2">
+                  <ApplyButton>Apply Filters</ApplyButton>
+                </div>
+              </div>
+            </details>
+          ) : null}
+
+          <details>
+            <summary className="flex min-h-5 cursor-pointer touch-manipulation items-center rounded-sm text-left text-sm font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]">
+              Score Formula…
+            </summary>
+            <div className="grid gap-4 border-t border-slate-100 pt-4">
+              {entity === "instructor" ? (
+                <fieldset className="grid gap-4 md:grid-cols-2">
+                  <legend className="mb-2 font-medium">Filters</legend>
+                  <label
+                    className="grid gap-1 font-medium"
+                    htmlFor="ranking-activity"
+                  >
+                    Activity
+                    <select
+                      className="h-11 rounded-md border border-slate-300 bg-white px-3 font-normal text-slate-950"
+                      defaultValue={
+                        query?.activity ??
+                        first(searchParams, "activity") ??
+                        "current"
+                      }
+                      id="ranking-activity"
+                      name="activity"
+                    >
+                      <option value="current">Active in this Term</option>
+                      <option value="all">
+                        Include historical or inactive
+                      </option>
+                    </select>
+                  </label>
+                  <label
+                    className="grid gap-1 font-medium"
+                    htmlFor="course-prefix"
+                  >
+                    Taught Course Prefix
+                    <input
+                      autoComplete="off"
+                      className="h-11 rounded-md border border-slate-300 px-3 font-normal uppercase"
+                      defaultValue={
+                        query?.coursePrefix ?? first(searchParams, "prefix")
+                      }
+                      id="course-prefix"
+                      maxLength={8}
+                      name="prefix"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label
+                    className="grid gap-1 font-medium"
+                    htmlFor="instructor-course"
+                  >
+                    Course Code
+                    <input
+                      autoComplete="off"
+                      className="h-11 rounded-md border border-slate-300 px-3 font-normal uppercase"
+                      defaultValue={
+                        query?.course ?? first(searchParams, "course")
+                      }
+                      id="instructor-course"
+                      maxLength={15}
+                      name="course"
+                      spellCheck={false}
+                    />
+                  </label>
+                </fieldset>
+              ) : null}
+              <label
+                className="grid gap-1 font-medium"
+                htmlFor="ranking-preset"
+              >
+                Ranking Preset
+                <select
+                  className="h-11 rounded-md border border-slate-300 bg-white px-3 font-normal text-slate-950"
+                  defaultValue={preset}
+                  id="ranking-preset"
+                  name="preset"
+                >
+                  <option value="learning">Learning-focused</option>
+                  <option value="grade">Grade-focused</option>
+                  <option value="custom">Custom weights</option>
+                </select>
+              </label>
+              <fieldset className="space-y-2">
                 <legend className="font-medium">
-                  Custom criterion weights (used when Custom weights is
-                  selected)
+                  Custom Criterion Weights
                 </legend>
+                <p className="text-sm text-slate-600">
+                  Used only when Custom weights is selected.
+                </p>
                 <div className="grid gap-2 sm:grid-cols-3">
                   {criteria.map(([criterion, criterionLabel]) => (
                     <label className="grid gap-1 text-sm" key={criterion}>
                       {criterionLabel}
                       <input
-                        className="h-10 rounded-md border border-slate-300 px-3"
+                        autoComplete="off"
+                        className="h-10 rounded-md border border-slate-300 px-3 tabular-nums"
                         defaultValue={
                           preset === "custom"
                             ? first(searchParams, `weight_${criterion}`)
                             : rankings?.configuration.weights[criterion]
                         }
+                        inputMode="decimal"
                         min="0"
                         name={`weight_${criterion}`}
                         step="any"
@@ -385,12 +512,13 @@ function RankingForm({
                   ))}
                 </div>
               </fieldset>
-              <button
-                className="rounded-md bg-[#003366] px-5 py-3 font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366] md:col-span-2"
-                type="submit"
-              >
-                Apply ranking configuration
-              </button>
+              <div>
+                <ApplyButton>
+                  {entity === "instructor"
+                    ? "Apply Ranking Settings"
+                    : "Apply Score Formula"}
+                </ApplyButton>
+              </div>
             </div>
           </details>
         </div>
@@ -417,26 +545,17 @@ function RankingChrome({
   const presetLabel =
     preset === "custom"
       ? "Custom weights"
-      : preset === "grade"
-        ? "Grade-focused preset"
-        : "Learning-focused preset";
+      : `${preset === "grade" ? "Grade" : "Learning"}-focused preset`;
   return (
-    <div className="w-full max-w-sm space-y-8 text-left lg:max-w-3xl">
+    <div className="w-full max-w-sm space-y-8 text-left lg:max-w-2xl">
       <NewReleaseBanner className="-mt-12" />
-      <header className="space-y-2">
-        <h1 className="text-logo-gradient max-w-sm text-6xl font-bold tracking-tighter sm:text-7xl lg:max-w-2xl">
+      <header className="text-center">
+        <h1 className="text-logo-gradient text-balance text-6xl font-bold tracking-tighter sm:text-7xl">
           UST Rankings
         </h1>
-        <p className="text-slate-600">
+        <p className="sr-only">
           {label} Rankings · {presetLabel}
         </p>
-        {rankings ? (
-          <p className="text-slate-600">
-            {rankings.population.termCode} · {rankings.population.size} eligible{" "}
-            {label}s · {rankings.population.filteredSize} in the Local Ranking
-            Population
-          </p>
-        ) : null}
       </header>
       <RankingForm
         entity={entity}
@@ -465,7 +584,9 @@ function RankingAlert({
       className="w-full rounded-xl border border-red-300 bg-red-50 p-6 text-left"
       role="alert"
     >
-      <h2 className="text-2xl font-bold text-slate-900">{title}</h2>
+      <h2 className="text-balance text-2xl font-bold text-slate-900">
+        {title}
+      </h2>
       <p className="mt-2 text-slate-700">{message}</p>
       {actionHref && actionLabel ? (
         <a
@@ -518,7 +639,11 @@ export async function RankingPage({
         searchParams={searchParams}
       >
         {rankings.results.length > 0 ? (
-          <ol aria-label={`${label} rankings`} className="space-y-3">
+          <ol
+            aria-label={`${label} rankings`}
+            className="space-y-3 p-0"
+            style={{ listStyle: "none", marginInlineStart: 0 }}
+          >
             {rankings.results.map((result) => (
               <RankingResultCard
                 key={
@@ -546,15 +671,15 @@ export async function RankingPage({
         )}
         {rankings.nextCursor ? (
           <a
-            className="inline-block rounded-md bg-[#003366] px-5 py-3 font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]"
+            className="inline-block rounded-md bg-[#003366] px-5 py-3 font-semibold text-white hover:bg-[#174f82] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]"
             href={nextPageHref(entity, searchParams, rankings.nextCursor)}
           >
-            Next 100 results
+            Next 100 Results
           </a>
         ) : null}
-        <footer className="break-all text-xs text-slate-500">
+        <p className="sr-only">
           Accepted ranking generation: <code>{rankings.generation}</code>
-        </footer>
+        </p>
       </RankingChrome>
     );
   } catch (error) {
@@ -584,7 +709,7 @@ export async function RankingPage({
           className="w-full rounded-xl border border-amber-300 bg-amber-50 p-6 text-left"
           role="alert"
         >
-          <h2 className="text-2xl font-bold text-slate-900">
+          <h2 className="text-balance text-2xl font-bold text-slate-900">
             {label} rankings are unavailable
           </h2>
           <p className="mt-2 text-slate-700">

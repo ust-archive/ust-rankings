@@ -95,6 +95,9 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
   expect(page.results[2]?.score).toBe(0.2667);
   expect(page.results[0]?.globalPercentile).toBe(1);
   expect(page.results[0]?.localPercentile).toBe(1);
+  expect(page.results[0]?.ustSpaceSamples).toBe(1);
+  expect(page.results[0]?.sfqSamples).toBe(1);
+  expect(page.terms).toEqual([{ termCode: "2510", termName: "2025-26 Fall" }]);
 
   const searched = await queryRankings({
     entity: "instructor",

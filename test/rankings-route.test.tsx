@@ -68,7 +68,7 @@ test("a blank Term Code renders the latest Instructor Ranking Population", async
     await InstructorsPage({ searchParams: Promise.resolve({ term: "  " }) }),
   );
 
-  expect(markup).toContain("2510 · 3 eligible Instructors");
+  expect(markup).toContain('value="2510" selected="">2025-26 Fall');
   expect(markup).not.toContain("Invalid Term Code");
 });
 
@@ -105,9 +105,11 @@ test("the public Course ranking route shares reproducible URL controls", async (
   );
 
   expect(markup).toContain("Course Rankings");
-  expect(markup).toContain("COMP 1000 · Creative Computing");
+  expect(markup).toContain("COMP 1000");
+  expect(markup).toContain("Creative Computing");
   expect(markup).toContain("Grade-focused preset");
   expect(markup).toContain('name="commonCore"');
+  expect(markup).toContain("Local Rank");
   expect(markup).not.toContain("MATH 2000");
 });
 
@@ -229,16 +231,17 @@ test("Course and Instructor Rankings retain the title, search, Term, and setting
   expect(instructors).toContain('name="q"');
   expect(instructors).toContain('type="search"');
   expect(instructors).toContain('name="term"');
-  expect(instructors).toContain("Settings...");
+  expect(instructors).toContain("Score Formula…");
+  expect(instructors).toContain("2025-26 Fall");
   expect(instructors).toContain('name="preset"');
   expect(instructors).toContain('name="activity"');
   expect(instructors).toContain('name="prefix"');
   expect(instructors).toContain('name="course"');
   expect(instructors.indexOf('name="q"')).toBeLessThan(
-    instructors.indexOf("Settings..."),
+    instructors.indexOf("Score Formula…"),
   );
   expect(instructors.indexOf('name="term"')).toBeLessThan(
-    instructors.indexOf("Settings..."),
+    instructors.indexOf("Score Formula…"),
   );
 
   const { default: CoursesPage } = await import("@/app/rankings/courses/page");
@@ -254,8 +257,8 @@ test("Course and Instructor Rankings retain the title, search, Term, and setting
   );
   expect(courses).toContain("UST Rankings");
   expect(courses).toContain("Course Rankings");
-  expect(courses).toContain("Grade-focused preset");
-  expect(courses).toContain("Settings...");
+  expect(courses).toContain("Filter…");
+  expect(courses).toContain("Score Formula…");
   expect(courses).toContain('name="commonCore"');
   expect(courses).toContain('name="weight_content"');
 });
@@ -276,9 +279,11 @@ test("ranking results show identity, ranks, score, and grade and navigate to Det
   );
   expect(instructors).toContain("Beta Instructor");
   expect(instructors).toContain("Global Rank 1 of 3");
-  expect(instructors).toContain("Local Rank 1 of 3");
+  expect(instructors).not.toContain("Local Rank 1 of 3");
   expect(instructors).toContain("#1");
   expect(instructors).toContain("A+");
+  expect(instructors).toContain("1 sample from ust.space");
+  expect(instructors).toContain("1 sample from SFQ");
   expect(instructors).toContain('href="/instructors/beta"');
   expect(instructors).not.toContain("Current Courses Taught");
   expect(instructors).not.toContain("Historical Courses Taught");
@@ -289,7 +294,8 @@ test("ranking results show identity, ranks, score, and grade and navigate to Det
       searchParams: Promise.resolve({ term: "2510", q: "COMP 1000" }),
     }),
   );
-  expect(courses).toContain("COMP 1000 · Creative Computing");
+  expect(courses).toContain("COMP 1000");
+  expect(courses).toContain("Creative Computing");
   expect(courses).toContain('href="/courses/COMP/1000"');
   expect(courses).toContain("Global Rank");
   expect(courses).not.toContain("Current Instructors");
@@ -315,7 +321,7 @@ test("empty, invalid, and unavailable ranking states keep the restored structure
     }),
   );
   expect(invalid).toContain("UST Rankings");
-  expect(invalid).toContain("Settings...");
+  expect(invalid).toContain("Score Formula…");
   expect(invalid).toContain('name="q"');
   expect(invalid).toContain("Invalid ranking query");
   expect(invalid).toContain('role="alert"');
@@ -326,7 +332,7 @@ test("empty, invalid, and unavailable ranking states keep the restored structure
     }),
   );
   expect(empty).toContain("UST Rankings");
-  expect(empty).toContain("Settings...");
+  expect(empty).toContain("Score Formula…");
   expect(empty).toContain(
     "No eligible Courses match these structured filters.",
   );

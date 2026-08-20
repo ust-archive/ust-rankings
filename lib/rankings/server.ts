@@ -362,6 +362,8 @@ type RankFields = {
   localRank: number;
   localPopulation: number;
   localPercentile: number;
+  ustSpaceSamples: number;
+  sfqSamples: number;
 };
 
 export type InstructorRanking = RankFields & {
@@ -395,6 +397,7 @@ export type RankingsPage<
     preset: RankingPreset | "custom";
     weights: RankingWeights;
   };
+  terms: Array<{ termCode: string; termName: string }>;
   results: [Entity] extends ["course"]
     ? CourseRanking[]
     : [Entity] extends ["instructor"]
@@ -1731,6 +1734,7 @@ type Candidate = {
   coursePrefix?: string;
   courseCodes: Set<string>;
   commonCore: CommonCoreCategory[];
+  evidenceSummary: Pick<RankFields, "ustSpaceSamples" | "sfqSamples">;
   result:
     | Omit<CourseRanking, keyof RankFields | "commonCore">
     | Omit<InstructorRanking, keyof RankFields>;
@@ -1950,10 +1954,27 @@ async function queryRankingsWithGeneration(
   const entityFile = `${query.entity}-ratings.parquet` as const;
   const rankingFile = `${query.entity}-rankings.parquet` as const;
   const source = sqlPath(accepted.directory, entityFile);
-  const latest = await queryRows(
-    accepted.connection,
-    `SELECT term_code FROM read_parquet('${sqlPath(accepted.directory, rankingFile)}') LIMIT 1`,
-  );
+  const [latest, termRows] = await Promise.all([
+    queryRows(
+      accepted.connection,
+      `SELECT term_code FROM read_parquet('${sqlPath(accepted.directory, rankingFile)}') LIMIT 1`,
+    ),
+    queryRows(
+      accepted.connection,
+      `SELECT term_num, term_code FROM read_parquet('${source}') GROUP BY ALL ORDER BY term_num DESC`,
+    ),
+  ]);
+  const terms = termRows.map((row) => {
+    const code = String(row.term_code);
+    const year = 2000 + Number(code.slice(0, 2));
+    const season = ["Fall", "Winter", "Spring", "Summer"][
+      Number(code.slice(2, 3)) - 1
+    ];
+    return {
+      termCode: code,
+      termName: `${year}-${String(year + 1).slice(-2)} ${season}`,
+    };
+  });
   const termCode = query.termCode?.trim() || String(latest[0]?.term_code);
   if (!/^[0-9]{4}$/.test(termCode))
     throw new InvalidRankingsQueryError("Invalid Term Code.");
@@ -2009,10 +2030,13 @@ async function queryRankingsWithGeneration(
     query.entity === "course" ? "is_offered" : "is_teaching";
   const rows = await queryRows(
     accepted.connection,
-    `SELECT ${entityColumns}, criterion, bayesian FROM read_parquet('${source}') WHERE term_code = $termCode AND ($current = false OR ${activityColumn}) ORDER BY ${entityColumns}, criterion`,
+    `SELECT ${entityColumns}, criterion, bayesian, cumulative_samples FROM read_parquet('${source}') WHERE term_code = $termCode AND ($current = false OR ${activityColumn}) ORDER BY ${entityColumns}, criterion`,
     { termCode, current: activity === "current" },
   );
-  const evidence = new Map<string, Partial<Record<Criterion, number>>>();
+  const evidence = new Map<
+    string,
+    Partial<Record<Criterion, { bayesian: number; samples: number }>>
+  >();
   for (const row of rows) {
     const criterion = String(row.criterion) as Criterion;
     if (!CRITERIA.includes(criterion)) continue;
@@ -2021,7 +2045,10 @@ async function queryRankingsWithGeneration(
         ? `${row.subject}${row.code}`
         : String(row.name);
     const values = evidence.get(key) ?? {};
-    values[criterion] = number(row.bayesian);
+    values[criterion] = {
+      bayesian: number(row.bayesian),
+      samples: number(row.cumulative_samples),
+    };
     evidence.set(key, values);
   }
 
@@ -2058,10 +2085,14 @@ async function queryRankingsWithGeneration(
       : weightedCriteria.reduce(
           (sum, criterion) =>
             sum +
-            (values[criterion] as number) *
+            (values[criterion]?.bayesian as number) *
               (configuration.weights[criterion] as number),
           0,
         );
+    const evidenceSummary = {
+      ustSpaceSamples: values.content?.samples ?? 0,
+      sfqSamples: values.course?.samples ?? 0,
+    };
     if (query.entity === "course") {
       const prefix = key.match(/^[A-Z]+/)?.[0];
       const courseNumber = prefix ? key.slice(prefix.length) : "";
@@ -2079,6 +2110,7 @@ async function queryRankingsWithGeneration(
       candidates.push({
         key,
         score,
+        evidenceSummary,
         coursePrefix: prefix,
         courseCodes: new Set([`${prefix} ${courseNumber}`]),
         commonCore: categories,
@@ -2117,6 +2149,7 @@ async function queryRankingsWithGeneration(
       candidates.push({
         key: identity.uuid,
         score: retired ? undefined : score,
+        evidenceSummary,
         courseCodes,
         commonCore: [],
         searchText: [
@@ -2219,6 +2252,7 @@ async function queryRankingsWithGeneration(
     if (!global || !local) throw new Error("Missing rank");
     return {
       ...candidate.result,
+      ...candidate.evidenceSummary,
       commonCore:
         candidate.result.entity === "course" ? candidate.commonCore : undefined,
       score: candidate.score,
@@ -2251,6 +2285,7 @@ async function queryRankingsWithGeneration(
       filteredSize: filtered.length,
     },
     configuration,
+    terms,
     results,
     nextCursor,
     unrankedMatchCount,

@@ -7,11 +7,13 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   await expect(
     page.getByRole("heading", { name: "UST Rankings" }),
   ).toBeVisible();
-  await expect(page.getByText("Instructor Rankings")).toBeVisible();
   const search = page.getByRole("searchbox", { name: "Search Instructors" });
   await expect(search).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Term" })).toBeVisible();
-  await expect(page.getByText("Settings...")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Term" })).toBeVisible();
+  await expect(page.getByText("Score Formula…")).toBeVisible();
+  await expect(
+    page.getByText(/samples? from ust\.space/).first(),
+  ).toBeVisible();
 
   const result = page.locator('a[href^="/instructors/"]').first();
   await expect(result).toBeVisible();
@@ -29,13 +31,11 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   await expect(page).toHaveURL(/\/rankings\/instructors\?.*q=a/);
   await expect(search).toHaveValue("a");
 
-  await page.getByText("Settings...").click();
+  await page.getByText("Score Formula…").click();
   await page.getByLabel("Ranking Preset").selectOption("grade");
-  await page
-    .getByRole("button", { name: "Apply ranking configuration" })
-    .click();
+  await page.getByRole("button", { name: "Apply Ranking Settings" }).click();
   await expect(page).toHaveURL(/preset=grade/);
-  await expect(page.getByText("Grade-focused preset")).toBeVisible();
+  await expect(page.getByLabel("Ranking Preset")).toHaveValue("grade");
   await expect(page).toHaveURL(/q=a/);
 });
 
@@ -47,12 +47,13 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
   await expect(
     page.getByRole("heading", { name: "UST Rankings" }),
   ).toBeVisible();
-  await expect(page.getByText("Course Rankings")).toBeVisible();
   await expect(
     page.getByRole("searchbox", { name: "Search Courses" }),
   ).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Term" })).toBeVisible();
-  await expect(page.getByText("Settings...")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Term" })).toBeVisible();
+  await expect(page.getByText("Filter…")).toBeVisible();
+  await expect(page.getByText("Score Formula…")).toBeVisible();
+  await expect(page.getByText(/samples? from SFQ/).first()).toBeVisible();
 
   const result = page.locator('a[href^="/courses/"]').first();
   await expect(result).toBeVisible();
