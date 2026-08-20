@@ -15,7 +15,8 @@
       "!!data/data-cq-terms.json",
       "!!data/data-cq.json",
       "!!data/ratings-course.json",
-      "!!data/ratings-instructor.json"
+      "!!data/ratings-instructor.json",
+      "!!rankings/seed"
     ]
   },
   "formatter": {
