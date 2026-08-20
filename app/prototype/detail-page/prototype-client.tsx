@@ -123,7 +123,7 @@ function cx(...parts: Array<string | false | null | undefined>) {
 
 function EntityPicker({ entity, onChange }: { entity: Entity; onChange: (entity: Entity) => void }) {
   return (
-    <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" aria-label="Prototype entity">
+    <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Prototype entity">
       {(["course", "instructor", "class"] as Entity[]).map((value) => (
         <button
           key={value}
@@ -185,7 +185,7 @@ function Signals({
     <div className={cx("text-left", !compact && "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm")}>
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Community pulse</p>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600">Community pulse</p>
           <p className="mt-1 text-sm text-slate-600">Separate from ranking scores</p>
         </div>
         {!signedIn && <span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">Sign in to respond</span>}
@@ -227,7 +227,7 @@ function Signals({
               reactions.includes(key) ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white",
             )}
           >
-            {emoji} <span className="text-xs text-slate-500">{count}</span>
+            {emoji} <span className="text-xs text-slate-700">{count}</span>
           </button>
         ))}
       </div>
@@ -296,7 +296,7 @@ function ReviewCard({
       </p>
       {review.image && (
         <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-sky-100 via-indigo-50 to-amber-100 p-4">
-          <div className="flex aspect-[16/7] items-center justify-center rounded-lg border border-white/80 bg-white/60 font-mono text-sm text-slate-600 shadow-inner">
+          <div className="flex aspect-[16/7] items-center justify-center rounded-lg border border-white bg-white/90 font-mono text-sm font-medium text-slate-800 shadow-inner">
             <ImageIcon className="mr-2 h-5 w-5" /> Inline Image Attachment · lab diagram
           </div>
         </div>
@@ -376,7 +376,7 @@ function VariantA({ common }: { common: CommonProps }) {
             <p className="mt-2 text-lg text-slate-600">{data.subtitle}</p>
           </div>
           <div className="flex items-center gap-4">
-            <div className="text-right"><p className="text-xs uppercase text-slate-400">Learning-focused</p><p className="mt-1 font-semibold">{data.rank}</p></div>
+            <div className="text-right"><p className="text-xs uppercase text-slate-600">Learning-focused</p><p className="mt-1 font-semibold">{data.rank}</p></div>
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-2xl font-black text-white shadow-lg">{data.grade}</div>
           </div>
         </section>
