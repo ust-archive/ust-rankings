@@ -9,11 +9,12 @@ import {
 } from "./accounts";
 import {
   ContributionsUnavailableError,
-  type CourseBasis,
-  type CourseReviewRepository,
   createReviewService,
-  type PublicCourseReview,
-  type PublishCourseReviewRecord,
+  type PublicReview,
+  type PublishReviewRecord,
+  type ReviewAssociations,
+  type ReviewListQuery,
+  type ReviewRepository,
   ReviewWriteError,
 } from "./reviews";
 import {
@@ -144,43 +145,68 @@ export class PostgresAccountRepository implements AccountRepository {
 type ReviewDatabaseRow = {
   id: string;
   revisionId: string;
-  coursePrefix: string;
-  courseNumber: string;
+  coursePrefix: string | null;
+  courseNumber: string | null;
+  instructorUuid: string | null;
+  termCode: string | null;
+  section: string | null;
   markdown: string;
   capturedDisplayName: string;
   publishedAt: Date;
+  instructorAssociationStatus:
+    | PublicReview["instructorAssociationStatus"]
+    | null;
 };
 
-function publicReview(row: ReviewDatabaseRow): PublicCourseReview {
+function publicReview(row: ReviewDatabaseRow): PublicReview {
   return {
     id: row.id,
     revisionId: row.revisionId,
-    coursePrefix: row.coursePrefix,
-    courseNumber: row.courseNumber,
+    ...(row.coursePrefix && row.courseNumber
+      ? {
+          course: {
+            coursePrefix: row.coursePrefix,
+            courseNumber: row.courseNumber,
+          },
+        }
+      : {}),
+    ...(row.instructorUuid ? { instructorUuid: row.instructorUuid } : {}),
+    ...(row.termCode ? { termCode: row.termCode } : {}),
+    ...(row.section ? { section: row.section } : {}),
     markdown: row.markdown,
     capturedDisplayName: row.capturedDisplayName,
     publishedAt: row.publishedAt,
+    ...(row.instructorAssociationStatus
+      ? { instructorAssociationStatus: row.instructorAssociationStatus }
+      : {}),
   };
 }
 
-export class PostgresReviewRepository implements CourseReviewRepository {
+export class PostgresReviewRepository implements ReviewRepository {
   constructor(private readonly sql: ReturnType<typeof postgres>) {}
 
-  async publishCourseReview(input: PublishCourseReviewRecord) {
+  async publishReview(input: PublishReviewRecord) {
     const reviewId = randomUUID();
     const revisionId = randomUUID();
+    const { course, instructorUuid, termCode, section } = input.associations;
     try {
       const [published] = await this.sql<ReviewDatabaseRow[]>`
         SELECT review_id AS id,
                revision_id AS "revisionId",
-               ${input.coursePrefix}::text AS "coursePrefix",
-               ${input.courseNumber}::text AS "courseNumber",
+               ${course?.coursePrefix ?? null}::text AS "coursePrefix",
+               ${course?.courseNumber ?? null}::text AS "courseNumber",
+               ${instructorUuid ?? null}::uuid AS "instructorUuid",
+               ${termCode ?? null}::text AS "termCode",
+               ${section ?? null}::text AS section,
                ${input.markdown}::text AS markdown,
                captured_display_name AS "capturedDisplayName",
-               published_at AS "publishedAt"
-        FROM publish_attributed_course_review(
-          ${reviewId}, ${revisionId}, ${input.userId}, ${input.coursePrefix},
-          ${input.courseNumber}, ${input.markdown}, ${input.policyVersion}
+               published_at AS "publishedAt",
+               ${instructorUuid ? "resolved" : null}::text AS "instructorAssociationStatus"
+        FROM publish_attributed_review(
+          ${reviewId}, ${revisionId}, ${input.userId},
+          ${course?.coursePrefix ?? null}, ${course?.courseNumber ?? null},
+          ${instructorUuid ?? null}, ${termCode ?? null}, ${section ?? null},
+          ${input.markdown}, ${input.policyVersion}
         )
       `;
       return publicReview(published);
@@ -190,11 +216,11 @@ export class PostgresReviewRepository implements CourseReviewRepository {
           "code" in error &&
           error.code === "23505" &&
           "constraint_name" in error &&
-          error.constraint_name === "reviews_active_course_tuple_idx"
+          error.constraint_name === "reviews_active_association_tuple_idx"
         )
           throw new ReviewWriteError(
             "duplicate-review",
-            "This User already has an active Review for the Course Basis",
+            "This User already has an active Review for this exact Review Basis and Review Context tuple",
           );
         if ("message" in error && typeof error.message === "string") {
           const code = [
@@ -214,23 +240,32 @@ export class PostgresReviewRepository implements CourseReviewRepository {
     }
   }
 
-  async listCourseReviews(course: CourseBasis) {
+  async listReviews(query: ReviewListQuery) {
     try {
       const rows = await this.sql<ReviewDatabaseRow[]>`
         SELECT r.id,
                rr.id AS "revisionId",
                rcb.course_prefix AS "coursePrefix",
                rcb.course_number AS "courseNumber",
+               rib.instructor_uuid AS "instructorUuid",
+               rc.term_code AS "termCode",
+               rc.section,
                rr.markdown,
                rr.captured_display_name AS "capturedDisplayName",
-               rr.published_at AS "publishedAt"
+               rr.published_at AS "publishedAt",
+               r.instructor_association_status AS "instructorAssociationStatus"
         FROM reviews r
         JOIN review_revisions rr ON rr.id = r.current_revision_id
-        JOIN review_course_bases rcb ON rcb.revision_id = rr.id
+        LEFT JOIN review_course_bases rcb ON rcb.revision_id = rr.id
+        LEFT JOIN review_instructor_bases rib ON rib.revision_id = rr.id
+        LEFT JOIN review_contexts rc ON rc.revision_id = rr.id
         WHERE r.publication_state = 'active'
           AND rr.attribution = 'attributed'
-          AND rcb.course_prefix = ${course.coursePrefix}
-          AND rcb.course_number = ${course.courseNumber}
+          AND (${query.type} = 'course' AND rcb.course_prefix = ${query.type === "course" ? query.coursePrefix : null}
+               AND rcb.course_number = ${query.type === "course" ? query.courseNumber : null}
+            OR ${query.type} = 'instructor' AND rib.instructor_uuid = ${query.type === "instructor" ? query.instructorUuid : null}::uuid)
+          AND (${query.termCode ?? null}::text IS NULL OR rc.term_code = ${query.termCode ?? null})
+          AND (${query.section ?? null}::text IS NULL OR rc.section = ${query.section ?? null})
         ORDER BY rr.published_at DESC, r.id
       `;
       return rows.map(publicReview);
@@ -577,22 +612,128 @@ function initializeRuntime() {
     }),
     reviews: createReviewService(new PostgresReviewRepository(sql), {
       reviewPolicyVersion: process.env.REVIEW_POLICY_VERSION,
-      async courseExists(course) {
+      async validateAssociations(associations: ReviewAssociations) {
         const {
+          getInstructorIdentity,
           getRankings,
+          InvalidRankingsQueryError,
+          RankingsUnavailableError,
+          UnknownRankingsEntityError,
+        } = await import("@/lib/rankings/server");
+        const {
+          getSchedule,
+          InvalidScheduleQueryError,
+          ScheduleUnavailableError,
+        } = await import("@/lib/schedule/server");
+        try {
+          let canonicalInstructorUuid = associations.instructorUuid;
+          if (canonicalInstructorUuid)
+            canonicalInstructorUuid = (
+              await getInstructorIdentity(canonicalInstructorUuid)
+            ).instructor.uuid;
+
+          const courseRankings = associations.course
+            ? await getRankings({ type: "course", ...associations.course })
+            : undefined;
+          if (canonicalInstructorUuid && !associations.course)
+            await getRankings(
+              { type: "instructor", uuid: canonicalInstructorUuid },
+              associations.termCode
+                ? { termCode: associations.termCode }
+                : undefined,
+            );
+          if (
+            courseRankings &&
+            canonicalInstructorUuid &&
+            !courseRankings.instructors.some(
+              (item) =>
+                item.instructor.uuid === canonicalInstructorUuid &&
+                (!associations.termCode ||
+                  item.termCode === associations.termCode),
+            )
+          )
+            return undefined;
+
+          if (associations.course && associations.termCode) {
+            const schedule = await getSchedule(
+              associations.section
+                ? {
+                    type: "class",
+                    ...associations.course,
+                    termCode: associations.termCode,
+                    section: associations.section,
+                  }
+                : {
+                    type: "course-offering",
+                    ...associations.course,
+                    termCode: associations.termCode,
+                  },
+            );
+            if (
+              canonicalInstructorUuid &&
+              schedule.type === "class" &&
+              !schedule.meetings.some((meeting) =>
+                meeting.instructors.some(
+                  (instructor) => instructor.uuid === canonicalInstructorUuid,
+                ),
+              )
+            )
+              return undefined;
+          }
+          return {
+            ...associations,
+            ...(canonicalInstructorUuid
+              ? { instructorUuid: canonicalInstructorUuid }
+              : {}),
+          };
+        } catch (error) {
+          if (
+            error instanceof UnknownRankingsEntityError ||
+            error instanceof InvalidRankingsQueryError ||
+            error instanceof InvalidScheduleQueryError
+          )
+            return undefined;
+          if (error instanceof RankingsUnavailableError)
+            throw new ReviewWriteError(
+              "rankings-unavailable",
+              "Review Bases cannot be validated while Rankings Data is unavailable",
+            );
+          if (error instanceof ScheduleUnavailableError)
+            throw new ReviewWriteError(
+              "schedule-unavailable",
+              "Review Context cannot be validated while Schedule Data is unavailable",
+            );
+          throw error;
+        }
+      },
+      async resolveInstructorAssociationStatus(review: PublicReview) {
+        if (!review.instructorUuid) return undefined;
+        const {
+          getInstructorIdentity,
           RankingsUnavailableError,
           UnknownRankingsEntityError,
         } = await import("@/lib/rankings/server");
         try {
-          await getRankings({ type: "course", ...course });
-          return true;
+          const identity = await getInstructorIdentity(review.instructorUuid);
+          const courseCode = review.course
+            ? `${review.course.coursePrefix} ${review.course.courseNumber}`
+            : undefined;
+          if (
+            identity.identityHistory.affectedAssociations.some(
+              (affected) =>
+                (!affected.courseCode || affected.courseCode === courseCode) &&
+                (!affected.termCode || affected.termCode === review.termCode),
+            )
+          )
+            return "needs-resolution";
+          if (identity.instructor.uuid !== review.instructorUuid)
+            return "historical";
+          return review.instructorAssociationStatus;
         } catch (error) {
-          if (error instanceof UnknownRankingsEntityError) return false;
+          if (error instanceof UnknownRankingsEntityError)
+            return "needs-resolution";
           if (error instanceof RankingsUnavailableError)
-            throw new ReviewWriteError(
-              "rankings-unavailable",
-              "Course Basis cannot be validated while Rankings Data is unavailable",
-            );
+            return review.instructorAssociationStatus;
           throw error;
         }
       },

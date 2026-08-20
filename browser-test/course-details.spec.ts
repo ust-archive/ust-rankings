@@ -73,13 +73,13 @@ test("Course Review composer is keyboard-accessible and explains attribution and
   const coursePath = offeringPath?.split("/").slice(0, 4).join("/");
   expect(coursePath).toBeTruthy();
   await page.goto(coursePath as string);
-  const open = page.getByRole("button", { name: "Write a Course Review" });
+  const open = page.getByRole("button", { name: "Write a Review" });
   await open.focus();
   await page.keyboard.press("Enter");
 
   const dialog = page.getByRole("dialog", { name: "Write your Review" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel("Review · Markdown")).toBeFocused();
+  await expect(dialog.getByLabel("Include Course Basis")).toBeFocused();
   await expect(dialog).toContainText("Attributed Review Revision");
   await expect(dialog).toContainText("CC BY 4.0");
   await expect(dialog).toContainText("non-exclusive site license");
@@ -89,6 +89,17 @@ test("Course Review composer is keyboard-accessible and explains attribution and
   await expect(
     page.getByRole("button", { name: /vote|reaction/i }),
   ).toHaveCount(0);
+
+  const markdown = dialog.getByLabel("Review · Markdown");
+  await markdown.fill("My entered Review content");
+  const instructorBasis = dialog.getByLabel("Include Instructor Basis");
+  if (await instructorBasis.isEnabled()) {
+    await instructorBasis.check();
+    await expect(dialog.getByLabel("Term")).toBeEnabled();
+    await dialog.getByLabel("Include Course Basis").uncheck();
+    await expect(dialog.getByLabel("Section")).toBeDisabled();
+    await expect(markdown).toHaveValue("My entered Review content");
+  }
 
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();

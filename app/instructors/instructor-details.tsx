@@ -1,6 +1,9 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
+import { ReviewComposer, Reviews } from "@/app/courses/course-reviews";
 import { coursePath } from "@/app/courses/routes";
 import { SignalControls } from "@/app/signals/signal-controls";
+import type { PublicReview } from "@/lib/contributions/reviews";
 import type { SignalSummary } from "@/lib/contributions/signals";
 import type { InstructorIdentityLookup, Rankings } from "@/lib/rankings/server";
 import { buildScheduleUrl } from "@/lib/schedule/planner";
@@ -38,6 +41,7 @@ function InstructorActions({
   signedIn,
   signalUpdated,
   signalError,
+  reviewComposer,
 }: {
   selectedTermCode?: string;
   classes: ScheduleClass[];
@@ -48,6 +52,7 @@ function InstructorActions({
   signedIn: boolean;
   signalUpdated?: boolean;
   signalError?: string;
+  reviewComposer: ReactNode;
 }) {
   return (
     <aside className="order-1 lg:col-start-2 lg:row-start-1 lg:self-start">
@@ -77,6 +82,11 @@ function InstructorActions({
             unavailable={signalsUnavailable}
             updated={signalUpdated}
           />
+          <p className="mt-5 border-t border-slate-200 pt-4 text-sm text-slate-600">
+            Publish one active attributed Review for each exact Review Basis and
+            Review Context tuple.
+          </p>
+          {reviewComposer}
         </div>
       </div>
     </aside>
@@ -200,15 +210,50 @@ function RankingEvidence({
   );
 }
 
-function CommunityArea() {
+function CommunityArea({
+  reviews,
+  unavailable,
+  published,
+  error,
+}: {
+  reviews: PublicReview[];
+  unavailable: boolean;
+  published?: boolean;
+  error?: string;
+}) {
   return (
-    <section className="order-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 lg:col-start-1 lg:row-start-2">
+    <section
+      className="order-3 rounded-2xl border border-slate-200 bg-slate-50 p-6 lg:col-start-1 lg:row-start-2"
+      id="reviews"
+    >
       <h2 className="text-2xl font-bold">Community Reviews</h2>
       <p className="mt-2 text-slate-600">
-        Community contributions are not available yet. This reserved area is
-        separate from ranking and Schedule availability and does not represent
-        zero Reviews.
+        Published experiences with this Instructor Basis.
       </p>
+      {published ? (
+        <p
+          className="mt-4 rounded-lg bg-green-50 p-3 text-green-900"
+          role="status"
+        >
+          Review Revision published.
+        </p>
+      ) : null}
+      {error ? (
+        <p className="mt-4 rounded-lg bg-red-50 p-3 text-red-900" role="alert">
+          Review could not be published ({error}).
+        </p>
+      ) : null}
+      {unavailable ? (
+        <p
+          className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950"
+          role="status"
+        >
+          Community Reviews are unavailable. This does not represent zero
+          Reviews.
+        </p>
+      ) : (
+        <Reviews reviews={reviews} />
+      )}
     </section>
   );
 }
@@ -401,6 +446,10 @@ export function InstructorDetails({
   signedIn = false,
   signalUpdated,
   signalError,
+  reviews = [],
+  reviewsUnavailable = true,
+  reviewPublished,
+  reviewError,
 }: {
   identity: InstructorIdentityLookup;
   rankings?: Rankings;
@@ -413,6 +462,10 @@ export function InstructorDetails({
   signedIn?: boolean;
   signalUpdated?: boolean;
   signalError?: string;
+  reviews?: PublicReview[];
+  reviewsUnavailable?: boolean;
+  reviewPublished?: boolean;
+  reviewError?: string;
 }) {
   const selectedClasses = selectedTermCode
     ? classes.filter(
@@ -422,6 +475,35 @@ export function InstructorDetails({
   const grade = rankings?.ranking
     ? letterGrade(rankings.ranking.globalPercentile)
     : undefined;
+  const courses = [
+    ...new Set([
+      ...(rankings?.courses.map((item) => item.courseCode) ?? []),
+      ...classes.map((item) => item.courseCode),
+    ]),
+  ].map((courseCode) => ({
+    ...splitCourseCode(courseCode),
+    label: courseCode,
+  }));
+  const contexts = classes.flatMap((item) => [
+    { instructorUuid: identity.instructor.uuid, termCode: item.termCode },
+    {
+      course: {
+        coursePrefix: item.coursePrefix,
+        courseNumber: item.courseNumber,
+      },
+      instructorUuid: identity.instructor.uuid,
+      termCode: item.termCode,
+    },
+    {
+      course: {
+        coursePrefix: item.coursePrefix,
+        courseNumber: item.courseNumber,
+      },
+      instructorUuid: identity.instructor.uuid,
+      termCode: item.termCode,
+      section: item.section,
+    },
+  ]);
   return (
     <div className="w-full space-y-8 text-left text-slate-900">
       <header className="border-b border-slate-200 pb-7">
@@ -491,12 +573,30 @@ export function InstructorDetails({
           signedIn={signedIn}
           signalUpdated={signalUpdated}
           signalError={signalError}
+          reviewComposer={
+            <ReviewComposer
+              courses={courses}
+              contexts={contexts}
+              initialInstructorUuid={identity.instructor.uuid}
+              instructors={[
+                {
+                  instructorUuid: identity.instructor.uuid,
+                  name: identity.instructor.canonicalName,
+                },
+              ]}
+            />
+          }
         />
         <RankingEvidence
           rankings={rankings}
           selectedTermCode={selectedTermCode}
         />
-        <CommunityArea />
+        <CommunityArea
+          error={reviewError}
+          published={reviewPublished}
+          reviews={reviews}
+          unavailable={reviewsUnavailable}
+        />
         <Associations
           identity={identity}
           rankings={rankings}

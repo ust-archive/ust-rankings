@@ -18,11 +18,11 @@ mock.module("@/lib/auth/user", () => ({
 }));
 mock.module("@/lib/contributions/postgres", () => ({
   getReviewService: () => ({
-    async publishCourseReview(id: string, input: unknown) {
+    async publishReview(id: string, input: unknown) {
       if (publicationError) throw publicationError;
       published.push({ id, input });
     },
-    async listCourseReviews() {
+    async listReviews() {
       const { ContributionsUnavailableError } = await import(
         "@/lib/contributions/reviews"
       );
@@ -33,8 +33,7 @@ mock.module("@/lib/contributions/postgres", () => ({
 
 function form(markdown: string | Blob = "Useful labs.") {
   const data = new FormData();
-  data.set("coursePrefix", "COMP");
-  data.set("courseNumber", "2000");
+  data.set("course", "COMP|2000");
   data.set("markdown", markdown);
   return data;
 }
@@ -49,25 +48,25 @@ async function redirectOf(run: () => Promise<unknown>) {
 }
 
 test("Review action denies cross-origin and signed-out writes before publication", async () => {
-  const { publishCourseReview } = await import("@/app/courses/review-actions");
+  const { publishReview } = await import("@/app/courses/review-actions");
   published.length = 0;
   userId = "00000000-0000-4000-8000-000000000044";
   origin = "https://evil.example";
-  expect(await redirectOf(() => publishCourseReview(form()))).toContain(
+  expect(await redirectOf(() => publishReview(form()))).toContain(
     "/courses/COMP/2000?reviewError=cross-origin#reviews",
   );
   expect(published).toHaveLength(0);
 
   origin = "https://rankings.example";
   userId = undefined;
-  expect(await redirectOf(() => publishCourseReview(form()))).toContain(
+  expect(await redirectOf(() => publishReview(form()))).toContain(
     "/sign-in?r=%2Fcourses%2FCOMP%2F2000",
   );
   expect(published).toHaveLength(0);
 });
 
 test("Review action rejects File-valued Markdown before publication", async () => {
-  const { publishCourseReview } = await import("@/app/courses/review-actions");
+  const { publishReview } = await import("@/app/courses/review-actions");
   origin = "https://rankings.example";
   userId = "00000000-0000-4000-8000-000000000044";
   publicationError = undefined;
@@ -75,7 +74,7 @@ test("Review action rejects File-valued Markdown before publication", async () =
 
   expect(
     await redirectOf(() =>
-      publishCourseReview(
+      publishReview(
         form(
           new File(["not text input"], "review.txt", { type: "text/plain" }),
         ),
@@ -85,28 +84,34 @@ test("Review action rejects File-valued Markdown before publication", async () =
   expect(published).toHaveLength(0);
 
   const malformedCourse = form();
-  malformedCourse.set("coursePrefix", new File(["COMP"], "prefix.txt"));
-  expect(
-    await redirectOf(() => publishCourseReview(malformedCourse)),
-  ).toContain("/rankings/courses?reviewError=invalid-course#reviews");
+  malformedCourse.set("course", new File(["COMP|2000"], "course.txt"));
+  expect(await redirectOf(() => publishReview(malformedCourse))).toContain(
+    "/rankings/courses?reviewError=invalid-basis#reviews",
+  );
+  const malformedContext = form();
+  malformedContext.set("termCode", new File(["2510"], "term.txt"));
+  expect(await redirectOf(() => publishReview(malformedContext))).toContain(
+    "/courses/COMP/2000?reviewError=invalid-context#reviews",
+  );
   expect(published).toHaveLength(0);
 });
 
 test("Review action publishes for an authenticated User and routes onboarding failures", async () => {
-  const { publishCourseReview } = await import("@/app/courses/review-actions");
+  const { publishReview } = await import("@/app/courses/review-actions");
   origin = "https://rankings.example";
   userId = "00000000-0000-4000-8000-000000000044";
   publicationError = undefined;
   published.length = 0;
-  expect(await redirectOf(() => publishCourseReview(form()))).toContain(
+  expect(await redirectOf(() => publishReview(form()))).toContain(
     "/courses/COMP/2000?review=published#reviews",
   );
   expect(published).toEqual([
     {
       id: userId,
       input: {
-        coursePrefix: "COMP",
-        courseNumber: "2000",
+        associations: {
+          course: { coursePrefix: "COMP", courseNumber: "2000" },
+        },
         markdown: "Useful labs.",
       },
     },
@@ -116,7 +121,7 @@ test("Review action publishes for an authenticated User and routes onboarding fa
     "onboarding-required",
     "Complete onboarding",
   );
-  expect(await redirectOf(() => publishCourseReview(form()))).toContain(
+  expect(await redirectOf(() => publishReview(form()))).toContain(
     "/onboarding?r=%2Fcourses%2FCOMP%2F2000",
   );
   publicationError = undefined;

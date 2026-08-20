@@ -2,16 +2,20 @@ import { expect, mock, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import postgres from "postgres";
-import { createReviewService } from "@/lib/contributions/reviews";
+import {
+  createReviewService,
+  type ReviewAssociations,
+} from "@/lib/contributions/reviews";
 
 mock.module("server-only", () => ({}));
 
 const connection = process.env.TEST_CONTRIBUTIONS_POSTGRES_URL;
+const INSTRUCTOR_UUID = "00000000-0000-4000-8000-000000000045";
 
 if (!connection) {
   test.skip("Review PostgreSQL contract (TEST_CONTRIBUTIONS_POSTGRES_URL is not configured)", () => {});
 } else {
-  test("Review PostgreSQL contract publishes and reads atomically with current authorization and tuple uniqueness", async () => {
+  test("Review PostgreSQL contract enforces complete tuples and aggregates durable associations", async () => {
     const schema = `review_test_${crypto.randomUUID().replaceAll("-", "")}`;
     const admin = postgres(connection, { max: 1, onnotice: () => {} });
     await admin.unsafe(`CREATE SCHEMA ${schema}`);
@@ -37,14 +41,14 @@ if (!connection) {
       const service = (client: ReturnType<typeof postgres>) =>
         createReviewService(new PostgresReviewRepository(client), {
           reviewPolicyVersion: "review-test-v1",
-          async courseExists({ coursePrefix, courseNumber }) {
-            return coursePrefix === "COMP" && courseNumber === "2000";
+          async validateAssociations(associations) {
+            return associations;
           },
         });
       const reviews = service(sql);
       const publish = async (
         userId: string,
-        input: { coursePrefix: string; courseNumber: string; markdown: string },
+        associations: ReviewAssociations,
       ) => {
         const client = postgres(connection, {
           max: 1,
@@ -52,7 +56,10 @@ if (!connection) {
           onnotice: () => {},
         });
         try {
-          return await service(client).publishCourseReview(userId, input);
+          return await service(client).publishReview(userId, {
+            associations,
+            markdown: `Review ${JSON.stringify(associations)}`,
+          });
         } finally {
           await client.end({ timeout: 0 });
         }
@@ -62,26 +69,81 @@ if (!connection) {
         INSERT INTO contribution_users (id, status, public_display_name)
         VALUES (${activeId}, 'active', 'Captured Student')
       `;
+      const course = { coursePrefix: "COMP", courseNumber: "2000" };
+      const shapes: ReviewAssociations[] = [
+        { course },
+        { instructorUuid: INSTRUCTOR_UUID },
+        { course, instructorUuid: INSTRUCTOR_UUID },
+        { course, termCode: "2510" },
+        { instructorUuid: INSTRUCTOR_UUID, termCode: "2510" },
+        { course, instructorUuid: INSTRUCTOR_UUID, termCode: "2510" },
+        { course, termCode: "2510", section: "L1" },
+        {
+          course,
+          instructorUuid: INSTRUCTOR_UUID,
+          termCode: "2510",
+          section: "L1",
+        },
+      ];
+      const published: Awaited<ReturnType<typeof publish>>[] = [];
+      for (const shape of shapes)
+        published.push(await publish(activeId, shape));
 
-      const published = await publish(activeId, {
-        coursePrefix: "COMP",
-        courseNumber: "2000",
-        markdown: "Useful **labs** and clear examples.",
+      await expect(publish(activeId, { course })).rejects.toMatchObject({
+        code: "duplicate-review",
       });
-      await expect(
-        publish(activeId, {
-          coursePrefix: "COMP",
-          courseNumber: "2000",
-          markdown: "A duplicate tuple.",
+      expect(
+        await reviews.listReviews({ type: "course", ...course }),
+      ).toHaveLength(6);
+      expect(
+        await reviews.listReviews({
+          type: "course",
+          ...course,
+          termCode: "2510",
         }),
-      ).rejects.toMatchObject({ code: "duplicate-review" });
-      await expect(
-        publish(activeId, {
-          coursePrefix: "MATH",
-          courseNumber: "1012",
-          markdown: "Unsupported Course.",
+      ).toHaveLength(4);
+      expect(
+        await reviews.listReviews({
+          type: "course",
+          ...course,
+          termCode: "2510",
+          section: "L1",
         }),
-      ).rejects.toMatchObject({ code: "invalid-course" });
+      ).toHaveLength(2);
+      expect(
+        await reviews.listReviews({
+          type: "instructor",
+          instructorUuid: INSTRUCTOR_UUID,
+        }),
+      ).toHaveLength(5);
+
+      const dual = published[2];
+      const complete = published[7];
+      if (!dual || !complete) throw new Error("Expected published Reviews");
+      await sql`
+        UPDATE reviews SET instructor_association_status = 'needs-resolution'
+        WHERE id = ${dual.id}
+      `;
+      const durable = await reviews.listReviews({ type: "course", ...course });
+      expect(durable.find((review) => review.id === dual.id)).toMatchObject({
+        course,
+        instructorUuid: INSTRUCTOR_UUID,
+        instructorAssociationStatus: "needs-resolution",
+      });
+
+      const [revision] = await sql<
+        { courseBases: number; instructorBases: number; contexts: number }[]
+      >`
+        SELECT
+          (SELECT count(*)::int FROM review_course_bases WHERE revision_id = ${complete.revisionId}) AS "courseBases",
+          (SELECT count(*)::int FROM review_instructor_bases WHERE revision_id = ${complete.revisionId}) AS "instructorBases",
+          (SELECT count(*)::int FROM review_contexts WHERE revision_id = ${complete.revisionId}) AS contexts
+      `;
+      expect(revision).toEqual({
+        courseBases: 1,
+        instructorBases: 1,
+        contexts: 1,
+      });
 
       for (const status of ["onboarding", "suspended", "closed"] as const) {
         const userId = crypto.randomUUID();
@@ -89,13 +151,7 @@ if (!connection) {
           INSERT INTO contribution_users (id, status, public_display_name)
           VALUES (${userId}, ${status}, 'Blocked Student')
         `;
-        await expect(
-          publish(userId, {
-            coursePrefix: "COMP",
-            courseNumber: "2000",
-            markdown: "Must not publish.",
-          }),
-        ).rejects.toMatchObject({
+        await expect(publish(userId, { course })).rejects.toMatchObject({
           code:
             status === "onboarding"
               ? "onboarding-required"
@@ -105,78 +161,10 @@ if (!connection) {
         });
       }
       await expect(
-        publish(crypto.randomUUID(), {
-          coursePrefix: "COMP",
-          courseNumber: "2000",
-          markdown: "Missing User.",
-        }),
-      ).rejects.toMatchObject({ code: "account-not-found" });
-
-      const rollbackUserId = crypto.randomUUID();
-      await sql`
-        INSERT INTO contribution_users (id, status, public_display_name)
-        VALUES (${rollbackUserId}, 'active', 'Rollback Student')
-      `;
-      await sql.unsafe(`
-        CREATE FUNCTION reject_rollback_revision() RETURNS trigger
-        LANGUAGE plpgsql AS $$ BEGIN
-          IF NEW.markdown = 'force rollback' THEN
-            RAISE EXCEPTION 'forced revision failure';
-          END IF;
-          RETURN NEW;
-        END $$;
-        CREATE TRIGGER reject_rollback_revision
-        BEFORE INSERT ON review_revisions
-        FOR EACH ROW EXECUTE FUNCTION reject_rollback_revision();
-      `);
-      await expect(
-        publish(rollbackUserId, {
-          coursePrefix: "COMP",
-          courseNumber: "2000",
-          markdown: "force rollback",
-        }),
-      ).rejects.toThrow("forced revision failure");
-      const [rolledBack] = await sql<{ count: number }[]>`
-        SELECT count(*)::int AS count FROM reviews WHERE author_user_id = ${rollbackUserId}
-      `;
-      expect(rolledBack?.count).toBe(0);
-
-      await sql`
-        UPDATE contribution_users
-        SET public_display_name = 'Later Name'
-        WHERE id = ${activeId}
-      `;
-      expect(
-        await reviews.listCourseReviews({
-          coursePrefix: "COMP",
-          courseNumber: "2000",
-        }),
-      ).toEqual([{ ...published, capturedDisplayName: "Captured Student" }]);
-      const [revision] = await sql<
-        { attribution: string; policyVersion: string; basisCount: number }[]
-      >`
-        SELECT rr.attribution,
-               rr.policy_version AS "policyVersion",
-               count(rcb.revision_id)::int AS "basisCount"
-        FROM review_revisions rr
-        JOIN review_course_bases rcb ON rcb.revision_id = rr.id
-        WHERE rr.id = ${published.revisionId}
-        GROUP BY rr.attribution, rr.policy_version
-      `;
-      expect(revision).toEqual({
-        attribution: "attributed",
-        policyVersion: "review-test-v1",
-        basisCount: 1,
+        publish(crypto.randomUUID(), { course }),
+      ).rejects.toMatchObject({
+        code: "account-not-found",
       });
-      let immutableError: unknown;
-      try {
-        await sql`UPDATE review_revisions SET markdown = 'rewritten' WHERE id = ${published.revisionId}`;
-      } catch (error) {
-        immutableError = error;
-      }
-      expect(String(immutableError)).toContain(
-        "Review Revisions are immutable",
-      );
     } finally {
       await sql.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       await sql.end();

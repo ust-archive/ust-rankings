@@ -1,7 +1,7 @@
 # Contribution module
 
-Issues #43, #44, and #47 introduce accounts, attributed Course Reviews, and
-private-identity Course/Instructor signals. Application routes cross
+Issues #43, #44, #45, and #47 introduce accounts, complete attributed Reviews,
+and private-identity Course/Instructor signals. Application routes cross
 `lib/contributions/accounts.ts`, `lib/contributions/reviews.ts`, and
 `lib/contributions/signals.ts`; PostgreSQL transactions and objects remain in the
 adapter and forward migrations under `contributions/migrations`.
@@ -33,9 +33,15 @@ the PostgreSQL contract tests. They create and drop their own schemas. Apply
 migrations before serving the application; `0002_course_reviews.sql` adds the
 stable Review, immutable Review Revision, current pointer, Course Basis,
 captured attribution, policy version, publication state, and active-tuple
-uniqueness records used by the first text-only path. `0003_signals.sql` adds separate portable relational
-keys for Course and Instructor Thumbs Votes and Emoji Reactions, aggregate-read
-indexes, the fixed Emoji palette, and durable Instructor merge redirects.
+uniqueness records used by the first text-only path. `0003_signals.sql` adds
+separate portable relational keys for Course and Instructor Thumbs Votes and
+Emoji Reactions, aggregate-read indexes, the fixed Emoji palette, and durable
+Instructor merge redirects. `0004_complete_review_associations.sql` expands the
+same Review seam to optional Course and Instructor Bases, Term and Section
+Context snapshots, exact null-aware active-tuple uniqueness, Context lookup
+indexes, and an explicit needs-resolution state for uncertain Instructor
+identity corrections. Apply every migration in order; historical Revision
+associations are never revalidated or guessed when current source data changes.
 
 Signal reads return only aggregate counts plus the requesting User's own current
 states. Pages are dynamic and never put session-specific state or participant
@@ -65,7 +71,9 @@ Entra registrations/secrets and exact origins, the pooled Singapore PostgreSQL
 connection, approved policy and Review-term versions/text and Privacy Contact
 details, and preview/production OIDC/PostgreSQL Review publication evidence.
 Never commit those values. Preview evidence must also verify Vercel Bun Server Actions preserve same-origin
-checks; public Course and Instructor pages remain dynamic across separate
-signed-in and signed-out requests; signal mutations never alter ranking results
+checks; complete Review Basis/Context association validation uses accepted
+Rankings and Schedule generations; dual-Basis Reviews appear once on each
+applicable detail page; public Course and Instructor pages remain dynamic across
+separate signed-in and signed-out requests; signal mutations never alter ranking results
 or generation cache identity; and the private database never exposes
 voter/reactor identities through rendered output or shared responses.

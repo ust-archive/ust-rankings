@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { ClassDetails, UnavailableDetail } from "@/app/courses/course-details";
 import { loadCourseRankings } from "@/app/courses/data";
+import { loadReviews } from "@/app/courses/review-data";
 import {
   normalizeCourseRoute,
   type RouteSearchParams,
@@ -28,7 +29,7 @@ export default async function ClassPage({
     normalizeCourseRoute(await params, query);
   if (!termCode || !section) notFound();
   try {
-    const [scheduleClass, rankings] = await Promise.all([
+    const [scheduleClass, rankings, community] = await Promise.all([
       getSchedule({
         type: "class",
         coursePrefix,
@@ -37,9 +38,23 @@ export default async function ClassPage({
         section,
       }),
       loadCourseRankings(coursePrefix, courseNumber, termCode),
+      loadReviews({
+        type: "course",
+        coursePrefix,
+        courseNumber,
+        termCode,
+        section,
+      }),
     ]);
     if (scheduleClass.type !== "class") notFound();
-    return <ClassDetails scheduleClass={scheduleClass} rankings={rankings} />;
+    return (
+      <ClassDetails
+        scheduleClass={scheduleClass}
+        rankings={rankings}
+        reviews={community.reviews}
+        reviewsUnavailable={community.unavailable}
+      />
+    );
   } catch (error) {
     if (error instanceof InvalidScheduleQueryError) notFound();
     if (error instanceof ScheduleUnavailableError)

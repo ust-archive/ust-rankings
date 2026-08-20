@@ -1,31 +1,33 @@
 import {
   ContributionsUnavailableError,
-  type PublicCourseReview,
+  type PublicReview,
+  type ReviewListQuery,
 } from "@/lib/contributions/reviews";
 
-type ReadCourseReviews = (input: {
-  coursePrefix: string;
-  courseNumber: string;
-}) => Promise<PublicCourseReview[]>;
+type ReadReviews = (query: ReviewListQuery) => Promise<PublicReview[]>;
 
-const readCourseReviews: ReadCourseReviews = async (course) =>
+const readReviews: ReadReviews = async (query) =>
   (await import("@/lib/contributions/postgres"))
     .getReviewService()
-    .listCourseReviews(course);
+    .listReviews(query);
 
-export async function loadCourseReviews(
-  coursePrefix: string,
-  courseNumber: string,
-  read: ReadCourseReviews = readCourseReviews,
+export async function loadReviews(
+  query: ReviewListQuery,
+  read: ReadReviews = readReviews,
 ) {
   try {
-    return {
-      reviews: await read({ coursePrefix, courseNumber }),
-      unavailable: false as const,
-    };
+    return { reviews: await read(query), unavailable: false as const };
   } catch (error) {
     if (error instanceof ContributionsUnavailableError)
       return { reviews: [], unavailable: true as const };
     throw error;
   }
+}
+
+export function loadCourseReviews(
+  coursePrefix: string,
+  courseNumber: string,
+  read?: ReadReviews,
+) {
+  return loadReviews({ type: "course", coursePrefix, courseNumber }, read);
 }

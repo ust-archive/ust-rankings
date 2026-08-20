@@ -66,7 +66,7 @@ test("Course details compose evidence, Offerings, Classes, Instructors, and isol
   expect(markup).toContain("Alpha Instructor");
   expect(markup).toContain("Community Reviews");
   expect(markup).toContain("Community Reviews are unavailable");
-  expect(markup).toContain("Write a Course Review");
+  expect(markup).toContain("Write a Review");
   expect(markup).toContain("/schedule?term=2510&amp;class=1001&amp;view=cart");
   expect(markup.indexOf("Course actions")).toBeLessThan(
     markup.indexOf("Ranking evidence and trends"),

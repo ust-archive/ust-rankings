@@ -80,7 +80,8 @@ test("Instructor details combine ranking evidence, Courses, Classes, aliases, an
   expect(markup).toContain("Instructor aliases and identity history");
   expect(markup).toContain("schedule");
   expect(markup).toContain("Community Reviews");
-  expect(markup).toContain("Community contributions are not available yet");
+  expect(markup).toContain("Community Reviews are unavailable");
+  expect(markup).toContain("Write a Review");
   expect(markup).toContain("/schedule?term=2510&amp;class=1001&amp;view=cart");
   expect(markup.indexOf("Instructor actions")).toBeLessThan(
     markup.indexOf("Ranking evidence and trends"),

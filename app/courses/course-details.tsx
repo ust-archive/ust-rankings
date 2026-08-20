@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { instructorPath } from "@/app/instructors/routes";
 import { SignalControls } from "@/app/signals/signal-controls";
-import type { PublicCourseReview } from "@/lib/contributions/reviews";
+import type { PublicReview } from "@/lib/contributions/reviews";
 import type { SignalSummary } from "@/lib/contributions/signals";
 import type { CourseRankings } from "@/lib/rankings/server";
 import { buildScheduleUrl } from "@/lib/schedule/planner";
@@ -12,7 +12,7 @@ import type {
   ScheduleDetails,
   ScheduleMeeting,
 } from "@/lib/schedule/server";
-import { CourseReviewComposer, CourseReviews } from "./course-reviews";
+import { ReviewComposer, Reviews } from "./course-reviews";
 import { coursePath } from "./routes";
 
 const criterionLabels = {
@@ -282,7 +282,7 @@ function CommunityArea({
   published,
   error,
 }: {
-  reviews?: PublicCourseReview[];
+  reviews?: PublicReview[];
   unavailable?: boolean;
   published?: boolean;
   error?: string;
@@ -318,7 +318,7 @@ function CommunityArea({
           Reviews.
         </p>
       ) : (
-        <CourseReviews reviews={reviews ?? []} />
+        <Reviews reviews={reviews ?? []} />
       )}
     </section>
   );
@@ -463,7 +463,7 @@ export function CourseDetails({
   schedule?: Extract<ScheduleDetails, { type: "course" }>;
   rankings?: CourseRankings;
   selectedTermCode?: string;
-  reviews?: PublicCourseReview[];
+  reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
   reviewPublished?: boolean;
   reviewError?: string;
@@ -523,9 +523,59 @@ export function CourseDetails({
             />
           }
           reviewComposer={
-            <CourseReviewComposer
-              courseNumber={courseNumber}
-              coursePrefix={coursePrefix}
+            <ReviewComposer
+              courses={[{ coursePrefix, courseNumber }]}
+              initialCourse={{ coursePrefix, courseNumber }}
+              instructors={instructors
+                .filter((item) => item.uuid)
+                .map((item) => ({
+                  instructorUuid: item.uuid as string,
+                  name: item.name,
+                }))}
+              contexts={offerings.flatMap((offering) => {
+                const course = { coursePrefix, courseNumber };
+                const courseContexts = [
+                  {
+                    course,
+                    termCode: offering.termCode,
+                    termName: offering.termName,
+                  },
+                  ...offering.classes.map((item) => ({
+                    course,
+                    termCode: offering.termCode,
+                    termName: offering.termName,
+                    section: item.section,
+                  })),
+                ];
+                const instructorContexts =
+                  rankings?.instructors
+                    .filter((item) => item.termCode === offering.termCode)
+                    .flatMap((item) => [
+                      {
+                        course,
+                        instructorUuid: item.instructor.uuid,
+                        termCode: offering.termCode,
+                        termName: offering.termName,
+                      },
+                      ...offering.classes
+                        .filter((scheduleClass) =>
+                          scheduleClass.meetings.some((meeting) =>
+                            meeting.instructors.some(
+                              (instructor) =>
+                                instructor.uuid === item.instructor.uuid,
+                            ),
+                          ),
+                        )
+                        .map((scheduleClass) => ({
+                          course,
+                          instructorUuid: item.instructor.uuid,
+                          termCode: offering.termCode,
+                          termName: offering.termName,
+                          section: scheduleClass.section,
+                        })),
+                    ]) ?? [];
+                return [...courseContexts, ...instructorContexts];
+              })}
             />
           }
         />
@@ -614,9 +664,13 @@ export function CourseDetails({
 export function CourseOfferingDetails({
   offering,
   rankings,
+  reviews = [],
+  reviewsUnavailable = true,
 }: {
   offering: Extract<ScheduleDetails, { type: "course-offering" }>;
   rankings?: CourseRankings;
+  reviews?: PublicReview[];
+  reviewsUnavailable?: boolean;
 }) {
   const instructors = uniqueInstructors([offering], rankings).filter((item) =>
     item.termCodes.has(offering.termCode),
@@ -640,6 +694,9 @@ export function CourseOfferingDetails({
       }
       evidence={
         <RankingEvidence rankings={rankings} termCode={offering.termCode} />
+      }
+      community={
+        <CommunityArea reviews={reviews} unavailable={reviewsUnavailable} />
       }
       associations={
         <div className="space-y-5 rounded-2xl border bg-white p-5 shadow-sm">
@@ -701,9 +758,13 @@ function meetingLabel(meeting: ScheduleMeeting) {
 export function ClassDetails({
   scheduleClass,
   rankings,
+  reviews = [],
+  reviewsUnavailable = true,
 }: {
   scheduleClass: Extract<ScheduleDetails, { type: "class" }>;
   rankings?: CourseRankings;
+  reviews?: PublicReview[];
+  reviewsUnavailable?: boolean;
 }) {
   const instructors = new Map<string, { name: string; uuid?: string }>();
   for (const meeting of scheduleClass.meetings)
@@ -777,6 +838,9 @@ export function ClassDetails({
             termCode={scheduleClass.termCode}
           />
         </section>
+      }
+      community={
+        <CommunityArea reviews={reviews} unavailable={reviewsUnavailable} />
       }
       associations={
         <div className="rounded-2xl border bg-white p-5 shadow-sm">

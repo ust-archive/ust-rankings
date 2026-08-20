@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { loadReviews } from "@/app/courses/review-data";
 import { InstructorDetails } from "@/app/instructors/instructor-details";
 import {
   type InstructorRouteSearchParams,
@@ -92,14 +93,19 @@ export default async function InstructorPage({
       throw error;
     },
   );
-  const [rankings, scheduleResult, signalResult] = await Promise.all([
-    rankingsPromise,
-    schedulePromise,
-    loadSignals({
-      type: "instructor",
-      instructorUuid: identity.instructor.uuid,
-    }),
-  ]);
+  const [rankings, scheduleResult, signalResult, reviewResult] =
+    await Promise.all([
+      rankingsPromise,
+      schedulePromise,
+      loadSignals({
+        type: "instructor",
+        instructorUuid: identity.instructor.uuid,
+      }),
+      loadReviews({
+        type: "instructor",
+        instructorUuid: identity.instructor.uuid,
+      }),
+    ]);
   const classes = scheduleResult.classes.filter(
     (scheduleClass) =>
       !identity.identityHistory.affectedAssociations.some(
@@ -133,6 +139,12 @@ export default async function InstructorPage({
       signalUpdated={query.signal === "updated"}
       signalError={
         typeof query.signalError === "string" ? query.signalError : undefined
+      }
+      reviews={reviewResult.reviews}
+      reviewsUnavailable={reviewResult.unavailable}
+      reviewPublished={query.review === "published"}
+      reviewError={
+        typeof query.reviewError === "string" ? query.reviewError : undefined
       }
     />
   );
