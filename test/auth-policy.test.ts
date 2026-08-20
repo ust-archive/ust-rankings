@@ -56,9 +56,13 @@ test("safe returns accept only relative application paths and avoid callback loo
     "/path%0d%0aSet-Cookie:x",
     "/path%E2%80%AEtxt",
     "/sign-in?r=/account",
+    "/%73ign-in?r=/account",
     "/onboarding?r=/account",
+    "/onboard%69ng?r=/account",
     "/api/auth/callback/hkust-connect",
+    "/api/%61uth/callback/hkust-connect",
     "/auth/continue?r=/account",
+    "/auth/%63ontinue?r=/account",
   ]) {
     expect(safeReturnPath(unsafe)).toBe("/");
   }

@@ -1,4 +1,4 @@
-import { type BrowserContext, expect, test } from "@playwright/test";
+import { type BrowserContext, expect, type Page, test } from "@playwright/test";
 import { encode } from "next-auth/jwt";
 import postgres from "postgres";
 
@@ -7,6 +7,14 @@ const databaseUrl = process.env.TEST_CONTRIBUTIONS_POSTGRES_URL;
 const authSecret = process.env.AUTH_SECRET;
 const accountBrowserReady = Boolean(databaseUrl && authSecret);
 let sql: ReturnType<typeof postgres> | undefined;
+
+async function expectNoHorizontalOverflow(page: Page) {
+  const dimensions = await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    width: document.documentElement.scrollWidth,
+  }));
+  expect(dimensions.width).toBeLessThanOrEqual(dimensions.viewport);
+}
 
 async function setUser(
   status: "onboarding" | "active",
@@ -77,6 +85,18 @@ test("signed-out sign-in keeps safe returns, errors, and keyboard order", async 
   await expect(
     page.getByRole("link", { name: "Continue without signing in" }),
   ).toHaveAttribute("href", "/");
+
+  for (const alias of [
+    "/%73ign-in",
+    "/onboard%69ng",
+    "/api/%61uth/callback/hkust-connect",
+    "/auth/%63ontinue",
+  ]) {
+    await page.goto(`/sign-in?r=${encodeURIComponent(alias)}`);
+    await expect(
+      page.getByRole("link", { name: "Continue without signing in" }),
+    ).toHaveAttribute("href", "/");
+  }
 });
 
 test.describe("signed account routes", () => {
@@ -168,5 +188,53 @@ test.describe("signed account routes", () => {
       "Account settings saved",
     );
     await expect(page.getByText("Future Name", { exact: true })).toBeVisible();
+  });
+
+  test("account flow reflows at 320px with an accessible account entry", async ({
+    context,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.goto("/sign-in?error=OAuthCallback");
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: "Sign-in could not be completed" }),
+    ).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    await setUser("onboarding", "Narrow Student");
+    await addSignedSession(context);
+    await page.goto("/onboarding?error=invalid-display-name");
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: "Enter a valid Public Display Name" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Public Display Name")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    await setUser("active", "Narrow Student");
+    await page.goto("/auth/continue");
+    await expect(page).toHaveURL(/\/rankings\/instructors$/);
+    const account = page.getByRole("link", { name: "Account", exact: true });
+    await account.focus();
+    await expect(account).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/account?error=invalid-display-name");
+    await expect(
+      page.getByRole("alert").filter({ hasText: "invalid-display-name" }),
+    ).toBeVisible();
+    const name = page.getByLabel("Edit Public Display Name");
+    await name.fill("Narrow Name");
+    await name.press("Tab");
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/account\?saved=1$/);
+    await expect(page.getByRole("status")).toContainText(
+      "Account settings saved",
+    );
+    await expectNoHorizontalOverflow(page);
   });
 });

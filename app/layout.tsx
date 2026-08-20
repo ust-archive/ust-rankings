@@ -48,7 +48,7 @@ export default function RootLayout({
             </Link>
             <nav
               aria-label="Primary navigation"
-              className="ml-auto flex items-center gap-4 text-sm font-semibold sm:gap-6 sm:text-base"
+              className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm font-semibold sm:gap-6 sm:text-base"
             >
               <Link
                 className="no-underline underline-offset-4 hover:underline"
@@ -70,9 +70,9 @@ export default function RootLayout({
               </Link>
               <Link
                 className="rounded-full border border-white/60 px-3 py-1.5 no-underline hover:bg-white/10"
-                href="/sign-in"
+                href="/account"
               >
-                Sign in
+                Account
               </Link>
             </nav>
           </div>

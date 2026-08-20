@@ -67,7 +67,7 @@ export function safeReturnPath(value: string | null | undefined) {
       return "/";
     const parsed = new URL(value, "https://ust-rankings.invalid");
     if (parsed.origin !== "https://ust-rankings.invalid") return "/";
-    const path = parsed.pathname.toLowerCase();
+    const path = decodeURIComponent(parsed.pathname).toLowerCase();
     if (
       CALLBACK_PATHS.some(
         (callback) => path === callback || path.startsWith(`${callback}/`),
