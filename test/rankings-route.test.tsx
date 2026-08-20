@@ -157,6 +157,8 @@ test("ranking routes distinguish every empty, invalid, and stale URL state", asy
       searchParams: Promise.resolve({ term: "2510", q: "MISS 4000" }),
     }),
   );
+  expect(unranked).toContain("UST Rankings");
+  expect(unranked).toContain("Filter…");
   expect(unranked).toContain("matching Course is unranked");
 
   const { queryRankings } = await import("@/lib/rankings/server");
@@ -171,6 +173,8 @@ test("ranking routes distinguish every empty, invalid, and stale URL state", asy
       searchParams: Promise.resolve({ term: "2510", cursor: page.nextCursor }),
     }),
   );
+  expect(stale).toContain("UST Rankings");
+  expect(stale).toContain("Score Formula…");
   expect(stale).toContain("Ranking page expired");
   expect(stale).toContain('role="alert"');
 });

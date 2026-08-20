@@ -17,7 +17,11 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
 
   const result = page.locator('a[href^="/instructors/"]').first();
   await expect(result).toBeVisible();
-  await result.focus();
+  for (let press = 0; press < 15; press += 1) {
+    if (await result.evaluate((element) => element === document.activeElement))
+      break;
+    await page.keyboard.press("Tab");
+  }
   await expect(result).toBeFocused();
   expect(
     await result.evaluate((element) => getComputedStyle(element).outlineWidth),
@@ -68,6 +72,21 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   await expect(
     page.locator('ol[aria-label="Instructor rankings"] > li > a').first(),
   ).toContainText("#101");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/rankings/instructors");
+  const mobileInstructorName = page
+    .locator('ol[aria-label="Instructor rankings"] h2')
+    .first();
+  await expect(mobileInstructorName).toBeVisible();
+  expect(
+    await mobileInstructorName.evaluate(
+      (element) => getComputedStyle(element).whiteSpace,
+    ),
+  ).toBe("normal");
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
 });
 
 test("Course Rankings preserve the restored hierarchy at 390px without overflow", async ({
@@ -93,7 +112,12 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
 
-  await result.focus();
+  for (let press = 0; press < 15; press += 1) {
+    if (await result.evaluate((element) => element === document.activeElement))
+      break;
+    await page.keyboard.press("Tab");
+  }
+  await expect(result).toBeFocused();
   expect(
     await result.evaluate((element) => getComputedStyle(element).outlineWidth),
   ).not.toBe("0px");
@@ -118,4 +142,12 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/rankings/courses");
+  await expect(page.getByText("Filter…")).toBeVisible();
+  await expect(page.locator('a[href^="/courses/"]').first()).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(1440);
 });
