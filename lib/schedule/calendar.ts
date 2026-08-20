@@ -7,8 +7,7 @@ import { RRule } from "rrule";
 import { PathAdvisor } from "@/data/cq/path-advisor";
 import {
   InvalidScheduleQueryError,
-  querySchedule,
-  resolveClasses,
+  resolveClassesWithGeneration,
   type ScheduleClass,
   type ScheduleMeeting,
   ScheduleUnavailableError,
@@ -35,17 +34,35 @@ type CalendarEvent = ics.EventAttributes & { timestamp: ics.DateTime };
 
 function scheduleDateTime(date: string, time: string) {
   const value = DateTime.fromISO(`${date}T${time}`, { zone: HONG_KONG_ZONE });
-  if (!value.isValid)
-    throw new InvalidScheduleQueryError("Invalid Schedule meeting date/time.");
+  if (!value.isValid) throw new Error("Invalid Schedule meeting date/time");
   return value;
 }
 
 function firstMeetingDate(meeting: ScheduleMeeting) {
   if (!meeting.dateFrom) throw new Error("Meeting date is unavailable");
+  const weekday = weekdayNumbers[meeting.weekday];
+  if (!weekday) throw new Error("Invalid Schedule meeting weekday");
   const start = scheduleDateTime(meeting.dateFrom, "00:00");
-  return start.plus({
-    days: (weekdayNumbers[meeting.weekday] - start.weekday + 7) % 7,
-  });
+  return start.plus({ days: (weekday - start.weekday + 7) % 7 });
+}
+
+/**
+ * The source has no meeting ID. Its recurrence slot is the durable identity;
+ * room and Instructor changes update that meeting instead of minting a UID.
+ */
+function meetingIdentity(meeting: ScheduleMeeting) {
+  return createHash("sha256")
+    .update(
+      [
+        meeting.weekday,
+        meeting.dateFrom,
+        meeting.dateTo,
+        meeting.timeFrom,
+        meeting.timeTo,
+      ].join("\0"),
+    )
+    .digest("hex")
+    .slice(0, 24);
 }
 
 function utcParts(value: DateTime): [number, number, number, number, number] {
@@ -56,7 +73,6 @@ function utcParts(value: DateTime): [number, number, number, number, number] {
 function eventAttributes(
   scheduleClass: ScheduleClass,
   meeting: ScheduleMeeting,
-  weekdayOrdinal: number,
 ): CalendarEvent | undefined {
   if (
     !meeting.dateFrom ||
@@ -67,8 +83,7 @@ function eventAttributes(
     return undefined;
 
   const firstDate = firstMeetingDate(meeting).toISODate();
-  if (!firstDate)
-    throw new InvalidScheduleQueryError("Invalid Schedule meeting date.");
+  if (!firstDate) throw new Error("Invalid Schedule meeting date");
   const start = scheduleDateTime(firstDate, meeting.timeFrom);
   let end = scheduleDateTime(firstDate, meeting.timeTo);
   let recurrenceEnd = scheduleDateTime(meeting.dateTo, meeting.timeTo);
@@ -86,7 +101,7 @@ function eventAttributes(
   const path = meeting.room ? PathAdvisor.findPathTo(meeting.room) : undefined;
 
   return {
-    uid: `${scheduleClass.termCode}-${scheduleClass.classNumber}-${meeting.weekday.toLowerCase()}-${weekdayOrdinal}@ust-rankings`,
+    uid: `${scheduleClass.termCode}-${scheduleClass.classNumber}-${meetingIdentity(meeting)}@ust-rankings`,
     timestamp: 0,
     start: utcParts(start),
     startInputType: "utc",
@@ -105,32 +120,32 @@ function eventAttributes(
 }
 
 function classEvents(scheduleClass: ScheduleClass) {
-  const weekdayCounts = new Map<ScheduleMeeting["weekday"], number>();
-  return scheduleClass.meetings.flatMap((meeting) => {
-    const ordinal = (weekdayCounts.get(meeting.weekday) ?? 0) + 1;
-    weekdayCounts.set(meeting.weekday, ordinal);
-    const event = eventAttributes(scheduleClass, meeting, ordinal);
+  const events = scheduleClass.meetings.flatMap((meeting) => {
+    const event = eventAttributes(scheduleClass, meeting);
     return event ? [event] : [];
   });
+  const uids = new Set(events.map((event) => event.uid));
+  if (uids.size !== events.length)
+    throw new Error("Duplicate Schedule meeting identity");
+  return events;
 }
 
 export async function generateScheduleCalendar(
   termCode: string,
   classNumbers: ReadonlyArray<number>,
 ): Promise<CalendarResult> {
-  const page = await querySchedule({ termCode, limit: 1 });
-  const classes = await resolveClasses(termCode, classNumbers);
-  const normalizedNumbers = classes.map(
+  const resolved = await resolveClassesWithGeneration(termCode, classNumbers);
+  const normalizedNumbers = resolved.classes.map(
     (scheduleClass) => scheduleClass.classNumber,
   );
-  const calendar = ics.createEvents(classes.flatMap(classEvents), {
+  const calendar = ics.createEvents(resolved.classes.flatMap(classEvents), {
     productId: "-//UST Rankings//Schedule//EN",
     calName: "UST Schedule",
   });
   if (calendar.error || calendar.value === null)
     throw new Error(calendar.error?.message ?? "Calendar generation failed");
-  const identity = `${page.generation}\n${page.term.termCode}\n${normalizedNumbers.join(",")}`;
-  const parameters = new URLSearchParams({ term: page.term.termCode });
+  const identity = `${resolved.generation}\n${termCode}\n${normalizedNumbers.join(",")}\n${calendar.value}`;
+  const parameters = new URLSearchParams({ term: termCode });
   for (const classNumber of normalizedNumbers)
     parameters.append("class", String(classNumber));
   return {
@@ -192,7 +207,10 @@ export async function handleScheduleCalendar(
         .get("if-none-match")
         ?.split(",")
         .map((value) => value.trim())
-        .some((value) => value === calendar.etag || value === "*")
+        .some(
+          (value) =>
+            value === "*" || value.replace(/^W\//, "") === calendar.etag,
+        )
     )
       return new Response(null, { status: 304, headers });
     return new Response(calendar.body, { headers });

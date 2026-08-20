@@ -715,10 +715,11 @@ export async function getSchedule(
   return { type: "class", ...scheduleClass };
 }
 
-export async function resolveClasses(
+/** Resolve Classes and their accepted generation in one Schedule query boundary. */
+export async function resolveClassesWithGeneration(
   term: string,
   classNumbers: ReadonlyArray<number>,
-): Promise<ScheduleClass[]> {
+): Promise<{ generation: string; classes: ScheduleClass[] }> {
   const termCode = validateTermCode(term);
   const numbers = [...new Set(classNumbers)].sort(
     (left, right) => left - right,
@@ -738,6 +739,11 @@ export async function resolveClasses(
     `${offeringSql(accepted.directory)} WHERE course.term_code = $termCode ORDER BY class.number`,
     { termCode },
   );
+  if (
+    rows.length === 0 &&
+    !(await terms(accepted)).some((term) => term.termCode === termCode)
+  )
+    throw new InvalidScheduleQueryError("Unknown Term Code.");
   const wanted = new Set(numbers);
   const classes = mapRows(rows, accepted)
     .flatMap((offering) => offering.classes)
@@ -745,5 +751,12 @@ export async function resolveClasses(
     .sort((left, right) => left.classNumber - right.classNumber);
   if (classes.length !== numbers.length)
     throw new InvalidScheduleQueryError("Unknown Class Number.");
-  return classes;
+  return { generation: accepted.sha, classes };
+}
+
+export async function resolveClasses(
+  term: string,
+  classNumbers: ReadonlyArray<number>,
+): Promise<ScheduleClass[]> {
+  return (await resolveClassesWithGeneration(term, classNumbers)).classes;
 }

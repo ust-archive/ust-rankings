@@ -5,7 +5,15 @@ import { DuckDBInstance } from "@duckdb/node-api";
 
 export const scheduleFixtureSha = "1234567890abcdef1234567890abcdef12345678";
 
-type ScheduleFixtureVariant = "conflict" | "duplicate-event" | "orphan-class";
+export type ScheduleFixtureVariant =
+  | "calendar-base"
+  | "calendar-inserted"
+  | "calendar-reordered"
+  | "calendar-updated"
+  | "conflict"
+  | "duplicate-event"
+  | "invalid-meeting"
+  | "orphan-class";
 
 async function digest(path: string) {
   return createHash("sha256")
@@ -51,6 +59,27 @@ export async function makeScheduleGeneration(
     (99, '2430', '2024-25 Spring', 'c4', 'COMP', '2000', 'UGRD', 'Earlier Offering', 'Earlier', 3, '', '', '', '', 'ACTIVE', '2024-01-01T00:00:00Z')
   ) t(term_num, term_code, term_name, id, prefix, number, career, title, description, credits, previous, prerequisite, corequisite, exclusion, status, timestamp)`;
 
+  const meetingA =
+    "{weekday:'Wed', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'11:00'::TIME, time_to:'11:50'::TIME, venue:'R101', venue_name:'Room 101', instructors:['Alpha Instructor']}";
+  const meetingB =
+    "{weekday:'Wed', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'15:00'::TIME, time_to:'15:50'::TIME, venue:'R102', venue_name:'Room 102', instructors:['Alpha Instructor']}";
+  const meetingInserted =
+    "{weekday:'Wed', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'13:00'::TIME, time_to:'13:50'::TIME, venue:'R103', venue_name:'Room 103', instructors:['Alpha Instructor']}";
+  const meetingUpdated =
+    "{weekday:'Wed', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'11:00'::TIME, time_to:'11:50'::TIME, venue:'R201', venue_name:'Room 201', instructors:['Updated Instructor']}";
+  const latestSchedules =
+    malformation === "calendar-base"
+      ? `[${meetingA}, ${meetingB}]`
+      : malformation === "calendar-reordered"
+        ? `[${meetingB}, ${meetingA}]`
+        : malformation === "calendar-inserted"
+          ? `[${meetingA}, ${meetingInserted}, ${meetingB}]`
+          : malformation === "calendar-updated"
+            ? `[${meetingUpdated}, ${meetingB}]`
+            : malformation === "invalid-meeting"
+              ? "[{weekday:'Invalid', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'11:00'::TIME, time_to:'11:50'::TIME, venue:'R101', venue_name:'Room 101', instructors:['Alpha Instructor']}]"
+              : `[${meetingA}]`;
+
   const classes = `SELECT
     term_num::INTEGER AS term_num, term_code::VARCHAR AS term_code,
     term_name::VARCHAR AS term_name, course_id::VARCHAR AS course_id,
@@ -65,7 +94,7 @@ export async function makeScheduleGeneration(
   FROM (VALUES
     (100, '2510', '2025-26 Fall', 'c1', 'L1', 999, 'E', 'LEC', 1, '', 10, 5, 0, false, true, [{weekday:'Mon', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'09:00'::TIME, time_to:'09:50'::TIME, venue:'OLD', venue_name:'Old Room', instructors:['Old Instructor']}], 'ACTIVE', '2025-01-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c2', 'L1', 1001, 'E', 'LEC', 1, '', 80, 20, 0, false, true, [{weekday:'Tue', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'10:00'::TIME, time_to:'10:50'::TIME, venue:'R101', venue_name:'Room 101', instructors:['Alpha Instructor']}], 'ACTIVE', '2025-01-01T00:00:00Z'),
-    (100, '2510', '2025-26 Fall', 'c2', 'L1', 1001, 'E', 'LEC', 1, 'Bring a laptop', 80, 30, 0, false, true, [{weekday:'Wed', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'11:00'::TIME, time_to:'11:50'::TIME, venue:'R101', venue_name:'Room 101', instructors:['Alpha Instructor']}], 'ACTIVE', '2025-02-01T00:00:00Z'),
+    (100, '2510', '2025-26 Fall', 'c2', 'L1', 1001, 'E', 'LEC', 1, 'Bring a laptop', 80, 30, 0, false, true, ${latestSchedules}, 'ACTIVE', '2025-02-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c2', 'T1', 1002, 'N', 'TUT', 1, '', 20, 10, 0, false, true, [], 'ACTIVE', '2025-01-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c2', 'T1', 1002, 'N', 'TUT', 1, '', 20, 10, 0, false, false, [], 'INACTIVE', '2025-02-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', '${malformation === "orphan-class" ? "missing" : "c3"}', 'L1', 2001, 'E', 'LEC', 1, '', 60, 40, 0, false, true, [{weekday:'${malformation === "conflict" ? "Wed" : "Fri"}', date_from:${malformation === "conflict" ? "'2025-09-01'" : "NULL"}::DATE, date_to:${malformation === "conflict" ? "'2025-11-30'" : "NULL"}::DATE, time_from:'${malformation === "conflict" ? "11:30" : "13:00"}'::TIME, time_to:'${malformation === "conflict" ? "12:20" : "13:50"}'::TIME, venue:'R202', venue_name:'Room 202', instructors:[' ', ' TBA ', ' Unresolved Teacher ']}], 'ACTIVE', '2025-01-01T00:00:00Z'),

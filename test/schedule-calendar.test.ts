@@ -1,20 +1,40 @@
-import { afterEach, expect, mock, test } from "bun:test";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeScheduleGeneration } from "./schedule-fixture";
+import {
+  makeScheduleGeneration,
+  type ScheduleFixtureVariant,
+} from "./schedule-fixture";
 
 mock.module("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
 
-async function configureFixture(sourceCommit?: string) {
+async function configureFixture(
+  sourceCommit?: string,
+  variant?: ScheduleFixtureVariant,
+) {
   const root = await mkdtemp(join(tmpdir(), "schedule-calendar-"));
   temporaryDirectories.push(root);
   process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(
     root,
-    undefined,
+    variant,
     sourceCommit,
+  );
+}
+
+function eventUidsByStart(body: string) {
+  return Object.fromEntries(
+    body
+      .split("BEGIN:VEVENT")
+      .slice(1)
+      .map((event) => {
+        const start = event.match(/DTSTART:(\d{8}T\d{6}Z)/)?.[1];
+        const uid = event.match(/UID:([^\r\n]+)/)?.[1];
+        if (!start || !uid) throw new Error("Invalid calendar test event");
+        return [start, uid];
+      }),
   );
 }
 
@@ -68,23 +88,33 @@ test("canonical calendar is strict, normalized, stable, zoned, and cacheable for
   );
   expect(etag).toMatch(/^"[0-9a-f]{64}"$/);
   expect(body.match(/BEGIN:VEVENT/g)).toHaveLength(1);
-  expect(body).toContain("UID:2510-1001-wed-1@ust-rankings");
+  expect(body).toMatch(/UID:2510-1001-[0-9a-f]{24}@ust-rankings/);
   expect(body).toContain("DTSTAMP:19700101T000000Z");
   expect(body).toContain("DTSTART:20250903T030000Z");
   expect(body).toContain("DTEND:20250903T035000Z");
   expect(body).toContain("UNTIL=20251130T035000Z");
   expect(await second.text()).toBe(body);
 
-  const notModified = await GET(
-    new Request(url, { headers: { "if-none-match": etag ?? "" } }),
-  );
-  expect(notModified.status).toBe(304);
-  expect(await notModified.text()).toBe("");
+  for (const validator of [etag ?? "", `W/${etag}`]) {
+    const notModified = await GET(
+      new Request(url, { headers: { "if-none-match": validator } }),
+    );
+    expect(notModified.status).toBe(304);
+    expect(await notModified.text()).toBe("");
+  }
 });
 
 test("one invalid Class rejects the complete canonical calendar", async () => {
   await configureFixture();
   const { GET } = await import("@/app/schedule/calendar.ics/route");
+  const unknownTerm = await GET(
+    new Request(
+      "https://example.test/schedule/calendar.ics?term=9999&class=1001",
+    ),
+  );
+  expect(unknownTerm.status).toBe(400);
+  expect(await unknownTerm.text()).toBe("Unknown Term Code.");
+
   const response = await GET(
     new Request(
       "https://example.test/schedule/calendar.ics?term=2510&class=1001&class=9999",
@@ -145,18 +175,68 @@ test("legacy subscribers invoke the strict canonical generator", async () => {
   expect(invalid.status).toBe(404);
 });
 
-test("calendar ETag changes with the accepted Schedule generation", async () => {
-  await configureFixture();
+test("calendar ETag identifies the body and accepted Schedule generation", async () => {
   const { GET } = await import("@/app/schedule/calendar.ics/route");
   const request = () =>
     new Request(
       "https://example.test/schedule/calendar.ics?term=2510&class=1001",
     );
+  await configureFixture(undefined, "calendar-base");
   const first = await GET(request());
 
-  await configureFixture("abcdefabcdefabcdefabcdefabcdefabcdefabcd");
-  const second = await GET(request());
+  await configureFixture(undefined, "calendar-updated");
+  const changedBody = await GET(request());
+  expect(await first.clone().text()).not.toBe(await changedBody.clone().text());
+  expect(first.headers.get("etag")).not.toBe(changedBody.headers.get("etag"));
 
-  expect(first.headers.get("etag")).not.toBe(second.headers.get("etag"));
-  expect(await first.text()).toBe(await second.text());
+  await configureFixture(
+    "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+    "calendar-updated",
+  );
+  const changedGeneration = await GET(request());
+  expect(await changedBody.clone().text()).toBe(
+    await changedGeneration.clone().text(),
+  );
+  expect(changedBody.headers.get("etag")).not.toBe(
+    changedGeneration.headers.get("etag"),
+  );
+});
+
+test("meeting UIDs survive reorder, insertion, and descriptive updates", async () => {
+  const { GET } = await import("@/app/schedule/calendar.ics/route");
+  const request = () =>
+    new Request(
+      "https://example.test/schedule/calendar.ics?term=2510&class=1001",
+    );
+
+  await configureFixture(undefined, "calendar-base");
+  const base = eventUidsByStart(await (await GET(request())).text());
+  await configureFixture(undefined, "calendar-reordered");
+  const reordered = eventUidsByStart(await (await GET(request())).text());
+  await configureFixture(undefined, "calendar-inserted");
+  const inserted = eventUidsByStart(await (await GET(request())).text());
+  await configureFixture(undefined, "calendar-updated");
+  const updated = eventUidsByStart(await (await GET(request())).text());
+
+  expect(reordered).toEqual(base);
+  expect(inserted["20250903T030000Z"]).toBe(base["20250903T030000Z"]);
+  expect(inserted["20250903T070000Z"]).toBe(base["20250903T070000Z"]);
+  expect(inserted["20250903T050000Z"]).toBeDefined();
+  expect(updated).toEqual(base);
+});
+
+test("malformed source meeting data fails internally without blaming the request", async () => {
+  await configureFixture(undefined, "invalid-meeting");
+  const { GET } = await import("@/app/schedule/calendar.ics/route");
+  const errorLog = spyOn(console, "error").mockImplementation(() => {});
+  const response = await GET(
+    new Request(
+      "https://example.test/schedule/calendar.ics?term=2510&class=1001",
+    ),
+  );
+
+  expect(response.status).toBe(500);
+  expect(await response.text()).toBe("Calendar generation failed.");
+  expect(errorLog).toHaveBeenCalled();
+  errorLog.mockRestore();
 });

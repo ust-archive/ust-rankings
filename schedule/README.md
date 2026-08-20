@@ -34,8 +34,10 @@ the Schedule module; any invalid or missing Class rejects the whole feed. The
 same path works with `webcal://`, defaults to inline subscription/opening, and
 adds download disposition only with `download=1`.
 
-Calendar UIDs are stable for each Class meeting, Hong Kong Schedule values are
-converted explicitly to UTC, and ETags bind the normalized request to the
-accepted Schedule generation. Established
+Calendar UIDs use each Class meeting's recurrence slot (weekday, date range,
+and time range) as the durable meeting identity, so source ordering and mutable
+room or Instructor details do not change identity. Hong Kong Schedule values
+are converted explicitly to UTC, and ETags bind the complete emitted calendar,
+normalized request, and accepted Schedule generation. Established
 `/api/calendar?term=2510&number=1001` subscriptions remain supported by the
 same generator.
