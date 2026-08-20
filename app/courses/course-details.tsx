@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { instructorPath } from "@/app/instructors/routes";
+import type { PublicCourseReview } from "@/lib/contributions/reviews";
 import type { CourseRankings } from "@/lib/rankings/server";
 import { buildScheduleUrl } from "@/lib/schedule/planner";
 import type {
@@ -9,6 +10,7 @@ import type {
   ScheduleDetails,
   ScheduleMeeting,
 } from "@/lib/schedule/server";
+import { CourseReviewComposer, CourseReviews } from "./course-reviews";
 import { coursePath } from "./routes";
 
 const criterionLabels = {
@@ -74,10 +76,12 @@ function ActionArea({
   type,
   scheduleHref,
   instructorNames,
+  reviewComposer,
 }: {
   type: "Course" | "Course Offering" | "Class";
   scheduleHref?: string;
   instructorNames: string[];
+  reviewComposer?: ReactNode;
 }) {
   return (
     <aside className="order-1 space-y-4 lg:col-start-2 lg:row-start-1 lg:self-start">
@@ -117,10 +121,17 @@ function ActionArea({
                 ))}
               </div>
             </>
+          ) : reviewComposer ? (
+            <>
+              <p className="mt-2 text-sm text-slate-600">
+                Publish one active attributed Review for this exact Course
+                Basis.
+              </p>
+              {reviewComposer}
+            </>
           ) : (
             <p className="mt-2 text-sm text-slate-600">
-              Course signals and Review writing will appear here when community
-              contributions are available.
+              Contribution controls are not available for this detail yet.
             </p>
           )}
         </div>
@@ -247,15 +258,50 @@ function RankingEvidence({
   );
 }
 
-function CommunityArea() {
+function CommunityArea({
+  reviews,
+  unavailable = true,
+  published,
+  error,
+}: {
+  reviews?: PublicCourseReview[];
+  unavailable?: boolean;
+  published?: boolean;
+  error?: string;
+}) {
   return (
-    <section className="order-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 lg:col-start-1 lg:row-start-2">
+    <section
+      className="order-3 rounded-2xl border border-slate-200 bg-slate-50 p-6 lg:col-start-1 lg:row-start-2"
+      id="reviews"
+    >
       <h2 className="text-2xl font-bold">Community Reviews</h2>
-      <p className="mt-2 text-slate-600">
-        Community contributions are not available yet. This reserved area is
-        separate from ranking and Schedule availability and does not represent
-        zero Reviews.
+      <p className="mt-1 text-sm text-slate-600">
+        Published experiences with this Course Basis.
       </p>
+      {published ? (
+        <p
+          className="mt-4 rounded-lg bg-green-50 p-3 text-green-900"
+          role="status"
+        >
+          Review Revision published.
+        </p>
+      ) : null}
+      {error ? (
+        <p className="mt-4 rounded-lg bg-red-50 p-3 text-red-900" role="alert">
+          Review could not be published ({error}).
+        </p>
+      ) : null}
+      {unavailable ? (
+        <p
+          className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950"
+          role="status"
+        >
+          Community Reviews are unavailable. This does not represent zero
+          Reviews.
+        </p>
+      ) : (
+        <CourseReviews reviews={reviews ?? []} />
+      )}
     </section>
   );
 }
@@ -267,6 +313,7 @@ function DetailShell({
   action,
   evidence,
   associations,
+  community,
 }: {
   eyebrow: string;
   title: string;
@@ -274,6 +321,7 @@ function DetailShell({
   action: ReactNode;
   evidence: ReactNode;
   associations: ReactNode;
+  community?: ReactNode;
 }) {
   return (
     <div className="w-full space-y-8 text-left text-slate-900">
@@ -289,7 +337,7 @@ function DetailShell({
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
         {action}
         {evidence}
-        <CommunityArea />
+        {community ?? <CommunityArea />}
         <section className="order-4 lg:col-start-2 lg:row-start-2">
           {associations}
         </section>
@@ -382,12 +430,20 @@ export function CourseDetails({
   schedule,
   rankings,
   selectedTermCode,
+  reviews = [],
+  reviewsUnavailable = true,
+  reviewPublished,
+  reviewError,
 }: {
   coursePrefix: string;
   courseNumber: string;
   schedule?: Extract<ScheduleDetails, { type: "course" }>;
   rankings?: CourseRankings;
   selectedTermCode?: string;
+  reviews?: PublicCourseReview[];
+  reviewsUnavailable?: boolean;
+  reviewPublished?: boolean;
+  reviewError?: string;
 }) {
   const offerings = schedule?.offerings ?? [];
   const selected = selectedTermCode
@@ -422,10 +478,24 @@ export function CourseDetails({
           instructorNames={instructors
             .filter((item) => item.uuid)
             .map((item) => item.name)}
+          reviewComposer={
+            <CourseReviewComposer
+              courseNumber={courseNumber}
+              coursePrefix={coursePrefix}
+            />
+          }
         />
       }
       evidence={
         <RankingEvidence rankings={rankings} termCode={evidenceTermCode} />
+      }
+      community={
+        <CommunityArea
+          error={reviewError}
+          published={reviewPublished}
+          reviews={reviews}
+          unavailable={reviewsUnavailable}
+        />
       }
       associations={
         <div className="space-y-6 rounded-2xl border bg-white p-5 shadow-sm">

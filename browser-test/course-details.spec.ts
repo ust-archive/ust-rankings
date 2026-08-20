@@ -62,6 +62,39 @@ test("Schedule cross-links reach validated Offering and Class details with keybo
   ).toBeVisible();
 });
 
+test("Course Review composer is keyboard-accessible and explains attribution and licensing", async ({
+  page,
+}) => {
+  await page.goto("/schedule");
+  const offeringPath = await page
+    .locator('h3 a[href^="/courses/"]')
+    .first()
+    .getAttribute("href");
+  const coursePath = offeringPath?.split("/").slice(0, 4).join("/");
+  expect(coursePath).toBeTruthy();
+  await page.goto(coursePath as string);
+  const open = page.getByRole("button", { name: "Write a Course Review" });
+  await open.focus();
+  await page.keyboard.press("Enter");
+
+  const dialog = page.getByRole("dialog", { name: "Write your Review" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Review · Markdown")).toBeFocused();
+  await expect(dialog).toContainText("Attributed Review Revision");
+  await expect(dialog).toContainText("CC BY 4.0");
+  await expect(dialog).toContainText("non-exclusive site license");
+  await expect(
+    dialog.getByRole("button", { name: "Publish Revision" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /vote|reaction/i }),
+  ).toHaveCount(0);
+
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(open).toBeFocused();
+});
+
 test("mobile Course detail puts actions before evidence and Reviews", async ({
   page,
 }) => {

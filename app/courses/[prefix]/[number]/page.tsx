@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { CourseDetails } from "@/app/courses/course-details";
 import { loadCourseRankings } from "@/app/courses/data";
+import { loadCourseReviews } from "@/app/courses/review-data";
 import {
   normalizeCourseRoute,
   type RouteSearchParams,
@@ -10,6 +11,8 @@ import {
   InvalidScheduleQueryError,
   ScheduleUnavailableError,
 } from "@/lib/schedule/server";
+
+export const dynamic = "force-dynamic";
 
 export default async function CoursePage({
   params,
@@ -44,11 +47,10 @@ export default async function CoursePage({
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
       : scheduleResult.schedule?.offerings.at(-1)?.termCode;
-  const rankings = await loadCourseRankings(
-    coursePrefix,
-    courseNumber,
-    selectedTerm,
-  );
+  const [rankings, community] = await Promise.all([
+    loadCourseRankings(coursePrefix, courseNumber, selectedTerm),
+    loadCourseReviews(coursePrefix, courseNumber),
+  ]);
   if (!rankings && !scheduleResult.schedule && !scheduleResult.unavailable)
     notFound();
 
@@ -59,6 +61,12 @@ export default async function CoursePage({
       rankings={rankings}
       schedule={scheduleResult.schedule}
       selectedTermCode={selectedTerm}
+      reviews={community.reviews}
+      reviewsUnavailable={community.unavailable}
+      reviewPublished={query.review === "published"}
+      reviewError={
+        typeof query.reviewError === "string" ? query.reviewError : undefined
+      }
     />
   );
 }

@@ -42,11 +42,12 @@ afterEach(async () => {
   ]);
 });
 
-test("Course details compose evidence, Offerings, Classes, Instructors, and reserved community state", async () => {
+test("Course details compose evidence, Offerings, Classes, Instructors, and isolated community state", async () => {
   await configureDetails();
-  const { default: CoursePage } = await import(
+  const { default: CoursePage, dynamic } = await import(
     "@/app/courses/[prefix]/[number]/page"
   );
+  expect(dynamic).toBe("force-dynamic");
 
   const markup = renderToStaticMarkup(
     await CoursePage({
@@ -64,7 +65,8 @@ test("Course details compose evidence, Offerings, Classes, Instructors, and rese
   expect(markup).toContain("2025-26 Fall");
   expect(markup).toContain("Alpha Instructor");
   expect(markup).toContain("Community Reviews");
-  expect(markup).toContain("Community contributions are not available yet");
+  expect(markup).toContain("Community Reviews are unavailable");
+  expect(markup).toContain("Write a Course Review");
   expect(markup).toContain("/schedule?term=2510&amp;class=1001&amp;view=cart");
   expect(markup.indexOf("Course actions")).toBeLessThan(
     markup.indexOf("Ranking evidence and trends"),

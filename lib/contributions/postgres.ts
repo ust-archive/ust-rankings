@@ -7,6 +7,15 @@ import {
   createAccountService,
   type EstablishIdentityInput,
 } from "./accounts";
+import {
+  ContributionsUnavailableError,
+  type CourseBasis,
+  type CourseReviewRepository,
+  createReviewService,
+  type PublicCourseReview,
+  type PublishCourseReviewRecord,
+  ReviewWriteError,
+} from "./reviews";
 
 type AccountDatabaseRow = {
   id: string;
@@ -122,15 +131,115 @@ export class PostgresAccountRepository implements AccountRepository {
   }
 }
 
+type ReviewDatabaseRow = {
+  id: string;
+  revisionId: string;
+  coursePrefix: string;
+  courseNumber: string;
+  markdown: string;
+  capturedDisplayName: string;
+  publishedAt: Date;
+};
+
+function publicReview(row: ReviewDatabaseRow): PublicCourseReview {
+  return {
+    id: row.id,
+    revisionId: row.revisionId,
+    coursePrefix: row.coursePrefix,
+    courseNumber: row.courseNumber,
+    markdown: row.markdown,
+    capturedDisplayName: row.capturedDisplayName,
+    publishedAt: row.publishedAt,
+  };
+}
+
+export class PostgresReviewRepository implements CourseReviewRepository {
+  constructor(private readonly sql: ReturnType<typeof postgres>) {}
+
+  async publishCourseReview(input: PublishCourseReviewRecord) {
+    const reviewId = randomUUID();
+    const revisionId = randomUUID();
+    try {
+      const [published] = await this.sql<ReviewDatabaseRow[]>`
+        SELECT review_id AS id,
+               revision_id AS "revisionId",
+               ${input.coursePrefix}::text AS "coursePrefix",
+               ${input.courseNumber}::text AS "courseNumber",
+               ${input.markdown}::text AS markdown,
+               captured_display_name AS "capturedDisplayName",
+               published_at AS "publishedAt"
+        FROM publish_attributed_course_review(
+          ${reviewId}, ${revisionId}, ${input.userId}, ${input.coursePrefix},
+          ${input.courseNumber}, ${input.markdown}, ${input.policyVersion}
+        )
+      `;
+      return publicReview(published);
+    } catch (error) {
+      if (typeof error === "object" && error !== null) {
+        if (
+          "code" in error &&
+          error.code === "23505" &&
+          "constraint_name" in error &&
+          error.constraint_name === "reviews_active_course_tuple_idx"
+        )
+          throw new ReviewWriteError(
+            "duplicate-review",
+            "This User already has an active Review for the Course Basis",
+          );
+        if ("message" in error && typeof error.message === "string") {
+          const code = [
+            "account-not-found",
+            "onboarding-required",
+            "account-suspended",
+            "account-closed",
+          ].find((code) => error.message === code);
+          if (code)
+            throw new ReviewWriteError(
+              code as ReviewWriteError["code"],
+              "This User cannot publish a Review",
+            );
+        }
+      }
+      throw error;
+    }
+  }
+
+  async listCourseReviews(course: CourseBasis) {
+    try {
+      const rows = await this.sql<ReviewDatabaseRow[]>`
+        SELECT r.id,
+               rr.id AS "revisionId",
+               rcb.course_prefix AS "coursePrefix",
+               rcb.course_number AS "courseNumber",
+               rr.markdown,
+               rr.captured_display_name AS "capturedDisplayName",
+               rr.published_at AS "publishedAt"
+        FROM reviews r
+        JOIN review_revisions rr ON rr.id = r.current_revision_id
+        JOIN review_course_bases rcb ON rcb.revision_id = rr.id
+        WHERE r.publication_state = 'active'
+          AND rr.attribution = 'attributed'
+          AND rcb.course_prefix = ${course.coursePrefix}
+          AND rcb.course_number = ${course.courseNumber}
+        ORDER BY rr.published_at DESC, r.id
+      `;
+      return rows.map(publicReview);
+    } catch (error) {
+      throw new ContributionsUnavailableError(undefined, { cause: error });
+    }
+  }
+}
+
 let runtime:
   | {
       sql: ReturnType<typeof postgres>;
       accounts: ReturnType<typeof createAccountService>;
+      reviews: ReturnType<typeof createReviewService>;
     }
   | undefined;
 
-export function getAccountService() {
-  if (runtime) return runtime.accounts;
+function initializeRuntime() {
+  if (runtime) return runtime;
   const connection = process.env.CONTRIBUTIONS_POSTGRES_URL;
   if (!connection)
     throw new Error("CONTRIBUTIONS_POSTGRES_URL is not configured");
@@ -141,8 +250,40 @@ export function getAccountService() {
       privacyPolicyVersion: process.env.PRIVACY_POLICY_VERSION,
       communityRulesVersion: process.env.COMMUNITY_RULES_VERSION,
     }),
+    reviews: createReviewService(new PostgresReviewRepository(sql), {
+      reviewPolicyVersion: process.env.REVIEW_POLICY_VERSION,
+      async courseExists(course) {
+        const {
+          getRankings,
+          RankingsUnavailableError,
+          UnknownRankingsEntityError,
+        } = await import("@/lib/rankings/server");
+        try {
+          await getRankings({ type: "course", ...course });
+          return true;
+        } catch (error) {
+          if (error instanceof UnknownRankingsEntityError) return false;
+          if (error instanceof RankingsUnavailableError)
+            throw new ReviewWriteError(
+              "rankings-unavailable",
+              "Course Basis cannot be validated while Rankings Data is unavailable",
+            );
+          throw error;
+        }
+      },
+    }),
   };
-  return runtime.accounts;
+  return runtime;
+}
+
+export function getAccountService() {
+  return initializeRuntime().accounts;
+}
+
+export function getReviewService() {
+  if (!process.env.CONTRIBUTIONS_POSTGRES_URL)
+    throw new ContributionsUnavailableError();
+  return initializeRuntime().reviews;
 }
 
 export async function closeAccountRuntimeForTests() {
