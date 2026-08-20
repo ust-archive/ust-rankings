@@ -134,10 +134,10 @@ function letterGrade(percentile: number) {
 
 function gradeColor(ratio: number): Color {
   const stops = [
-    { ratio: 0, color: [237, 27, 47] as Color },
-    { ratio: 0.25, color: [250, 166, 26] as Color },
-    { ratio: 0.75, color: [163, 207, 98] as Color },
-    { ratio: 1, color: [0, 154, 97] as Color },
+    { ratio: 0, color: [185, 28, 28] as Color },
+    { ratio: 0.25, color: [154, 82, 0] as Color },
+    { ratio: 0.75, color: [77, 124, 15] as Color },
+    { ratio: 1, color: [4, 120, 87] as Color },
   ];
   for (let index = 0; index < stops.length - 1; index += 1) {
     const current = stops[index];
@@ -218,6 +218,7 @@ function RankingResultCard({
             </div>
             <div
               className="w-12 shrink-0 rounded-lg py-2 text-center text-xl font-semibold text-white shadow-sm sm:text-2xl"
+              data-grade={grade}
               style={{
                 backgroundColor: `rgb(${gradeColor(result.globalPercentile).join(", ")})`,
               }}

@@ -1,4 +1,30 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+
+async function expectAccessibleGradeContrast(page: Page) {
+  const ratios = await page.locator("[data-grade]").evaluateAll((elements) =>
+    elements.map((element) => {
+      const channels = getComputedStyle(element)
+        .backgroundColor.match(/[\d.]+/g)
+        ?.slice(0, 3)
+        .map(Number);
+      if (!channels) return 0;
+      const luminance = channels
+        .map((channel) => channel / 255)
+        .map((channel) =>
+          channel <= 0.04045
+            ? channel / 12.92
+            : ((channel + 0.055) / 1.055) ** 2.4,
+        )
+        .reduce(
+          (sum, channel, index) =>
+            sum + channel * [0.2126, 0.7152, 0.0722][index],
+          0,
+        );
+      return 1.05 / (luminance + 0.05);
+    }),
+  );
+  expect(Math.min(...ratios)).toBeGreaterThanOrEqual(4.5);
+}
 
 test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation to Details", async ({
   page,
@@ -14,6 +40,7 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   await expect(
     page.getByText(/samples? from ust\.space/).first(),
   ).toBeVisible();
+  await expectAccessibleGradeContrast(page);
 
   const result = page.locator('a[href^="/instructors/"]').first();
   await expect(result).toBeVisible();
@@ -104,6 +131,7 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
   await expect(page.getByText("Filter…")).toBeVisible();
   await expect(page.getByText("Score Formula…")).toBeVisible();
   await expect(page.getByText(/samples? from SFQ/).first()).toBeVisible();
+  await expectAccessibleGradeContrast(page);
 
   const result = page.locator('a[href^="/courses/"]').first();
   await expect(result).toBeVisible();
