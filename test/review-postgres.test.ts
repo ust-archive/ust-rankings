@@ -195,6 +195,11 @@ if (!connection) {
           (${wrongOwnerId}, 'active', 'Wrong Owner')
       `;
       const lifecycleOriginal = await publish(lifecycleUserId, { course });
+      expect(await reviews.getReview(lifecycleOriginal.id)).toMatchObject({
+        id: lifecycleOriginal.id,
+        revisionId: lifecycleOriginal.revisionId,
+        course,
+      });
       await sql`
         UPDATE contribution_users
         SET public_display_name = 'Later Display Name'
@@ -213,6 +218,12 @@ if (!connection) {
       expect(identityHidden).toMatchObject({
         attribution: "identity-hidden",
         attributionCredit: "UST Rankings contributor",
+      });
+      expect(await reviews.getReview(lifecycleOriginal.id)).toMatchObject({
+        id: lifecycleOriginal.id,
+        revisionId: identityHidden.revisionId,
+        course,
+        termCode: "2510",
       });
       expect("capturedDisplayName" in identityHidden).toBe(false);
       const [historyAfterHidden] = await sql<
@@ -315,6 +326,7 @@ if (!connection) {
           (review) => review.id === lifecycleOriginal.id,
         ),
       ).toBe(false);
+      expect(await reviews.getReview(lifecycleOriginal.id)).toBeUndefined();
       const [withdrawnHistory] = await sql<
         { publicationState: string; revisions: number }[]
       >`

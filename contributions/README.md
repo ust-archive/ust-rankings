@@ -48,11 +48,13 @@ withdrawal. Apply every migration in order; historical Revision associations
 are never revalidated or guessed when current source data changes.
 
 Identity-hidden public reads emit no captured Public Display Name and use `UST
-Rankings contributor` plus the Review permalink for CC BY 4.0 credit. The
-internal Review-to-User link remains available only through controlled
-contribution storage. Withdrawal removes the current Review from public reads
-without deleting immutable Revisions. It does not recall CC BY 4.0 rights from
-copies already obtained.
+Rankings contributor` plus the stable `/reviews/{review-id}` permalink for CC BY
+4.0 credit. The permalink is based only on immutable Review identity, resolves
+only the active current Review Revision across reassociation, and returns no
+Review after withdrawal. The internal Review-to-User link remains available only
+through controlled contribution storage. Withdrawal removes the current Review
+from public reads without deleting immutable Revisions. It does not recall CC BY
+4.0 rights from copies already obtained.
 
 Signal reads return only aggregate counts plus the requesting User's own current
 states. Pages are dynamic and never put session-specific state or participant

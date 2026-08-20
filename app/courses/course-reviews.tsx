@@ -117,13 +117,70 @@ export function ReviewComposer({
         .filter((value, index, values) => values.indexOf(value) === index),
     [validContexts, termCode],
   );
+  const courseSupported =
+    !courseEnabled ||
+    courses.some(
+      (item) =>
+        item.coursePrefix === selectedCoursePrefix &&
+        item.courseNumber === selectedCourseNumber,
+    );
+  const instructorSupported =
+    !instructorEnabled ||
+    instructors.some((item) => item.instructorUuid === instructorUuid);
+  const contextSupported =
+    !termCode ||
+    validContexts.some(
+      (item) =>
+        item.termCode === termCode &&
+        (section === "" || item.section === section),
+    );
+  const selectionSupported =
+    courseSupported && instructorSupported && contextSupported;
+  const displayedCourses =
+    selectedInitialCourse &&
+    !courses.some(
+      (item) => courseValue(item) === courseValue(selectedInitialCourse),
+    )
+      ? [
+          {
+            ...selectedInitialCourse,
+            label: `${selectedInitialCourse.coursePrefix} ${selectedInitialCourse.courseNumber} (current snapshot)`,
+          },
+          ...courses,
+        ]
+      : courses;
+  const displayedInstructors =
+    selectedInitialInstructor &&
+    !instructors.some(
+      (item) => item.instructorUuid === selectedInitialInstructor,
+    )
+      ? [
+          {
+            instructorUuid: selectedInitialInstructor,
+            name: `${selectedInitialInstructor} (current snapshot)`,
+          },
+          ...instructors,
+        ]
+      : instructors;
+  const displayedTerms =
+    review?.termCode && !terms.some(([value]) => value === review.termCode)
+      ? [
+          [review.termCode, `${review.termCode} (current snapshot)`] as const,
+          ...terms,
+        ]
+      : terms;
+  const displayedSections =
+    review?.section && !sections.includes(review.section)
+      ? [review.section, ...sections]
+      : sections;
 
   useEffect(() => {
+    if (review) return;
     if (termCode && !terms.some(([value]) => value === termCode)) {
       setTermCode("");
       setSection("");
     } else if (section && !sections.includes(section)) setSection("");
-  }, [termCode, section, terms, sections]);
+  }, [review, termCode, section, terms, sections]);
 
   const hasBasis = courseEnabled || instructorEnabled;
   const inputId = review ? `review-markdown-${review.id}` : "review-markdown";
@@ -176,7 +233,7 @@ export function ReviewComposer({
               <input
                 aria-label="Include Course Basis"
                 checked={courseEnabled}
-                disabled={!courses.length}
+                disabled={!courses.length && !courseEnabled}
                 onChange={(event) => setCourseEnabled(event.target.checked)}
                 type="checkbox"
               />
@@ -189,7 +246,7 @@ export function ReviewComposer({
                 onChange={(event) => setCourse(event.target.value)}
                 value={course}
               >
-                {courses.map((item) => (
+                {displayedCourses.map((item) => (
                   <option key={courseValue(item)} value={courseValue(item)}>
                     {item.label ?? `${item.coursePrefix} ${item.courseNumber}`}
                   </option>
@@ -200,7 +257,7 @@ export function ReviewComposer({
               <input
                 aria-label="Include Instructor Basis"
                 checked={instructorEnabled}
-                disabled={!instructors.length}
+                disabled={!instructors.length && !instructorEnabled}
                 onChange={(event) => setInstructorEnabled(event.target.checked)}
                 type="checkbox"
               />
@@ -213,7 +270,7 @@ export function ReviewComposer({
                 onChange={(event) => setInstructorUuid(event.target.value)}
                 value={instructorUuid}
               >
-                {instructors.map((item) => (
+                {displayedInstructors.map((item) => (
                   <option key={item.instructorUuid} value={item.instructorUuid}>
                     {item.name}
                   </option>
@@ -243,7 +300,7 @@ export function ReviewComposer({
                 value={termCode}
               >
                 <option value="">General</option>
-                {terms.map(([value, label]) => (
+                {displayedTerms.map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
@@ -260,7 +317,7 @@ export function ReviewComposer({
                 value={section}
               >
                 <option value="">All Sections</option>
-                {sections.map((value) => (
+                {displayedSections.map((value) => (
                   <option key={value} value={value}>
                     {value}
                   </option>
@@ -271,6 +328,17 @@ export function ReviewComposer({
               Term qualifies every selected Review Basis. Section requires a
               Course Basis and Term and identifies a Class.
             </p>
+            {edit && !selectionSupported ? (
+              <p
+                className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 sm:col-span-2"
+                role="alert"
+              >
+                This Review snapshot is no longer source-backed. Select
+                supported Review Bases and Review Context before publishing.
+                Persisted values are shown as the current snapshot and will not
+                be removed automatically.
+              </p>
+            ) : null}
           </fieldset>
           <div>
             <div className="flex items-end justify-between gap-3">
@@ -376,7 +444,7 @@ export function ReviewComposer({
             </button>
             <button
               className="min-h-11 rounded-xl bg-[#003366] px-5 py-3 font-bold text-white disabled:bg-slate-400"
-              disabled={!hasBasis}
+              disabled={!hasBasis || (edit && !selectionSupported)}
               type="submit"
             >
               Publish Revision
@@ -419,9 +487,7 @@ export function Reviews({
   return (
     <ol className="mt-5 space-y-5">
       {reviews.map((review) => {
-        const permalink = review.course
-          ? `/courses/${review.course.coursePrefix}/${review.course.courseNumber}#review-${review.id}`
-          : `/instructors/${review.instructorUuid}#review-${review.id}`;
+        const permalink = `/reviews/${review.id}`;
         const identityHidden = review.attribution === "identity-hidden";
         const credit = identityHidden
           ? "UST Rankings contributor"

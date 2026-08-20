@@ -35,7 +35,7 @@ test("public Review renders equal Bases, secondary Context, and safe Markdown on
   expect(markup).not.toContain("evil.example");
   expect(markup).not.toContain('href="javascript:');
   expect(markup).toContain(
-    'href="/courses/COMP/2000#review-00000000-0000-4000-8000-000000000144"',
+    'href="/reviews/00000000-0000-4000-8000-000000000144"',
   );
   expect(markup.match(/Useful/g)).toHaveLength(1);
 
@@ -137,6 +137,28 @@ test("Identity-hidden public Review output redacts author names and emits CC cre
   expect(markup).toContain("Review permalink");
 });
 
+test("Review permalink remains stable across reassociation", async () => {
+  const { Reviews } = await import("@/app/courses/course-reviews");
+  const href = `/reviews/${review.id}`;
+  const courseMarkup = renderToStaticMarkup(<Reviews reviews={[review]} />);
+  const instructorMarkup = renderToStaticMarkup(
+    <Reviews
+      reviews={[
+        {
+          ...review,
+          course: undefined,
+          instructorUuid: "00000000-0000-4000-8000-000000000046",
+          termCode: undefined,
+          section: undefined,
+        },
+      ]}
+    />,
+  );
+
+  expect(courseMarkup).toContain(`href="${href}"`);
+  expect(instructorMarkup).toContain(`href="${href}"`);
+});
+
 test("a Review author receives optimistic edit and withdrawal controls at the public seam", async () => {
   const { Reviews } = await import("@/app/courses/course-reviews");
   const markup = renderToStaticMarkup(
@@ -168,5 +190,46 @@ test("a Review author receives optimistic edit and withdrawal controls at the pu
   expect(markup).toContain("Useful **labs**.");
   expect(markup).toContain(
     "Publishing this edit creates a new immutable Review Revision",
+  );
+});
+
+test("historical Review editing preserves unsupported Context and blocks implicit publication", async () => {
+  const { Reviews } = await import("@/app/courses/course-reviews");
+  const retiredInstructorUuid = "00000000-0000-4000-8000-000000000099";
+  const markup = renderToStaticMarkup(
+    <Reviews
+      editor={{
+        courses: [{ coursePrefix: "COMP", courseNumber: "2000" }],
+        instructors: [
+          { instructorUuid: review.instructorUuid, name: "Current Instructor" },
+        ],
+        contexts: [
+          {
+            course: review.course,
+            instructorUuid: review.instructorUuid,
+            termCode: "2510",
+            section: "L1",
+          },
+        ],
+      }}
+      reviews={[
+        {
+          ...review,
+          instructorUuid: retiredInstructorUuid,
+          instructorAssociationStatus: "historical",
+          viewerCanEdit: true,
+        },
+      ]}
+    />,
+  );
+
+  expect(markup).toContain(`${retiredInstructorUuid}`);
+  expect(markup).toContain('<option value="2510" selected="">');
+  expect(markup).toContain('<option value="L1" selected="">');
+  expect(markup).toContain(
+    "This Review snapshot is no longer source-backed. Select supported Review Bases and Review Context before publishing.",
+  );
+  expect(markup).toMatch(
+    /<button[^>]+disabled=""[^>]*>Publish Revision<\/button>/,
   );
 });

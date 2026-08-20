@@ -309,6 +309,36 @@ export class PostgresReviewRepository implements ReviewRepository {
     }
   }
 
+  async getReview(reviewId: string, viewerUserId?: string) {
+    try {
+      const [row] = await this.sql<ReviewDatabaseRow[]>`
+        SELECT r.id,
+               rr.id AS "revisionId",
+               rcb.course_prefix AS "coursePrefix",
+               rcb.course_number AS "courseNumber",
+               rib.instructor_uuid AS "instructorUuid",
+               rc.term_code AS "termCode",
+               rc.section,
+               rr.markdown,
+               rr.attribution,
+               rr.captured_display_name AS "capturedDisplayName",
+               rr.published_at AS "publishedAt",
+               r.instructor_association_status AS "instructorAssociationStatus",
+               (${viewerUserId ?? null}::uuid IS NOT NULL
+                 AND r.author_user_id = ${viewerUserId ?? null}::uuid) AS "viewerCanEdit"
+        FROM reviews r
+        JOIN review_revisions rr ON rr.id = r.current_revision_id
+        LEFT JOIN review_course_bases rcb ON rcb.revision_id = rr.id
+        LEFT JOIN review_instructor_bases rib ON rib.revision_id = rr.id
+        LEFT JOIN review_contexts rc ON rc.revision_id = rr.id
+        WHERE r.id = ${reviewId} AND r.publication_state = 'active'
+      `;
+      return row ? publicReview(row) : undefined;
+    } catch (error) {
+      throw new ContributionsUnavailableError(undefined, { cause: error });
+    }
+  }
+
   async listReviews(query: ReviewListQuery, viewerUserId?: string) {
     try {
       const rows = await this.sql<ReviewDatabaseRow[]>`

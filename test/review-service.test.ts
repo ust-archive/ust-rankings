@@ -39,6 +39,9 @@ function fakeRepository() {
     async withdrawReview() {
       throw new Error("not used");
     },
+    async getReview() {
+      return undefined;
+    },
     async listReviews() {
       return [];
     },
@@ -195,6 +198,9 @@ test("Instructor family aggregation normalizes UUIDs and de-duplicates each Revi
     async withdrawReview() {
       throw new Error("not used");
     },
+    async getReview() {
+      return stored;
+    },
     async listReviews(query) {
       queries.push(query);
       return [stored, stored];
@@ -242,6 +248,9 @@ test("durable Review associations are flagged rather than guessed after an Instr
     },
     async withdrawReview() {
       throw new Error("not used");
+    },
+    async getReview() {
+      return stored;
     },
     async listReviews() {
       return [stored];
@@ -320,6 +329,9 @@ test("a Review author publishes optimistic attributed and Identity-hidden Revisi
     async withdrawReview(input) {
       withdrawals.push(input);
     },
+    async getReview() {
+      return revision;
+    },
     async listReviews() {
       return [revision];
     },
@@ -364,6 +376,50 @@ test("a Review author publishes optimistic attributed and Identity-hidden Revisi
   ]);
 });
 
+test("a stable Review identity resolves only its current public Revision", async () => {
+  const current = {
+    id: "00000000-0000-4000-8000-000000000144",
+    revisionId: "00000000-0000-4000-8000-000000000245",
+    instructorUuid: INSTRUCTOR_UUID,
+    markdown: "Current Revision.",
+    attribution: "identity-hidden" as const,
+    attributionCredit: "UST Rankings contributor",
+    license: "CC BY 4.0" as const,
+    publishedAt: new Date("2026-08-20T13:00:00.000Z"),
+  };
+  const repository = {
+    async publishReview() {
+      return current;
+    },
+    async editReview() {
+      return current;
+    },
+    async withdrawReview() {},
+    async getReview(reviewId: string) {
+      return reviewId === current.id ? current : undefined;
+    },
+    async listReviews() {
+      return [];
+    },
+  } as ReviewRepository & {
+    getReview(reviewId: string): Promise<typeof current | undefined>;
+  };
+  const reviews = createReviewService(repository, {
+    reviewPolicyVersion: "review-test-v1",
+    async validateAssociations(associations) {
+      return associations;
+    },
+  });
+
+  expect(await reviews.getReview(current.id)).toEqual(current);
+  expect(
+    await reviews.getReview("00000000-0000-4000-8000-000000000999"),
+  ).toBeUndefined();
+  await expect(reviews.getReview("bad")).rejects.toMatchObject({
+    code: "review-not-found",
+  });
+});
+
 test("Review edits validate identifiers, attribution, Markdown, and reassociation before persistence", async () => {
   let edits = 0;
   let validations = 0;
@@ -376,6 +432,9 @@ test("Review edits validate identifiers, attribution, Markdown, and reassociatio
       throw new Error("must not persist");
     },
     async withdrawReview() {},
+    async getReview() {
+      return undefined;
+    },
     async listReviews() {
       return [];
     },

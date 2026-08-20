@@ -61,6 +61,10 @@ export interface ReviewRepository {
   publishReview(input: PublishReviewRecord): Promise<PublicReview>;
   editReview(input: EditReviewRecord): Promise<PublicReview>;
   withdrawReview(input: WithdrawReviewRecord): Promise<void>;
+  getReview(
+    reviewId: string,
+    viewerUserId?: string,
+  ): Promise<PublicReview | undefined>;
   listReviews(
     query: ReviewListQuery,
     viewerUserId?: string,
@@ -296,6 +300,24 @@ export function createReviewService(
         reviewId,
         expectedRevisionId,
       });
+    },
+
+    async getReview(reviewId: string, viewerUserId?: string) {
+      if (!UUID.test(reviewId))
+        throw new ReviewWriteError("review-not-found", "Review was not found");
+      const review = await repository.getReview(
+        reviewId,
+        viewerUserId && UUID.test(viewerUserId) ? viewerUserId : undefined,
+      );
+      if (
+        !review?.instructorUuid ||
+        !options.resolveInstructorAssociationStatus
+      )
+        return review;
+      const status = await options.resolveInstructorAssociationStatus(review);
+      return status
+        ? { ...review, instructorAssociationStatus: status }
+        : review;
     },
 
     async listReviews(query: ReviewListQuery, viewerUserId?: string) {
