@@ -46,11 +46,12 @@ only from the validated immutable ranking generation.
 new ranking generation is prepared. `identities` adds a provenance-bearing
 Instructor identity (including the new UUID required by a proven split).
 `events` records `itsc-added`, `merge`, and `split` decisions with their source
-commit. Split events list the affected historical associations; the application
-marks them `needs-resolution` and never guesses reassignment. Existing events
-must remain an exact prefix, UUIDs and historical ITSC values cannot be reused,
-and merge cycles fail validation. A deployment may read the same schema from
-`RANKINGS_INSTRUCTOR_REGISTRY_FILE`.
+commit. A split event carries the complete newly introduced identity and lists
+the affected historical associations; the application marks them
+`needs-resolution` and never guesses reassignment. Existing events must remain
+an exact prefix—even when the configured list is empty—UUIDs and historical
+ITSC values cannot be reused, and merge cycles fail validation. A deployment
+may read the same schema from `RANKINGS_INSTRUCTOR_REGISTRY_FILE`.
 
 Do not add a correction without authoritative evidence. Adding an ITSC keeps
 the Instructor UUID; retired UUID and ITSC routes permanently redirect to the

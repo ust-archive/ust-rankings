@@ -1,4 +1,5 @@
 import { notFound, permanentRedirect } from "next/navigation";
+import { normalizeInstructorKey } from "@/lib/instructor-identity";
 
 export type InstructorRouteSearchParams = Record<
   string,
@@ -30,14 +31,8 @@ export function normalizeInstructorRoute(
   value: string,
   searchParams: InstructorRouteSearchParams,
 ) {
-  const key = value.trim().toLowerCase();
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
-      key,
-    ) &&
-    !/^[a-z][a-z0-9._-]{1,31}$/.test(key)
-  )
-    notFound();
+  const key = normalizeInstructorKey(value);
+  if (!key) notFound();
   if (value !== key) instructorRedirect(key, searchParams);
   return key;
 }

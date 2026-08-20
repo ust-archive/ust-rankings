@@ -39,10 +39,17 @@ function uniqueInstructors(
   for (const offering of offerings)
     for (const meeting of offering.classes.flatMap((item) => item.meetings))
       for (const instructor of meeting.instructors) {
-        const key = instructor.uuid ?? instructor.sourceName;
+        const resolvedUuid = rankings?.instructors.some(
+          (association) =>
+            association.termCode === offering.termCode &&
+            association.instructor.uuid === instructor.uuid,
+        )
+          ? instructor.uuid
+          : undefined;
+        const key = resolvedUuid ?? instructor.sourceName;
         const current = instructors.get(key) ?? {
           name: instructor.sourceName,
-          uuid: instructor.uuid,
+          uuid: resolvedUuid,
           termCodes: new Set(),
         };
         current.termCodes.add(offering.termCode);
@@ -583,11 +590,19 @@ export function ClassDetails({
 }) {
   const instructors = new Map<string, { name: string; uuid?: string }>();
   for (const meeting of scheduleClass.meetings)
-    for (const instructor of meeting.instructors)
-      instructors.set(instructor.uuid ?? instructor.sourceName, {
+    for (const instructor of meeting.instructors) {
+      const resolvedUuid = rankings?.instructors.some(
+        (association) =>
+          association.termCode === scheduleClass.termCode &&
+          association.instructor.uuid === instructor.uuid,
+      )
+        ? instructor.uuid
+        : undefined;
+      instructors.set(resolvedUuid ?? instructor.sourceName, {
         name: instructor.sourceName,
-        uuid: instructor.uuid,
+        uuid: resolvedUuid,
       });
+    }
   return (
     <DetailShell
       eyebrow="Class"

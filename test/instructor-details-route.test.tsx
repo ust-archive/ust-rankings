@@ -71,6 +71,9 @@ test("Instructor details combine ranking evidence, Courses, Classes, aliases, an
   expect(markup).toContain("Alpha Instructor");
   expect(markup).toContain("Ranking evidence and trends");
   expect(markup).toContain("Global Rank");
+  expect(markup).toContain("Learning-focused Ranking Preset");
+  expect(markup).toContain("Ranking Population");
+  expect(markup).toContain("Grade A+");
   expect(markup).toContain("Associated Courses and Classes");
   expect(markup).toContain("COMP 2000");
   expect(markup).toContain("L1 · Class 1001");
@@ -115,18 +118,19 @@ test("Instructor routes normalize UUID and ITSC keys while retaining query state
 test("Instructor registry preserves ITSC additions, merge redirects, split resolution flags, and historical access", async () => {
   await configureDetails();
   const splitUuid = "00000000-0000-4000-8000-00000000000a";
+  const splitIdentity = {
+    uuid: splitUuid,
+    canonicalName: "Split Instructor",
+    aliases: [
+      {
+        name: "Split Source Name",
+        source: "schedule",
+        sourceCommit: fixtureSha,
+      },
+    ],
+  };
   await updateManifest((manifest) => {
-    manifest.identities.push({
-      uuid: splitUuid,
-      canonicalName: "Split Instructor",
-      aliases: [
-        {
-          name: "Split Source Name",
-          source: "schedule",
-          sourceCommit: fixtureSha,
-        },
-      ],
-    });
+    manifest.identities.push(splitIdentity);
     manifest.identityEvents = [
       {
         type: "itsc-added",
@@ -144,12 +148,13 @@ test("Instructor registry preserves ITSC additions, merge redirects, split resol
         type: "split",
         sourceUuid: "00000000-0000-4000-8000-000000000001",
         newUuid: splitUuid,
+        newIdentity: splitIdentity,
         sourceCommit: fixtureSha,
         affectedAssociations: [
           {
             sourceCommit: fixtureSha,
-            sourceName: "Shared Source Name",
-            termCode: "2430",
+            sourceName: "Alpha Instructor",
+            termCode: "2510",
             courseCode: "COMP 2000",
           },
         ],
@@ -187,6 +192,22 @@ test("Instructor registry preserves ITSC additions, merge redirects, split resol
     status: "retired",
     sourceCommit: fixtureSha,
   });
+  expect(merged.family.map((identity) => identity.canonicalName)).toEqual([
+    "Alpha Instructor",
+    "Beta Instructor",
+  ]);
+  expect(merged.historicalEvidence).toEqual([
+    expect.objectContaining({
+      instructor: expect.objectContaining({ canonicalName: "Beta Instructor" }),
+      courses: expect.arrayContaining([
+        { termCode: "2510", courseCode: "MATH 2000" },
+      ]),
+    }),
+  ]);
+  expect(merged.courses).not.toContainEqual({
+    termCode: "2510",
+    courseCode: "COMP 2000",
+  });
   const mergedSearch = await queryRankings({
     entity: "instructor",
     termCode: "2510",
@@ -202,18 +223,78 @@ test("Instructor registry preserves ITSC additions, merge redirects, split resol
   expect(split.identityHistory.affectedAssociations).toEqual([
     {
       sourceCommit: fixtureSha,
-      sourceName: "Shared Source Name",
-      termCode: "2430",
+      sourceName: "Alpha Instructor",
+      termCode: "2510",
       courseCode: "COMP 2000",
       status: "needs-resolution",
     },
   ]);
+  const course = await getRankings(
+    { type: "course", coursePrefix: "COMP", courseNumber: "2000" },
+    { termCode: "2510" },
+  );
+  expect(course.instructors).not.toContainEqual(
+    expect.objectContaining({
+      termCode: "2510",
+      instructor: expect.objectContaining({ uuid: added.instructor.uuid }),
+    }),
+  );
+  const { default: SchedulePage } = await import("@/app/schedule/page");
+  const scheduleMarkup = renderToStaticMarkup(
+    await SchedulePage({ searchParams: Promise.resolve({ term: "2510" }) }),
+  );
+  expect(scheduleMarkup).toContain("Alpha Instructor");
+  expect(scheduleMarkup).not.toContain('href="/instructors/alpha"');
+  expect(scheduleMarkup).not.toContain(
+    'href="/instructors/00000000-0000-4000-8000-000000000001"',
+  );
 
   const historical = await getRankings({
     type: "instructor",
     key: "00000000-0000-4000-8000-000000000005",
   });
   expect(historical.instructor.canonicalName).toBe("Historical Instructor");
+});
+
+test("merge details retain retired aliases, evidence, Courses, and Classes", async () => {
+  await configureDetails();
+  await updateManifest((manifest) => {
+    manifest.identityEvents = [
+      {
+        type: "merge",
+        retiredUuid: "00000000-0000-4000-8000-000000000002",
+        survivorUuid: "00000000-0000-4000-8000-000000000001",
+        sourceCommit: fixtureSha,
+      },
+    ];
+  });
+  const scheduleManifestPath = join(
+    process.env.SCHEDULE_SEED_DIR as string,
+    "manifest.json",
+  );
+  const scheduleManifest = JSON.parse(
+    await readFile(scheduleManifestPath, "utf8"),
+  );
+  scheduleManifest.instructors[0].uuid = "00000000-0000-4000-8000-000000000002";
+  await writeFile(scheduleManifestPath, JSON.stringify(scheduleManifest));
+  const { default: InstructorPage } = await import(
+    "@/app/instructors/[key]/page"
+  );
+
+  const markup = renderToStaticMarkup(
+    await InstructorPage({
+      params: Promise.resolve({
+        key: "00000000-0000-4000-8000-000000000001",
+      }),
+      searchParams: Promise.resolve({ term: "2510" }),
+    }),
+  );
+
+  expect(markup).toContain("Second Teacher");
+  expect(markup).toContain("retired · sfq");
+  expect(markup).toContain("Retired identity evidence");
+  expect(markup).toContain("MATH 2000");
+  expect(markup).toContain("L1 · Class 1001");
 });
 
 test("resolved Instructor cross-links use details while unresolved source spellings remain plain text", async () => {
@@ -272,6 +353,51 @@ test("resolved Instructor cross-links use details while unresolved source spelli
   expect(rankings).toContain(
     'href="/instructors/00000000-0000-4000-8000-000000000001"',
   );
+});
+
+test("unknown selected Term falls back to latest evidence with an accessible notice", async () => {
+  await configureDetails();
+  const { default: InstructorPage } = await import(
+    "@/app/instructors/[key]/page"
+  );
+
+  const markup = renderToStaticMarkup(
+    await InstructorPage({
+      params: Promise.resolve({
+        key: "00000000-0000-4000-8000-000000000001",
+      }),
+      searchParams: Promise.resolve({ term: "9999" }),
+    }),
+  );
+
+  expect(markup).toContain("Term 9999 has no ranking evidence");
+  expect(markup).toContain("Selected-Term evidence for 2510");
+});
+
+test("Instructor identity, Classes, and community remain visible when rankings fail", async () => {
+  await configureDetails();
+  const rankingFile = join(
+    process.env.RANKINGS_SEED_DIR as string,
+    "instructor-rankings.parquet",
+  );
+  await writeFile(rankingFile, "broken ranking data");
+  const { default: InstructorPage } = await import(
+    "@/app/instructors/[key]/page"
+  );
+
+  const markup = renderToStaticMarkup(
+    await InstructorPage({
+      params: Promise.resolve({
+        key: "00000000-0000-4000-8000-000000000001",
+      }),
+      searchParams: Promise.resolve({ term: "2510" }),
+    }),
+  );
+
+  expect(markup).toContain("Alpha Instructor");
+  expect(markup).toContain("Ranking evidence is unavailable");
+  expect(markup).toContain("L1 · Class 1001");
+  expect(markup).toContain("Community Reviews");
 });
 
 test("unknown Instructor route keys return 404", async () => {

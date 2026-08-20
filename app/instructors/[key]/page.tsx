@@ -6,7 +6,9 @@ import {
   normalizeInstructorRoute,
 } from "@/app/instructors/routes";
 import {
+  getInstructorIdentity,
   getRankings,
+  InvalidRankingsQueryError,
   RankingsUnavailableError,
   UnknownRankingsEntityError,
 } from "@/lib/rankings/server";
@@ -29,53 +31,95 @@ export default async function InstructorPage({
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
       : undefined;
-  try {
-    const rankings = await getRankings(
-      { type: "instructor", key },
-      { termCode: selectedTerm },
-    );
-    if (rankings.route.redirect)
-      instructorRedirect(rankings.route.canonicalKey, query);
-    const scheduleResult = await getSchedule({
-      type: "instructor",
-      uuid: rankings.instructor.uuid,
-    }).then(
-      (schedule) => ({
-        classes: schedule.type === "instructor" ? schedule.classes : [],
-        unavailable: false,
-      }),
-      (error) => {
-        if (error instanceof ScheduleUnavailableError)
-          return { classes: [], unavailable: true };
-        if (error instanceof InvalidScheduleQueryError)
-          return { classes: [], unavailable: false };
-        throw error;
-      },
-    );
-    return (
-      <InstructorDetails
-        rankings={rankings}
-        classes={scheduleResult.classes}
-        scheduleUnavailable={scheduleResult.unavailable}
-        selectedTermCode={rankings.population.termCode}
-      />
-    );
-  } catch (error) {
+  const identity = await getInstructorIdentity(key).catch((error) => {
     if (error instanceof UnknownRankingsEntityError) notFound();
     if (!(error instanceof RankingsUnavailableError)) throw error;
+    return undefined;
+  });
+  if (!identity)
     return (
       <section
         className="w-full rounded-xl border border-amber-300 bg-amber-50 p-6 text-left"
         role="alert"
       >
         <h1 className="text-2xl font-bold text-slate-900">
-          Instructor details are unavailable
+          Instructor identity is unavailable
         </h1>
         <p className="mt-2 text-slate-700">
-          The validated Instructor registry and ranking generation could not be
-          loaded. Schedule and other public pages remain available.
+          The validated Instructor registry could not be loaded. Other public
+          pages remain available.
         </p>
       </section>
     );
-  }
+  if (identity.route.redirect)
+    instructorRedirect(identity.route.canonicalKey, query);
+
+  let invalidTermCode: string | undefined;
+  const rankingsPromise = getRankings(
+    { type: "instructor", uuid: identity.instructor.uuid },
+    { termCode: selectedTerm },
+  ).catch(async (error) => {
+    if (error instanceof InvalidRankingsQueryError && selectedTerm) {
+      invalidTermCode = selectedTerm;
+      return getRankings({
+        type: "instructor",
+        uuid: identity.instructor.uuid,
+      });
+    }
+    if (
+      error instanceof RankingsUnavailableError ||
+      error instanceof UnknownRankingsEntityError
+    )
+      return undefined;
+    throw error;
+  });
+  const schedulePromise = getSchedule({
+    type: "instructor",
+    uuids: identity.familyUuids,
+  }).then(
+    (schedule) => ({
+      classes: schedule.type === "instructor" ? schedule.classes : [],
+      unavailable: false,
+    }),
+    (error) => {
+      if (error instanceof ScheduleUnavailableError)
+        return { classes: [], unavailable: true };
+      if (error instanceof InvalidScheduleQueryError)
+        return { classes: [], unavailable: false };
+      throw error;
+    },
+  );
+  const [rankings, scheduleResult] = await Promise.all([
+    rankingsPromise,
+    schedulePromise,
+  ]);
+  const classes = scheduleResult.classes.filter(
+    (scheduleClass) =>
+      !identity.identityHistory.affectedAssociations.some(
+        (affected) =>
+          (affected.termCode === undefined ||
+            affected.termCode === scheduleClass.termCode) &&
+          (affected.courseCode === undefined ||
+            affected.courseCode === scheduleClass.courseCode) &&
+          scheduleClass.meetings.some((meeting) =>
+            meeting.instructors.some(
+              (instructor) =>
+                instructor.sourceName.trim().toLowerCase() ===
+                affected.sourceName.trim().toLowerCase(),
+            ),
+          ),
+      ),
+  );
+  const selectedTermCode =
+    rankings?.population.termCode ?? selectedTerm ?? classes.at(-1)?.termCode;
+  return (
+    <InstructorDetails
+      identity={identity}
+      rankings={rankings}
+      classes={classes}
+      scheduleUnavailable={scheduleResult.unavailable}
+      selectedTermCode={selectedTermCode}
+      invalidTermCode={invalidTermCode}
+    />
+  );
 }

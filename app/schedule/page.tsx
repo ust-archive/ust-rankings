@@ -7,6 +7,7 @@ import { CanonicalScheduleUrl } from "@/app/schedule/canonical-schedule-url";
 import { SisParserDialog } from "@/app/schedule/sis-parser-dialog";
 import { NewReleaseBanner } from "@/components/component/new-release-banner";
 import { PathAdvisor } from "@/data/cq/path-advisor";
+import { resolveInstructorAssociations } from "@/lib/rankings/server";
 import {
   buildCalendarUrl,
   buildScheduleUrl,
@@ -193,6 +194,40 @@ export default async function SchedulePage({
       );
     }
   }
+
+  const instructorAssociations = page.results.flatMap((offering) =>
+    offering.classes.flatMap((scheduleClass) =>
+      scheduleClass.meetings.flatMap((meeting) =>
+        meeting.instructors.flatMap((instructor) =>
+          instructor.uuid
+            ? [
+                {
+                  uuid: instructor.uuid,
+                  sourceName: instructor.sourceName,
+                  termCode: scheduleClass.termCode,
+                  courseCode: scheduleClass.courseCode,
+                },
+              ]
+            : [],
+        ),
+      ),
+    ),
+  );
+  const resolvedInstructors = await resolveInstructorAssociations(
+    instructorAssociations,
+  ).catch(() => []);
+  const resolvedInstructorKeys = new Map(
+    resolvedInstructors.flatMap((association) =>
+      association.status === "resolved"
+        ? [
+            [
+              `${association.uuid}\0${association.sourceName}\0${association.termCode}\0${association.courseCode}`,
+              association.instructor,
+            ] as const,
+          ]
+        : [],
+    ),
+  );
 
   let selectedClasses: ScheduleClass[] = [];
   if (plannerQuery.classNumbers.length > 0 && !unknownTerm) {
@@ -536,24 +571,29 @@ export default async function SchedulePage({
                                 </td>
                                 <td className="px-4 py-3 align-top">
                                   {meeting?.instructors.length
-                                    ? meeting.instructors.map((instructor) => (
-                                        <span
-                                          className="block"
-                                          key={instructor.sourceName}
-                                        >
-                                          {instructor.uuid ? (
-                                            <Link
-                                              href={instructorPath(
-                                                instructor.uuid,
-                                              )}
-                                            >
-                                              {instructor.sourceName}
-                                            </Link>
-                                          ) : (
-                                            instructor.sourceName
-                                          )}
-                                        </span>
-                                      ))
+                                    ? meeting.instructors.map((instructor) => {
+                                        const resolved = instructor.uuid
+                                          ? resolvedInstructorKeys.get(
+                                              `${instructor.uuid}\0${instructor.sourceName}\0${scheduleClass.termCode}\0${scheduleClass.courseCode}`,
+                                            )
+                                          : undefined;
+                                        return (
+                                          <span
+                                            className="block"
+                                            key={instructor.sourceName}
+                                          >
+                                            {resolved ? (
+                                              <Link
+                                                href={instructorPath(resolved)}
+                                              >
+                                                {instructor.sourceName}
+                                              </Link>
+                                            ) : (
+                                              instructor.sourceName
+                                            )}
+                                          </span>
+                                        );
+                                      })
                                     : "TBA"}
                                 </td>
                                 <td className="px-4 py-3 align-top">

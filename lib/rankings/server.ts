@@ -8,6 +8,11 @@ import {
   DuckDBInstance,
   type DuckDBValue,
 } from "@duckdb/node-api";
+import {
+  INSTRUCTOR_UUID_PATTERN,
+  ITSC_PATTERN,
+  normalizeInstructorKey,
+} from "@/lib/instructor-identity";
 import defaultInstructorRegistry from "../../rankings/instructor-registry.json";
 
 const SEED_SHA = "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d";
@@ -237,6 +242,7 @@ export type InstructorIdentityEvent =
       type: "split";
       sourceUuid: string;
       newUuid: string;
+      newIdentity: InstructorIdentity;
       sourceCommit: string;
       affectedAssociations: AffectedInstructorAssociation[];
     };
@@ -403,13 +409,11 @@ type RankingTermEvidence = {
   criteria: Partial<Record<Criterion, { bayesian: number; samples: number }>>;
 };
 
-export type Rankings = {
+export type InstructorIdentityLookup = {
   generation: string;
-  population: RankingsPage["population"];
   instructor: InstructorIdentity;
-  ranking?: InstructorRanking;
-  terms: RankingTermEvidence[];
-  courses: Array<{ termCode: string; courseCode: string }>;
+  family: InstructorIdentity[];
+  familyUuids: string[];
   route: { canonicalKey: string; redirect: boolean };
   identityHistory: {
     identifiers: InstructorIdentifierHistory[];
@@ -418,6 +422,21 @@ export type Rankings = {
       AffectedInstructorAssociation & { status: "needs-resolution" }
     >;
   };
+};
+
+export type InstructorHistoricalEvidence = {
+  instructor: InstructorIdentity;
+  terms: RankingTermEvidence[];
+  courses: Array<{ termCode: string; courseCode: string }>;
+};
+
+export type Rankings = InstructorIdentityLookup & {
+  population: RankingsPage["population"];
+  configuration: RankingsPage["configuration"];
+  ranking?: InstructorRanking;
+  terms: RankingTermEvidence[];
+  courses: Array<{ termCode: string; courseCode: string }>;
+  historicalEvidence: InstructorHistoricalEvidence[];
 };
 
 export type CourseRankings = {
@@ -678,8 +697,18 @@ function normalizedInstructorName(name: string) {
   return name.trim().toLocaleLowerCase();
 }
 
+type InstructorRegistry = Pick<
+  Generation,
+  | "sha"
+  | "identitiesByUuid"
+  | "identitiesByItsc"
+  | "redirectByUuid"
+  | "identifiersByUuid"
+  | "identityEvents"
+>;
+
 function resolvedInstructorIdentity(
-  generation: Generation,
+  generation: InstructorRegistry,
   identity: InstructorIdentity,
 ) {
   let uuid = identity.uuid;
@@ -689,9 +718,8 @@ function resolvedInstructorIdentity(
 }
 
 function validateIdentities(manifest: Manifest, names: string[]) {
-  const uuidPattern =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-  const itscPattern = /^[a-z][a-z0-9._-]{1,31}$/;
+  const uuidPattern = INSTRUCTOR_UUID_PATTERN;
+  const itscPattern = ITSC_PATTERN;
   const observedNames = new Map<string, InstructorIdentity[]>();
   const currentNames = new Map<string, InstructorIdentity>();
   const identitiesByUuid = new Map<string, InstructorIdentity>();
@@ -830,6 +858,18 @@ function validateIdentities(manifest: Manifest, names: string[]) {
         event.sourceUuid === event.newUuid ||
         !identitiesByUuid.has(event.sourceUuid) ||
         !identitiesByUuid.has(event.newUuid) ||
+        event.newIdentity?.uuid !== event.newUuid ||
+        identitiesByUuid.get(event.newUuid)?.canonicalName !==
+          event.newIdentity.canonicalName ||
+        JSON.stringify(
+          identitiesByUuid
+            .get(event.newUuid)
+            ?.aliases.slice(0, event.newIdentity.aliases.length),
+        ) !== JSON.stringify(event.newIdentity.aliases) ||
+        event.newIdentity.aliases.length === 0 ||
+        event.newIdentity.aliases.some(
+          (alias) => alias.sourceCommit !== event.sourceCommit,
+        ) ||
         splitTargets.has(event.newUuid) ||
         !Array.isArray(event.affectedAssociations) ||
         event.affectedAssociations.length === 0 ||
@@ -900,6 +940,98 @@ function validateIdentities(manifest: Manifest, names: string[]) {
   };
 }
 
+function lookupInstructorIdentity(
+  registry: InstructorRegistry,
+  requestedKey: string,
+): InstructorIdentityLookup {
+  const normalizedKey = normalizeInstructorKey(requestedKey);
+  const requestedIdentity = normalizedKey
+    ? (registry.identitiesByUuid.get(normalizedKey) ??
+      registry.identitiesByItsc.get(normalizedKey))
+    : undefined;
+  if (!requestedIdentity) throw new UnknownRankingsEntityError("Instructor");
+  const instructor = resolvedInstructorIdentity(registry, requestedIdentity);
+  const family = [...registry.identitiesByUuid.values()].filter(
+    (identity) =>
+      resolvedInstructorIdentity(registry, identity).uuid === instructor.uuid,
+  );
+  const familyUuids = family.map((identity) => identity.uuid);
+  const familySet = new Set(familyUuids);
+  const events = registry.identityEvents.filter((event) => {
+    if (event.type === "itsc-added") return familySet.has(event.uuid);
+    if (event.type === "merge")
+      return (
+        familySet.has(event.retiredUuid) || familySet.has(event.survivorUuid)
+      );
+    return familySet.has(event.sourceUuid) || familySet.has(event.newUuid);
+  });
+  const canonicalKey = instructor.itsc ?? instructor.uuid;
+  return {
+    generation: registry.sha,
+    instructor,
+    family,
+    familyUuids,
+    route: {
+      canonicalKey,
+      redirect: requestedKey !== canonicalKey,
+    },
+    identityHistory: {
+      identifiers: familyUuids.flatMap(
+        (uuid) => registry.identifiersByUuid.get(uuid) ?? [],
+      ),
+      events,
+      affectedAssociations: events.flatMap((event) =>
+        event.type === "split"
+          ? event.affectedAssociations.map((association) => ({
+              ...association,
+              status: "needs-resolution" as const,
+            }))
+          : [],
+      ),
+    },
+  };
+}
+
+function associationNeedsResolution(
+  registry: InstructorRegistry,
+  association: {
+    sourceName: string;
+    termCode: string;
+    courseCode: string;
+  },
+) {
+  return registry.identityEvents.some(
+    (event) =>
+      event.type === "split" &&
+      event.affectedAssociations.some(
+        (affected) =>
+          normalizedInstructorName(affected.sourceName) ===
+            normalizedInstructorName(association.sourceName) &&
+          (affected.termCode === undefined ||
+            affected.termCode === association.termCode) &&
+          (affected.courseCode === undefined ||
+            affected.courseCode === association.courseCode),
+      ),
+  );
+}
+
+function resolveInstructorAssociation(
+  registry: Generation,
+  association: {
+    sourceName: string;
+    termCode: string;
+    courseCode: string;
+  },
+) {
+  if (associationNeedsResolution(registry, association)) return undefined;
+  const observed = registry.identitiesByObservedName.get(
+    normalizedInstructorName(association.sourceName),
+  );
+  return observed?.length === 1
+    ? resolvedInstructorIdentity(registry, observed[0])
+    : undefined;
+}
+
 async function loadGeneration(
   directory: string,
   cleanup?: () => Promise<void>,
@@ -951,6 +1083,95 @@ async function loadGeneration(
     await cleanup?.().catch(() => undefined);
     throw new RankingsUnavailableError({ cause: error });
   }
+}
+
+async function loadInstructorRegistry(
+  directory: string,
+): Promise<InstructorRegistry> {
+  try {
+    const manifest = JSON.parse(
+      await readFile(resolve(directory, "manifest.json"), "utf8"),
+    ) as Manifest;
+    if (
+      manifest.schemaMajor !== 0 ||
+      !/^[0-9a-f]{40}$/.test(manifest.sourceCommit) ||
+      basename(resolve(directory)) !== manifest.sourceCommit
+    )
+      throw new Error("Invalid Instructor registry manifest");
+    const identities = validateIdentities(manifest, []);
+    return {
+      sha: manifest.sourceCommit,
+      identitiesByUuid: identities.identitiesByUuid,
+      identitiesByItsc: identities.identitiesByItsc,
+      redirectByUuid: identities.redirectByUuid,
+      identifiersByUuid: identities.identifiersByUuid,
+      identityEvents: identities.identityEvents,
+    };
+  } catch (error) {
+    throw new RankingsUnavailableError({ cause: error });
+  }
+}
+
+async function instructorRegistry(): Promise<InstructorRegistry> {
+  if (runtimeActive) {
+    const accepted = await runtimeActive.catch(() => undefined);
+    if (accepted && !accepted.closed) return accepted;
+  }
+  if (process.env.RANKINGS_SEED_DIR)
+    return loadInstructorRegistry(seedDirectory());
+  try {
+    runtimeDependencies ??= (
+      await import("./runtime")
+    ).productionRankingRefreshDependencies();
+    const pointer = await runtimeDependencies.store.readPointer();
+    if (pointer)
+      for (const sha of [pointer.activeSha, pointer.previousSha]) {
+        if (!sha) continue;
+        const directory = await runtimeDependencies.store
+          .downloadGeneration(sha)
+          .catch(() => undefined);
+        if (!directory) continue;
+        try {
+          return await loadInstructorRegistry(directory);
+        } catch {
+          // Try the retained previous registry before the seed.
+        }
+      }
+  } catch {
+    // The validated seed remains an independent identity fallback.
+  }
+  return loadInstructorRegistry(seedDirectory());
+}
+
+export async function getInstructorIdentity(key: string) {
+  return lookupInstructorIdentity(await instructorRegistry(), key.trim());
+}
+
+export type InstructorAssociationLookup = {
+  uuid: string;
+  sourceName: string;
+  termCode: string;
+  courseCode: string;
+};
+
+export async function resolveInstructorAssociations(
+  associations: InstructorAssociationLookup[],
+) {
+  const registry = await instructorRegistry();
+  return associations.map((association) => {
+    if (associationNeedsResolution(registry, association))
+      return { ...association, status: "needs-resolution" as const };
+    const identity = registry.identitiesByUuid.get(
+      normalizeInstructorKey(association.uuid) ?? "",
+    );
+    return identity
+      ? {
+          ...association,
+          status: "resolved" as const,
+          instructor: resolvedInstructorIdentity(registry, identity),
+        }
+      : { ...association, status: "unresolved" as const };
+  });
 }
 
 async function closeRetiredGeneration(generation: Generation) {
@@ -1172,7 +1393,8 @@ async function prepareCandidateManifest(
     previous = await seedGeneration();
   }
   const retained = structuredClone([...previous.identitiesByUuid.values()]);
-  let identityEvents = structuredClone(previous.identityEvents);
+  const previousUuids = new Set(previous.identitiesByUuid.keys());
+  const identityEvents = structuredClone(previous.identityEvents);
   const configured = await configuredInstructorRegistry();
   for (const identity of configured.identities) {
     const existing = retained.find(
@@ -1188,30 +1410,27 @@ async function prepareCandidateManifest(
         throw new Error("Configured Instructor identity rewrites history");
     } else retained.push(identity);
   }
-  for (const identity of retained)
-    if (
-      identity.itsc &&
-      !identityEvents.some(
-        (event) =>
-          event.type === "itsc-added" &&
-          event.uuid === identity.uuid &&
-          event.itsc === identity.itsc,
-      )
-    )
-      identityEvents.push({
-        type: "itsc-added",
-        uuid: identity.uuid,
-        itsc: identity.itsc,
-        sourceCommit: previous.sha,
-      });
-  if (configured.events.length > 0) {
-    if (
-      JSON.stringify(configured.events.slice(0, identityEvents.length)) !==
+  if (
+    configured.events.length < identityEvents.length ||
+    JSON.stringify(configured.events.slice(0, identityEvents.length)) !==
       JSON.stringify(identityEvents)
-    )
-      throw new Error("Configured Instructor events rewrite history");
-    identityEvents = structuredClone(configured.events);
-  }
+  )
+    throw new Error("Configured Instructor events rewrite history");
+  for (const event of configured.events.slice(identityEvents.length))
+    if (event.type === "split") {
+      const configuredIdentity = configured.identities.find(
+        (identity) => identity.uuid === event.newUuid,
+      );
+      if (
+        previousUuids.has(event.newUuid) ||
+        !configuredIdentity ||
+        JSON.stringify(configuredIdentity) !== JSON.stringify(event.newIdentity)
+      )
+        throw new Error("Instructor split must introduce its new UUID");
+    }
+  identityEvents.push(
+    ...structuredClone(configured.events.slice(identityEvents.length)),
+  );
   try {
     const instance = await DuckDBInstance.create(":memory:");
     const connection = await instance.connect();
@@ -1769,12 +1988,12 @@ async function queryRankingsWithGeneration(
   const coursesByInstructor = new Map<string, Set<string>>();
   for (const row of linkRows) {
     const courseKey = `${row.subject}${row.code}`;
-    const observed = accepted.identitiesByObservedName.get(
-      normalizedInstructorName(String(row.name)),
-    );
-    const observedIdentity = observed?.length === 1 ? observed[0] : undefined;
-    if (observedIdentity) {
-      const identity = resolvedInstructorIdentity(accepted, observedIdentity);
+    const identity = resolveInstructorAssociation(accepted, {
+      sourceName: String(row.name),
+      termCode,
+      courseCode: `${row.subject} ${row.code}`,
+    });
+    if (identity) {
       const identities = identitiesByCourse.get(courseKey) ?? [];
       if (!identities.some((candidate) => candidate.uuid === identity.uuid))
         identities.push(identity);
@@ -1819,6 +2038,17 @@ async function queryRankingsWithGeneration(
     );
     identitySearchValues.set(resolved.uuid, values);
   }
+  const currentSurvivorEvidence = new Set(
+    [...evidence.keys()].flatMap((key) => {
+      if (query.entity !== "instructor") return [];
+      const observed = accepted.identitiesByCurrentName.get(
+        normalizedInstructorName(key),
+      );
+      if (!observed) return [];
+      const resolved = resolvedInstructorIdentity(accepted, observed);
+      return observed.uuid === resolved.uuid ? [resolved.uuid] : [];
+    }),
+  );
   const candidates: Candidate[] = [];
   for (const [key, values] of evidence) {
     const score = weightedCriteria.some(
@@ -1881,11 +2111,12 @@ async function queryRankingsWithGeneration(
       );
       if (!observedIdentity) continue;
       const identity = resolvedInstructorIdentity(accepted, observedIdentity);
-      if (identity.uuid !== observedIdentity.uuid) continue;
+      const retired = identity.uuid !== observedIdentity.uuid;
+      if (retired && currentSurvivorEvidence.has(identity.uuid)) continue;
       const courseCodes = coursesByInstructor.get(identity.uuid) ?? new Set();
       candidates.push({
         key: identity.uuid,
-        score,
+        score: retired ? undefined : score,
         courseCodes,
         commonCore: [],
         searchText: [
@@ -2109,17 +2340,13 @@ export async function getRankings(
         { coursePrefix, courseNumber },
       );
       const instructors = links.flatMap((row) => {
-        const matches = accepted.identitiesByObservedName.get(
-          normalizedInstructorName(String(row.name)),
-        );
-        return matches?.length === 1
-          ? [
-              {
-                termCode: String(row.term_code),
-                instructor: resolvedInstructorIdentity(accepted, matches[0]),
-              },
-            ]
-          : [];
+        const termCode = String(row.term_code);
+        const instructor = resolveInstructorAssociation(accepted, {
+          sourceName: String(row.name),
+          termCode,
+          courseCode,
+        });
+        return instructor ? [{ termCode, instructor }] : [];
       });
       const commonCore = COMMON_CORE_CATEGORIES.filter(
         ({ value }) =>
@@ -2146,96 +2373,92 @@ export async function getRankings(
     }
 
     const requestedKey = ("key" in entity ? entity.key : entity.uuid).trim();
-    const uuidKey = requestedKey.toLowerCase();
-    const normalizedKey =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        requestedKey,
-      )
-        ? uuidKey
-        : /^[a-z][a-z0-9._-]{1,31}$/i.test(requestedKey)
-          ? requestedKey.toLowerCase()
-          : undefined;
-    const requestedIdentity = normalizedKey
-      ? (accepted.identitiesByUuid.get(normalizedKey) ??
-        accepted.identitiesByItsc.get(normalizedKey))
-      : undefined;
-    if (!requestedIdentity) throw new UnknownRankingsEntityError("Instructor");
-    const family = new Set<string>();
-    const instructor = resolvedInstructorIdentity(accepted, requestedIdentity);
-    for (const identity of accepted.identitiesByUuid.values())
-      if (
-        resolvedInstructorIdentity(accepted, identity).uuid === instructor.uuid
-      )
-        family.add(identity.uuid);
-    const canonicalKey = instructor.itsc ?? instructor.uuid;
+    const identity = lookupInstructorIdentity(accepted, requestedKey);
     const page = (await queryRankingsWithGeneration(
       {
         entity: "instructor",
         activity: options.activity,
         termCode: options.termCode,
-        search: instructor.uuid,
+        search: identity.instructor.uuid,
       },
       accepted,
     )) as RankingsPage<"instructor">;
-    const name =
-      accepted.currentNameByUuid.get(instructor.uuid) ??
-      instructor.canonicalName;
-    const ratings = await queryRows(
-      accepted.connection,
-      `SELECT term_code, criterion, bayesian, samples FROM read_parquet('${sqlPath(accepted.directory, "instructor-ratings.parquet")}') WHERE name = $name ORDER BY term_num, criterion`,
-      { name },
+    const evidence = await Promise.all(
+      identity.family.map(async (familyInstructor) => {
+        const name =
+          accepted.currentNameByUuid.get(familyInstructor.uuid) ??
+          familyInstructor.canonicalName;
+        const [ratings, courseRows] = await Promise.all([
+          queryRows(
+            accepted.connection,
+            `SELECT term_code, criterion, bayesian, samples FROM read_parquet('${sqlPath(accepted.directory, "instructor-ratings.parquet")}') WHERE name = $name ORDER BY term_num, criterion`,
+            { name },
+          ),
+          queryRows(
+            accepted.connection,
+            `SELECT term_code, subject || ' ' || code AS course_code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE name = $name ORDER BY term_num, subject, code`,
+            { name },
+          ),
+        ]);
+        const terms = new Map<string, RankingTermEvidence>();
+        for (const row of ratings) {
+          const termCode = String(row.term_code);
+          const term = terms.get(termCode) ?? { termCode, criteria: {} };
+          term.criteria[String(row.criterion) as Criterion] = {
+            bayesian: number(row.bayesian),
+            samples: number(row.samples),
+          };
+          terms.set(termCode, term);
+        }
+        const courses = courseRows.flatMap((row) => {
+          const association = {
+            sourceName: name,
+            termCode: String(row.term_code),
+            courseCode: String(row.course_code),
+          };
+          return associationNeedsResolution(accepted, association)
+            ? []
+            : [
+                {
+                  termCode: association.termCode,
+                  courseCode: association.courseCode,
+                },
+              ];
+        });
+        return {
+          instructor: familyInstructor,
+          terms: [...terms.values()],
+          courses,
+        };
+      }),
     );
-    const terms = new Map<string, RankingTermEvidence>();
-    for (const row of ratings) {
-      const termCode = String(row.term_code);
-      const term = terms.get(termCode) ?? { termCode, criteria: {} };
-      term.criteria[String(row.criterion) as Criterion] = {
-        bayesian: number(row.bayesian),
-        samples: number(row.samples),
-      };
-      terms.set(termCode, term);
-    }
-    const courses = await queryRows(
-      accepted.connection,
-      `SELECT term_code, subject || ' ' || code AS course_code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE name = $name ORDER BY term_num, subject, code`,
-      { name },
-    );
-    const events = accepted.identityEvents.filter((event) => {
-      if (event.type === "itsc-added") return family.has(event.uuid);
-      if (event.type === "merge")
-        return family.has(event.retiredUuid) || family.has(event.survivorUuid);
-      return family.has(event.sourceUuid) || family.has(event.newUuid);
-    });
+    const current = evidence.find(
+      (item) => item.instructor.uuid === identity.instructor.uuid,
+    ) ?? { instructor: identity.instructor, terms: [], courses: [] };
+    const courses = [
+      ...new Map(
+        evidence
+          .flatMap((item) => item.courses)
+          .map((association) => [
+            `${association.termCode}\0${association.courseCode}`,
+            association,
+          ]),
+      ).values(),
+    ];
     return {
-      generation: accepted.sha,
+      ...identity,
       population: page.population,
-      instructor,
+      configuration: page.configuration,
       ranking: page.results.find(
-        (candidate) => candidate.uuid === instructor.uuid,
+        (candidate) => candidate.uuid === identity.instructor.uuid,
       ),
-      terms: [...terms.values()],
-      courses: courses.map((row) => ({
-        termCode: String(row.term_code),
-        courseCode: String(row.course_code),
-      })),
-      route: {
-        canonicalKey,
-        redirect: requestedKey !== canonicalKey,
-      },
-      identityHistory: {
-        identifiers: [...family].flatMap(
-          (uuid) => accepted.identifiersByUuid.get(uuid) ?? [],
-        ),
-        events,
-        affectedAssociations: events.flatMap((event) =>
-          event.type === "split"
-            ? event.affectedAssociations.map((association) => ({
-                ...association,
-                status: "needs-resolution" as const,
-              }))
-            : [],
-        ),
-      },
+      terms: current.terms,
+      courses,
+      historicalEvidence: evidence.filter(
+        (item) =>
+          item.instructor.uuid !== identity.instructor.uuid &&
+          (item.terms.length > 0 || item.courses.length > 0),
+      ),
     };
   } finally {
     await lease.release();

@@ -8,6 +8,10 @@ import {
   DuckDBInstance,
   type DuckDBValue,
 } from "@duckdb/node-api";
+import {
+  INSTRUCTOR_UUID_PATTERN,
+  normalizeInstructorUuid,
+} from "@/lib/instructor-identity";
 
 const SEED_SHA = "0ddb2e493caeeb8aa9c56728496c866c358a2431";
 const ARTIFACTS = ["classes.parquet", "courses.parquet"] as const;
@@ -212,7 +216,7 @@ export type SchedulePage = {
 
 export type ScheduleEntity =
   | { type: "course"; coursePrefix: string; courseNumber: string }
-  | { type: "instructor"; uuid: string }
+  | { type: "instructor"; uuids: string[] }
   | {
       type: "course-offering";
       termCode: string;
@@ -232,7 +236,7 @@ export type ScheduleDetails =
       CourseOffering,
       "coursePrefix" | "courseNumber" | "courseCode"
     >)
-  | { type: "instructor"; instructorUuid: string; classes: ScheduleClass[] }
+  | { type: "instructor"; instructorUuids: string[]; classes: ScheduleClass[] }
   | ({ type: "course-offering" } & CourseOffering)
   | ({ type: "class" } & ScheduleClass);
 
@@ -366,8 +370,7 @@ function validateInstructorMappings(manifest: Manifest) {
   if (!Array.isArray(manifest.instructors))
     throw new Error("Invalid Schedule Instructor mappings");
   const mappings = new Map<string, string>();
-  const uuidPattern =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const uuidPattern = INSTRUCTOR_UUID_PATTERN;
   for (const instructor of manifest.instructors) {
     const sourceName = instructor.sourceName?.trim();
     const normalized = sourceName?.toLocaleLowerCase();
@@ -1106,27 +1109,51 @@ export async function getSchedule(
 ): Promise<ScheduleDetails> {
   return withAcceptedGeneration(async (accepted) => {
     if (entity.type === "instructor") {
-      const instructorUuid = entity.uuid.trim().toLowerCase();
+      const instructorUuids = [
+        ...new Set(entity.uuids.map(normalizeInstructorUuid)),
+      ];
       if (
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
-          instructorUuid,
-        )
+        instructorUuids.length === 0 ||
+        instructorUuids.length > 100 ||
+        instructorUuids.some((uuid) => uuid === undefined)
       )
-        throw new InvalidScheduleQueryError("Invalid Instructor UUID.");
+        throw new InvalidScheduleQueryError("Invalid Instructor UUIDs.");
+      const wanted = new Set(instructorUuids as string[]);
+      const sourceNames = [...accepted.instructors]
+        .filter(([, uuid]) => wanted.has(uuid))
+        .map(([sourceName]) => sourceName);
+      if (sourceNames.length === 0)
+        return {
+          type: "instructor",
+          instructorUuids: [...wanted],
+          classes: [],
+        };
+      const parameters = Object.fromEntries(
+        sourceNames.map((sourceName, index) => [
+          `sourceName${index}`,
+          sourceName,
+        ]),
+      );
+      const placeholders = sourceNames
+        .map((_, index) => `$sourceName${index}`)
+        .join(", ");
       const rows = await queryRows(
         accepted.connection,
-        `${offeringSql(accepted.directory)} ORDER BY course.term_num, course.prefix, course.number, class.section`,
+        `${offeringSql(accepted.directory)} WHERE EXISTS (
+          SELECT 1
+          FROM unnest(class.schedules) AS schedules(meeting),
+               unnest(meeting.instructors) AS instructors(name)
+          WHERE lower(trim(name)) IN (${placeholders})
+        ) ORDER BY course.term_num, course.prefix, course.number, class.section`,
+        parameters,
       );
-      const classes = mapRows(rows, accepted)
-        .flatMap((offering) => offering.classes)
-        .filter((scheduleClass) =>
-          scheduleClass.meetings.some((meeting) =>
-            meeting.instructors.some(
-              (instructor) => instructor.uuid === instructorUuid,
-            ),
-          ),
-        );
-      return { type: "instructor", instructorUuid, classes };
+      return {
+        type: "instructor",
+        instructorUuids: [...wanted],
+        classes: mapRows(rows, accepted).flatMap(
+          (offering) => offering.classes,
+        ),
+      };
     }
     const { coursePrefix, courseNumber } = validateCourse(
       entity.coursePrefix,

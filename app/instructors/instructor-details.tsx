@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { coursePath } from "@/app/courses/routes";
-import type { Rankings } from "@/lib/rankings/server";
+import type { InstructorIdentityLookup, Rankings } from "@/lib/rankings/server";
 import { buildScheduleUrl } from "@/lib/schedule/planner";
 import type { ScheduleClass } from "@/lib/schedule/server";
 
@@ -31,7 +31,7 @@ function InstructorActions({
   classes,
   scheduleUnavailable,
 }: {
-  selectedTermCode: string;
+  selectedTermCode?: string;
   classes: ScheduleClass[];
   scheduleUnavailable: boolean;
 }) {
@@ -39,7 +39,7 @@ function InstructorActions({
     <aside className="order-1 lg:col-start-2 lg:row-start-1 lg:self-start">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-6">
         <h2 className="text-lg font-bold">Instructor actions</h2>
-        {classes.length ? (
+        {classes.length && selectedTermCode ? (
           <Link
             className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#003366] px-4 py-3 font-bold text-white no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]"
             href={scheduleUrl(selectedTermCode, classes)}
@@ -69,9 +69,22 @@ function RankingEvidence({
   rankings,
   selectedTermCode,
 }: {
-  rankings: Rankings;
-  selectedTermCode: string;
+  rankings?: Rankings;
+  selectedTermCode?: string;
 }) {
+  if (!rankings)
+    return (
+      <section className="order-2 min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
+        <h2 className="text-2xl font-bold">Ranking evidence and trends</h2>
+        <p
+          className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950"
+          role="status"
+        >
+          Ranking evidence is unavailable. Instructor identity, Schedule, and
+          community sections remain available.
+        </p>
+      </section>
+    );
   const evidence = rankings.terms.find(
     (term) => term.termCode === selectedTermCode,
   );
@@ -183,16 +196,24 @@ function CommunityArea() {
 }
 
 function Associations({
+  identity,
   rankings,
   classes,
   scheduleUnavailable,
 }: {
-  rankings: Rankings;
+  identity: InstructorIdentityLookup;
+  rankings?: Rankings;
   classes: ScheduleClass[];
   scheduleUnavailable: boolean;
 }) {
   const courseAssociations = new Map<string, Set<string>>();
-  for (const association of rankings.courses) {
+  for (const association of [
+    ...(rankings?.courses ?? []),
+    ...classes.map((scheduleClass) => ({
+      courseCode: scheduleClass.courseCode,
+      termCode: scheduleClass.termCode,
+    })),
+  ]) {
     const terms = courseAssociations.get(association.courseCode) ?? new Set();
     terms.add(association.termCode);
     courseAssociations.set(association.courseCode, terms);
@@ -263,24 +284,31 @@ function Associations({
           Instructor aliases and identity history
         </h2>
         <p className="mt-2 break-all text-xs text-slate-600">
-          Instructor UUID: {rankings.instructor.uuid}
+          Instructor UUID: {identity.instructor.uuid}
         </p>
-        {rankings.instructor.itsc ? (
+        {identity.instructor.itsc ? (
           <p className="mt-1 text-xs text-slate-600">
-            Current ITSC: {rankings.instructor.itsc}
+            Current ITSC: {identity.instructor.itsc}
           </p>
         ) : null}
         <ul className="mt-3 space-y-2 text-sm">
-          {rankings.instructor.aliases.map((alias) => (
-            <li key={JSON.stringify(alias)}>
-              <span className="font-medium">{alias.name}</span>
-              <span className="text-xs text-slate-500">
-                {" "}
-                · {alias.source} · {alias.sourceCommit.slice(0, 8)}
-              </span>
-            </li>
-          ))}
-          {rankings.identityHistory.identifiers.map((identifier) => (
+          {identity.family.flatMap((familyInstructor) =>
+            familyInstructor.aliases.map((alias) => (
+              <li key={`${familyInstructor.uuid}-${JSON.stringify(alias)}`}>
+                <span className="font-medium">{alias.name}</span>
+                <span className="text-xs text-slate-500">
+                  {" "}
+                  ·{" "}
+                  {familyInstructor.uuid === identity.instructor.uuid
+                    ? "current"
+                    : "retired"}
+                  {" · "}
+                  {alias.source} · {alias.sourceCommit.slice(0, 8)}
+                </span>
+              </li>
+            )),
+          )}
+          {identity.identityHistory.identifiers.map((identifier) => (
             <li key={`${identifier.value}-${identifier.sourceCommit}`}>
               ITSC {identifier.value}
               <span className="text-xs text-slate-500">
@@ -290,31 +318,82 @@ function Associations({
             </li>
           ))}
         </ul>
-        {rankings.identityHistory.affectedAssociations.length ? (
+        {identity.identityHistory.affectedAssociations.length ? (
           <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
             Historical associations affected by an Instructor split need
             resolution; they have not been guessed or reassigned.
           </p>
+        ) : null}
+        {rankings?.historicalEvidence.length ? (
+          <div className="mt-5 border-t border-slate-200 pt-4">
+            <h3 className="font-bold">Retired identity evidence</h3>
+            <ul className="mt-2 space-y-3 text-sm">
+              {rankings.historicalEvidence.map((historical) => (
+                <li key={historical.instructor.uuid}>
+                  <span className="font-semibold">
+                    {historical.instructor.canonicalName}
+                  </span>
+                  <span className="block text-xs text-slate-500">
+                    Evidence retained separately for Terms{" "}
+                    {historical.terms.map((term) => term.termCode).join(", ") ||
+                      "none"}
+                    ; Courses{" "}
+                    {historical.courses
+                      .map((course) => course.courseCode)
+                      .join(", ") || "none"}
+                    . Scores are not combined across corrected identities.
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </div>
     </section>
   );
 }
 
+function letterGrade(percentile: number) {
+  return (
+    [
+      [0.9, "A+"],
+      [0.8, "A"],
+      [0.75, "A−"],
+      [0.6, "B+"],
+      [0.45, "B"],
+      [0.35, "B−"],
+      [0.3, "C+"],
+      [0.25, "C"],
+      [0.2, "C−"],
+      [0.1, "D"],
+      [0, "F"],
+    ] as const
+  ).find(([threshold]) => percentile >= threshold)?.[1];
+}
+
 export function InstructorDetails({
+  identity,
   rankings,
   classes,
   scheduleUnavailable,
   selectedTermCode,
+  invalidTermCode,
 }: {
-  rankings: Rankings;
+  identity: InstructorIdentityLookup;
+  rankings?: Rankings;
   classes: ScheduleClass[];
   scheduleUnavailable: boolean;
-  selectedTermCode: string;
+  selectedTermCode?: string;
+  invalidTermCode?: string;
 }) {
-  const selectedClasses = classes.filter(
-    (scheduleClass) => scheduleClass.termCode === selectedTermCode,
-  );
+  const selectedClasses = selectedTermCode
+    ? classes.filter(
+        (scheduleClass) => scheduleClass.termCode === selectedTermCode,
+      )
+    : [];
+  const grade = rankings?.ranking
+    ? letterGrade(rankings.ranking.globalPercentile)
+    : undefined;
   return (
     <div className="w-full space-y-8 text-left text-slate-900">
       <header className="border-b border-slate-200 pb-7">
@@ -322,13 +401,56 @@ export function InstructorDetails({
           Instructor
         </p>
         <h1 className="mt-2 text-4xl font-black tracking-tight sm:text-6xl">
-          {rankings.instructor.canonicalName}
+          {identity.instructor.canonicalName}
         </h1>
         <p className="mt-2 text-lg text-slate-600">
-          {rankings.instructor.itsc
-            ? `ITSC ${rankings.instructor.itsc}`
-            : `Instructor UUID ${rankings.instructor.uuid}`}
+          {identity.instructor.itsc
+            ? `ITSC ${identity.instructor.itsc}`
+            : `Instructor UUID ${identity.instructor.uuid}`}
         </p>
+        <dl className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div>
+            <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Ranking Preset
+            </dt>
+            <dd className="font-semibold">
+              {rankings
+                ? `${rankings.configuration.preset === "grade" ? "Grade" : "Learning"}-focused Ranking Preset`
+                : "Ranking Preset unavailable"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Ranking Population
+            </dt>
+            <dd className="font-semibold">
+              {rankings
+                ? `${rankings.population.size} eligible Instructors`
+                : "Ranking Population unavailable"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Grade summary
+            </dt>
+            <dd className="font-semibold">
+              {grade
+                ? `Grade ${grade}`
+                : rankings
+                  ? "Unranked"
+                  : "Grade unavailable"}
+            </dd>
+          </div>
+        </dl>
+        {invalidTermCode ? (
+          <p
+            className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
+            role="status"
+          >
+            Term {invalidTermCode} has no ranking evidence. Showing the latest
+            available Term instead.
+          </p>
+        ) : null}
       </header>
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
         <InstructorActions
@@ -342,6 +464,7 @@ export function InstructorDetails({
         />
         <CommunityArea />
         <Associations
+          identity={identity}
           rankings={rankings}
           classes={classes}
           scheduleUnavailable={scheduleUnavailable}
