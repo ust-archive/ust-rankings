@@ -166,6 +166,97 @@ test("public Attachment resolver redirects to a five-minute signed origin URL", 
   expect(missing.status).toBe(404);
 });
 
+test("public resolver uses download disposition and a Tombstone placeholder", async () => {
+  const { createAttachmentResolver } = await import(
+    "@/app/attachments/[attachmentId]/route"
+  );
+  const GET = createAttachmentResolver(
+    () =>
+      ({
+        async signPublicRead(
+          attachmentId: string,
+          options?: { download?: boolean },
+        ) {
+          if (attachmentId.endsWith("410")) {
+            const { AttachmentWriteError } = await import(
+              "@/lib/attachments/attachments"
+            );
+            throw new AttachmentWriteError(
+              "attachment-unavailable",
+              "This Attachment is no longer available",
+            );
+          }
+          signed.push(
+            `${attachmentId}:${options?.download ? "download" : "open"}`,
+          );
+          return {
+            url: options?.download
+              ? "https://sgp1.digitaloceanspaces.com/object?download=1"
+              : "https://sgp1.digitaloceanspaces.com/object?X-Amz-Expires=300",
+            mime: "application/pdf",
+            kind: "document" as const,
+            expiresAt: new Date("2026-04-01T00:05:00.000Z"),
+            download: Boolean(options?.download),
+          };
+        },
+      }) as never,
+  ).GET;
+  const downloaded = await GET(
+    request("/attachments/00000000-0000-4000-8000-000000000348?download=1"),
+    {
+      params: Promise.resolve({
+        attachmentId: "00000000-0000-4000-8000-000000000348",
+      }),
+    },
+  );
+  expect(downloaded.status).toBe(302);
+  expect(downloaded.headers.get("location")).toContain("download=1");
+  const gone = await GET(
+    request("/attachments/00000000-0000-4000-8000-000000000410"),
+    {
+      params: Promise.resolve({
+        attachmentId: "00000000-0000-4000-8000-000000000410",
+      }),
+    },
+  );
+  expect(gone.status).toBe(410);
+  expect(await gone.text()).toContain("no longer available");
+});
+
+test("upload kill switch is distinct from Review publication", async () => {
+  const { createAttachmentUploadHandlers } = await import(
+    "@/app/api/attachments/uploads/route"
+  );
+  const handlers = createAttachmentUploadHandlers({
+    userId: async () => "00000000-0000-4000-8000-000000000048",
+    attachments: () =>
+      ({
+        async reserveUpload() {
+          const { AttachmentWriteError } = await import(
+            "@/lib/attachments/attachments"
+          );
+          throw new AttachmentWriteError(
+            "uploads-disabled",
+            "New Attachment uploads are disabled",
+          );
+        },
+      }) as never,
+  });
+  const blocked = await handlers.POST(
+    request("/api/attachments/uploads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        byteSize: 12,
+        filename: "photo.jpg",
+        contentType: "image/jpeg",
+      }),
+    }),
+  );
+  expect(blocked.status).toBe(403);
+  expect(await blocked.json()).toEqual({ error: "uploads-disabled" });
+});
+
 test("cleanup requires the cron secret", async () => {
   process.env.CRON_SECRET = "correct-secret-with-enough-entropy";
   const { createAttachmentCleanupHandlers } = await import(

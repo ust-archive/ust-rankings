@@ -234,6 +234,14 @@ if (!connection) {
       await expect(
         attachments.signPublicRead(attachment.id),
       ).rejects.toMatchObject({ code: "attachment-not-found" });
+
+      await sql`UPDATE reviews SET publication_state = 'active' WHERE id = ${reviewId}`;
+      expect(await attachments.removeStoredFile(stored.id)).toEqual({
+        removed: true,
+      });
+      await expect(
+        attachments.signPublicRead(attachment.id),
+      ).rejects.toMatchObject({ code: "attachment-unavailable" });
     } finally {
       await sql.end({ timeout: 0 });
       const drop = postgres(connection, { max: 1, onnotice: () => {} });

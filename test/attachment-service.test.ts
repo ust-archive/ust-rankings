@@ -6,6 +6,7 @@ import {
   type AttachmentStore,
   attachmentPutCors,
   authorizedInlineImage,
+  contentDisposition,
   createAttachmentService,
   GET_EXPIRES_SECONDS,
   GLOBAL_QUOTA_BYTES,
@@ -14,6 +15,7 @@ import {
   PUT_EXPIRES_SECONDS,
   type StoredFileRecord,
   type UploadIntentRecord,
+  USAGE_ALERT_BYTES,
   USER_QUOTA_BYTES,
 } from "@/lib/attachments/attachments";
 import {
@@ -21,6 +23,8 @@ import {
   heicBytes,
   jpegBytes,
   PNG_1x1,
+  pdfBytes,
+  textBytes,
   webpBytes,
 } from "./attachment-fixtures";
 
@@ -35,12 +39,17 @@ function sha256(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function memory() {
+function memory(options?: {
+  uploadsDisabled?: boolean;
+  alert?: (event: { type: "usage"; globalUsedBytes: number }) => void;
+}) {
   const users = new Map<string, string>([[USER_ID, "active"]]);
   const intents = new Map<string, UploadIntentRecord>();
   const files = new Map<string, StoredFileRecord>();
   const attachments = new Map<string, AttachmentRecord>();
   const publicRevisions = new Set<string>([REVISION_ID]);
+  const removed = new Set<string>();
+  const removalRequested = new Set<string>();
   const objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
   const puts: Array<{ key: string; expiresSeconds: number }> = [];
   const gets: Array<{
@@ -62,8 +71,13 @@ function memory() {
         },
       };
     },
-    async presignGet({ key, contentType, expiresSeconds }) {
-      gets.push({ key, expiresSeconds, contentType });
+    async presignGet({ key, contentType, expiresSeconds, contentDisposition }) {
+      gets.push({
+        key,
+        expiresSeconds,
+        contentType,
+        ...(contentDisposition ? { contentDisposition } : {}),
+      });
       return { url: `https://cdn-free.example/${key}?get=1` };
     },
     async head(key) {
@@ -89,6 +103,7 @@ function memory() {
     let stored = 0;
     let pending = 0;
     for (const file of files.values()) {
+      if (removed.has(file.id)) continue;
       if (!userId || file.ownerUserId === userId) stored += file.byteSize;
     }
     for (const intent of intents.values()) {
@@ -145,7 +160,7 @@ function memory() {
         createdAt: now,
         updatedAt: now,
       });
-      return { quotaUsedBytes: quota(input.userId) };
+      return { quotaUsedBytes: quota(input.userId), globalUsedBytes: quota() };
     },
     async getIntent(intentId) {
       return intents.get(intentId);
@@ -183,7 +198,10 @@ function memory() {
     },
     async findStoredFile(userId, digest) {
       return [...files.values()].find(
-        (file) => file.ownerUserId === userId && file.sha256 === digest,
+        (file) =>
+          file.ownerUserId === userId &&
+          file.sha256 === digest &&
+          !removed.has(file.id),
       );
     },
     async attachToRevision({ userId, revisionId, attachments: drafts }) {
@@ -198,6 +216,10 @@ function memory() {
           throw Object.assign(new Error("invalid-attachment"), {
             code: "invalid-attachment",
           });
+        if (removed.has(file.id))
+          throw Object.assign(new Error("invalid-attachment"), {
+            code: "invalid-attachment",
+          });
         const record = {
           id: draft.id,
           revisionId,
@@ -205,6 +227,10 @@ function memory() {
           filename: draft.filename,
           description: draft.description,
           mime: file.detectedMime,
+          kind: file.detectedMime.startsWith("image/")
+            ? ("image" as const)
+            : ("document" as const),
+          available: true,
         };
         attachments.set(record.id, record);
         created.push({
@@ -213,6 +239,8 @@ function memory() {
           filename: record.filename,
           description: record.description,
           mime: record.mime,
+          kind: record.kind,
+          available: record.available,
         });
       }
       return created;
@@ -223,6 +251,10 @@ function memory() {
         return undefined;
       const file = files.get(attachment.storedFileId);
       if (!file) return undefined;
+      if (removed.has(file.id))
+        return {
+          attachment: { ...attachment, available: false },
+        };
       return { attachment, objectKey: file.objectKey };
     },
     async listCleanupIntents(when) {
@@ -236,10 +268,29 @@ function memory() {
     async deleteIntent(intentId) {
       intents.delete(intentId);
     },
+    async requestRemoval(storedFileId) {
+      const file = files.get(storedFileId);
+      if (!file || removed.has(storedFileId))
+        throw Object.assign(new Error("attachment-not-found"), {
+          code: "attachment-not-found",
+        });
+      removalRequested.add(storedFileId);
+      return file;
+    },
+    async listRemovalQueue() {
+      return [...files.values()].filter(
+        (file) => removalRequested.has(file.id) && !removed.has(file.id),
+      );
+    },
+    async markRemoved(storedFileId) {
+      removed.add(storedFileId);
+    },
   };
   const attachmentsService = createAttachmentService(repository, store, {
     now: () => now,
     randomUUID: () => ids[uuidIndex++] ?? crypto.randomUUID(),
+    uploadsDisabled: options?.uploadsDisabled,
+    alert: options?.alert,
   });
   return {
     attachments: attachmentsService,
@@ -254,6 +305,13 @@ function memory() {
     },
     hideRevision() {
       publicRevisions.delete(REVISION_ID);
+    },
+    keepObjectOnDelete() {
+      const original = store.delete;
+      store.delete = async () => {};
+      return () => {
+        store.delete = original;
+      };
     },
   };
 }
@@ -356,6 +414,7 @@ test("complete upload preserves exact bytes after ownership, size, and raster ch
     sha256: sha256(bytes),
     byteSize: bytes.byteLength,
     mime: "image/jpeg",
+    kind: "image",
     reused: false,
   });
   expect(world.files.get(FILE_ID)?.objectKey).toBe(INTENT_ID);
@@ -466,6 +525,8 @@ test("a Revision accepts at most four Image Attachments with normalized names", 
       filename: "Photo.JPG",
       description: "Lab setup",
       mime: "image/jpeg",
+      kind: "image",
+      available: true,
     },
   ]);
   await expect(
@@ -506,7 +567,9 @@ test("public resolver signs only accepted current Revision images", async () => 
   expect(signed).toEqual({
     url: `https://cdn-free.example/${INTENT_ID}?get=1`,
     mime: "image/jpeg",
+    kind: "image",
     expiresAt: new Date("2026-04-01T00:05:00.000Z"),
+    download: false,
   });
   expect(world.gets).toEqual([
     {
@@ -557,4 +620,156 @@ test("rejected and expired uploads stay private and release quota after confirme
     contentType: "image/jpeg",
   });
   expect(again.quotaUsedBytes).toBe(USER_QUOTA_BYTES);
+});
+
+test("documents are accepted, never inlined, and signed with canonical disposition", async () => {
+  const world = memory();
+  const stored = await accept(
+    world,
+    pdfBytes(),
+    "notes.pdf",
+    "application/pdf",
+  );
+  expect(stored).toMatchObject({ mime: "application/pdf", kind: "document" });
+  const [attachment] = await world.attachments.attachToRevision({
+    userId: USER_ID,
+    revisionId: REVISION_ID,
+    attachments: [
+      {
+        storedFileId: stored.id,
+        filename: "notes.pdf",
+        description: "Course notes",
+      },
+    ],
+  });
+  expect(attachment.kind).toBe("document");
+  expect(
+    authorizedInlineImage(`/attachments/${attachment.id}`, [attachment]),
+  ).toBeUndefined();
+  const opened = await world.attachments.signPublicRead(attachment.id);
+  expect(opened.kind).toBe("document");
+  expect(world.gets.at(-1)).toMatchObject({
+    contentType: "application/pdf",
+    contentDisposition: contentDisposition("inline", "notes.pdf"),
+  });
+  await world.attachments.signPublicRead(attachment.id, { download: true });
+  expect(world.gets.at(-1)).toMatchObject({
+    contentDisposition: contentDisposition("attachment", "notes.pdf"),
+  });
+  const text = await accept(world, textBytes(), "notes.txt", "text/plain");
+  expect(text.kind).toBe("document");
+});
+
+test("kill switch blocks new uploads without touching existing downloads", async () => {
+  const live = memory();
+  const stored = await accept(live, jpegBytes());
+  const [attachment] = await live.attachments.attachToRevision({
+    userId: USER_ID,
+    revisionId: REVISION_ID,
+    attachments: [
+      {
+        storedFileId: stored.id,
+        filename: "photo.jpg",
+        description: "Visible lab",
+      },
+    ],
+  });
+  const disabled = memory({ uploadsDisabled: true });
+  await expect(
+    disabled.attachments.reserveUpload({
+      userId: USER_ID,
+      byteSize: 12,
+      filename: "photo.jpg",
+      contentType: "image/jpeg",
+    }),
+  ).rejects.toMatchObject({ code: "uploads-disabled" });
+  const signed = await live.attachments.signPublicRead(attachment.id);
+  expect(signed.mime).toBe("image/jpeg");
+});
+
+test("usage alerts fire before the 128 GiB cap without disabling Review text", async () => {
+  const alerts: Array<{ globalUsedBytes: number }> = [];
+  const world = memory({
+    alert: (event) => {
+      alerts.push(event);
+    },
+  });
+  world.users.set(OTHER_USER, "active");
+  const giant = {
+    id: crypto.randomUUID(),
+    ownerUserId: OTHER_USER,
+    objectKey: crypto.randomUUID(),
+    declaredByteSize: USAGE_ALERT_BYTES,
+    declaredExtension: "jpg",
+    declaredMime: "image/jpeg",
+    state: "reserved" as const,
+    expiresAt: new Date("2026-04-01T00:15:00.000Z"),
+    createdAt: new Date("2026-04-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-04-01T00:00:00.000Z"),
+  };
+  world.intents.set(giant.id, giant);
+  await world.attachments.reserveUpload({
+    userId: USER_ID,
+    byteSize: jpegBytes().byteLength,
+    filename: "photo.jpg",
+    contentType: "image/jpeg",
+  });
+  expect(alerts[0]?.globalUsedBytes).toBeGreaterThanOrEqual(USAGE_ALERT_BYTES);
+});
+
+test("operator byte removal leaves a Tombstone and releases quota after confirmed absence", async () => {
+  const world = memory();
+  const stored = await accept(world, jpegBytes());
+  const [attachment] = await world.attachments.attachToRevision({
+    userId: USER_ID,
+    revisionId: REVISION_ID,
+    attachments: [
+      {
+        storedFileId: stored.id,
+        filename: "photo.jpg",
+        description: "Removed later",
+      },
+    ],
+  });
+  const restore = world.keepObjectOnDelete();
+  expect(await world.attachments.removeStoredFile(stored.id)).toEqual({
+    removed: false,
+  });
+  restore();
+  expect(await world.attachments.removeStoredFile(stored.id)).toEqual({
+    removed: true,
+  });
+  await expect(
+    world.attachments.signPublicRead(attachment.id),
+  ).rejects.toMatchObject({ code: "attachment-unavailable" });
+  const again = await world.attachments.reserveUpload({
+    userId: USER_ID,
+    byteSize: USER_QUOTA_BYTES,
+    filename: "full.jpg",
+    contentType: "image/jpeg",
+  });
+  expect(again.quotaUsedBytes).toBe(USER_QUOTA_BYTES);
+});
+
+test("cleanup retries until the object is confirmed gone", async () => {
+  const world = memory();
+  const reservation = await world.attachments.reserveUpload({
+    userId: USER_ID,
+    byteSize: 4,
+    filename: "photo.jpg",
+    contentType: "image/jpeg",
+  });
+  world.objects.set(reservation.objectKey, {
+    bytes: Buffer.from("nope"),
+    contentType: "image/jpeg",
+  });
+  await world.attachments
+    .completeUpload({ userId: USER_ID, intentId: reservation.intentId })
+    .catch(() => {});
+  const restore = world.keepObjectOnDelete();
+  expect(await world.attachments.cleanupExpired()).toBe(0);
+  expect(world.intents.has(reservation.intentId)).toBe(true);
+  restore();
+  expect(await world.attachments.cleanupExpired()).toBe(1);
+  expect(world.intents.has(reservation.intentId)).toBe(false);
 });

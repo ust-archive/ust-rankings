@@ -83,6 +83,7 @@ export class SpacesAttachmentStore implements AttachmentStore {
     key: string;
     contentType: string;
     expiresSeconds: number;
+    contentDisposition?: string;
   }) {
     const url = await this.sign(
       this.client,
@@ -90,6 +91,9 @@ export class SpacesAttachmentStore implements AttachmentStore {
         Bucket: this.bucket,
         Key: this.key(input.key),
         ResponseContentType: input.contentType,
+        ...(input.contentDisposition
+          ? { ResponseContentDisposition: input.contentDisposition }
+          : {}),
       }),
       { expiresIn: input.expiresSeconds },
     );

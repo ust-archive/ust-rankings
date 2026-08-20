@@ -6,14 +6,24 @@ import {
 export function createAttachmentResolver(attachments: () => AttachmentService) {
   return {
     async GET(
-      _request: Request,
+      request: Request,
       context: { params: Promise<{ attachmentId: string }> },
     ) {
       try {
         const { attachmentId } = await context.params;
-        const signed = await attachments().signPublicRead(attachmentId);
+        const download = new URL(request.url).searchParams.has("download");
+        const signed = await attachments().signPublicRead(attachmentId, {
+          download,
+        });
         return Response.redirect(signed.url, 302);
       } catch (error) {
+        if (
+          error instanceof AttachmentWriteError &&
+          error.code === "attachment-unavailable"
+        )
+          return new Response("This Attachment is no longer available", {
+            status: 410,
+          });
         if (error instanceof AttachmentWriteError)
           return new Response("Not found", { status: 404 });
         if (

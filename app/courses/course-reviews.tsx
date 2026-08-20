@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { authorizedInlineImage } from "@/lib/attachments/attachments";
+import {
+  authorizedInlineImage,
+  contentTypeForFilename,
+} from "@/lib/attachments/attachments";
 import type {
   PublicReview,
   ReviewAssociations,
@@ -33,6 +36,7 @@ type DraftAttachment = {
   filename: string;
   description: string;
   status: "ready" | "pending" | "failed";
+  kind?: "image" | "document";
 };
 
 function SafeMarkdown({
@@ -108,6 +112,7 @@ export function ReviewComposer({
       filename: attachment.filename,
       description: attachment.description,
       status: "ready" as const,
+      kind: attachment.kind,
     })),
   );
   const [markdown, setMarkdown] = useState(() => {
@@ -240,7 +245,7 @@ export function ReviewComposer({
   const readyAttachments = attachments.filter(
     (attachment) => attachment.status === "ready" && attachment.storedFileId,
   );
-  async function addImageFiles(fileList: FileList | null) {
+  async function addFiles(fileList: FileList | null) {
     if (!fileList) return;
     const room = 4 - attachments.length;
     for (const file of [...fileList].slice(0, room)) {
@@ -262,7 +267,10 @@ export function ReviewComposer({
           body: JSON.stringify({
             byteSize: file.size,
             filename: file.name,
-            contentType: file.type || "application/octet-stream",
+            contentType:
+              file.type ||
+              contentTypeForFilename(file.name) ||
+              "application/octet-stream",
           }),
         });
         if (!reserved.ok) throw new Error("reserve");
@@ -282,11 +290,19 @@ export function ReviewComposer({
           { method: "POST" },
         );
         if (!completed.ok) throw new Error("complete");
-        const stored = (await completed.json()) as { id: string };
+        const stored = (await completed.json()) as {
+          id: string;
+          kind?: "image" | "document";
+        };
         setAttachments((current) =>
           current.map((item) =>
             item.id === id
-              ? { ...item, storedFileId: stored.id, status: "ready" }
+              ? {
+                  ...item,
+                  storedFileId: stored.id,
+                  status: "ready",
+                  kind: stored.kind,
+                }
               : item,
           ),
         );
@@ -504,11 +520,11 @@ export function ReviewComposer({
               Raw HTML is not rendered. Remote images are prohibited. Inline
               images may reference only an Image Attachment on this Revision as
               <code>{`/attachments/{id}`}</code>; the Attachment description is
-              used as alt text.
+              used as alt text. Document Attachments are never embedded.
             </p>
           </div>
           <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4">
-            <legend className="px-1 font-bold">Image Attachments</legend>
+            <legend className="px-1 font-bold">Attachments</legend>
             <input
               name="attachments"
               type="hidden"
@@ -526,16 +542,18 @@ export function ReviewComposer({
             <p className="text-sm text-amber-950">
               Embedded metadata is preserved and may expose names, device
               information, or location. UST Rankings does not resize, strip,
-              transcode, or malware-scan files. Accepted JPEG, PNG, GIF, WebP,
-              and HEIC/HEIF images count toward a 32 MiB distinct Stored File
+              transcode, or malware-scan files. Strict format validation is not
+              antivirus assurance. Accepted JPEG, PNG, GIF, WebP, HEIC/HEIF,
+              PDF, TXT, Markdown, CSV, macro-free DOCX/XLSX/PPTX, and
+              ODT/ODS/ODP files count toward a 32 MiB distinct Stored File
               quota, including pending uploads. A Revision has at most four
               Attachments. Review text can publish while an upload is pending.
             </p>
             <input
-              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif"
+              accept=".jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.pdf,.txt,.md,.csv,.docx,.xlsx,.pptx,.odt,.ods,.odp,image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,application/pdf,text/plain,text/markdown,text/csv"
               disabled={attachments.length >= 4}
               onChange={(event) => {
-                void addImageFiles(event.target.files);
+                void addFiles(event.target.files);
                 event.target.value = "";
               }}
               type="file"
@@ -561,7 +579,8 @@ export function ReviewComposer({
                     value={attachment.description}
                   />
                 </label>
-                {attachment.status === "ready" ? (
+                {attachment.status === "ready" &&
+                attachment.kind !== "document" ? (
                   <button
                     className="justify-self-start text-sm font-semibold text-blue-800"
                     onClick={() =>
@@ -741,14 +760,44 @@ export function Reviews({
               />
             </div>
             {review.attachments?.length ? (
-              <ul className="mt-4 space-y-1 text-sm">
+              <ul className="mt-4 space-y-2 text-sm">
                 {review.attachments.map((attachment) => (
                   <li key={attachment.id}>
-                    <a href={`/attachments/${attachment.id}`}>
-                      {attachment.filename}
-                    </a>
-                    {" — "}
-                    {attachment.description}
+                    {attachment.available === false ? (
+                      <p>
+                        This Attachment is no longer available —{" "}
+                        {attachment.filename} — {attachment.description}
+                      </p>
+                    ) : attachment.kind === "document" ? (
+                      <>
+                        <a
+                          href={`/attachments/${attachment.id}`}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                        >
+                          Open {attachment.filename}
+                        </a>
+                        {" · "}
+                        <a href={`/attachments/${attachment.id}?download=1`}>
+                          Download
+                        </a>
+                        {" — "}
+                        {attachment.description}
+                        <p className="text-xs text-amber-950">
+                          This file has not been malware-scanned. Open it only
+                          if you trust the author. Strict format validation is
+                          not antivirus assurance.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <a href={`/attachments/${attachment.id}`}>
+                          {attachment.filename}
+                        </a>
+                        {" — "}
+                        {attachment.description}
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -24,7 +24,8 @@
     "data:check": "bun run --cwd data type-check && bun run --cwd data test",
     "toolchain:check": "bun scripts/check-toolchain.ts",
     "contributions:migrate": "bun scripts/migrate-contributions.ts",
-    "contributions:merge-instructor-signals": "bun scripts/merge-instructor-signals.ts"
+    "contributions:merge-instructor-signals": "bun scripts/merge-instructor-signals.ts",
+    "attachments:remove-stored-file": "bun scripts/remove-stored-file.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1114.0",

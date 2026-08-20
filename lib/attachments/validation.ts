@@ -1,55 +1,154 @@
-export type DetectedRaster = {
-  mime:
-    | "image/jpeg"
-    | "image/png"
-    | "image/gif"
-    | "image/webp"
-    | "image/heic"
-    | "image/heif";
-  extension: "jpg" | "png" | "gif" | "webp" | "heic" | "heif";
+import { inflateRawSync } from "node:zlib";
+
+export type AttachmentKind = "image" | "document";
+
+export type DetectedUpload = {
+  mime: string;
+  extension: string;
+  kind: AttachmentKind;
 };
+
+const MAX_UNCOMPRESSED = 32 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 4096;
+const MAX_INSPECTED = 1024 * 1024;
+
+const DOCX =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const XLSX =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const PPTX =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const ODT = "application/vnd.oasis.opendocument.text";
+const ODS = "application/vnd.oasis.opendocument.spreadsheet";
+const ODP = "application/vnd.oasis.opendocument.presentation";
 
 const FORMATS = [
   {
     extensions: ["jpg", "jpeg"],
     extension: "jpg",
     mime: "image/jpeg",
+    kind: "image" as const,
     parse: parseJpeg,
   },
-  { extensions: ["png"], extension: "png", mime: "image/png", parse: parsePng },
-  { extensions: ["gif"], extension: "gif", mime: "image/gif", parse: parseGif },
+  {
+    extensions: ["png"],
+    extension: "png",
+    mime: "image/png",
+    kind: "image" as const,
+    parse: parsePng,
+  },
+  {
+    extensions: ["gif"],
+    extension: "gif",
+    mime: "image/gif",
+    kind: "image" as const,
+    parse: parseGif,
+  },
   {
     extensions: ["webp"],
     extension: "webp",
     mime: "image/webp",
+    kind: "image" as const,
     parse: parseWebp,
   },
   {
     extensions: ["heic"],
     extension: "heic",
     mime: "image/heic",
+    kind: "image" as const,
     parse: (bytes: Uint8Array) => parseHeif(bytes, "image/heic"),
   },
   {
     extensions: ["heif"],
     extension: "heif",
     mime: "image/heif",
+    kind: "image" as const,
     parse: (bytes: Uint8Array) => parseHeif(bytes, "image/heif"),
+  },
+  {
+    extensions: ["pdf"],
+    extension: "pdf",
+    mime: "application/pdf",
+    kind: "document" as const,
+    parse: parsePdf,
+  },
+  {
+    extensions: ["txt"],
+    extension: "txt",
+    mime: "text/plain",
+    kind: "document" as const,
+    parse: parseText,
+  },
+  {
+    extensions: ["md"],
+    extension: "md",
+    mime: "text/markdown",
+    kind: "document" as const,
+    parse: parseText,
+  },
+  {
+    extensions: ["csv"],
+    extension: "csv",
+    mime: "text/csv",
+    kind: "document" as const,
+    parse: parseText,
+  },
+  {
+    extensions: ["docx"],
+    extension: "docx",
+    mime: DOCX,
+    kind: "document" as const,
+    parse: (bytes: Uint8Array) => parseOoxml(bytes, "word", "wordprocessingml"),
+  },
+  {
+    extensions: ["xlsx"],
+    extension: "xlsx",
+    mime: XLSX,
+    kind: "document" as const,
+    parse: (bytes: Uint8Array) => parseOoxml(bytes, "xl", "spreadsheetml"),
+  },
+  {
+    extensions: ["pptx"],
+    extension: "pptx",
+    mime: PPTX,
+    kind: "document" as const,
+    parse: (bytes: Uint8Array) => parseOoxml(bytes, "ppt", "presentationml"),
+  },
+  {
+    extensions: ["odt"],
+    extension: "odt",
+    mime: ODT,
+    kind: "document" as const,
+    parse: (bytes: Uint8Array) => parseOdf(bytes, ODT),
+  },
+  {
+    extensions: ["ods"],
+    extension: "ods",
+    mime: ODS,
+    kind: "document" as const,
+    parse: (bytes: Uint8Array) => parseOdf(bytes, ODS),
+  },
+  {
+    extensions: ["odp"],
+    extension: "odp",
+    mime: ODP,
+    kind: "document" as const,
+    parse: (bytes: Uint8Array) => parseOdf(bytes, ODP),
   },
 ] as const;
 
-export class RasterValidationError extends Error {
+export class AttachmentValidationError extends Error {
   constructor(message = "Upload rejected") {
     super(message);
-    this.name = "RasterValidationError";
+    this.name = "AttachmentValidationError";
   }
 }
 
-export function validateRasterImage(input: {
+export function validateUpload(input: {
   bytes: Uint8Array;
   filename: string;
   declaredMime: string;
-}): DetectedRaster {
+}): DetectedUpload {
   const extension = declaredExtension(input.filename);
   const format = FORMATS.find((candidate) =>
     (candidate.extensions as readonly string[]).includes(extension),
@@ -60,8 +159,12 @@ export function validateRasterImage(input: {
     input.bytes.byteLength === 0 ||
     !format.parse(input.bytes)
   )
-    throw new RasterValidationError("Upload rejected");
-  return { mime: format.mime, extension: format.extension };
+    throw new AttachmentValidationError("Upload rejected");
+  return {
+    mime: format.mime,
+    extension: format.extension,
+    kind: format.kind,
+  };
 }
 
 function declaredExtension(filename: string) {
@@ -76,6 +179,10 @@ function byteAt(bytes: Uint8Array, offset: number) {
 
 function u16be(bytes: Uint8Array, offset: number) {
   return (byteAt(bytes, offset) << 8) | byteAt(bytes, offset + 1);
+}
+
+function u16le(bytes: Uint8Array, offset: number) {
+  return byteAt(bytes, offset) | (byteAt(bytes, offset + 1) << 8);
 }
 
 function u32be(bytes: Uint8Array, offset: number) {
@@ -301,4 +408,235 @@ function parseHeif(bytes: Uint8Array, mime: "image/heic" | "image/heif") {
   if (!ftyp || !body || index !== bytes.length) return false;
   if (mime === "image/heic") return heicBrand;
   return heifBrand && !heicBrand;
+}
+
+function parsePdf(bytes: Uint8Array) {
+  if (bytes.length < 15 || ascii(bytes, 0, 5) !== "%PDF-") return false;
+  let end = bytes.length;
+  while (
+    end > 0 &&
+    [0x00, 0x09, 0x0a, 0x0d, 0x20].includes(byteAt(bytes, end - 1))
+  )
+    end--;
+  if (end < 5 || ascii(bytes, end - 5, 5) !== "%%EOF") return false;
+  const latin1 = Buffer.from(bytes).toString("latin1");
+  if (/\/Encrypt(?=[/\s>[\]])/u.test(latin1)) return false;
+  if (
+    /<!DOCTYPE html|<html[\s>]|<svg[\s>]|<\?xml/iu.test(latin1.slice(0, 1024))
+  )
+    return false;
+  return true;
+}
+
+function parseText(bytes: Uint8Array) {
+  if (bytes.includes(0) || bytes[0] === 0x50 || bytes[0] === 0x25) return false;
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const sniff = text.slice(0, 256).trimStart().toLowerCase();
+    return !(
+      sniff.startsWith("<!doctype html") ||
+      sniff.startsWith("<html") ||
+      sniff.startsWith("<svg") ||
+      sniff.startsWith("<?xml")
+    );
+  } catch {
+    return false;
+  }
+}
+
+type ZipEntry = {
+  name: string;
+  method: number;
+  flags: number;
+  compressedSize: number;
+  uncompressedSize: number;
+  localOffset: number;
+};
+
+function parseZip(bytes: Uint8Array): ZipEntry[] | undefined {
+  if (bytes.length < 22 || bytes[0] !== 0x50 || bytes[1] !== 0x4b)
+    return undefined;
+  const windowStart = Math.max(0, bytes.length - 22 - 65535);
+  let eocd = -1;
+  for (let index = bytes.length - 22; index >= windowStart; index--) {
+    if (
+      byteAt(bytes, index) === 0x50 &&
+      byteAt(bytes, index + 1) === 0x4b &&
+      byteAt(bytes, index + 2) === 0x05 &&
+      byteAt(bytes, index + 3) === 0x06
+    ) {
+      const comment = u16le(bytes, index + 20);
+      if (index + 22 + comment === bytes.length) {
+        eocd = index;
+        break;
+      }
+    }
+  }
+  if (eocd < 0) return undefined;
+  if (u16le(bytes, eocd + 4) !== 0 || u16le(bytes, eocd + 6) !== 0)
+    return undefined;
+  const count = u16le(bytes, eocd + 8);
+  const total = u16le(bytes, eocd + 10);
+  const cdSize = u32le(bytes, eocd + 12);
+  const cdOffset = u32le(bytes, eocd + 16);
+  if (
+    count !== total ||
+    count === 0 ||
+    count > MAX_ZIP_ENTRIES ||
+    cdOffset + cdSize > eocd
+  )
+    return undefined;
+  const entries: ZipEntry[] = [];
+  let cursor = cdOffset;
+  for (let i = 0; i < count; i++) {
+    if (cursor + 46 > bytes.length || u32le(bytes, cursor) !== 0x02014b50)
+      return undefined;
+    const flags = u16le(bytes, cursor + 8);
+    const method = u16le(bytes, cursor + 10);
+    const compressedSize = u32le(bytes, cursor + 20);
+    const uncompressedSize = u32le(bytes, cursor + 24);
+    const nameLength = u16le(bytes, cursor + 28);
+    const extraLength = u16le(bytes, cursor + 30);
+    const commentLength = u16le(bytes, cursor + 32);
+    const localOffset = u32le(bytes, cursor + 42);
+    if (
+      flags & 1 ||
+      compressedSize === 0xffffffff ||
+      uncompressedSize === 0xffffffff ||
+      uncompressedSize > MAX_UNCOMPRESSED ||
+      cursor + 46 + nameLength + extraLength + commentLength > cdOffset + cdSize
+    )
+      return undefined;
+    const name = ascii(bytes, cursor + 46, nameLength);
+    if (
+      !name ||
+      name.includes("\\") ||
+      name.split("/").includes("..") ||
+      /\.(?:zip|tar|gz|tgz|7z|rar|jar|exe|dll|js|html|htm|svg)$/iu.test(name)
+    )
+      return undefined;
+    entries.push({
+      name,
+      method,
+      flags,
+      compressedSize,
+      uncompressedSize,
+      localOffset,
+    });
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  if (cursor !== cdOffset + cdSize) return undefined;
+  return entries;
+}
+
+function zipPayload(bytes: Uint8Array, entry: ZipEntry) {
+  if (
+    entry.localOffset + 30 > bytes.length ||
+    u32le(bytes, entry.localOffset) !== 0x04034b50
+  )
+    return undefined;
+  const nameLength = u16le(bytes, entry.localOffset + 26);
+  const extraLength = u16le(bytes, entry.localOffset + 28);
+  const dataStart = entry.localOffset + 30 + nameLength + extraLength;
+  const dataEnd = dataStart + entry.compressedSize;
+  if (dataEnd > bytes.length) return undefined;
+  const compressed = bytes.subarray(dataStart, dataEnd);
+  if (entry.method === 0) {
+    if (compressed.length !== entry.uncompressedSize) return undefined;
+    return compressed;
+  }
+  if (entry.method !== 8 || entry.uncompressedSize > MAX_INSPECTED)
+    return undefined;
+  try {
+    const inflated = inflateRawSync(compressed, {
+      maxOutputLength: entry.uncompressedSize,
+    });
+    return inflated.length === entry.uncompressedSize ? inflated : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function zipText(bytes: Uint8Array, entry: ZipEntry | undefined) {
+  if (!entry || entry.uncompressedSize > MAX_INSPECTED) return undefined;
+  const payload = zipPayload(bytes, entry);
+  if (!payload) return undefined;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(payload);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseOoxml(
+  bytes: Uint8Array,
+  directory: "word" | "xl" | "ppt",
+  family: "wordprocessingml" | "spreadsheetml" | "presentationml",
+) {
+  const entries = parseZip(bytes);
+  if (!entries) return false;
+  const names = new Set(
+    entries.map((entry) => entry.name.replaceAll("\\", "/")),
+  );
+  if (
+    !names.has("[Content_Types].xml") ||
+    ![...names].some(
+      (name) => name === directory || name.startsWith(`${directory}/`),
+    )
+  )
+    return false;
+  if (
+    [...names].some(
+      (name) =>
+        /vbaProject/i.test(name) ||
+        /macrosheets/i.test(name) ||
+        name === "EncryptedPackage" ||
+        name === "EncryptionInfo",
+    )
+  )
+    return false;
+  const types = zipText(
+    bytes,
+    entries.find((entry) => entry.name === "[Content_Types].xml"),
+  );
+  if (
+    !types ||
+    /<!ENTITY|<!DOCTYPE|macroEnabled|vbaProject|application\/encrypted/i.test(
+      types,
+    ) ||
+    !types.includes(family)
+  )
+    return false;
+  return true;
+}
+
+function parseOdf(bytes: Uint8Array, mime: string) {
+  const entries = parseZip(bytes);
+  if (!entries) return false;
+  const first = entries[0];
+  if (first?.name !== "mimetype" || first.method !== 0) return false;
+  const declared = zipText(bytes, first);
+  if (declared !== mime) return false;
+  const names = entries.map((entry) => entry.name);
+  if (
+    names.some(
+      (name) =>
+        name.startsWith("Basic/") ||
+        name.includes("vbaProject") ||
+        name === "EncryptedPackage",
+    )
+  )
+    return false;
+  const manifest = zipText(
+    bytes,
+    entries.find((entry) => entry.name === "META-INF/manifest.xml"),
+  );
+  if (
+    !manifest ||
+    /<!ENTITY|<!DOCTYPE|text\/x-script|application\/x-basic|Basic\//i.test(
+      manifest,
+    )
+  )
+    return false;
+  return names.includes("content.xml");
 }

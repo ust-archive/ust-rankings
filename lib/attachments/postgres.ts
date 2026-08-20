@@ -30,6 +30,7 @@ function mapWriteError(error: unknown): never {
       "upload-expired",
       "too-many-attachments",
       "invalid-attachment",
+      "attachment-not-found",
     ].find((candidate) => message === candidate || message.includes(candidate));
     if (code)
       throw new AttachmentWriteError(
@@ -102,14 +103,16 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
           SELECT
             (
               COALESCE((SELECT sum(byte_size) FROM stored_files
-                        WHERE owner_user_id = ${input.userId}), 0)
+                        WHERE owner_user_id = ${input.userId}
+                          AND removed_at IS NULL), 0)
               + COALESCE((SELECT sum(declared_byte_size) FROM upload_intents
                           WHERE owner_user_id = ${input.userId}
                             AND stored_file_id IS NULL
                             AND state IN ('reserved', 'uploaded', 'validating')), 0)
             )::text AS "userBytes",
             (
-              COALESCE((SELECT sum(byte_size) FROM stored_files), 0)
+              COALESCE((SELECT sum(byte_size) FROM stored_files
+                        WHERE removed_at IS NULL), 0)
               + COALESCE((SELECT sum(declared_byte_size) FROM upload_intents
                           WHERE stored_file_id IS NULL
                             AND state IN ('reserved', 'uploaded', 'validating')), 0)
@@ -137,7 +140,10 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
             ${input.declaredMime}, 'reserved', ${input.expiresAt}
           )
         `;
-        return { quotaUsedBytes: userBytes + input.declaredByteSize };
+        return {
+          quotaUsedBytes: userBytes + input.declaredByteSize,
+          globalUsedBytes: globalBytes + input.declaredByteSize,
+        };
       });
     } catch (error) {
       mapWriteError(error);
@@ -207,7 +213,7 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
              sha256,
              detected_mime AS "detectedMime"
       FROM stored_files
-      WHERE owner_user_id = ${userId} AND sha256 = ${sha256}
+      WHERE owner_user_id = ${userId} AND sha256 = ${sha256} AND removed_at IS NULL
     `;
     return row ? storedFile(row) : undefined;
   }
@@ -224,7 +230,7 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
               ${input.storedFile.objectKey}, ${input.storedFile.byteSize},
               ${input.storedFile.sha256}, ${input.storedFile.detectedMime}
             )
-            ON CONFLICT (owner_user_id, sha256) DO NOTHING
+            ON CONFLICT (owner_user_id, sha256) WHERE removed_at IS NULL DO NOTHING
           `;
         }
         const [file] = await sql<StoredFileRecord[]>`
@@ -237,6 +243,7 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
           FROM stored_files
           WHERE owner_user_id = ${input.storedFile.ownerUserId}
             AND sha256 = ${input.storedFile.sha256}
+            AND removed_at IS NULL
         `;
         if (!file)
           throw new AttachmentWriteError(
@@ -279,13 +286,17 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
               FROM stored_files sf
               WHERE sf.id = ${draft.storedFileId}
                 AND sf.owner_user_id = ${input.userId}
+                AND sf.removed_at IS NULL
               RETURNING id, stored_file_id, public_filename, description
             )
             SELECT inserted.id,
                    inserted.stored_file_id AS "storedFileId",
                    inserted.public_filename AS filename,
                    inserted.description,
-                   sf.detected_mime AS mime
+                   sf.detected_mime AS mime,
+                   CASE WHEN sf.detected_mime LIKE 'image/%' THEN 'image'
+                        ELSE 'document' END AS kind,
+                   true AS available
             FROM inserted
             JOIN stored_files sf ON sf.id = inserted.stored_file_id
           `;
@@ -305,14 +316,18 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
 
   async findPublicAttachment(attachmentId: string) {
     const [row] = await this.sql<
-      Array<ImageAttachment & { objectKey: string }>
+      Array<ImageAttachment & { objectKey: string; removed: boolean }>
     >`
       SELECT a.id,
              a.stored_file_id AS "storedFileId",
              a.public_filename AS filename,
              a.description,
              sf.detected_mime AS mime,
-             sf.object_key AS "objectKey"
+             CASE WHEN sf.detected_mime LIKE 'image/%' THEN 'image'
+                  ELSE 'document' END AS kind,
+             (sf.removed_at IS NULL) AS available,
+             sf.object_key AS "objectKey",
+             (sf.removed_at IS NOT NULL) AS removed
       FROM attachments a
       JOIN stored_files sf ON sf.id = a.stored_file_id
       JOIN review_revisions rr ON rr.id = a.revision_id
@@ -320,8 +335,11 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
       WHERE a.id = ${attachmentId} AND r.publication_state = 'active'
     `;
     if (!row) return undefined;
-    const { objectKey, ...attachment } = row;
-    return { attachment, objectKey };
+    const { objectKey, removed, ...attachment } = row;
+    return {
+      attachment,
+      ...(removed ? {} : { objectKey }),
+    };
   }
 
   async listCleanupIntents(now: Date) {
@@ -352,6 +370,50 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
     await this.sql`
       DELETE FROM upload_intents
       WHERE id = ${intentId} AND stored_file_id IS NULL
+    `;
+  }
+
+  async requestRemoval(storedFileId: string) {
+    const [row] = await this.sql<StoredFileRecord[]>`
+      UPDATE stored_files
+      SET removal_requested_at = COALESCE(removal_requested_at, now())
+      WHERE id = ${storedFileId} AND removed_at IS NULL
+      RETURNING id,
+                owner_user_id AS "ownerUserId",
+                object_key AS "objectKey",
+                byte_size AS "byteSize",
+                sha256,
+                detected_mime AS "detectedMime"
+    `;
+    if (!row)
+      throw new AttachmentWriteError(
+        "attachment-not-found",
+        "Stored File was not found",
+      );
+    return storedFile(row);
+  }
+
+  async listRemovalQueue() {
+    const rows = await this.sql<StoredFileRecord[]>`
+      SELECT id,
+             owner_user_id AS "ownerUserId",
+             object_key AS "objectKey",
+             byte_size AS "byteSize",
+             sha256,
+             detected_mime AS "detectedMime"
+      FROM stored_files
+      WHERE removal_requested_at IS NOT NULL AND removed_at IS NULL
+    `;
+    return rows.map(storedFile);
+  }
+
+  async markRemoved(storedFileId: string) {
+    await this.sql`
+      UPDATE stored_files
+      SET removed_at = now()
+      WHERE id = ${storedFileId}
+        AND removal_requested_at IS NOT NULL
+        AND removed_at IS NULL
     `;
   }
 }

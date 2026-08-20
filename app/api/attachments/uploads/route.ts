@@ -16,7 +16,10 @@ function hostOf(request: Request) {
 
 function jsonError(error: unknown) {
   if (error instanceof AttachmentWriteError)
-    return Response.json({ error: error.code }, { status: 400 });
+    return Response.json(
+      { error: error.code },
+      { status: error.code === "uploads-disabled" ? 403 : 400 },
+    );
   if (error instanceof Error && error.name === "AttachmentsUnavailableError")
     return Response.json({ error: "unavailable" }, { status: 503 });
   throw error;

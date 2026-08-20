@@ -211,6 +211,9 @@ test("Review composer warns that metadata is preserved and files are not scanned
   expect(markup).toContain("32 MiB");
   expect(markup).toContain("at most four Attachments");
   expect(markup).toContain("publish while an upload is pending");
+  expect(markup).toContain("PDF, TXT, Markdown, CSV");
+  expect(markup).toContain("not antivirus assurance");
+  expect(markup).toContain("not licensed under CC BY 4.0");
   expect(markup).not.toMatch(/malware-scanned files are safe/i);
 });
 
@@ -222,6 +225,8 @@ test("public Reviews render authorized Image Attachments inline and in the file 
     filename: "lab.jpg",
     description: "Lab bench",
     mime: "image/jpeg",
+    kind: "image" as const,
+    available: true,
   };
   const markup = renderToStaticMarkup(
     <Reviews
@@ -240,6 +245,54 @@ test("public Reviews render authorized Image Attachments inline and in the file 
   expect(markup).toContain("Lab bench");
   expect(markup).not.toContain("evil.example");
   expect(markup).not.toContain("ignored");
+});
+
+test("Document Attachments are listed with unscanned warnings and are never embedded", async () => {
+  const { Reviews } = await import("@/app/courses/course-reviews");
+  const attachment = {
+    id: "00000000-0000-4000-8000-000000000349",
+    storedFileId: "00000000-0000-4000-8000-000000000249",
+    filename: "notes.pdf",
+    description: "Course notes",
+    mime: "application/pdf",
+    kind: "document" as const,
+    available: true,
+  };
+  const markup = renderToStaticMarkup(
+    <Reviews
+      reviews={[
+        {
+          ...review,
+          markdown: `See ![nope](/attachments/${attachment.id})`,
+          attachments: [attachment],
+        },
+      ]}
+    />,
+  );
+  expect(markup).toContain(`href="/attachments/${attachment.id}"`);
+  expect(markup).toContain('target="_blank"');
+  expect(markup).toContain(`href="/attachments/${attachment.id}?download=1"`);
+  expect(markup).toContain("has not been malware-scanned");
+  expect(markup).not.toContain(`src="/attachments/${attachment.id}"`);
+  expect(markup).not.toContain("nope");
+});
+
+test("removed Stored Files render an Attachment Tombstone placeholder", async () => {
+  const { Reviews } = await import("@/app/courses/course-reviews");
+  const attachment = {
+    id: "00000000-0000-4000-8000-000000000350",
+    storedFileId: "00000000-0000-4000-8000-000000000250",
+    filename: "gone.jpg",
+    description: "Former photo",
+    mime: "image/jpeg",
+    kind: "image" as const,
+    available: false,
+  };
+  const markup = renderToStaticMarkup(
+    <Reviews reviews={[{ ...review, attachments: [attachment] }]} />,
+  );
+  expect(markup).toContain("This Attachment is no longer available");
+  expect(markup).not.toContain(`href="/attachments/${attachment.id}"`);
 });
 
 test("historical Review editing preserves unsupported Context and blocks implicit publication", async () => {

@@ -377,7 +377,9 @@ export class PostgresReviewRepository implements ReviewRepository {
                  'storedFileId', a.stored_file_id,
                  'filename', a.public_filename,
                  'description', a.description,
-                 'mime', sf.detected_mime
+                 'mime', sf.detected_mime,
+                 'kind', CASE WHEN sf.detected_mime LIKE 'image/%' THEN 'image' ELSE 'document' END,
+                 'available', (sf.removed_at IS NULL)
                ) ORDER BY a.created_at, a.id)
                FROM attachments a
                JOIN stored_files sf ON sf.id = a.stored_file_id
@@ -417,7 +419,9 @@ export class PostgresReviewRepository implements ReviewRepository {
                  'storedFileId', a.stored_file_id,
                  'filename', a.public_filename,
                  'description', a.description,
-                 'mime', sf.detected_mime
+                 'mime', sf.detected_mime,
+                 'kind', CASE WHEN sf.detected_mime LIKE 'image/%' THEN 'image' ELSE 'document' END,
+                 'available', (sf.removed_at IS NULL)
                ) ORDER BY a.created_at, a.id)
                FROM attachments a
                JOIN stored_files sf ON sf.id = a.stored_file_id

@@ -1,13 +1,13 @@
 # Contribution module
 
-Issues #43–#48 introduce accounts, complete Review Bases and Context,
+Issues #43–#49 introduce accounts, complete Review Bases and Context,
 optimistic immutable Review editing, per-Revision attribution, author
-withdrawal, private-identity Course/Instructor signals, and raster Image
-Attachments. Application routes cross `lib/contributions/accounts.ts`,
-`lib/contributions/reviews.ts`, `lib/contributions/signals.ts`, and
-`lib/attachments/attachments.ts`; PostgreSQL transactions, Space keys, and
-objects remain in the adapters and forward migrations under
-`contributions/migrations`.
+withdrawal, private-identity Course/Instructor signals, raster Image
+Attachments, and mixed-format Document Attachments. Application routes cross
+`lib/contributions/accounts.ts`, `lib/contributions/reviews.ts`,
+`lib/contributions/signals.ts`, and `lib/attachments/attachments.ts`;
+PostgreSQL transactions, Space keys, and objects remain in the adapters and
+forward migrations under `contributions/migrations`.
 
 ## Local setup
 
@@ -50,12 +50,27 @@ withdrawal. Apply every migration in order; historical Revision associations
 are never revalidated or guessed when current source data changes.
 
 `0006_raster_attachments.sql` adds Upload Intents, Stored Files, and immutable
-Attachments. The attachment module owns reservation, opaque object keys,
-validation, association, signed delivery, cleanup, and S3 operations. Configure
-the dedicated private Space origin (not CDN) variables in `.env.example` and
-exact-origin CORS allowing `PUT` and `HEAD` only. Daily `/api/attachments/cleanup`
-uses `CRON_SECRET` and releases quota only after the object is confirmed gone.
+Attachments. `0007_document_attachments.sql` expands accepted document MIME
+types and adds operator byte-removal columns. The attachment module owns
+reservation, opaque object keys, validation, association, signed delivery,
+cleanup, removal, and S3 operations. Configure the dedicated private Space
+origin (not CDN) variables in `.env.example` and exact-origin CORS allowing
+`PUT` and `HEAD` only. Set Spaces to abort incomplete multipart uploads after
+one day as a lifecycle backstop; application cleanup is the primary 24-hour
+path. Daily `/api/attachments/cleanup` uses `CRON_SECRET` and releases quota
+only after the object is confirmed gone. Set `ATTACHMENTS_UPLOADS_DISABLED=1`
+to reject new uploads without disabling Review text or existing downloads.
 Accepted files are not malware-scanned; UI copy must not claim otherwise.
+Attachments receive only a non-exclusive site license and are not automatically
+CC BY 4.0.
+
+To remove Stored File bytes while preserving Attachment Tombstones:
+
+```sh
+bun run attachments:remove-stored-file <stored-file-uuid>
+```
+
+Then call authenticated `GET /api/attachments/cleanup` (or wait for the daily cron) so bytes are deleted, the Tombstone remains, and quota is released.
 
 Identity-hidden public reads emit no captured Public Display Name and use `UST
 Rankings contributor` plus the stable `/reviews/{review-id}` permalink for CC BY
