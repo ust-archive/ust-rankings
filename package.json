@@ -5,6 +5,7 @@
   "scripts": {
     "update-data": "node scripts/update-data.mjs",
     "dev": "next dev --turbopack",
+    "prototype:detail": "next dev --webpack --hostname 127.0.0.1 --port 3100",
     "prebuild": "pnpm run update-data",
     "build": "next build",
     "start": "next start",
