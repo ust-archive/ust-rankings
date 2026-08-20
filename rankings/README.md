@@ -8,8 +8,10 @@ The manifest pins the immutable source commit and declares every Parquet file's
 SHA-256 and byte size. It also assigns permanent application UUIDs to the
 Canonical Instructor Names in that generation. Each source-observed spelling is
 retained as an Instructor Alias with its source commit and file provenance. The
-registry is append-only: future seed updates must preserve UUIDs when a known
-alias or Canonical Instructor Name is observed again. TBA is never an identity.
+registry is append-only: future seed updates preserve UUIDs through an
+unambiguous Canonical Instructor Name or current ranking-generation observation.
+Historical Instructor Aliases may be shared and never establish identity alone;
+an ambiguous current observation fails closed. TBA is never an identity.
 
 `lib/rankings/server.ts` validates the filenames, declarations, Parquet framing,
 v0 schemas, relation grains, finite measures, latest-Term relationships,
@@ -58,10 +60,17 @@ Complete generations are written under immutable private Space keys before a
 single active pointer is replaced. A PostgreSQL advisory lock excludes jobs
 across instances, and the source publication time prevents an older immutable
 commit from regressing that pointer. The pointer retains the previous accepted
-SHA. Readers bind one generation for an entire query; a failed refresh leaves
-the pointer untouched and serves the in-memory generation, active/previous
-Space generation, or validated seed in that order. `/tmp` and process memory
-are caches only.
+SHA. Readers acquire one generation snapshot for an entire public operation; a
+failed refresh leaves the pointer untouched and serves the in-memory
+generation, active/previous Space generation, or validated seed in that order.
+Only active and previous native snapshots are retained. Retired DuckDB
+instances/connections close after their in-flight readers finish, and their
+owned `/tmp` directories are removed. `/tmp` and process memory are caches only.
+
+Course–Instructor association keys are validated for completeness, uniqueness,
+and consistent Term Code/Term Number mapping. They are intentionally not
+foreign keys to Course or Instructor rating evidence: the source relation also
+contains valid teaching associations for entities without SFQ/rating rows.
 
 Required deployment variables are listed in `.env.example`. The Space must be
 private and use restricted credentials; do not reuse attachment-publication

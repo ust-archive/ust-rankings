@@ -14,62 +14,78 @@ function authenticated(request: Request) {
   return timingSafeEqual(actual, expected);
 }
 
-async function handle(request: Request, sha?: string) {
-  if (!authenticated(request))
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+type RefreshOperation = (options: { sha?: string }) => Promise<{
+  status: "activated" | "current" | "superseded" | "busy";
+  generation?: string;
+}>;
+
+export function createRankingRefreshHandlers(operation: RefreshOperation) {
+  async function handle(request: Request, sha?: string) {
+    if (!authenticated(request))
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    try {
+      const result = await operation({ sha });
+      return Response.json(result, {
+        status: result.status === "busy" ? 409 : 200,
+      });
+    } catch (error) {
+      const { InvalidRankingsQueryError, RankingsRefreshError } = await import(
+        "@/lib/rankings/server"
+      );
+      if (error instanceof InvalidRankingsQueryError)
+        return Response.json({ error: error.message }, { status: 400 });
+      if (error instanceof RankingsRefreshError)
+        return Response.json(
+          { error: error.message, failureClass: error.failureClass },
+          { status: 503 },
+        );
+      console.error("ranking refresh failed", {
+        error: error instanceof Error ? error.name : "unknown",
+      });
+      return Response.json(
+        { error: "Rankings refresh failed." },
+        { status: 503 },
+      );
+    }
+  }
+
+  return {
+    GET(request: Request) {
+      return handle(request);
+    },
+    async POST(request: Request) {
+      if (!authenticated(request))
+        return Response.json({ error: "Unauthorized" }, { status: 401 });
+      if (Number(request.headers.get("content-length") ?? 0) > 1024)
+        return Response.json(
+          { error: "Request is too large." },
+          { status: 413 },
+        );
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: "Invalid JSON." }, { status: 400 });
+      }
+      const sha =
+        typeof body === "object" && body !== null && "sha" in body
+          ? (body as { sha?: unknown }).sha
+          : undefined;
+      if (sha !== undefined && typeof sha !== "string")
+        return Response.json({ error: "Invalid commit SHA." }, { status: 400 });
+      return handle(request, sha);
+    },
+  };
+}
+
+async function productionRefresh(options: { sha?: string }) {
   const { refreshRankings } = await import("@/lib/rankings/server");
   const { productionRankingRefreshDependencies } = await import(
     "@/lib/rankings/runtime"
   );
-  try {
-    const result = await refreshRankings(
-      { sha },
-      productionRankingRefreshDependencies(),
-    );
-    return Response.json(result, {
-      status: result.status === "busy" ? 409 : 200,
-    });
-  } catch (error) {
-    const { InvalidRankingsQueryError, RankingsRefreshError } = await import(
-      "@/lib/rankings/server"
-    );
-    if (error instanceof InvalidRankingsQueryError)
-      return Response.json({ error: error.message }, { status: 400 });
-    if (error instanceof RankingsRefreshError)
-      return Response.json(
-        { error: error.message, failureClass: error.failureClass },
-        { status: 503 },
-      );
-    console.error("ranking refresh failed", {
-      error: error instanceof Error ? error.name : "unknown",
-    });
-    return Response.json(
-      { error: "Rankings refresh failed." },
-      { status: 503 },
-    );
-  }
+  return refreshRankings(options, productionRankingRefreshDependencies());
 }
 
-export async function GET(request: Request) {
-  return handle(request);
-}
-
-export async function POST(request: Request) {
-  if (!authenticated(request))
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  if (Number(request.headers.get("content-length") ?? 0) > 1024)
-    return Response.json({ error: "Request is too large." }, { status: 413 });
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Invalid JSON." }, { status: 400 });
-  }
-  const sha =
-    typeof body === "object" && body !== null && "sha" in body
-      ? (body as { sha?: unknown }).sha
-      : undefined;
-  if (sha !== undefined && typeof sha !== "string")
-    return Response.json({ error: "Invalid commit SHA." }, { status: 400 });
-  return handle(request, sha);
-}
+const productionHandlers = createRankingRefreshHandlers(productionRefresh);
+export const GET = productionHandlers.GET;
+export const POST = productionHandlers.POST;

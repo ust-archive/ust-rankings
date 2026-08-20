@@ -79,6 +79,53 @@ test("the upstream adapter pins all five LFS objects to one full commit", async 
   ).toHaveLength(5);
 });
 
+test("the upstream adapter aborts a response beyond its declared LFS size", async () => {
+  const sha = "2223456789abcdef0123456789abcdef01234567";
+  const declared = Buffer.from("PAR1fixturePAR1");
+  const digest = createHash("sha256").update(declared).digest("hex");
+  const filenames = [
+    "course-instructors.parquet",
+    "course-rankings.parquet",
+    "course-ratings.parquet",
+    "instructor-rankings.parquet",
+    "instructor-ratings.parquet",
+  ];
+  let maliciousPulls = 0;
+  const request = mock(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/revision/"))
+      return Response.json({
+        sha,
+        lastModified: "2026-08-20T06:00:00.000Z",
+      });
+    if (url.includes("/tree/"))
+      return Response.json(
+        filenames.map((path) => ({
+          type: "file",
+          path,
+          size: declared.length,
+          lfs: { oid: digest, size: declared.length },
+        })),
+      );
+    if (url.endsWith("/course-ratings.parquet"))
+      return new Response(
+        new ReadableStream({
+          pull(controller) {
+            maliciousPulls += 1;
+            if (maliciousPulls > 100) controller.close();
+            else controller.enqueue(new Uint8Array(1024));
+          },
+        }),
+      );
+    return new Response(declared);
+  });
+  const { HuggingFaceRankingSource } = await import("@/lib/rankings/runtime");
+  const source = new HuggingFaceRankingSource(request);
+
+  await expect(source.download(sha)).rejects.toThrow("declared size");
+  expect(maliciousPulls).toBeLessThan(100);
+});
+
 test("the refresh operation rejects unauthenticated requests", async () => {
   process.env.RANKINGS_REFRESH_SECRET = "correct-secret-with-enough-entropy";
   try {
@@ -163,6 +210,60 @@ test("a complete refresh activates one immutable generation atomically", async (
     (await queryRankings({ entity: "instructor", termCode: "2510" }))
       .generation,
   ).toBe("0123456789abcdef0123456789abcdef01234567");
+});
+
+test("a mixed-commit candidate is rejected before persistence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ranking-mixed-commit-"));
+  temporaryDirectories.push(root);
+  const directory = await makeRankingGeneration(root);
+  const requestedSha = "3223456789abcdef0123456789abcdef01234567";
+  let writes = 0;
+  const { refreshRankings, RankingsRefreshError } = await import(
+    "@/lib/rankings/server"
+  );
+
+  await expect(
+    refreshRankings(
+      { sha: requestedSha },
+      {
+        upstream: {
+          async download() {
+            return {
+              sha: requestedSha,
+              sourceUpdatedAt: "2026-08-20T07:00:00.000Z",
+              directory,
+            };
+          },
+        },
+        store: {
+          async readPointer() {
+            return undefined;
+          },
+          async downloadGeneration() {
+            return undefined;
+          },
+          async putGeneration() {
+            writes += 1;
+          },
+          async writePointer() {
+            writes += 1;
+          },
+          async readFailure() {
+            return undefined;
+          },
+          async writeFailure() {},
+        },
+        async withLock<T>(operation: () => Promise<T>) {
+          return operation();
+        },
+        async sleep() {},
+      },
+    ),
+  ).rejects.toMatchObject({
+    name: RankingsRefreshError.name,
+    failureClass: "integrity",
+  });
+  expect(writes).toBe(0);
 });
 
 test("a failed refresh records a bounded class and keeps last-known-good active", async () => {

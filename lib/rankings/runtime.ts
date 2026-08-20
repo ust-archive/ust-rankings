@@ -1,9 +1,17 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, readFile, rename, rm, stat } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { Readable } from "node:stream";
+import { Readable, Transform, type TransformCallback } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
   GetObjectCommand,
@@ -24,6 +32,8 @@ const FULL_SHA = /^[0-9a-f]{40}$/;
 const LFS_SHA = /^[0-9a-f]{64}$/;
 const MAX_ARTIFACT_BYTES = 128 * 1024 * 1024;
 const MAX_GENERATION_BYTES = 256 * 1024 * 1024;
+const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
+const MAX_METADATA_BYTES = 64 * 1024;
 
 type TreeFile = {
   type?: unknown;
@@ -34,7 +44,6 @@ type TreeFile = {
 
 type StoredBody = {
   transformToWebStream(): ReadableStream;
-  transformToByteArray(): Promise<Uint8Array>;
 };
 
 function requireEnvironment(name: string) {
@@ -57,6 +66,31 @@ async function sha256(path: string) {
 
 class RankingSourceIntegrityError extends Error {
   readonly failureClass = "integrity" as const;
+}
+
+class ByteLimit extends Transform {
+  bytes = 0;
+
+  constructor(private readonly limit: number) {
+    super();
+  }
+
+  override _transform(
+    chunk: Buffer,
+    _encoding: BufferEncoding,
+    callback: TransformCallback,
+  ) {
+    this.bytes += chunk.length;
+    if (this.bytes > this.limit) {
+      callback(
+        new RankingSourceIntegrityError(
+          "Ranking object exceeds its declared size",
+        ),
+      );
+      return;
+    }
+    callback(null, chunk);
+  }
 }
 
 type Fetch = (
@@ -148,12 +182,15 @@ export class HuggingFaceRankingSource {
           if (!response.ok || !response.body)
             throw new Error(`Failed to download ${filename}`);
           const path = join(/* turbopackIgnore: true */ directory, filename);
+          const declaration = artifacts[filename];
+          const limit = new ByteLimit(declaration.size);
           await pipeline(
             Readable.fromWeb(response.body as never),
+            limit,
             createWriteStream(path, { flags: "wx" }),
           );
-          const declaration = artifacts[filename];
           if (
+            limit.bytes !== declaration.size ||
             (await stat(/* turbopackIgnore: true */ path)).size !==
               declaration.size ||
             (await sha256(path)) !== declaration.sha256
@@ -176,6 +213,42 @@ export class HuggingFaceRankingSource {
       throw error;
     }
   }
+}
+
+function parseStoredManifest(value: unknown, sha: string) {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("sourceCommit" in value) ||
+    value.sourceCommit !== sha ||
+    !("artifacts" in value) ||
+    typeof value.artifacts !== "object" ||
+    value.artifacts === null ||
+    JSON.stringify(Object.keys(value.artifacts).sort()) !==
+      JSON.stringify(ARTIFACTS)
+  )
+    throw new Error("Invalid stored ranking manifest");
+  const artifacts = value.artifacts as Record<
+    string,
+    { sha256?: unknown; size?: unknown }
+  >;
+  let total = 0;
+  for (const filename of ARTIFACTS) {
+    const declaration = artifacts[filename];
+    if (
+      typeof declaration?.sha256 !== "string" ||
+      !LFS_SHA.test(declaration.sha256) ||
+      typeof declaration.size !== "number" ||
+      !Number.isSafeInteger(declaration.size) ||
+      declaration.size <= 0 ||
+      declaration.size > MAX_ARTIFACT_BYTES
+    )
+      throw new Error("Invalid stored ranking artifact declaration");
+    total += declaration.size;
+  }
+  if (total > MAX_GENERATION_BYTES)
+    throw new Error("Stored ranking generation exceeds its size bound");
+  return artifacts as Record<string, { sha256: string; size: number }>;
 }
 
 function parsePointer(value: unknown) {
@@ -235,13 +308,21 @@ class SpacesRankingStore {
     return `${this.prefix}/${suffix}`;
   }
 
-  private async bytes(key: string) {
+  private async bytes(key: string, maximum = MAX_METADATA_BYTES) {
     try {
       const result = await this.client.send(
         new GetObjectCommand({ Bucket: this.bucket, Key: this.key(key) }),
       );
       if (!result.Body) throw new Error("Stored ranking object is empty");
-      return await (result.Body as StoredBody).transformToByteArray();
+      if (result.ContentLength !== undefined && result.ContentLength > maximum)
+        throw new Error("Stored ranking object exceeds its size bound");
+      const limit = new ByteLimit(maximum);
+      const chunks: Buffer[] = [];
+      for await (const chunk of Readable.fromWeb(
+        (result.Body as StoredBody).transformToWebStream() as never,
+      ).pipe(limit))
+        chunks.push(Buffer.from(chunk));
+      return Buffer.concat(chunks);
     } catch (error) {
       if (
         ["NoSuchKey", "NotFound"].includes(
@@ -325,8 +406,22 @@ class SpacesRankingStore {
     }
     const staging = await mkdtemp(join(tmpdir(), `stored-rankings-${sha}-`));
     try {
+      const manifestBytes = await this.bytes(
+        `generations/${sha}/manifest.json`,
+        MAX_MANIFEST_BYTES,
+      );
+      if (!manifestBytes)
+        throw new Error("Stored ranking generation is incomplete");
+      const artifacts = parseStoredManifest(
+        JSON.parse(manifestBytes.toString("utf8")),
+        sha,
+      );
+      await writeFile(join(staging, "manifest.json"), manifestBytes, {
+        flag: "wx",
+      });
       await Promise.all(
-        ["manifest.json", ...ARTIFACTS].map(async (filename) => {
+        ARTIFACTS.map(async (filename) => {
+          const declaration = artifacts[filename];
           const result = await this.client.send(
             new GetObjectCommand({
               Bucket: this.bucket,
@@ -335,12 +430,26 @@ class SpacesRankingStore {
           );
           if (!result.Body)
             throw new Error("Stored ranking generation is incomplete");
+          if (
+            result.ContentLength !== undefined &&
+            result.ContentLength > declaration.size
+          )
+            throw new Error(
+              "Stored ranking artifact exceeds its declared size",
+            );
+          const limit = new ByteLimit(declaration.size);
           await pipeline(
             Readable.fromWeb(
               (result.Body as StoredBody).transformToWebStream() as never,
             ),
-            createWriteStream(join(staging, filename), { flags: "wx" }),
+            limit,
+            createWriteStream(
+              join(/* turbopackIgnore: true */ staging, filename),
+              { flags: "wx" },
+            ),
           );
+          if (limit.bytes !== declaration.size)
+            throw new Error("Stored ranking artifact size mismatch");
         }),
       );
       await mkdir(resolve(base, ".."), { recursive: true });
@@ -355,20 +464,30 @@ class SpacesRankingStore {
     }
   }
 
+  async removeCachedGeneration(sha: string) {
+    if (!FULL_SHA.test(sha)) return;
+    await rm(resolve(tmpdir(), "ust-rankings", sha), {
+      recursive: true,
+      force: true,
+    });
+  }
+
   async putGeneration(sha: string, directory: string) {
     if (basename(resolve(directory)) !== sha)
       throw new Error("Generation directory is not commit-pinned");
-    for (const filename of ["manifest.json", ...ARTIFACTS])
-      await this.put(
-        `generations/${sha}/${filename}`,
-        await readFile(join(directory, filename)),
-        true,
-      );
+    for (const filename of ["manifest.json", ...ARTIFACTS]) {
+      const body = await readFile(join(directory, filename));
+      const maximum =
+        filename === "manifest.json" ? MAX_MANIFEST_BYTES : MAX_ARTIFACT_BYTES;
+      if (body.length > maximum)
+        throw new Error("Ranking generation object exceeds its size bound");
+      await this.put(`generations/${sha}/${filename}`, body, true);
+    }
   }
 
   private async put(key: string, body: Uint8Array, immutable: boolean) {
     if (immutable) {
-      const existing = await this.bytes(key);
+      const existing = await this.bytes(key, body.length);
       if (existing) {
         if (!Buffer.from(existing).equals(Buffer.from(body)))
           throw new Error(

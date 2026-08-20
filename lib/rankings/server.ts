@@ -222,9 +222,16 @@ type Manifest = {
 type Generation = {
   sha: string;
   directory: string;
+  instance: DuckDBInstance;
   connection: DuckDBConnection;
-  identitiesByName: Map<string, InstructorIdentity>;
+  identitiesByCurrentName: Map<string, InstructorIdentity>;
+  identitiesByObservedName: Map<string, InstructorIdentity[]>;
   identitiesByUuid: Map<string, InstructorIdentity>;
+  currentNameByUuid: Map<string, string>;
+  readers: number;
+  retired: boolean;
+  closed: boolean;
+  cleanup?: () => Promise<void>;
 };
 
 export type GenerationPointer = {
@@ -258,6 +265,7 @@ export type RankingRefreshDependencies = {
   store: {
     readPointer(): Promise<GenerationPointer | undefined>;
     downloadGeneration(sha: string): Promise<string | undefined>;
+    removeCachedGeneration?(sha: string): Promise<void>;
     putGeneration(sha: string, directory: string): Promise<void>;
     writePointer(pointer: GenerationPointer): Promise<void>;
     readFailure(): Promise<RankingFailure | undefined>;
@@ -381,17 +389,22 @@ export class StaleRankingsCursorError extends InvalidRankingsQueryError {
   }
 }
 
-const generations = new Map<string, Promise<Generation>>();
 const catalogs = new Map<string, Promise<CourseCatalog>>();
 const queryQueues = new WeakMap<DuckDBConnection, Promise<void>>();
 const queuedQueryCounts = new WeakMap<DuckDBConnection, number>();
 const serializedQueries = new Map<string, string>();
 let runtimeActive: Promise<Generation> | undefined;
+let runtimePrevious: Promise<Generation> | undefined;
 let runtimeActiveSha: string | undefined;
 let runtimeCheckedAt = 0;
 let runtimeDependencies: RankingRefreshDependencies | undefined;
 let runtimeDiscovery: Promise<Generation> | undefined;
-let explicitSeedDirectory: string | undefined;
+let explicitGeneration:
+  | { directory: string; loading: Promise<Generation> }
+  | undefined;
+let seedLoading: Promise<Generation> | undefined;
+let openGenerationCount = 0;
+let afterAcquireForTests: ((generation: string) => Promise<void>) | undefined;
 
 function seedDirectory() {
   return (
@@ -559,10 +572,15 @@ async function validateRelations(
   }
 }
 
+function normalizedInstructorName(name: string) {
+  return name.trim().toLocaleLowerCase();
+}
+
 function validateIdentities(manifest: Manifest, names: string[]) {
   const uuidPattern =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-  const identityNames = new Map<string, string>();
+  const observedNames = new Map<string, InstructorIdentity[]>();
+  const currentNames = new Map<string, InstructorIdentity>();
   const uuids = new Set<string>();
   const itscs = new Set<string>();
   const canonicalNames = new Set<string>();
@@ -609,18 +627,47 @@ function validateIdentities(manifest: Manifest, names: string[]) {
       identity.canonicalName,
       ...identity.aliases.map((alias) => alias.name),
     ]) {
-      const normalized = observedName.trim().toLocaleLowerCase();
-      const owner = identityNames.get(normalized);
-      if (owner && owner !== identity.uuid)
-        throw new Error("Instructor Alias resolves to several identities");
-      identityNames.set(normalized, identity.uuid);
+      const normalized = normalizedInstructorName(observedName);
+      const owners = observedNames.get(normalized) ?? [];
+      if (!owners.some((owner) => owner.uuid === identity.uuid))
+        owners.push(identity);
+      observedNames.set(normalized, owners);
+    }
+    const currentObservedNames = [
+      identity.canonicalName,
+      ...identity.aliases
+        .filter(
+          (alias) =>
+            alias.source === "ranking-generation" &&
+            alias.sourceCommit === manifest.sourceCommit,
+        )
+        .map((alias) => alias.name),
+    ];
+    for (const observedName of currentObservedNames) {
+      const normalized = normalizedInstructorName(observedName);
+      const owner = currentNames.get(normalized);
+      if (owner && owner.uuid !== identity.uuid)
+        throw new Error("Current Instructor name is ambiguous");
+      currentNames.set(normalized, identity);
     }
   }
-  if (names.some((name) => !identityNames.has(name.trim().toLocaleLowerCase())))
-    throw new Error("Instructor registry does not match the generation");
+  const currentNameByUuid = new Map<string, string>();
+  for (const name of names) {
+    const identity = currentNames.get(normalizedInstructorName(name));
+    if (!identity)
+      throw new Error("Instructor registry does not match the generation");
+    const existing = currentNameByUuid.get(identity.uuid);
+    if (existing && existing !== name)
+      throw new Error("Instructor has several current ranking names");
+    currentNameByUuid.set(identity.uuid, name);
+  }
+  return { currentNames, observedNames, currentNameByUuid };
 }
 
-async function loadGeneration(directory: string): Promise<Generation> {
+async function loadGeneration(
+  directory: string,
+  cleanup?: () => Promise<void>,
+): Promise<Generation> {
   try {
     const manifest = JSON.parse(
       await readFile(resolve(directory, "manifest.json"), "utf8"),
@@ -636,23 +683,26 @@ async function loadGeneration(directory: string): Promise<Generation> {
         connection,
         `SELECT DISTINCT name FROM read_parquet('${sqlPath(directory, "instructor-ratings.parquet")}') ORDER BY name`,
       );
-      validateIdentities(
+      const identityNames = validateIdentities(
         manifest,
         nameRows.map((row) => String(row.name)),
       );
+      openGenerationCount += 1;
       return {
         sha: manifest.sourceCommit,
         directory,
+        instance,
         connection,
-        identitiesByName: new Map(
-          manifest.identities.flatMap((identity) => [
-            [identity.canonicalName, identity] as const,
-            ...identity.aliases.map((alias) => [alias.name, identity] as const),
-          ]),
-        ),
+        identitiesByCurrentName: identityNames.currentNames,
+        identitiesByObservedName: identityNames.observedNames,
         identitiesByUuid: new Map(
           manifest.identities.map((identity) => [identity.uuid, identity]),
         ),
+        currentNameByUuid: identityNames.currentNameByUuid,
+        readers: 0,
+        retired: false,
+        closed: false,
+        cleanup,
       };
     } catch (error) {
       connection.closeSync();
@@ -660,17 +710,84 @@ async function loadGeneration(directory: string): Promise<Generation> {
       throw error;
     }
   } catch (error) {
+    await cleanup?.().catch(() => undefined);
     throw new RankingsUnavailableError({ cause: error });
   }
 }
 
-function localGeneration(directory: string) {
-  let loading = generations.get(directory);
-  if (!loading) {
-    loading = loadGeneration(directory);
-    generations.set(directory, loading);
+async function closeRetiredGeneration(generation: Generation) {
+  if (!generation.retired || generation.readers > 0 || generation.closed)
+    return;
+  generation.closed = true;
+  generation.connection.closeSync();
+  generation.instance.closeSync();
+  openGenerationCount -= 1;
+  await generation.cleanup?.().catch(() => undefined);
+}
+
+async function retireGeneration(loading?: Promise<Generation>) {
+  if (!loading) return;
+  try {
+    const retired = await loading;
+    retired.retired = true;
+    await closeRetiredGeneration(retired);
+  } catch {}
+}
+
+async function acquireGeneration(loading = generation()) {
+  const accepted = await loading;
+  if (accepted.closed) throw new RankingsUnavailableError();
+  accepted.readers += 1;
+  try {
+    await afterAcquireForTests?.(accepted.sha);
+  } catch (error) {
+    accepted.readers -= 1;
+    await closeRetiredGeneration(accepted);
+    throw error;
   }
-  return loading;
+  return {
+    accepted,
+    async release() {
+      accepted.readers -= 1;
+      await closeRetiredGeneration(accepted);
+    },
+  };
+}
+
+function seedGeneration() {
+  seedLoading ??= loadGeneration(seedDirectory());
+  return seedLoading;
+}
+
+function explicitSeedGeneration(directory: string) {
+  if (explicitGeneration?.directory !== directory) {
+    void retireGeneration(explicitGeneration?.loading);
+    explicitGeneration = { directory, loading: loadGeneration(directory) };
+    serializedQueries.clear();
+  }
+  return explicitGeneration.loading;
+}
+
+async function installRuntimeGeneration(
+  loading: Promise<Generation>,
+  sha: string,
+  previousSha?: string,
+) {
+  const accepted = await loading;
+  if (accepted.sha !== sha) throw new RankingsUnavailableError();
+  const oldActive = runtimeActive;
+  const oldPrevious = runtimePrevious;
+  runtimeActive = loading;
+  runtimeActiveSha = sha;
+  runtimePrevious = undefined;
+  if (oldActive && oldActive !== seedLoading) {
+    try {
+      if ((await oldActive).sha === previousSha) runtimePrevious = oldActive;
+      else await retireGeneration(oldActive);
+    } catch {}
+  }
+  if (oldPrevious && oldPrevious !== runtimePrevious)
+    await retireGeneration(oldPrevious);
 }
 
 async function discoverGeneration() {
@@ -688,10 +805,21 @@ async function discoverGeneration() {
           const directory =
             await runtimeDependencies.store.downloadGeneration(sha);
           if (!directory) continue;
-          const loading = localGeneration(directory);
-          await loading;
-          runtimeActive = loading;
-          runtimeActiveSha = sha;
+          const removeCachedGeneration =
+            runtimeDependencies.store.removeCachedGeneration?.bind(
+              runtimeDependencies.store,
+            );
+          const loading = loadGeneration(
+            directory,
+            removeCachedGeneration
+              ? () => removeCachedGeneration(sha)
+              : undefined,
+          );
+          await installRuntimeGeneration(
+            loading,
+            sha,
+            sha === pointer.activeSha ? pointer.previousSha : undefined,
+          );
           return loading;
         } catch {
           // Try the retained previous generation before the validated seed.
@@ -702,21 +830,17 @@ async function discoverGeneration() {
     if (existing) return existing;
   }
   if (existing) return existing;
-  const seed = localGeneration(seedDirectory());
-  await seed;
-  runtimeActive = seed;
+  const seed = seedGeneration();
   runtimeActiveSha = (await seed).sha;
   return seed;
 }
 
 function generation() {
-  if (process.env.RANKINGS_SEED_DIR) {
-    const directory = seedDirectory();
-    if (explicitSeedDirectory !== directory) {
-      explicitSeedDirectory = directory;
-      serializedQueries.clear();
-    }
-    return localGeneration(directory);
+  if (process.env.RANKINGS_SEED_DIR)
+    return explicitSeedGeneration(seedDirectory());
+  if (explicitGeneration) {
+    void retireGeneration(explicitGeneration.loading);
+    explicitGeneration = undefined;
   }
   if (
     runtimeActive &&
@@ -732,7 +856,7 @@ function generation() {
       "RANKINGS_SPACE_ACCESS_KEY_ID",
       "RANKINGS_SPACE_SECRET_ACCESS_KEY",
     ].every((name) => process.env[name]?.trim());
-  if (!storageConfigured) return localGeneration(seedDirectory());
+  if (!storageConfigured) return seedGeneration();
   if (runtimeActive && Date.now() - runtimeCheckedAt < 60_000)
     return runtimeActive;
   if (!runtimeDiscovery) {
@@ -744,11 +868,15 @@ function generation() {
   return runtimeDiscovery;
 }
 
-async function prepareCandidateManifest(candidate: {
-  sha: string;
-  directory: string;
-  artifacts?: Record<string, { sha256: string; size: number }>;
-}) {
+async function prepareCandidateManifest(
+  candidate: {
+    sha: string;
+    directory: string;
+    artifacts?: Record<string, { sha256: string; size: number }>;
+  },
+  current: GenerationPointer | undefined,
+  dependencies: RankingRefreshDependencies,
+) {
   try {
     await stat(resolve(candidate.directory, "manifest.json"));
     return;
@@ -761,78 +889,119 @@ async function prepareCandidateManifest(candidate: {
       JSON.stringify(ARTIFACTS)
   )
     throw new Error("Upstream tree declarations are incomplete");
-  let previous: Generation | undefined;
-  try {
-    previous = await (runtimeActive ?? generation());
-  } catch {}
-  const retained = previous
-    ? structuredClone([...previous.identitiesByUuid.values()])
-    : [];
-  const instance = await DuckDBInstance.create(":memory:");
-  const connection = await instance.connect();
-  let names: string[];
-  try {
-    const rows = await queryRows(
-      connection,
-      `SELECT DISTINCT name FROM read_parquet('${sqlPath(candidate.directory, "instructor-ratings.parquet")}') ORDER BY name`,
+  let previous: Generation;
+  let closePrevious = false;
+  if (current) {
+    const directory = await dependencies.store.downloadGeneration(
+      current.activeSha,
     );
-    names = rows.map((row) => String(row.name));
-  } finally {
-    connection.closeSync();
-    instance.closeSync();
+    if (!directory)
+      throw new Error("The current Instructor registry is unavailable");
+    let retainedCurrent: Generation | undefined;
+    for (const loading of [runtimeActive, runtimePrevious]) {
+      if (!loading) continue;
+      try {
+        const retainedGeneration = await loading;
+        if (
+          retainedGeneration.sha === current.activeSha &&
+          retainedGeneration.directory === directory &&
+          !retainedGeneration.closed
+        ) {
+          retainedCurrent = retainedGeneration;
+          break;
+        }
+      } catch {}
+    }
+    if (retainedCurrent) previous = retainedCurrent;
+    else {
+      const removeCachedGeneration =
+        dependencies.store.removeCachedGeneration?.bind(dependencies.store);
+      previous = await loadGeneration(
+        directory,
+        removeCachedGeneration
+          ? () => removeCachedGeneration(current.activeSha)
+          : undefined,
+      );
+      closePrevious = true;
+    }
+    if (previous.sha !== current.activeSha) {
+      if (closePrevious) await retireGeneration(Promise.resolve(previous));
+      throw new Error(
+        "The current Instructor registry does not match its pointer",
+      );
+    }
+  } else {
+    previous = await seedGeneration();
   }
-  for (const name of names) {
-    const normalized = name.trim().toLocaleLowerCase();
-    const matches = retained.filter(
-      (identity) =>
-        identity.canonicalName.trim().toLocaleLowerCase() === normalized ||
-        identity.aliases.some(
-          (alias) => alias.name.trim().toLocaleLowerCase() === normalized,
-        ),
-    );
-    if (matches.length > 1)
-      throw new Error("Instructor Alias resolves to several identities");
-    const identity = matches[0];
-    if (identity) {
-      if (
-        identity.canonicalName !== name &&
-        !identity.aliases.some((alias) => alias.name === name)
-      )
+  const retained = structuredClone([...previous.identitiesByUuid.values()]);
+  try {
+    const instance = await DuckDBInstance.create(":memory:");
+    const connection = await instance.connect();
+    let names: string[];
+    try {
+      const rows = await queryRows(
+        connection,
+        `SELECT DISTINCT name FROM read_parquet('${sqlPath(candidate.directory, "instructor-ratings.parquet")}') ORDER BY name`,
+      );
+      names = rows.map((row) => String(row.name));
+    } finally {
+      connection.closeSync();
+      instance.closeSync();
+    }
+    for (const name of names) {
+      const normalized = normalizedInstructorName(name);
+      const matches = retained.filter(
+        (identity) =>
+          normalizedInstructorName(identity.canonicalName) === normalized ||
+          identity.aliases.some(
+            (alias) =>
+              alias.source === "ranking-generation" &&
+              alias.sourceCommit === previous?.sha &&
+              normalizedInstructorName(alias.name) === normalized,
+          ),
+      );
+      if (matches.length > 1)
+        throw new Error("Current Instructor name is ambiguous");
+      const identity = matches[0];
+      if (identity) {
         identity.aliases.push({
           name,
           source: "ranking-generation",
           sourceCommit: candidate.sha,
           sourceFile: "instructor-ratings.parquet",
         });
-    } else {
-      retained.push({
-        uuid: randomUUID(),
-        canonicalName: name,
-        aliases: [
-          {
-            name,
-            source: "ranking-generation",
-            sourceCommit: candidate.sha,
-            sourceFile: "instructor-ratings.parquet",
-          },
-        ],
-      });
+      } else {
+        retained.push({
+          uuid: randomUUID(),
+          canonicalName: name,
+          aliases: [
+            {
+              name,
+              source: "ranking-generation",
+              sourceCommit: candidate.sha,
+              sourceFile: "instructor-ratings.parquet",
+            },
+          ],
+        });
+      }
     }
+    await writeFile(
+      resolve(candidate.directory, "manifest.json"),
+      `${JSON.stringify(
+        {
+          schemaMajor: 0,
+          sourceCommit: candidate.sha,
+          artifacts: candidate.artifacts,
+          identities: retained,
+        },
+        null,
+        2,
+      )}\n`,
+      { flag: "wx" },
+    );
+  } finally {
+    if (closePrevious) await retireGeneration(Promise.resolve(previous));
   }
-  await writeFile(
-    resolve(candidate.directory, "manifest.json"),
-    `${JSON.stringify(
-      {
-        schemaMajor: 0,
-        sourceCommit: candidate.sha,
-        artifacts: candidate.artifacts,
-        identities: retained,
-      },
-      null,
-      2,
-    )}\n`,
-    { flag: "wx" },
-  );
 }
 
 export async function refreshRankings(
@@ -856,6 +1025,7 @@ export async function refreshRankings(
         let candidate:
           | Awaited<ReturnType<typeof dependencies.upstream.download>>
           | undefined;
+        let loading: Promise<Generation> | undefined;
         try {
           candidate = await dependencies.upstream.download(options.sha);
           failureClass = "integrity";
@@ -869,8 +1039,20 @@ export async function refreshRankings(
             );
           if (!Number.isFinite(Date.parse(candidate.sourceUpdatedAt)))
             throw new Error("Upstream publication time is invalid");
-          await prepareCandidateManifest(candidate);
-          const loading = loadGeneration(candidate.directory);
+          await prepareCandidateManifest(candidate, current, dependencies);
+          const temporaryRoot = candidate.temporary
+            ? resolve(candidate.directory, "..")
+            : undefined;
+          loading = loadGeneration(
+            candidate.directory,
+            temporaryRoot
+              ? () =>
+                  rm(temporaryRoot, {
+                    recursive: true,
+                    force: true,
+                  })
+              : undefined,
+          );
           const accepted = await loading;
           if (accepted.sha !== candidate.sha)
             throw new Error("Candidate files are from a mixed commit");
@@ -879,11 +1061,7 @@ export async function refreshRankings(
             Date.parse(candidate.sourceUpdatedAt) <=
               Date.parse(current.sourceUpdatedAt)
           ) {
-            if (candidate.temporary)
-              await rm(resolve(candidate.directory, ".."), {
-                recursive: true,
-                force: true,
-              }).catch(() => undefined);
+            await retireGeneration(loading);
             return {
               status:
                 candidate.sha === current.activeSha ? "current" : "superseded",
@@ -902,9 +1080,11 @@ export async function refreshRankings(
             sourceUpdatedAt: candidate.sourceUpdatedAt,
           };
           await dependencies.store.writePointer(pointer);
-          generations.set(candidate.directory, loading);
-          runtimeActive = loading;
-          runtimeActiveSha = candidate.sha;
+          await installRuntimeGeneration(
+            loading,
+            candidate.sha,
+            current?.activeSha,
+          );
           runtimeCheckedAt = Date.now();
           runtimeDependencies = dependencies;
           await dependencies.store
@@ -922,7 +1102,8 @@ export async function refreshRankings(
             )
           )
             failureClass = error.failureClass as RankingFailure["class"];
-          if (candidate?.temporary)
+          if (loading) await retireGeneration(loading);
+          else if (candidate?.temporary)
             await rm(resolve(candidate.directory, ".."), {
               recursive: true,
               force: true,
@@ -993,16 +1174,37 @@ export async function getRankingsHealth(
   }
 }
 
+export function getRankingsRuntimeStatsForTests() {
+  return { openGenerations: openGenerationCount };
+}
+
+export function setRankingsAfterAcquireForTests(
+  hook?: (generation: string) => Promise<void>,
+) {
+  afterAcquireForTests = hook;
+}
+
 export async function resetRankingsRuntimeForTests(
   dependencies?: RankingRefreshDependencies,
 ) {
+  const retained = [
+    runtimeActive,
+    runtimePrevious,
+    explicitGeneration?.loading,
+    seedLoading,
+  ];
   runtimeActive = undefined;
+  runtimePrevious = undefined;
+  explicitGeneration = undefined;
+  seedLoading = undefined;
   runtimeActiveSha = undefined;
   runtimeCheckedAt = 0;
   runtimeDependencies = dependencies;
   runtimeDiscovery = undefined;
-  explicitSeedDirectory = undefined;
+  afterAcquireForTests = undefined;
   serializedQueries.clear();
+  catalogs.clear();
+  await Promise.all(retained.map((loading) => retireGeneration(loading)));
 }
 
 function number(value: unknown) {
@@ -1104,6 +1306,8 @@ async function courseCatalog(directory: string) {
       };
     })();
     catalogs.set(cacheKey, loading);
+    if (catalogs.size > 3)
+      catalogs.delete(catalogs.keys().next().value as string);
   }
   return loading;
 }
@@ -1205,6 +1409,18 @@ export function queryRankings(query: RankingsQuery): Promise<RankingsPage>;
 export async function queryRankings(
   query: RankingsQuery,
 ): Promise<RankingsPage> {
+  const lease = await acquireGeneration();
+  try {
+    return await queryRankingsWithGeneration(query, lease.accepted);
+  } finally {
+    await lease.release();
+  }
+}
+
+async function queryRankingsWithGeneration(
+  query: RankingsQuery,
+  accepted: Generation,
+): Promise<RankingsPage> {
   if (query.entity !== "course" && query.entity !== "instructor")
     throw new InvalidRankingsQueryError("Unknown ranking entity.");
   const activity = query.activity ?? "current";
@@ -1233,7 +1449,6 @@ export async function queryRankings(
   if (!Number.isFinite(limit))
     throw new InvalidRankingsQueryError("Invalid ranking page size.");
   const configuration = normalizedWeights(query);
-  const accepted = await generation();
   const entityFile = `${query.entity}-ratings.parquet` as const;
   const rankingFile = `${query.entity}-rankings.parquet` as const;
   const source = sqlPath(accepted.directory, entityFile);
@@ -1271,7 +1486,10 @@ export async function queryRankings(
   const coursesByInstructor = new Map<string, Set<string>>();
   for (const row of linkRows) {
     const courseKey = `${row.subject}${row.code}`;
-    const identity = accepted.identitiesByName.get(String(row.name));
+    const observed = accepted.identitiesByObservedName.get(
+      normalizedInstructorName(String(row.name)),
+    );
+    const identity = observed?.length === 1 ? observed[0] : undefined;
     if (identity) {
       const identities = identitiesByCourse.get(courseKey) ?? [];
       identities.push(identity);
@@ -1361,7 +1579,9 @@ export async function queryRankings(
         },
       });
     } else {
-      const identity = accepted.identitiesByName.get(key);
+      const identity = accepted.identitiesByCurrentName.get(
+        normalizedInstructorName(key),
+      );
       if (!identity) continue;
       const courseCodes = coursesByInstructor.get(key) ?? new Set();
       candidates.push({
@@ -1518,42 +1738,58 @@ export async function getRankings(
   entity: { type: "instructor"; uuid: string },
   options: { activity?: "current" | "all" } = {},
 ): Promise<Rankings> {
-  const accepted = await generation();
-  const instructor = accepted.identitiesByUuid.get(entity.uuid.toLowerCase());
-  if (entity.type !== "instructor" || !instructor)
-    throw new TypeError("Unknown Instructor");
-  const page = await queryRankings({
-    entity: "instructor",
-    activity: options.activity,
-  });
-  const ratings = await queryRows(
-    accepted.connection,
-    `SELECT term_code, criterion, bayesian, samples FROM read_parquet('${sqlPath(accepted.directory, "instructor-ratings.parquet")}') WHERE name = $name ORDER BY term_num, criterion`,
-    { name: instructor.canonicalName },
-  );
-  const terms = new Map<string, Rankings["terms"][number]>();
-  for (const row of ratings) {
-    const termCode = String(row.term_code);
-    const term = terms.get(termCode) ?? { termCode, criteria: {} };
-    term.criteria[String(row.criterion) as Criterion] = {
-      bayesian: number(row.bayesian),
-      samples: number(row.samples),
+  const lease = await acquireGeneration();
+  const accepted = lease.accepted;
+  try {
+    const instructor = accepted.identitiesByUuid.get(entity.uuid.toLowerCase());
+    if (entity.type !== "instructor" || !instructor)
+      throw new TypeError("Unknown Instructor");
+    const page = await queryRankingsWithGeneration(
+      {
+        entity: "instructor",
+        activity: options.activity,
+      },
+      accepted,
+    );
+    const ratings = await queryRows(
+      accepted.connection,
+      `SELECT term_code, criterion, bayesian, samples FROM read_parquet('${sqlPath(accepted.directory, "instructor-ratings.parquet")}') WHERE name = $name ORDER BY term_num, criterion`,
+      {
+        name:
+          accepted.currentNameByUuid.get(instructor.uuid) ??
+          instructor.canonicalName,
+      },
+    );
+    const terms = new Map<string, Rankings["terms"][number]>();
+    for (const row of ratings) {
+      const termCode = String(row.term_code);
+      const term = terms.get(termCode) ?? { termCode, criteria: {} };
+      term.criteria[String(row.criterion) as Criterion] = {
+        bayesian: number(row.bayesian),
+        samples: number(row.samples),
+      };
+      terms.set(termCode, term);
+    }
+    const courses = await queryRows(
+      accepted.connection,
+      `SELECT term_code, subject || ' ' || code AS course_code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE name = $name ORDER BY term_num, subject, code`,
+      {
+        name:
+          accepted.currentNameByUuid.get(instructor.uuid) ??
+          instructor.canonicalName,
+      },
+    );
+    return {
+      generation: accepted.sha,
+      population: page.population,
+      instructor,
+      terms: [...terms.values()],
+      courses: courses.map((row) => ({
+        termCode: String(row.term_code),
+        courseCode: String(row.course_code),
+      })),
     };
-    terms.set(termCode, term);
+  } finally {
+    await lease.release();
   }
-  const courses = await queryRows(
-    accepted.connection,
-    `SELECT term_code, subject || ' ' || code AS course_code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE name = $name ORDER BY term_num, subject, code`,
-    { name: instructor.canonicalName },
-  );
-  return {
-    generation: accepted.sha,
-    population: page.population,
-    instructor,
-    terms: [...terms.values()],
-    courses: courses.map((row) => ({
-      termCode: String(row.term_code),
-      courseCode: String(row.course_code),
-    })),
-  };
 }

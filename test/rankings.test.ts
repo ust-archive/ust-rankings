@@ -403,6 +403,35 @@ test("required catalog metadata fails closed without blocking unrelated Instruct
   ).rejects.toBeInstanceOf(RankingsUnavailableError);
 });
 
+test("shared historical Instructor Aliases do not establish identity", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-aliases-"));
+  temporaryDirectories.push(temporaryDirectory);
+  const directory = await makeRankingGeneration(temporaryDirectory);
+  const manifestPath = join(directory, "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  for (const identity of manifest.identities.slice(0, 2))
+    identity.aliases.push({
+      name: "Shared Historical Name",
+      source: "schedule",
+      sourceCommit: fixtureSha,
+    });
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  process.env.RANKINGS_SEED_DIR = directory;
+  const { queryRankings } = await import("@/lib/rankings/server");
+
+  const page = await queryRankings({
+    entity: "instructor",
+    termCode: "2510",
+  });
+
+  expect(page.results.map((row) => row.canonicalName)).toContain(
+    "Alpha Instructor",
+  );
+  expect(page.results.map((row) => row.canonicalName)).toContain(
+    "Beta Instructor",
+  );
+});
+
 test("search distinguishes strict-ineligible entities from unknown entities", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-unranked-"));
   temporaryDirectories.push(temporaryDirectory);
