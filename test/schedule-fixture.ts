@@ -67,7 +67,7 @@ export async function makeScheduleGeneration(
     (100, '2510', '2025-26 Fall', 'c2', 'L1', 1001, 'E', 'LEC', 1, 'Bring a laptop', 80, 30, 0, false, true, [{weekday:'Wed', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'11:00'::TIME, time_to:'11:50'::TIME, venue:'R101', venue_name:'Room 101', instructors:['Alpha Instructor']}], 'ACTIVE', '2025-02-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c2', 'T1', 1002, 'N', 'TUT', 1, '', 20, 10, 0, false, true, [], 'ACTIVE', '2025-01-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c2', 'T1', 1002, 'N', 'TUT', 1, '', 20, 10, 0, false, false, [], 'INACTIVE', '2025-02-01T00:00:00Z'),
-    (100, '2510', '2025-26 Fall', '${malformation === "orphan-class" ? "missing" : "c3"}', 'L1', 2001, 'E', 'LEC', 1, '', 60, 40, 0, false, true, [{weekday:'Fri', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'13:00'::TIME, time_to:'13:50'::TIME, venue:'R202', venue_name:'Room 202', instructors:['Unresolved Teacher']}], 'ACTIVE', '2025-01-01T00:00:00Z'),
+    (100, '2510', '2025-26 Fall', '${malformation === "orphan-class" ? "missing" : "c3"}', 'L1', 2001, 'E', 'LEC', 1, '', 60, 40, 0, false, true, [{weekday:'Fri', date_from:NULL::DATE, date_to:NULL::DATE, time_from:'13:00'::TIME, time_to:'13:50'::TIME, venue:'R202', venue_name:'Room 202', instructors:[' ', ' TBA ', ' Unresolved Teacher ']}], 'ACTIVE', '2025-01-01T00:00:00Z'),
     (99, '2430', '2024-25 Spring', 'c4', 'L1', 3001, 'E', 'LEC', 1, '', 60, 40, 0, false, true, [], 'ACTIVE', '2024-01-01T00:00:00Z')
   ) t(term_num, term_code, term_name, course_id, section, number, role, type, association, remarks, capacity, enroll, wait, consent, open, schedules, status, timestamp)`;
 

@@ -534,15 +534,15 @@ function mapRows(rows: Array<Record<string, unknown>>, accepted: Generation) {
         timeTo: time(meeting.time_to),
         room: text(meeting.venue_name) || text(meeting.venue),
         roomCode: text(meeting.venue),
-        instructors: ((meeting.instructors as unknown[] | undefined) ?? []).map(
-          (value) => {
-            const sourceName = text(value);
-            const uuid = accepted.instructors.get(
-              sourceName.trim().toLocaleLowerCase(),
-            );
-            return uuid ? { sourceName, uuid } : { sourceName };
-          },
-        ),
+        instructors: (
+          (meeting.instructors as unknown[] | undefined) ?? []
+        ).flatMap((value) => {
+          const sourceName = text(value).trim();
+          if (!sourceName || sourceName.toLocaleLowerCase() === "tba")
+            return [];
+          const uuid = accepted.instructors.get(sourceName.toLocaleLowerCase());
+          return [uuid ? { sourceName, uuid } : { sourceName }];
+        }),
       }),
     );
     offering.classes.push({

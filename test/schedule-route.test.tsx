@@ -45,6 +45,14 @@ test("the public Schedule route renders Term selection and dense searchable Clas
   expect(markup).toContain("Alpha Instructor");
   expect(markup).toContain("Room 101");
   expect(markup).not.toContain("MATH 1000");
+
+  const missingDates = renderToStaticMarkup(
+    await SchedulePage({
+      searchParams: Promise.resolve({ term: "2510", q: "Room 202" }),
+    }),
+  );
+  expect(missingDates).toContain("Dates TBA");
+  expect(missingDates).not.toContain(">–</span>");
 });
 
 test("Schedule query errors and unavailable data have accessible specific states", async () => {

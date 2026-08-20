@@ -130,6 +130,20 @@ test("getSchedule and resolveClasses expose domain details without source mechan
     ],
   });
 
+  const offering = await getSchedule({
+    type: "course-offering",
+    termCode: "2510",
+    coursePrefix: "COMP",
+    courseNumber: "2000",
+  });
+  expect(offering).toMatchObject({
+    type: "course-offering",
+    termCode: "2510",
+    termName: "2025-26 Fall",
+    courseCode: "COMP 2000",
+    classes: [{ section: "L1", classNumber: 1001 }],
+  });
+
   const classDetails = await getSchedule({
     type: "class",
     termCode: "2510",
@@ -146,9 +160,11 @@ test("getSchedule and resolveClasses expose domain details without source mechan
 
   const classes = await resolveClasses("2510", [2001, 1001, 1001]);
   expect(classes.map((item) => item.classNumber)).toEqual([1001, 2001]);
-  expect(classes[1]?.meetings[0]?.instructors).toEqual([
-    { sourceName: "Unresolved Teacher" },
-  ]);
+  expect(classes[1]?.meetings[0]).toMatchObject({
+    dateFrom: undefined,
+    dateTo: undefined,
+    instructors: [{ sourceName: "Unresolved Teacher" }],
+  });
   await expect(resolveClasses("2510", [1001, 9999])).rejects.toThrow(
     "Unknown Class Number",
   );

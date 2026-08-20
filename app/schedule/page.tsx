@@ -20,6 +20,12 @@ function meetingTime(meeting: ScheduleMeeting) {
     : "Time TBA";
 }
 
+function meetingDates(meeting: ScheduleMeeting) {
+  if (meeting.dateFrom && meeting.dateTo)
+    return `${meeting.dateFrom}–${meeting.dateTo}`;
+  return meeting.dateFrom ?? meeting.dateTo ?? "Dates TBA";
+}
+
 function ErrorState({ title, message }: { title: string; message: string }) {
   return (
     <section
@@ -218,7 +224,7 @@ export default async function SchedulePage({
                                     {meeting.weekday} {meetingTime(meeting)}
                                   </span>
                                   <span className="text-xs text-slate-500">
-                                    {meeting.dateFrom}–{meeting.dateTo}
+                                    {meetingDates(meeting)}
                                   </span>
                                 </>
                               ) : (
