@@ -282,8 +282,8 @@ test("ranking results show identity, ranks, score, and grade and navigate to Det
   expect(instructors).not.toContain("Local Rank 1 of 3");
   expect(instructors).toContain("#1");
   expect(instructors).toContain("A+");
-  expect(instructors).toContain("1 sample from ust.space");
-  expect(instructors).toContain("1 sample from SFQ");
+  expect(instructors).toContain("11 samples from ust.space");
+  expect(instructors).toContain("33 samples from SFQ");
   expect(instructors).toContain('href="/instructors/beta"');
   expect(instructors).not.toContain("Current Courses Taught");
   expect(instructors).not.toContain("Historical Courses Taught");

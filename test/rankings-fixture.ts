@@ -147,6 +147,8 @@ export async function makeRankingGeneration(
         "instructor",
       ]) {
         if (criterion === missingCriterion) continue;
+        const cumulativeSamples =
+          criterion === "content" ? 11 : criterion === "course" ? 22 : 33;
         const score =
           prefix === "COMP" && courseNumber === "1000"
             ? Number(criterion === "content")
@@ -156,7 +158,7 @@ export async function makeRankingGeneration(
                 ? 0.125
                 : 0.25;
         courseRows.push(
-          `('${prefix}', '${courseNumber}', 100, '2510', ${isOffered}, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
+          `('${prefix}', '${courseNumber}', 100, '2510', ${isOffered}, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, ${cumulativeSamples}::BIGINT, 1.0, 0.5, 0.1)`,
         );
       }
     }
@@ -195,6 +197,8 @@ export async function makeRankingGeneration(
           criterion === "instructor"
         )
           continue;
+        const cumulativeSamples =
+          criterion === "content" ? 11 : criterion === "course" ? 22 : 33;
         const score =
           identity.canonicalName === "Delta Instructor"
             ? Number(criterion === "content")
@@ -204,7 +208,7 @@ export async function makeRankingGeneration(
               : 1;
         const isTeaching = identity.canonicalName !== "Historical Instructor";
         rows.push(
-          `('${identity.canonicalName}', 100, '2510', ${isTeaching}, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
+          `('${identity.canonicalName}', 100, '2510', ${isTeaching}, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, ${cumulativeSamples}::BIGINT, 1.0, 0.5, 0.1)`,
         );
       }
     }

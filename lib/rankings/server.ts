@@ -2093,7 +2093,9 @@ async function queryRankingsWithGeneration(
         );
     const evidenceSummary = {
       ustSpaceSamples: values.content?.samples ?? 0,
-      sfqSamples: values.course?.samples ?? 0,
+      sfqSamples:
+        values[query.entity === "course" ? "course" : "instructor"]?.samples ??
+        0,
     };
     if (query.entity === "course") {
       const prefix = key.match(/^[A-Z]+/)?.[0];
