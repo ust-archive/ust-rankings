@@ -1,0 +1,29 @@
+# Keep scheduled workflows enabled by recording monthly repository activity.
+
+name: Keep Alive
+
+on:
+  schedule:
+    # 04:21 HKT on day 4 of each month.
+    - cron: "21 20 3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: keep-alive
+          fetch-depth: 0
+
+      - name: Record repository activity
+        run: |
+          git config --local user.name "UST Rankings Bot"
+          git config --local user.email "bot@ust-rankings.com"
+          git commit --message "keep-alive" --allow-empty
+          git push origin HEAD:keep-alive
