@@ -33,6 +33,15 @@ const CRITERIA = [
 ] as const;
 type Criterion = (typeof CRITERIA)[number];
 
+export function rankingTermName(termCode: string) {
+  if (!/^[0-9]{4}$/.test(termCode)) return termCode;
+  const year = 2000 + Number(termCode.slice(0, 2));
+  const season = ["Fall", "Winter", "Spring", "Summer"][
+    Number(termCode.slice(2, 3)) - 1
+  ];
+  return season ? `${year}-${String(year + 1).slice(-2)} ${season}` : termCode;
+}
+
 export type RankingPreset = "learning" | "grade";
 export type RankingWeights = Partial<Record<Criterion, number>>;
 export type CommonCoreCategory =
@@ -1965,15 +1974,8 @@ async function queryRankingsWithGeneration(
     ),
   ]);
   const terms = termRows.map((row) => {
-    const code = String(row.term_code);
-    const year = 2000 + Number(code.slice(0, 2));
-    const season = ["Fall", "Winter", "Spring", "Summer"][
-      Number(code.slice(2, 3)) - 1
-    ];
-    return {
-      termCode: code,
-      termName: `${year}-${String(year + 1).slice(-2)} ${season}`,
-    };
+    const termCode = String(row.term_code);
+    return { termCode, termName: rankingTermName(termCode) };
   });
   const termCode = query.termCode?.trim() || String(latest[0]?.term_code);
   if (!/^[0-9]{4}$/.test(termCode))

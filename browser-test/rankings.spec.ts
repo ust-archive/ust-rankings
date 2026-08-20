@@ -19,6 +19,9 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   await expect(result).toBeVisible();
   await result.focus();
   await expect(result).toBeFocused();
+  expect(
+    await result.evaluate((element) => getComputedStyle(element).outlineWidth),
+  ).not.toBe("0px");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/instructors\/[^/]+$/);
   await expect(
@@ -37,6 +40,34 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   await expect(page).toHaveURL(/preset=grade/);
   await expect(page.getByLabel("Ranking Preset")).toHaveValue("grade");
   await expect(page).toHaveURL(/q=a/);
+
+  await page.getByText("Score Formula…").click();
+  await page.getByLabel("Ranking Preset").selectOption("custom");
+  await page.getByLabel("Activity").selectOption("all");
+  await page.getByLabel("Taught Course Prefix").fill("COMP");
+  await page.getByLabel("Course Code").fill("COMP 1000");
+  await page.getByLabel("Content", { exact: true }).fill("2");
+  await page.getByRole("button", { name: "Apply Ranking Settings" }).click();
+  await expect(page).toHaveURL(/preset=custom/);
+  const settingsUrl = new URL(page.url());
+  expect(settingsUrl.searchParams.get("q")).toBe("a");
+  expect(settingsUrl.searchParams.get("preset")).toBe("custom");
+  expect(settingsUrl.searchParams.get("weight_content")).toBe("2");
+  expect(settingsUrl.searchParams.get("activity")).toBe("all");
+  expect(settingsUrl.searchParams.get("prefix")).toBe("COMP");
+  expect(settingsUrl.searchParams.get("course")).toBe("COMP 1000");
+
+  await page.goto("/rankings/instructors");
+  const selectedTerm = await page
+    .getByLabel("Term", { exact: true })
+    .inputValue();
+  await page.getByRole("link", { name: "Next 100 Results" }).click();
+  const nextPageUrl = new URL(page.url());
+  expect(nextPageUrl.searchParams.get("term")).toBe(selectedTerm);
+  expect(nextPageUrl.searchParams.get("cursor")).toBeTruthy();
+  await expect(
+    page.locator('ol[aria-label="Instructor rankings"] > li > a').first(),
+  ).toContainText("#101");
 });
 
 test("Course Rankings preserve the restored hierarchy at 390px without overflow", async ({
@@ -62,8 +93,28 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
 
-  await result.click();
+  await result.focus();
+  expect(
+    await result.evaluate((element) => getComputedStyle(element).outlineWidth),
+  ).not.toBe("0px");
+  await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/courses\/[^/]+\/[^/?]+$/);
+
+  await page.goto("/rankings/courses");
+  await page.getByText("Filter…").click();
+  await page.getByLabel("Activity").selectOption("all");
+  await page.getByLabel("Course Prefix").fill("CENG");
+  await page.getByLabel("Arts", { exact: true }).check();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+  await page.getByRole("button", { name: "Apply Filters" }).click();
+  await expect(page).toHaveURL(/commonCore=arts/);
+  const filterUrl = new URL(page.url());
+  expect(filterUrl.searchParams.get("activity")).toBe("all");
+  expect(filterUrl.searchParams.get("prefix")).toBe("CENG");
+  expect(filterUrl.searchParams.getAll("commonCore")).toContain("arts");
+  expect(filterUrl.searchParams.get("term")).toBeTruthy();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);

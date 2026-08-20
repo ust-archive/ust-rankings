@@ -15,6 +15,7 @@ import {
   type RankingsPage,
   type RankingsQuery,
   RankingsUnavailableError,
+  rankingTermName,
   StaleRankingsCursorError,
 } from "@/lib/rankings/server";
 
@@ -99,6 +100,7 @@ function nextPageHref(
   entity: Entity,
   searchParams: RankingSearchParams,
   cursor: string,
+  termCode: string,
 ) {
   const next = new URLSearchParams();
   for (const [name, value] of Object.entries(searchParams)) {
@@ -106,6 +108,7 @@ function nextPageHref(
     for (const item of Array.isArray(value) ? value : [value])
       next.append(name, item);
   }
+  next.set("term", termCode);
   next.set("cursor", cursor);
   return `${rankingPath(entity)}?${next}`;
 }
@@ -239,15 +242,6 @@ function selectedPreset(
   return query?.preset ?? first(searchParams, "preset") ?? "learning";
 }
 
-function fallbackTermName(termCode: string) {
-  if (!/^[0-9]{4}$/.test(termCode)) return termCode;
-  const year = 2000 + Number(termCode.slice(0, 2));
-  const season = ["Fall", "Winter", "Spring", "Summer"][
-    Number(termCode.slice(2, 3)) - 1
-  ];
-  return season ? `${year}-${String(year + 1).slice(-2)} ${season}` : termCode;
-}
-
 function ApplyButton({ children }: { children: ReactNode }) {
   return (
     <button
@@ -284,7 +278,7 @@ function RankingForm({
   const terms =
     rankings?.terms ??
     (rawTerm
-      ? [{ termCode: rawTerm, termName: fallbackTermName(rawTerm) }]
+      ? [{ termCode: rawTerm, termName: rankingTermName(rawTerm) }]
       : []);
   return (
     <form
@@ -672,7 +666,12 @@ export async function RankingPage({
         {rankings.nextCursor ? (
           <a
             className="inline-block rounded-md bg-[#003366] px-5 py-3 font-semibold text-white hover:bg-[#174f82] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]"
-            href={nextPageHref(entity, searchParams, rankings.nextCursor)}
+            href={nextPageHref(
+              entity,
+              searchParams,
+              rankings.nextCursor,
+              rankings.population.termCode,
+            )}
           >
             Next 100 Results
           </a>
