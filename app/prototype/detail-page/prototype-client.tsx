@@ -381,6 +381,13 @@ function VariantA({ common }: { common: CommonProps }) {
           </div>
         </section>
 
+        <div className="mt-6 space-y-3 lg:hidden">
+          <button onClick={common.signedIn ? common.openComposer : () => common.setSignedIn(true)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#003366] px-5 py-3.5 font-bold text-white shadow-lg shadow-blue-950/10">
+            <MessageSquareText className="h-5 w-5" /> {common.signedIn ? "Write or edit your Review" : "Sign in to write"}
+          </button>
+          <Signals {...common.signalProps} entity={common.entity} />
+        </div>
+
         <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="space-y-8">
             <section><div className="mb-4 flex items-center justify-between"><h2 className="text-xl font-bold">Ranking evidence</h2><button className="text-sm font-semibold text-blue-700">View trends →</button></div><Metrics /></section>
@@ -392,10 +399,12 @@ function VariantA({ common }: { common: CommonProps }) {
             </section>
           </div>
           <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-            <button onClick={common.signedIn ? common.openComposer : () => common.setSignedIn(true)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#003366] px-5 py-3.5 font-bold text-white shadow-lg shadow-blue-950/10">
-              <MessageSquareText className="h-5 w-5" /> {common.signedIn ? "Write or edit your Review" : "Sign in to write"}
-            </button>
-            <Signals {...common.signalProps} entity={common.entity} />
+            <div className="hidden space-y-4 lg:block">
+              <button onClick={common.signedIn ? common.openComposer : () => common.setSignedIn(true)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#003366] px-5 py-3.5 font-bold text-white shadow-lg shadow-blue-950/10">
+                <MessageSquareText className="h-5 w-5" /> {common.signedIn ? "Write or edit your Review" : "Sign in to write"}
+              </button>
+              <Signals {...common.signalProps} entity={common.entity} />
+            </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm shadow-sm"><p className="font-bold">Known associations</p><div className="mt-3 space-y-2 text-slate-600"><p>2025-26 Fall · L1 · Desmond Lee</p><p>2025-26 Fall · L2 · Ada Chan</p><p>2024-25 Spring · L1 · Desmond Lee</p></div></div>
           </aside>
         </div>
