@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import {
   type DuckDBConnection,
@@ -73,7 +73,70 @@ type Generation = {
   instance: DuckDBInstance;
   connection: DuckDBConnection;
   instructors: Map<string, string>;
+  readers: number;
+  retired: boolean;
+  closed: boolean;
+  cleanup?: () => Promise<void>;
 };
+
+export type ScheduleGenerationPointer = {
+  activeSha: string;
+  previousSha?: string;
+  acceptedAt: string;
+  sourceUpdatedAt: string;
+};
+
+export type ScheduleFailure = {
+  class:
+    | "configuration"
+    | "upstream"
+    | "integrity"
+    | "storage"
+    | "lock"
+    | "internal";
+  at: string;
+};
+
+export type ScheduleRefreshDependencies = {
+  upstream: {
+    download(sha?: string): Promise<{
+      sha: string;
+      sourceUpdatedAt: string;
+      directory: string;
+      artifacts?: Record<string, { sha256: string; size: number }>;
+      temporary?: boolean;
+    }>;
+  };
+  store: {
+    readPointer(): Promise<ScheduleGenerationPointer | undefined>;
+    downloadGeneration(sha: string): Promise<string | undefined>;
+    removeCachedGeneration?(sha: string): Promise<void>;
+    putGeneration(sha: string, directory: string): Promise<void>;
+    writePointer(pointer: ScheduleGenerationPointer): Promise<void>;
+    readFailure(): Promise<ScheduleFailure | undefined>;
+    writeFailure(failure: ScheduleFailure | undefined): Promise<void>;
+  };
+  withLock<T>(operation: () => Promise<T>): Promise<T | undefined>;
+  sleep(milliseconds: number): Promise<void>;
+};
+
+export type ScheduleRefreshResult = {
+  status: "activated" | "current" | "superseded" | "busy";
+  generation?: string;
+};
+
+export class ScheduleRefreshError extends Error {
+  readonly failureClass: ScheduleFailure["class"];
+
+  constructor(
+    failureClass: ScheduleFailure["class"],
+    options?: { cause?: unknown },
+  ) {
+    super("Schedule refresh failed; last-known-good remains active.", options);
+    this.name = "ScheduleRefreshError";
+    this.failureClass = failureClass;
+  }
+}
 
 export type ScheduleTerm = {
   termNumber: number;
@@ -185,7 +248,17 @@ export class InvalidScheduleQueryError extends TypeError {
   }
 }
 
-let loaded: { directory: string; generation: Promise<Generation> } | undefined;
+let explicitGeneration:
+  | { directory: string; generation: Promise<Generation> }
+  | undefined;
+let seedLoading: Promise<Generation> | undefined;
+let runtimeActive: Promise<Generation> | undefined;
+let runtimePrevious: Promise<Generation> | undefined;
+let runtimeActiveSha: string | undefined;
+let runtimeDependencies: ScheduleRefreshDependencies | undefined;
+let runtimeCheckedAt = 0;
+let runtimeDiscovery: Promise<Generation> | undefined;
+let afterAcquireForTests: ((generation: string) => Promise<void>) | undefined;
 const queryQueues = new WeakMap<DuckDBConnection, Promise<void>>();
 const queuedQueryCounts = new WeakMap<DuckDBConnection, number>();
 
@@ -360,7 +433,10 @@ async function validateRelations(
   }
 }
 
-async function loadGeneration(directory: string): Promise<Generation> {
+async function loadGeneration(
+  directory: string,
+  cleanup?: () => Promise<void>,
+): Promise<Generation> {
   try {
     const manifest = JSON.parse(
       await readFile(resolve(directory, "manifest.json"), "utf8"),
@@ -379,6 +455,10 @@ async function loadGeneration(directory: string): Promise<Generation> {
         instance,
         connection,
         instructors,
+        readers: 0,
+        retired: false,
+        closed: false,
+        cleanup,
       };
     } catch (error) {
       connection.closeSync();
@@ -390,25 +470,359 @@ async function loadGeneration(directory: string): Promise<Generation> {
   }
 }
 
-function generation() {
-  const directory = seedDirectory();
-  if (loaded?.directory !== directory) {
-    const previous = loaded?.generation;
-    loaded = { directory, generation: loadGeneration(directory) };
-    void previous?.then(closeGeneration).catch(() => undefined);
+async function discoverGeneration() {
+  const existing = runtimeActive;
+  try {
+    runtimeDependencies ??= (
+      await import("./runtime")
+    ).productionScheduleRefreshDependencies();
+    const pointer = await runtimeDependencies.store.readPointer();
+    if (pointer) {
+      for (const sha of [pointer.activeSha, pointer.previousSha]) {
+        if (!sha) continue;
+        if (sha === runtimeActiveSha && runtimeActive) return runtimeActive;
+        try {
+          const directory =
+            await runtimeDependencies.store.downloadGeneration(sha);
+          if (!directory) continue;
+          const loading = loadGeneration(directory);
+          await installRuntimeGeneration(
+            loading,
+            sha,
+            sha === pointer.activeSha ? pointer.previousSha : undefined,
+          );
+          return loading;
+        } catch {
+          await runtimeDependencies.store
+            .removeCachedGeneration?.(sha)
+            .catch(() => undefined);
+        }
+      }
+    }
+  } catch {
+    if (existing) return existing;
   }
-  return loaded.generation;
+  if (existing) return existing;
+  if (!seedLoading) seedLoading = loadGeneration(seedDirectory());
+  const seed = seedLoading;
+  runtimeActiveSha = (await seed).sha;
+  return seed;
 }
 
-function closeGeneration(generation: Generation) {
+function generation() {
+  if (process.env.SCHEDULE_SEED_DIR) {
+    const directory = seedDirectory();
+    if (explicitGeneration?.directory !== directory) {
+      const previous = explicitGeneration?.generation;
+      explicitGeneration = { directory, generation: loadGeneration(directory) };
+      void retireGeneration(previous);
+    }
+    return explicitGeneration.generation;
+  }
+  if (
+    runtimeActive &&
+    runtimeDependencies &&
+    Date.now() - runtimeCheckedAt < 60_000
+  )
+    return runtimeActive;
+  const storageConfigured =
+    Boolean(runtimeDependencies) ||
+    [
+      "SCHEDULE_SPACE_ENDPOINT",
+      "SCHEDULE_SPACE_BUCKET",
+      "SCHEDULE_SPACE_ACCESS_KEY_ID",
+      "SCHEDULE_SPACE_SECRET_ACCESS_KEY",
+    ].every((name) => process.env[name]?.trim());
+  if (!storageConfigured) {
+    if (!seedLoading) seedLoading = loadGeneration(seedDirectory());
+    return runtimeActive ?? seedLoading;
+  }
+  if (!runtimeDiscovery) {
+    runtimeCheckedAt = Date.now();
+    runtimeDiscovery = discoverGeneration().finally(() => {
+      runtimeDiscovery = undefined;
+    });
+  }
+  return runtimeDiscovery;
+}
+
+function closeRetiredGeneration(generation: Generation) {
+  if (!generation.retired || generation.readers > 0 || generation.closed)
+    return;
+  generation.closed = true;
   generation.connection.closeSync();
   generation.instance.closeSync();
+  void generation.cleanup?.().catch(() => undefined);
 }
 
-export async function resetScheduleRuntimeForTests() {
-  const previous = loaded?.generation;
-  loaded = undefined;
-  if (previous) await previous.then(closeGeneration).catch(() => undefined);
+async function retireGeneration(loading?: Promise<Generation>) {
+  if (!loading) return;
+  const accepted = await loading.catch(() => undefined);
+  if (!accepted) return;
+  accepted.retired = true;
+  closeRetiredGeneration(accepted);
+}
+
+async function withAcceptedGeneration<T>(
+  operation: (accepted: Generation) => Promise<T>,
+) {
+  const accepted = await generation();
+  if (accepted.closed) throw new ScheduleUnavailableError();
+  accepted.readers += 1;
+  try {
+    await afterAcquireForTests?.(accepted.sha);
+    return await operation(accepted);
+  } finally {
+    accepted.readers -= 1;
+    closeRetiredGeneration(accepted);
+  }
+}
+
+export function setScheduleAfterAcquireForTests(
+  hook?: (generation: string) => Promise<void>,
+) {
+  afterAcquireForTests = hook;
+}
+
+async function installRuntimeGeneration(
+  loading: Promise<Generation>,
+  sha: string,
+  previousSha?: string,
+) {
+  const accepted = await loading;
+  if (accepted.sha !== sha) throw new ScheduleUnavailableError();
+  const oldActive = runtimeActive;
+  const oldPrevious = runtimePrevious;
+  runtimeActive = loading;
+  runtimeActiveSha = sha;
+  runtimePrevious = undefined;
+  if (oldActive && oldActive !== seedLoading) {
+    if ((await oldActive).sha === previousSha) runtimePrevious = oldActive;
+    else await retireGeneration(oldActive);
+  }
+  if (oldPrevious && oldPrevious !== runtimePrevious)
+    await retireGeneration(oldPrevious);
+}
+
+async function prepareCandidateManifest(
+  candidate: Awaited<
+    ReturnType<ScheduleRefreshDependencies["upstream"]["download"]>
+  >,
+  current: ScheduleGenerationPointer | undefined,
+  dependencies: ScheduleRefreshDependencies,
+) {
+  try {
+    await stat(resolve(candidate.directory, "manifest.json"));
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (
+    !candidate.artifacts ||
+    JSON.stringify(Object.keys(candidate.artifacts).sort()) !==
+      JSON.stringify(ARTIFACTS)
+  )
+    throw new Error("Upstream tree declarations are incomplete");
+  let retainedManifest: Manifest;
+  if (current) {
+    const directory = await dependencies.store.downloadGeneration(
+      current.activeSha,
+    );
+    if (!directory)
+      throw new Error("The current Schedule generation is unavailable");
+    retainedManifest = JSON.parse(
+      await readFile(resolve(directory, "manifest.json"), "utf8"),
+    ) as Manifest;
+  } else {
+    retainedManifest = JSON.parse(
+      await readFile(resolve(seedDirectory(), "manifest.json"), "utf8"),
+    ) as Manifest;
+  }
+  await writeFile(
+    resolve(candidate.directory, "manifest.json"),
+    `${JSON.stringify(
+      {
+        schemaMajor: 0,
+        sourceCommit: candidate.sha,
+        artifacts: candidate.artifacts,
+        instructors: retainedManifest.instructors,
+      },
+      null,
+      2,
+    )}\n`,
+    { flag: "wx" },
+  );
+}
+
+export async function refreshSchedule(
+  options: { sha?: string },
+  dependencies: ScheduleRefreshDependencies,
+): Promise<ScheduleRefreshResult> {
+  if (options.sha !== undefined && !/^[0-9a-f]{40}$/.test(options.sha))
+    throw new InvalidScheduleQueryError(
+      "A full immutable commit SHA is required.",
+    );
+  let result: ScheduleRefreshResult | undefined;
+  try {
+    result = await dependencies.withLock(async () => {
+      const current = await dependencies.store.readPointer();
+      if (options.sha && current?.activeSha === options.sha)
+        return { status: "current", generation: options.sha } as const;
+      let lastError: unknown;
+      let failureClass: ScheduleFailure["class"] = "upstream";
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (attempt > 0) await dependencies.sleep(250 * 4 ** (attempt - 1));
+        let accepted: Generation | undefined;
+        try {
+          const candidate = await dependencies.upstream.download(options.sha);
+          failureClass = "integrity";
+          if (
+            !/^[0-9a-f]{40}$/.test(candidate.sha) ||
+            (options.sha && candidate.sha !== options.sha) ||
+            !Number.isFinite(Date.parse(candidate.sourceUpdatedAt))
+          )
+            throw new Error("Invalid immutable Schedule generation");
+          await prepareCandidateManifest(candidate, current, dependencies);
+          const temporaryRoot = candidate.temporary
+            ? resolve(candidate.directory, "..")
+            : undefined;
+          const loading = loadGeneration(
+            candidate.directory,
+            temporaryRoot
+              ? () => rm(temporaryRoot, { recursive: true, force: true })
+              : undefined,
+          );
+          accepted = await loading;
+          if (accepted.sha !== candidate.sha)
+            throw new Error("Candidate files are from a mixed commit");
+          if (
+            current &&
+            Date.parse(candidate.sourceUpdatedAt) <=
+              Date.parse(current.sourceUpdatedAt)
+          ) {
+            await retireGeneration(Promise.resolve(accepted));
+            return {
+              status:
+                candidate.sha === current.activeSha ? "current" : "superseded",
+              generation: current.activeSha,
+            } as const;
+          }
+          failureClass = "storage";
+          await dependencies.store.putGeneration(
+            candidate.sha,
+            candidate.directory,
+          );
+          const pointer = {
+            activeSha: candidate.sha,
+            previousSha: current?.activeSha,
+            acceptedAt: new Date().toISOString(),
+            sourceUpdatedAt: candidate.sourceUpdatedAt,
+          };
+          await dependencies.store.writePointer(pointer);
+          await installRuntimeGeneration(
+            loading,
+            candidate.sha,
+            current?.activeSha,
+          );
+          runtimeDependencies = dependencies;
+          runtimeCheckedAt = Date.now();
+          await dependencies.store
+            .writeFailure(undefined)
+            .catch(() => undefined);
+          return { status: "activated", generation: candidate.sha } as const;
+        } catch (error) {
+          lastError = error;
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            "failureClass" in error &&
+            ["upstream", "integrity", "storage", "internal"].includes(
+              String(error.failureClass),
+            )
+          )
+            failureClass = error.failureClass as ScheduleFailure["class"];
+          if (accepted) await retireGeneration(Promise.resolve(accepted));
+        }
+      }
+      const failure = {
+        class: failureClass,
+        at: new Date().toISOString(),
+      };
+      await dependencies.store.writeFailure(failure).catch(() => undefined);
+      throw new ScheduleRefreshError(failureClass, { cause: lastError });
+    });
+  } catch (error) {
+    if (error instanceof ScheduleRefreshError) throw error;
+    const failure = { class: "lock", at: new Date().toISOString() } as const;
+    await dependencies.store.writeFailure(failure).catch(() => undefined);
+    throw new ScheduleRefreshError("lock", { cause: error });
+  }
+  return result ?? { status: "busy" };
+}
+
+export async function getScheduleHealth(
+  dependencies?: ScheduleRefreshDependencies,
+) {
+  try {
+    const selected =
+      dependencies ??
+      runtimeDependencies ??
+      (await import("./runtime")).productionScheduleRefreshDependencies();
+    const [pointer, failure] = await Promise.all([
+      selected.store.readPointer(),
+      selected.store.readFailure(),
+    ]);
+    if (!pointer)
+      return {
+        status: "unavailable" as const,
+        activeGeneration: undefined,
+        acceptedAt: undefined,
+        sourceUpdatedAt: undefined,
+        failureClass: failure?.class ?? "configuration",
+        failureAt: failure?.at,
+      };
+    const stale =
+      Boolean(failure) ||
+      Date.now() - Date.parse(pointer.sourceUpdatedAt) > 36 * 60 * 60 * 1000;
+    return {
+      status: stale ? ("stale" as const) : ("healthy" as const),
+      activeGeneration: pointer.activeSha,
+      acceptedAt: pointer.acceptedAt,
+      sourceUpdatedAt: pointer.sourceUpdatedAt,
+      failureClass: failure?.class,
+      failureAt: failure?.at,
+    };
+  } catch {
+    return {
+      status: "unavailable" as const,
+      activeGeneration: runtimeActiveSha,
+      acceptedAt: undefined,
+      sourceUpdatedAt: undefined,
+      failureClass: "configuration" as const,
+      failureAt: undefined,
+    };
+  }
+}
+
+export async function resetScheduleRuntimeForTests(
+  dependencies?: ScheduleRefreshDependencies,
+) {
+  const retained = [
+    explicitGeneration?.generation,
+    seedLoading,
+    runtimeActive,
+    runtimePrevious,
+  ];
+  explicitGeneration = undefined;
+  seedLoading = undefined;
+  runtimeActive = undefined;
+  runtimePrevious = undefined;
+  runtimeActiveSha = undefined;
+  runtimeDependencies = dependencies;
+  runtimeCheckedAt = 0;
+  runtimeDiscovery = undefined;
+  afterAcquireForTests = undefined;
+  for (const loading of new Set(retained)) await retireGeneration(loading);
 }
 
 function text(value: unknown) {
@@ -629,90 +1043,94 @@ async function terms(accepted: Generation) {
 export async function querySchedule(
   query: { termCode?: string; search?: string; limit?: number } = {},
 ): Promise<SchedulePage> {
-  const accepted = await generation();
-  const availableTerms = await terms(accepted);
-  const selectedTermCode = query.termCode?.trim()
-    ? validateTermCode(query.termCode)
-    : availableTerms.at(-1)?.termCode;
-  const term = availableTerms.find(
-    (candidate) => candidate.termCode === selectedTermCode,
-  );
-  if (!term) throw new InvalidScheduleQueryError("Unknown Term Code.");
-  const search = query.search?.trim() || undefined;
-  if (search && search.length > 100)
-    throw new InvalidScheduleQueryError("Search is limited to 100 characters.");
-  const limit = Math.min(Math.max(Math.floor(query.limit ?? 100), 1), 100);
-  if (!Number.isFinite(limit))
-    throw new InvalidScheduleQueryError("Invalid Schedule page size.");
-  const rows = await queryRows(
-    accepted.connection,
-    `${offeringSql(accepted.directory)} WHERE course.term_code = $termCode ORDER BY course.prefix, course.number, class.section`,
-    { termCode: term.termCode },
-  );
-  let offerings = mapRows(rows, accepted);
-  if (search) {
-    const normalized = search.toLocaleLowerCase();
-    offerings = offerings.filter((offering) =>
-      searchText(offering).includes(normalized),
+  return withAcceptedGeneration(async (accepted) => {
+    const availableTerms = await terms(accepted);
+    const selectedTermCode = query.termCode?.trim()
+      ? validateTermCode(query.termCode)
+      : availableTerms.at(-1)?.termCode;
+    const term = availableTerms.find(
+      (candidate) => candidate.termCode === selectedTermCode,
     );
-  }
-  return {
-    generation: accepted.sha,
-    terms: availableTerms,
-    term,
-    search,
-    total: offerings.length,
-    results: offerings.slice(0, limit),
-  };
+    if (!term) throw new InvalidScheduleQueryError("Unknown Term Code.");
+    const search = query.search?.trim() || undefined;
+    if (search && search.length > 100)
+      throw new InvalidScheduleQueryError(
+        "Search is limited to 100 characters.",
+      );
+    const limit = Math.min(Math.max(Math.floor(query.limit ?? 100), 1), 100);
+    if (!Number.isFinite(limit))
+      throw new InvalidScheduleQueryError("Invalid Schedule page size.");
+    const rows = await queryRows(
+      accepted.connection,
+      `${offeringSql(accepted.directory)} WHERE course.term_code = $termCode ORDER BY course.prefix, course.number, class.section`,
+      { termCode: term.termCode },
+    );
+    let offerings = mapRows(rows, accepted);
+    if (search) {
+      const normalized = search.toLocaleLowerCase();
+      offerings = offerings.filter((offering) =>
+        searchText(offering).includes(normalized),
+      );
+    }
+    return {
+      generation: accepted.sha,
+      terms: availableTerms,
+      term,
+      search,
+      total: offerings.length,
+      results: offerings.slice(0, limit),
+    };
+  });
 }
 
 export async function getSchedule(
   entity: ScheduleEntity,
 ): Promise<ScheduleDetails> {
-  const accepted = await generation();
-  const { coursePrefix, courseNumber } = validateCourse(
-    entity.coursePrefix,
-    entity.courseNumber,
-  );
-  const parameters: Record<string, DuckDBValue> = {
-    coursePrefix,
-    courseNumber,
-  };
-  let where =
-    "WHERE course.prefix = $coursePrefix AND course.number = $courseNumber";
-  if (entity.type !== "course") {
-    parameters.termCode = validateTermCode(entity.termCode);
-    where += " AND course.term_code = $termCode";
-  }
-  const rows = await queryRows(
-    accepted.connection,
-    `${offeringSql(accepted.directory)} ${where} ORDER BY course.term_num, class.section`,
-    parameters,
-  );
-  const offerings = mapRows(rows, accepted);
-  if (offerings.length === 0)
-    throw new InvalidScheduleQueryError("Unknown Schedule entity.");
-  if (entity.type === "course")
-    return {
-      type: "course",
+  return withAcceptedGeneration(async (accepted) => {
+    const { coursePrefix, courseNumber } = validateCourse(
+      entity.coursePrefix,
+      entity.courseNumber,
+    );
+    const parameters: Record<string, DuckDBValue> = {
       coursePrefix,
       courseNumber,
-      courseCode: `${coursePrefix} ${courseNumber}`,
-      offerings,
     };
-  const offering = offerings[0];
-  if (!offering)
-    throw new InvalidScheduleQueryError("Unknown Course Offering.");
-  if (entity.type === "course-offering")
-    return { type: "course-offering", ...offering };
-  const section = entity.section.trim().toUpperCase();
-  if (!/^[A-Z][A-Z0-9-]{0,15}$/.test(section))
-    throw new InvalidScheduleQueryError("Invalid Section.");
-  const scheduleClass = offering.classes.find(
-    (candidate) => candidate.section === section,
-  );
-  if (!scheduleClass) throw new InvalidScheduleQueryError("Unknown Class.");
-  return { type: "class", ...scheduleClass };
+    let where =
+      "WHERE course.prefix = $coursePrefix AND course.number = $courseNumber";
+    if (entity.type !== "course") {
+      parameters.termCode = validateTermCode(entity.termCode);
+      where += " AND course.term_code = $termCode";
+    }
+    const rows = await queryRows(
+      accepted.connection,
+      `${offeringSql(accepted.directory)} ${where} ORDER BY course.term_num, class.section`,
+      parameters,
+    );
+    const offerings = mapRows(rows, accepted);
+    if (offerings.length === 0)
+      throw new InvalidScheduleQueryError("Unknown Schedule entity.");
+    if (entity.type === "course")
+      return {
+        type: "course",
+        coursePrefix,
+        courseNumber,
+        courseCode: `${coursePrefix} ${courseNumber}`,
+        offerings,
+      };
+    const offering = offerings[0];
+    if (!offering)
+      throw new InvalidScheduleQueryError("Unknown Course Offering.");
+    if (entity.type === "course-offering")
+      return { type: "course-offering", ...offering };
+    const section = entity.section.trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9-]{0,15}$/.test(section))
+      throw new InvalidScheduleQueryError("Invalid Section.");
+    const scheduleClass = offering.classes.find(
+      (candidate) => candidate.section === section,
+    );
+    if (!scheduleClass) throw new InvalidScheduleQueryError("Unknown Class.");
+    return { type: "class", ...scheduleClass };
+  });
 }
 
 /** Resolve Classes and their accepted generation in one Schedule query boundary. */
@@ -733,25 +1151,26 @@ export async function resolveClassesWithGeneration(
     )
   )
     throw new InvalidScheduleQueryError("Invalid Class Numbers.");
-  const accepted = await generation();
-  const rows = await queryRows(
-    accepted.connection,
-    `${offeringSql(accepted.directory)} WHERE course.term_code = $termCode ORDER BY class.number`,
-    { termCode },
-  );
-  if (
-    rows.length === 0 &&
-    !(await terms(accepted)).some((term) => term.termCode === termCode)
-  )
-    throw new InvalidScheduleQueryError("Unknown Term Code.");
-  const wanted = new Set(numbers);
-  const classes = mapRows(rows, accepted)
-    .flatMap((offering) => offering.classes)
-    .filter((scheduleClass) => wanted.has(scheduleClass.classNumber))
-    .sort((left, right) => left.classNumber - right.classNumber);
-  if (classes.length !== numbers.length)
-    throw new InvalidScheduleQueryError("Unknown Class Number.");
-  return { generation: accepted.sha, classes };
+  return withAcceptedGeneration(async (accepted) => {
+    const rows = await queryRows(
+      accepted.connection,
+      `${offeringSql(accepted.directory)} WHERE course.term_code = $termCode ORDER BY class.number`,
+      { termCode },
+    );
+    if (
+      rows.length === 0 &&
+      !(await terms(accepted)).some((term) => term.termCode === termCode)
+    )
+      throw new InvalidScheduleQueryError("Unknown Term Code.");
+    const wanted = new Set(numbers);
+    const classes = mapRows(rows, accepted)
+      .flatMap((offering) => offering.classes)
+      .filter((scheduleClass) => wanted.has(scheduleClass.classNumber))
+      .sort((left, right) => left.classNumber - right.classNumber);
+    if (classes.length !== numbers.length)
+      throw new InvalidScheduleQueryError("Unknown Class Number.");
+    return { generation: accepted.sha, classes };
+  });
 }
 
 export async function resolveClasses(
