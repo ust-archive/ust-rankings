@@ -124,7 +124,12 @@ export function CourseReviews({ reviews }: { reviews: PublicCourseReview[] }) {
             </ReactMarkdown>
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            Attributed Review Revision · Review text licensed CC BY 4.0
+            Attributed Review Revision · Review text licensed CC BY 4.0 ·{" "}
+            <a
+              href={`/courses/${review.coursePrefix}/${review.courseNumber}#review-${review.id}`}
+            >
+              Review permalink
+            </a>
           </p>
         </li>
       ))}

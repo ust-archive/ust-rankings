@@ -14,13 +14,19 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default async function CoursePage({
-  params,
-  searchParams,
-}: {
+type CoursePageProps = {
   params: Promise<{ prefix: string; number: string }>;
   searchParams: Promise<RouteSearchParams>;
-}) {
+};
+
+export default function CoursePage(props: CoursePageProps) {
+  return renderCoursePage(props);
+}
+
+export async function renderCoursePage(
+  { params, searchParams }: CoursePageProps,
+  readReviews: typeof loadCourseReviews = loadCourseReviews,
+) {
   const query = await searchParams;
   const { coursePrefix, courseNumber } = normalizeCourseRoute(
     await params,
@@ -49,7 +55,7 @@ export default async function CoursePage({
       : scheduleResult.schedule?.offerings.at(-1)?.termCode;
   const [rankings, community] = await Promise.all([
     loadCourseRankings(coursePrefix, courseNumber, selectedTerm),
-    loadCourseReviews(coursePrefix, courseNumber),
+    readReviews(coursePrefix, courseNumber),
   ]);
   if (!rankings && !scheduleResult.schedule && !scheduleResult.unavailable)
     notFound();

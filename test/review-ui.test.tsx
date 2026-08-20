@@ -23,6 +23,10 @@ test("public Review Markdown is attributed and rendered without raw HTML or remo
   expect(markup).not.toContain("<img");
   expect(markup).not.toContain("evil.example");
   expect(markup).not.toContain('href="javascript:');
+  expect(markup).toContain(
+    'href="/courses/COMP/2000#review-00000000-0000-4000-8000-000000000144"',
+  );
+  expect(markup).toContain(">Review permalink</a>");
   expect(markup.match(/Useful/g)).toHaveLength(1);
 });
 

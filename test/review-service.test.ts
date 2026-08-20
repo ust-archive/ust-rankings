@@ -73,10 +73,19 @@ test("invalid Courses and malformed text fail before publication", async () => {
   for (const input of [
     { coursePrefix: "bad!", courseNumber: "2000", markdown: "Useful" },
     { coursePrefix: "COMP", courseNumber: "2000", markdown: "   " },
+    {
+      coursePrefix: "COMP",
+      courseNumber: "2000",
+      markdown: new File(["not text input"], "review.txt"),
+    },
     { coursePrefix: "MATH", courseNumber: "1012", markdown: "Useful" },
-  ])
+  ]) {
     await expect(
-      reviews.publishCourseReview(USER_ID, input),
+      reviews.publishCourseReview(
+        USER_ID,
+        input as unknown as Parameters<typeof reviews.publishCourseReview>[1],
+      ),
     ).rejects.toBeInstanceOf(ReviewWriteError);
+  }
   expect(published).toHaveLength(0);
 });

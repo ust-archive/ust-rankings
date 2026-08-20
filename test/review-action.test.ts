@@ -31,11 +31,11 @@ mock.module("@/lib/contributions/postgres", () => ({
   }),
 }));
 
-function form() {
+function form(markdown: string | Blob = "Useful labs.") {
   const data = new FormData();
   data.set("coursePrefix", "COMP");
   data.set("courseNumber", "2000");
-  data.set("markdown", "Useful labs.");
+  data.set("markdown", markdown);
   return data;
 }
 
@@ -63,6 +63,32 @@ test("Review action denies cross-origin and signed-out writes before publication
   expect(await redirectOf(() => publishCourseReview(form()))).toContain(
     "/sign-in?r=%2Fcourses%2FCOMP%2F2000",
   );
+  expect(published).toHaveLength(0);
+});
+
+test("Review action rejects File-valued Markdown before publication", async () => {
+  const { publishCourseReview } = await import("@/app/courses/review-actions");
+  origin = "https://rankings.example";
+  userId = "00000000-0000-4000-8000-000000000044";
+  publicationError = undefined;
+  published.length = 0;
+
+  expect(
+    await redirectOf(() =>
+      publishCourseReview(
+        form(
+          new File(["not text input"], "review.txt", { type: "text/plain" }),
+        ),
+      ),
+    ),
+  ).toContain("/courses/COMP/2000?reviewError=invalid-review#reviews");
+  expect(published).toHaveLength(0);
+
+  const malformedCourse = form();
+  malformedCourse.set("coursePrefix", new File(["COMP"], "prefix.txt"));
+  expect(
+    await redirectOf(() => publishCourseReview(malformedCourse)),
+  ).toContain("/rankings/courses?reviewError=invalid-course#reviews");
   expect(published).toHaveLength(0);
 });
 

@@ -62,6 +62,11 @@ const COURSE_PREFIX = /^[A-Z]{2,8}$/u;
 const COURSE_NUMBER = /^[0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?$/u;
 
 function courseBasis(input: CourseBasis) {
+  if (
+    typeof input.coursePrefix !== "string" ||
+    typeof input.courseNumber !== "string"
+  )
+    throw new ReviewWriteError("invalid-course", "Course Basis is malformed");
   const coursePrefix = input.coursePrefix.trim().toUpperCase();
   const courseNumber = input.courseNumber.trim().toUpperCase();
   if (!COURSE_PREFIX.test(coursePrefix) || !COURSE_NUMBER.test(courseNumber))
@@ -84,7 +89,7 @@ export function createReviewService(
       if (!UUID.test(userId))
         throw new ReviewWriteError("account-not-found", "User was not found");
       const course = courseBasis(input);
-      if (!input.markdown.trim())
+      if (typeof input.markdown !== "string" || !input.markdown.trim())
         throw new ReviewWriteError(
           "invalid-review",
           "Review Markdown must not be empty",

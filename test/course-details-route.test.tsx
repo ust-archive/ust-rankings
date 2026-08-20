@@ -73,6 +73,42 @@ test("Course details compose evidence, Offerings, Classes, Instructors, and isol
   );
 });
 
+test("Course page renders a successful public Review read exactly once", async () => {
+  await configureDetails();
+  const { dynamic, renderCoursePage } = await import(
+    "@/app/courses/[prefix]/[number]/page"
+  );
+
+  const markup = renderToStaticMarkup(
+    await renderCoursePage(
+      {
+        params: Promise.resolve({ prefix: "COMP", number: "2000" }),
+        searchParams: Promise.resolve({ term: "2510" }),
+      },
+      async () => ({
+        unavailable: false,
+        reviews: [
+          {
+            id: "00000000-0000-4000-8000-000000000144",
+            revisionId: "00000000-0000-4000-8000-000000000244",
+            coursePrefix: "COMP",
+            courseNumber: "2000",
+            markdown: "The route renders **one public Review**.",
+            capturedDisplayName: "Captured Route Student",
+            publishedAt: new Date("2026-08-20T12:00:00.000Z"),
+          },
+        ],
+      }),
+    ),
+  );
+
+  expect(dynamic).toBe("force-dynamic");
+  expect(markup.match(/Captured Route Student/g)).toHaveLength(1);
+  expect(markup.match(/The route renders/g)).toHaveLength(1);
+  expect(markup).toContain("<strong>one public Review</strong>");
+  expect(markup).not.toContain("Community Reviews are unavailable");
+});
+
 test("Course Offering and Class routes validate nested relationships and preserve domain distinctions", async () => {
   await configureDetails();
   const [{ default: OfferingPage }, { default: ClassPage }] = await Promise.all(
