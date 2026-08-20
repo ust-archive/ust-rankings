@@ -211,7 +211,7 @@ export async function RankingPage({
                 id="instructor-course"
                 name="course"
                 placeholder="COMP 1000"
-                maxLength={14}
+                maxLength={15}
                 defaultValue={query.course}
               />
             </label>
@@ -296,6 +296,12 @@ export async function RankingPage({
               </li>
             ))}
           </ol>
+        ) : rankings.unrankedMatchCount > 0 ? (
+          <p>
+            {rankings.unrankedMatchCount} matching {label}
+            {rankings.unrankedMatchCount === 1 ? " is" : "s are"} unranked
+            because required criterion evidence is missing.
+          </p>
         ) : rankings.population.size === 0 ? (
           <p>
             No {label}s have all evidence required by this scoring

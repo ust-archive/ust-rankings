@@ -28,8 +28,12 @@ never read Parquet directly. Term, activity, search, entity-specific filters,
 preset or custom criterion weights, and continuation cursor are represented in
 the query string. Cursors bind the accepted generation, normalized query, and
 last result, so a replaced generation cannot be mixed into an existing page.
+Course and association-title queries additionally bind the SHA-256 digest of
+the exact generated course-catalog bytes, preventing a catalog refresh from
+mixing result membership across cursor pages.
 
 Course titles and current Common Core category labels come from the generated
-course catalog refreshed by `bun run update-data` (and by `prebuild`). Ranking
-scores and Course–Instructor associations continue to come only from the
-validated immutable ranking generation.
+course catalog refreshed by `bun run update-data` (and by `prebuild`). The
+ranking module validates required catalog fields before serving dependent
+queries. Ranking scores and Course–Instructor associations continue to come
+only from the validated immutable ranking generation.

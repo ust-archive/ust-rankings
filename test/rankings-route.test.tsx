@@ -11,6 +11,7 @@ const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   delete process.env.RANKINGS_SEED_DIR;
+  delete process.env.RANKINGS_COURSE_CATALOG_FILE;
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -108,6 +109,68 @@ test("the public Course ranking route shares reproducible URL controls", async (
   expect(markup).toContain("Grade-focused preset");
   expect(markup).toContain('name="commonCore"');
   expect(markup).not.toContain("MATH 2000");
+});
+
+test("ranking routes distinguish every empty, invalid, and stale URL state", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-states-"));
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR =
+    await makeRankingGeneration(temporaryDirectory);
+  const { default: CoursesPage } = await import("@/app/rankings/courses/page");
+  const { default: InstructorsPage } = await import(
+    "@/app/rankings/instructors/page"
+  );
+
+  const invalid = renderToStaticMarkup(
+    await CoursesPage({
+      searchParams: Promise.resolve({
+        preset: "custom",
+        weight_content: "0",
+      }),
+    }),
+  );
+  expect(invalid).toContain("Invalid ranking query");
+  expect(invalid).toContain("non-zero criterion");
+
+  const filterEmpty = renderToStaticMarkup(
+    await CoursesPage({
+      searchParams: Promise.resolve({ term: "2510", prefix: "ZZZZ" }),
+    }),
+  );
+  expect(filterEmpty).toContain(
+    "No eligible Courses match these structured filters.",
+  );
+
+  const searchEmpty = renderToStaticMarkup(
+    await CoursesPage({
+      searchParams: Promise.resolve({ term: "2510", q: "UNKNOWN 9999" }),
+    }),
+  );
+  expect(searchEmpty).toContain(
+    "No Courses in the Local Ranking Population match this search.",
+  );
+
+  const unranked = renderToStaticMarkup(
+    await CoursesPage({
+      searchParams: Promise.resolve({ term: "2510", q: "MISS 4000" }),
+    }),
+  );
+  expect(unranked).toContain("matching Course is unranked");
+
+  const { queryRankings } = await import("@/lib/rankings/server");
+  const page = await queryRankings({
+    entity: "instructor",
+    termCode: "2510",
+    limit: 1,
+  });
+  delete process.env.RANKINGS_SEED_DIR;
+  const stale = renderToStaticMarkup(
+    await InstructorsPage({
+      searchParams: Promise.resolve({ term: "2510", cursor: page.nextCursor }),
+    }),
+  );
+  expect(stale).toContain("Ranking page expired");
+  expect(stale).toContain('role="alert"');
 });
 
 test("the legacy Course ranking route permanently redirects", async () => {

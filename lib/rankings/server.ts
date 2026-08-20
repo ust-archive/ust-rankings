@@ -48,43 +48,58 @@ export type CommonCoreCategory =
 export const COMMON_CORE_CATEGORIES: ReadonlyArray<{
   value: CommonCoreCategory;
   label: string;
+  cc25Value: string;
 }> = [
   {
     value: "critical-thinking-data-literacy",
     label: "Critical Thinking and Data Literacy",
+    cc25Value: "33",
   },
   {
     value: "healthy-lifestyle-mindfulness-well-being",
     label: "Healthy Lifestyle, Mindfulness and Well-being",
+    cc25Value: "34",
   },
-  { value: "english-communication", label: "English Communication" },
-  { value: "chinese-communication", label: "Chinese Communication" },
-  { value: "arts", label: "Arts" },
-  { value: "humanities", label: "Humanities" },
-  { value: "science", label: "Science" },
-  { value: "technology", label: "Technology" },
-  { value: "social-analysis", label: "Social Analysis" },
-  { value: "sustainability", label: "Sustainability" },
+  {
+    value: "english-communication",
+    label: "English Communication",
+    cc25Value: "35",
+  },
+  {
+    value: "chinese-communication",
+    label: "Chinese Communication",
+    cc25Value: "36",
+  },
+  { value: "arts", label: "Arts", cc25Value: "37" },
+  { value: "humanities", label: "Humanities", cc25Value: "38" },
+  { value: "science", label: "Science", cc25Value: "39" },
+  { value: "technology", label: "Technology", cc25Value: "40" },
+  { value: "social-analysis", label: "Social Analysis", cc25Value: "41" },
+  { value: "sustainability", label: "Sustainability", cc25Value: "42" },
   {
     value: "undergraduate-research",
     label: "Undergraduate Research Opportunity",
+    cc25Value: "43",
   },
   {
     value: "undergraduate-teaching",
     label: "Undergraduate Teaching Opportunity",
+    cc25Value: "44",
   },
   {
     value: "undergraduate-participation",
     label: "Undergraduate Participation Opportunity",
+    cc25Value: "45",
   },
   {
     value: "undergraduate-community",
     label: "Undergraduate Community Opportunity",
+    cc25Value: "46",
   },
 ];
 
 const commonCoreValues = new Map<CommonCoreCategory, string>(
-  COMMON_CORE_CATEGORIES.map(({ value }, index) => [value, String(index + 33)]),
+  COMMON_CORE_CATEGORIES.map(({ value, cc25Value }) => [value, cc25Value]),
 );
 
 const PRESET_WEIGHTS: Record<
@@ -273,6 +288,7 @@ export type RankingsPage<
       ? InstructorRanking[]
       : Array<CourseRanking | InstructorRanking>;
   nextCursor?: string;
+  unrankedMatchCount: number;
 };
 
 export type Rankings = {
@@ -302,13 +318,13 @@ export class InvalidRankingsQueryError extends TypeError {
 
 export class StaleRankingsCursorError extends InvalidRankingsQueryError {
   constructor() {
-    super("The ranking generation changed; restart pagination.");
+    super("The ranking snapshot changed; restart pagination.");
     this.name = "StaleRankingsCursorError";
   }
 }
 
 const generations = new Map<string, Promise<Generation>>();
-const catalogs = new Map<string, Promise<Map<string, CatalogCourse>>>();
+const catalogs = new Map<string, Promise<CourseCatalog>>();
 
 function seedDirectory() {
   return (
@@ -553,16 +569,21 @@ function number(value: unknown) {
 type CatalogCourse = {
   coursePrefix: string;
   courseNumber: string;
-  courseName?: string;
-  courseAttributes?: Array<{
+  courseName: string;
+  courseAttributes: Array<{
     courseAttribute: string;
     courseAttributeValue: string;
   }>;
 };
 
+type CourseCatalog = {
+  courses: Map<string, CatalogCourse>;
+  digest: string;
+};
+
 type Candidate = {
   key: string;
-  score: number;
+  score?: number;
   searchText: string;
   coursePrefix?: string;
   courseCodes: Set<string>;
@@ -572,33 +593,74 @@ type Candidate = {
     | Omit<InstructorRanking, keyof RankFields>;
 };
 
+type RankedCandidate = Candidate & { score: number };
+
 async function courseCatalog(directory: string) {
-  let loading = catalogs.get(directory);
-  if (!loading) {
-    loading = (async () => {
-      let contents: string | undefined;
-      for (const path of [
+  const configuredPath = process.env.RANKINGS_COURSE_CATALOG_FILE;
+  const paths = configuredPath
+    ? [resolve(configuredPath)]
+    : [
         resolve(directory, "..", "course-catalog.json"),
         resolve(process.cwd(), "data", "data-course-catalog.json"),
-      ]) {
+      ];
+  const cacheKey = paths.join("\0");
+  let loading = catalogs.get(cacheKey);
+  if (!loading) {
+    loading = (async () => {
+      let contents: Buffer | undefined;
+      for (const path of paths) {
         try {
-          contents = await readFile(/* turbopackIgnore: true */ path, "utf8");
+          contents = await readFile(/* turbopackIgnore: true */ path);
           break;
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
       }
-      if (!contents) return new Map<string, CatalogCourse>();
-      const courses = JSON.parse(contents) as CatalogCourse[];
-      if (!Array.isArray(courses)) throw new Error("Invalid Course catalog");
-      return new Map(
-        courses.map((course) => [
-          `${course.coursePrefix}${course.courseNumber}`,
-          course,
-        ]),
-      );
+      if (!contents) throw new Error("Course catalog is unavailable");
+      const parsed = JSON.parse(contents.toString("utf8")) as unknown;
+      if (!Array.isArray(parsed) || parsed.length === 0)
+        throw new Error("Invalid Course catalog");
+      const courses = new Map<string, CatalogCourse>();
+      for (const value of parsed) {
+        if (
+          typeof value !== "object" ||
+          value === null ||
+          !("coursePrefix" in value) ||
+          typeof value.coursePrefix !== "string" ||
+          !/^[A-Z]{2,8}$/.test(value.coursePrefix) ||
+          !("courseNumber" in value) ||
+          typeof value.courseNumber !== "string" ||
+          !/^[0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?$/.test(value.courseNumber) ||
+          !("courseName" in value) ||
+          typeof value.courseName !== "string" ||
+          !value.courseName.trim() ||
+          !("courseAttributes" in value) ||
+          !Array.isArray(value.courseAttributes) ||
+          value.courseAttributes.some(
+            (attribute) =>
+              typeof attribute !== "object" ||
+              attribute === null ||
+              !("courseAttribute" in attribute) ||
+              typeof attribute.courseAttribute !== "string" ||
+              !attribute.courseAttribute.trim() ||
+              !("courseAttributeValue" in attribute) ||
+              typeof attribute.courseAttributeValue !== "string" ||
+              !attribute.courseAttributeValue.trim(),
+          )
+        ) {
+          throw new Error("Invalid Course catalog entry");
+        }
+        const course = value as CatalogCourse;
+        const key = `${course.coursePrefix}${course.courseNumber}`;
+        if (courses.has(key)) throw new Error("Duplicate Course catalog entry");
+        courses.set(key, course);
+      }
+      return {
+        courses,
+        digest: createHash("sha256").update(contents).digest("base64url"),
+      };
     })();
-    catalogs.set(directory, loading);
+    catalogs.set(cacheKey, loading);
   }
   return loading;
 }
@@ -622,15 +684,19 @@ function normalizedWeights(query: RankingsQuery) {
     const positive = entries.filter((entry) => entry[1] > 0) as Array<
       [Criterion, number]
     >;
-    const total = positive.reduce((sum, entry) => sum + entry[1], 0);
-    if (total === 0)
+    const maximum = Math.max(...positive.map((entry) => entry[1]));
+    if (positive.length === 0)
       throw new InvalidRankingsQueryError(
         "Custom ranking weights need at least one non-zero criterion.",
       );
+    const scaled = positive
+      .map(([criterion, value]) => [criterion, value / maximum] as const)
+      .filter((entry) => entry[1] > 0);
+    const total = scaled.reduce((sum, entry) => sum + entry[1], 0);
     return {
       preset: "custom" as const,
       weights: Object.fromEntries(
-        positive.map(([criterion, value]) => [criterion, value / total]),
+        scaled.map(([criterion, value]) => [criterion, value / total]),
       ) as RankingWeights,
     };
   }
@@ -644,7 +710,7 @@ function percentile(rank: number, population: number) {
   return population === 1 ? 1 : (population - rank) / (population - 1);
 }
 
-function ranks(candidates: Candidate[]) {
+function ranks(candidates: RankedCandidate[]) {
   let rank = 0;
   let previousScore: number | undefined;
   return new Map(
@@ -671,11 +737,12 @@ function decodeCursor(cursor: string) {
     ) as Record<string, unknown>;
     if (
       typeof value.g !== "string" ||
+      typeof value.c !== "string" ||
       typeof value.q !== "string" ||
       typeof value.p !== "string"
     )
       throw new Error("invalid cursor payload");
-    return value as { g: string; q: string; p: string };
+    return value as { g: string; c: string; q: string; p: string };
   } catch {
     throw new InvalidRankingsQueryError("Invalid ranking cursor.");
   }
@@ -703,7 +770,7 @@ export async function queryRankings(
   if (coursePrefix && !/^[A-Z]{2,8}$/.test(coursePrefix))
     throw new InvalidRankingsQueryError("Invalid Course Prefix.");
   const course = query.course?.trim().toUpperCase() || undefined;
-  if (course && !/^[A-Z]{2,8} [0-9]{3,5}$/.test(course))
+  if (course && !/^[A-Z]{2,8} [0-9]{3,5}[A-Z]?$/.test(course))
     throw new InvalidRankingsQueryError("Invalid Course Code.");
   const commonCore = [...new Set(query.commonCore ?? [])].sort();
   if (commonCore.some((category) => !commonCoreValues.has(category)))
@@ -738,12 +805,16 @@ export async function queryRankings(
   if (termExists.length === 0)
     throw new InvalidRankingsQueryError("Unknown Term Code.");
 
-  let catalog: Map<string, CatalogCourse>;
-  try {
-    catalog = await courseCatalog(accepted.directory);
-  } catch (error) {
-    throw new RankingsUnavailableError({ cause: error });
+  let catalogSnapshot: CourseCatalog | undefined;
+  if (query.entity === "course" || search) {
+    try {
+      catalogSnapshot = await courseCatalog(accepted.directory);
+    } catch (error) {
+      throw new RankingsUnavailableError({ cause: error });
+    }
   }
+  const catalog = catalogSnapshot?.courses ?? new Map<string, CatalogCourse>();
+  const catalogDigest = catalogSnapshot?.digest ?? "";
   const linkRows = await queryRows(
     accepted.connection,
     `SELECT name, subject, code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE term_code = $termCode`,
@@ -786,17 +857,19 @@ export async function queryRankings(
   }
 
   const weightedCriteria = Object.keys(configuration.weights) as Criterion[];
-  const eligible: Candidate[] = [];
+  const candidates: Candidate[] = [];
   for (const [key, values] of evidence) {
-    if (weightedCriteria.some((criterion) => values[criterion] === undefined))
-      continue;
-    const score = weightedCriteria.reduce(
-      (sum, criterion) =>
-        sum +
-        (values[criterion] as number) *
-          (configuration.weights[criterion] as number),
-      0,
-    );
+    const score = weightedCriteria.some(
+      (criterion) => values[criterion] === undefined,
+    )
+      ? undefined
+      : weightedCriteria.reduce(
+          (sum, criterion) =>
+            sum +
+            (values[criterion] as number) *
+              (configuration.weights[criterion] as number),
+          0,
+        );
     if (query.entity === "course") {
       const prefix = key.match(/^[A-Z]+/)?.[0];
       const courseNumber = prefix ? key.slice(prefix.length) : "";
@@ -811,7 +884,7 @@ export async function queryRankings(
           ) ?? false,
       ).map(({ value }) => value);
       const associated = identitiesByCourse.get(key) ?? [];
-      eligible.push({
+      candidates.push({
         key,
         score,
         coursePrefix: prefix,
@@ -844,7 +917,7 @@ export async function queryRankings(
       const identity = accepted.identitiesByName.get(key);
       if (!identity) continue;
       const courseCodes = coursesByInstructor.get(key) ?? new Set();
-      eligible.push({
+      candidates.push({
         key: identity.uuid,
         score,
         courseCodes,
@@ -874,12 +947,14 @@ export async function queryRankings(
       });
     }
   }
+  const eligible = candidates.filter(
+    (candidate): candidate is RankedCandidate => candidate.score !== undefined,
+  );
   eligible.sort(
     (left, right) =>
       right.score - left.score || left.key.localeCompare(right.key),
   );
-  const globalRanks = ranks(eligible);
-  const filtered = eligible.filter((candidate) => {
+  const matchesFilters = (candidate: Candidate) => {
     if (coursePrefix) {
       const matchesPrefix =
         query.entity === "course"
@@ -896,11 +971,19 @@ export async function queryRankings(
     )
       return false;
     return true;
-  });
+  };
+  const globalRanks = ranks(eligible);
+  const filtered = eligible.filter(matchesFilters);
   const localRanks = ranks(filtered);
   const searched = search
     ? filtered.filter((candidate) => candidate.searchText.includes(search))
     : filtered;
+  const unrankedMatchCount = candidates.filter(
+    (candidate) =>
+      candidate.score === undefined &&
+      matchesFilters(candidate) &&
+      (!search || candidate.searchText.includes(search)),
+  ).length;
 
   const normalizedQuery = JSON.stringify({
     entity: query.entity,
@@ -924,6 +1007,7 @@ export async function queryRankings(
       throw new InvalidRankingsQueryError(
         "The cursor belongs to a different ranking query.",
       );
+    if (cursor.c !== catalogDigest) throw new StaleRankingsCursorError();
     const position = searched.findIndex(
       (candidate) => candidate.key === cursor.p,
     );
@@ -954,6 +1038,7 @@ export async function queryRankings(
     ? Buffer.from(
         JSON.stringify({
           g: accepted.sha,
+          c: catalogDigest,
           q: fingerprint,
           p: page.at(-1)?.key,
         }),
@@ -971,6 +1056,7 @@ export async function queryRankings(
     configuration,
     results,
     nextCursor,
+    unrankedMatchCount,
   };
 }
 

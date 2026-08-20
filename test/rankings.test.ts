@@ -1,5 +1,5 @@
 import { afterEach, expect, mock, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fixtureSha, makeRankingGeneration } from "./rankings-fixture";
@@ -10,6 +10,7 @@ const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   delete process.env.RANKINGS_SEED_DIR;
+  delete process.env.RANKINGS_COURSE_CATALOG_FILE;
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -107,6 +108,7 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
     sourceCommit: fixtureSha,
   });
   expect(detail.courses).toEqual([
+    { termCode: "2510", courseCode: "COMP 1029C" },
     { termCode: "2510", courseCode: "MATH 2000" },
   ]);
   expect(detail.terms[0]?.criteria.instructor?.bayesian).toBe(1);
@@ -174,7 +176,7 @@ test("queryRankings serves Course presets and normalized custom weights", async 
     preset: "custom",
     weights: { content: 1 },
   });
-  expect(custom.population.size).toBe(3);
+  expect(custom.population.size).toBe(4);
   expect(
     custom.results.find((row) => row.courseCode === "COMP 1000")?.score,
   ).toBe(1);
@@ -185,6 +187,22 @@ test("queryRankings serves Course presets and normalized custom weights", async 
   await expect(
     queryRankings({ entity: "course", weights: { content: 0 } }),
   ).rejects.toThrow("non-zero");
+
+  const large = await queryRankings({
+    entity: "instructor",
+    termCode: "2510",
+    weights: { content: 1e308, teaching: 1e308 },
+  });
+  expect(large.configuration.weights).toEqual({
+    content: 0.5,
+    teaching: 0.5,
+  });
+  const extreme = await queryRankings({
+    entity: "instructor",
+    termCode: "2510",
+    weights: { content: Number.MIN_VALUE, teaching: Number.MAX_VALUE },
+  });
+  expect(extreme.configuration.weights).toEqual({ teaching: 1 });
 });
 
 test("structured filters create Local Ranks while search preserves both ranks", async () => {
@@ -217,13 +235,22 @@ test("structured filters create Local Ranks while search preserves both ranks", 
     commonCore: ["arts"],
     search: "Alpha Instructor",
   });
-  expect(courses.population).toMatchObject({ size: 2, filteredSize: 1 });
+  expect(courses.population).toMatchObject({ size: 3, filteredSize: 1 });
   expect(courses.results).toEqual([
     expect.objectContaining({
       courseCode: "COMP 1000",
       title: "Creative Computing",
       localRank: 1,
     }),
+  ]);
+
+  const bySuffixedCourse = await queryRankings({
+    entity: "instructor",
+    termCode: "2510",
+    course: "COMP 1029C",
+  });
+  expect(bySuffixedCourse.results.map((row) => row.canonicalName)).toEqual([
+    "Beta Instructor",
   ]);
 
   const byItsc = await queryRankings({
@@ -290,6 +317,101 @@ test("historical mode and generation-bound cursors remain reproducible", async (
       cursor: current.nextCursor,
     }),
   ).rejects.toBeInstanceOf(StaleRankingsCursorError);
+});
+
+test("catalog identity binds Course and association-title cursors", async () => {
+  const firstRoot = await mkdtemp(join(tmpdir(), "ranking-catalog-first-"));
+  const secondRoot = await mkdtemp(join(tmpdir(), "ranking-catalog-second-"));
+  temporaryDirectories.push(firstRoot, secondRoot);
+  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(firstRoot);
+  const { queryRankings, StaleRankingsCursorError } = await import(
+    "@/lib/rankings/server"
+  );
+  const first = await queryRankings({
+    entity: "course",
+    termCode: "2510",
+    limit: 1,
+  });
+  expect(first.nextCursor).toBeString();
+
+  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(secondRoot);
+  const catalogPath = join(secondRoot, "course-catalog.json");
+  const catalog = JSON.parse(await readFile(catalogPath, "utf8"));
+  catalog[0].courseName = "Changed title";
+  await writeFile(catalogPath, JSON.stringify(catalog));
+  await expect(
+    queryRankings({
+      entity: "course",
+      termCode: "2510",
+      limit: 1,
+      cursor: first.nextCursor,
+    }),
+  ).rejects.toBeInstanceOf(StaleRankingsCursorError);
+});
+
+test("required catalog metadata fails closed without blocking unrelated Instructor queries", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-catalog-"));
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR =
+    await makeRankingGeneration(temporaryDirectory);
+  process.env.RANKINGS_COURSE_CATALOG_FILE = join(
+    temporaryDirectory,
+    "missing-catalog.json",
+  );
+
+  const { queryRankings, RankingsUnavailableError } = await import(
+    "@/lib/rankings/server"
+  );
+  await expect(
+    queryRankings({ entity: "course", termCode: "2510" }),
+  ).rejects.toBeInstanceOf(RankingsUnavailableError);
+  await expect(
+    queryRankings({ entity: "instructor", termCode: "2510" }),
+  ).resolves.toMatchObject({ population: { entity: "instructor" } });
+  await expect(
+    queryRankings({ entity: "instructor", termCode: "2510", search: "Math" }),
+  ).rejects.toBeInstanceOf(RankingsUnavailableError);
+
+  const malformed = join(temporaryDirectory, "malformed-catalog.json");
+  await writeFile(
+    malformed,
+    JSON.stringify([
+      {
+        coursePrefix: "COMP",
+        courseNumber: "1000",
+        courseName: "Broken",
+        courseAttributes: "not-an-array",
+      },
+    ]),
+  );
+  process.env.RANKINGS_COURSE_CATALOG_FILE = malformed;
+  await expect(
+    queryRankings({ entity: "course", termCode: "2510" }),
+  ).rejects.toBeInstanceOf(RankingsUnavailableError);
+});
+
+test("search distinguishes strict-ineligible entities from unknown entities", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-unranked-"));
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR =
+    await makeRankingGeneration(temporaryDirectory);
+
+  const { queryRankings } = await import("@/lib/rankings/server");
+  const unranked = await queryRankings({
+    entity: "course",
+    termCode: "2510",
+    search: "MISS 4000",
+  });
+  expect(unranked.results).toHaveLength(0);
+  expect(unranked.unrankedMatchCount).toBe(1);
+
+  const unknown = await queryRankings({
+    entity: "course",
+    termCode: "2510",
+    search: "UNKNOWN 9999",
+  });
+  expect(unknown.results).toHaveLength(0);
+  expect(unknown.unrankedMatchCount).toBe(0);
 });
 
 test("ranking pages stop at 100 rows and continue after the last position", async () => {

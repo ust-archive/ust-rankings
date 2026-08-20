@@ -116,6 +116,7 @@ export async function makeRankingGeneration(
     const courseRows: string[] = [];
     for (const [prefix, courseNumber, isOffered, missingCriterion] of [
       ["COMP", "1000", true, ""],
+      ["COMP", "1029C", true, ""],
       ["MATH", "2000", true, ""],
       ["HIST", "3000", false, ""],
       ["MISS", "4000", true, "instructor"],
@@ -130,7 +131,7 @@ export async function makeRankingGeneration(
       ]) {
         if (criterion === missingCriterion) continue;
         const score =
-          prefix === "COMP"
+          prefix === "COMP" && courseNumber === "1000"
             ? Number(criterion === "content")
             : prefix === "MATH"
               ? 0.5
@@ -193,6 +194,7 @@ export async function makeRankingGeneration(
       `SELECT * FROM (VALUES
         ('Alpha Instructor', 100, '2510', 'COMP', '1000'),
         ('Beta Instructor', 100, '2510', 'MATH', '2000'),
+        ('Beta Instructor', 100, '2510', 'COMP', '1029C'),
         ('Delta Instructor', 100, '2510', 'HIST', '3000'),
         ('Gamma Instructor', 100, '2510', 'MISS', '4000'),
         ('Historical Instructor', 100, '2510', 'COMP', '1000')
@@ -238,6 +240,15 @@ export async function makeRankingGeneration(
         courseName: "Creative Computing",
         courseAttributes: [
           { courseAttribute: "CC25", courseAttributeValue: "37" },
+        ],
+      },
+      {
+        coursePrefix: "COMP",
+        courseNumber: "1029C",
+        courseCode: "COMP1029C",
+        courseName: "Special Topics in Computing",
+        courseAttributes: [
+          { courseAttribute: "CC25", courseAttributeValue: "40" },
         ],
       },
       {
