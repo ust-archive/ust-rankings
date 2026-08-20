@@ -68,6 +68,12 @@ export default function RootLayout({
               >
                 Schedule
               </Link>
+              <Link
+                className="rounded-full border border-white/60 px-3 py-1.5 no-underline hover:bg-white/10"
+                href="/sign-in"
+              >
+                Sign in
+              </Link>
             </nav>
           </div>
         </header>
