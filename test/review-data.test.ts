@@ -22,7 +22,7 @@ test("Review reads cross one contribution seam and distinguish provider unavaila
     await loadReviews(
       {
         type: "instructor",
-        instructorUuid: review.instructorUuid,
+        instructorUuids: [review.instructorUuid],
       },
       async () => {
         throw new ContributionsUnavailableError();

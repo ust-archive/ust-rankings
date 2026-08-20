@@ -35,9 +35,8 @@ export type ReviewListQuery =
   | ({ type: "course" } & CourseBasis & { termCode?: string; section?: string })
   | {
       type: "instructor";
-      instructorUuid: string;
+      instructorUuids: string[];
       termCode?: string;
-      section?: string;
     };
 
 export interface ReviewRepository {
@@ -190,6 +189,17 @@ export function createReviewService(
     },
 
     async listReviews(query: ReviewListQuery) {
+      const instructorUuids =
+        query.type === "instructor" && Array.isArray(query.instructorUuids)
+          ? [
+              ...new Set(
+                query.instructorUuids.map(
+                  (instructorUuid) =>
+                    normalizeAssociations({ instructorUuid }).instructorUuid,
+                ),
+              ),
+            ]
+          : undefined;
       const context = normalizeAssociations(
         query.type === "course"
           ? {
@@ -201,9 +211,8 @@ export function createReviewService(
               section: query.section,
             }
           : {
-              instructorUuid: query.instructorUuid,
+              instructorUuid: instructorUuids?.[0],
               termCode: query.termCode,
-              section: query.section,
             },
       );
       let reviews: PublicReview[];
@@ -214,21 +223,29 @@ export function createReviewService(
           termCode: context.termCode,
           section: context.section,
         });
-      else if (query.type === "instructor" && context.instructorUuid)
+      else if (
+        query.type === "instructor" &&
+        context.instructorUuid &&
+        instructorUuids?.every((instructorUuid): instructorUuid is string =>
+          Boolean(instructorUuid),
+        )
+      )
         reviews = await repository.listReviews({
           type: "instructor",
-          instructorUuid: context.instructorUuid,
+          instructorUuids,
           termCode: context.termCode,
-          section: context.section,
         });
       else
         throw new ReviewWriteError(
           "invalid-basis",
           "Review Basis is malformed",
         );
-      if (!options.resolveInstructorAssociationStatus) return reviews;
+      const uniqueReviews = [
+        ...new Map(reviews.map((review) => [review.id, review])).values(),
+      ];
+      if (!options.resolveInstructorAssociationStatus) return uniqueReviews;
       return Promise.all(
-        reviews.map(async (review) => {
+        uniqueReviews.map(async (review) => {
           if (!review.instructorUuid) return review;
           const status =
             await options.resolveInstructorAssociationStatus?.(review);

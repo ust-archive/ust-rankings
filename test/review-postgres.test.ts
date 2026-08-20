@@ -49,6 +49,7 @@ if (!connection) {
       const publish = async (
         userId: string,
         associations: ReviewAssociations,
+        markdown = `Review ${JSON.stringify(associations)}`,
       ) => {
         const client = postgres(connection, {
           max: 1,
@@ -58,7 +59,7 @@ if (!connection) {
         try {
           return await service(client).publishReview(userId, {
             associations,
-            markdown: `Review ${JSON.stringify(associations)}`,
+            markdown,
           });
         } finally {
           await client.end({ timeout: 0 });
@@ -113,9 +114,21 @@ if (!connection) {
       expect(
         await reviews.listReviews({
           type: "instructor",
-          instructorUuid: INSTRUCTOR_UUID,
+          instructorUuids: [INSTRUCTOR_UUID],
         }),
       ).toHaveLength(5);
+      const retiredInstructorUuid = "00000000-0000-4000-8000-000000000046";
+      const retiredReview = await publish(activeId, {
+        instructorUuid: retiredInstructorUuid,
+      });
+      const familyReviews = await reviews.listReviews({
+        type: "instructor",
+        instructorUuids: [INSTRUCTOR_UUID, retiredInstructorUuid],
+      });
+      expect(familyReviews).toHaveLength(6);
+      expect(
+        familyReviews.some((review) => review.id === retiredReview.id),
+      ).toBe(true);
 
       const dual = published[2];
       const complete = published[7];
@@ -144,6 +157,48 @@ if (!connection) {
         instructorBases: 1,
         contexts: 1,
       });
+      for (const mutation of [
+        `UPDATE review_revisions SET markdown = 'rewritten' WHERE id = '${complete.revisionId}'`,
+        `UPDATE review_course_bases SET course_number = '2001' WHERE revision_id = '${complete.revisionId}'`,
+        `UPDATE review_instructor_bases SET instructor_uuid = '${retiredInstructorUuid}' WHERE revision_id = '${complete.revisionId}'`,
+        `UPDATE review_contexts SET term_code = '2520' WHERE revision_id = '${complete.revisionId}'`,
+      ]) {
+        let immutableError: unknown;
+        try {
+          await sql.unsafe(mutation);
+        } catch (error) {
+          immutableError = error;
+        }
+        expect(String(immutableError)).toContain(
+          "Review Revisions are immutable",
+        );
+      }
+
+      const rollbackUserId = crypto.randomUUID();
+      await sql`
+        INSERT INTO contribution_users (id, status, public_display_name)
+        VALUES (${rollbackUserId}, 'active', 'Rollback Student')
+      `;
+      await sql.unsafe(`
+        CREATE FUNCTION reject_review_revision() RETURNS trigger
+        LANGUAGE plpgsql AS $$ BEGIN
+          IF NEW.markdown = 'force rollback' THEN
+            RAISE EXCEPTION 'forced revision failure';
+          END IF;
+          RETURN NEW;
+        END $$;
+        CREATE TRIGGER reject_review_revision
+        BEFORE INSERT ON review_revisions
+        FOR EACH ROW EXECUTE FUNCTION reject_review_revision();
+      `);
+      await expect(
+        publish(rollbackUserId, { course }, "force rollback"),
+      ).rejects.toThrow("forced revision failure");
+      const [rolledBack] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count
+        FROM reviews WHERE author_user_id = ${rollbackUserId}
+      `;
+      expect(rolledBack?.count).toBe(0);
 
       for (const status of ["onboarding", "suspended", "closed"] as const) {
         const userId = crypto.randomUUID();

@@ -22,13 +22,19 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default async function InstructorPage({
-  params,
-  searchParams,
-}: {
+type InstructorPageProps = {
   params: Promise<{ key: string }>;
   searchParams: Promise<InstructorRouteSearchParams>;
-}) {
+};
+
+export default function InstructorPage(props: InstructorPageProps) {
+  return renderInstructorPage(props);
+}
+
+export async function renderInstructorPage(
+  { params, searchParams }: InstructorPageProps,
+  readReviews: typeof loadReviews = loadReviews,
+) {
   const query = await searchParams;
   const key = normalizeInstructorRoute((await params).key, query);
   const selectedTerm =
@@ -101,9 +107,9 @@ export default async function InstructorPage({
         type: "instructor",
         instructorUuid: identity.instructor.uuid,
       }),
-      loadReviews({
+      readReviews({
         type: "instructor",
-        instructorUuid: identity.instructor.uuid,
+        instructorUuids: identity.familyUuids,
       }),
     ]);
   const classes = scheduleResult.classes.filter(

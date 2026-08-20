@@ -158,6 +158,44 @@ test("invalid Review Basis and Review Context shapes fail before source validati
   expect(published).toHaveLength(0);
 });
 
+test("Instructor family aggregation normalizes UUIDs and de-duplicates each Review", async () => {
+  const stored = {
+    id: "00000000-0000-4000-8000-000000000144",
+    revisionId: "00000000-0000-4000-8000-000000000244",
+    instructorUuid: INSTRUCTOR_UUID,
+    markdown: "Useful.",
+    capturedDisplayName: "Public Student",
+    publishedAt: new Date("2026-08-20T12:00:00.000Z"),
+    instructorAssociationStatus: "resolved" as const,
+  };
+  const queries: Parameters<ReviewRepository["listReviews"]>[0][] = [];
+  const repository: ReviewRepository = {
+    async publishReview() {
+      return stored;
+    },
+    async listReviews(query) {
+      queries.push(query);
+      return [stored, stored];
+    },
+  };
+  const reviews = createReviewService(repository, {
+    reviewPolicyVersion: "review-test-v1",
+    async validateAssociations(associations) {
+      return associations;
+    },
+  });
+
+  expect(
+    await reviews.listReviews({
+      type: "instructor",
+      instructorUuids: [INSTRUCTOR_UUID.toUpperCase(), INSTRUCTOR_UUID],
+    }),
+  ).toEqual([stored]);
+  expect(queries).toEqual([
+    { type: "instructor", instructorUuids: [INSTRUCTOR_UUID] },
+  ]);
+});
+
 test("durable Review associations are flagged rather than guessed after an Instructor correction", async () => {
   const stored = {
     id: "00000000-0000-4000-8000-000000000144",

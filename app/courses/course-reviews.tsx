@@ -55,13 +55,17 @@ export function ReviewComposer({
     () =>
       contexts.filter(
         (context) =>
-          (!selectedCoursePrefix ||
-            (context.course?.coursePrefix === selectedCoursePrefix &&
-              context.course.courseNumber === selectedCourseNumber)) &&
-          (!instructorEnabled || context.instructorUuid === instructorUuid),
+          (courseEnabled
+            ? context.course?.coursePrefix === selectedCoursePrefix &&
+              context.course.courseNumber === selectedCourseNumber
+            : context.course === undefined) &&
+          (instructorEnabled
+            ? context.instructorUuid === instructorUuid
+            : context.instructorUuid === undefined),
       ),
     [
       contexts,
+      courseEnabled,
       selectedCoursePrefix,
       selectedCourseNumber,
       instructorEnabled,
@@ -328,6 +332,11 @@ export function Reviews({ reviews }: { reviews: PublicReview[] }) {
               <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-950">
                 Instructor association needs resolution after an identity
                 correction; it has not been guessed or reassigned.
+              </p>
+            ) : review.instructorAssociationStatus === "historical" ? (
+              <p className="mt-2 text-sm text-slate-600">
+                Historical Instructor association retained after an identity
+                merge.
               </p>
             ) : null}
             <div className="prose prose-slate mt-4 max-w-none leading-7">

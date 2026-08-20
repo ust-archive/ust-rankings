@@ -8,11 +8,14 @@ import {
   type EstablishIdentityInput,
 } from "./accounts";
 import {
+  resolveReviewInstructorAssociationStatus,
+  validateReviewAssociations,
+} from "./review-associations";
+import {
   ContributionsUnavailableError,
   createReviewService,
   type PublicReview,
   type PublishReviewRecord,
-  type ReviewAssociations,
   type ReviewListQuery,
   type ReviewRepository,
   ReviewWriteError,
@@ -263,9 +266,10 @@ export class PostgresReviewRepository implements ReviewRepository {
           AND rr.attribution = 'attributed'
           AND (${query.type} = 'course' AND rcb.course_prefix = ${query.type === "course" ? query.coursePrefix : null}
                AND rcb.course_number = ${query.type === "course" ? query.courseNumber : null}
-            OR ${query.type} = 'instructor' AND rib.instructor_uuid = ${query.type === "instructor" ? query.instructorUuid : null}::uuid)
+            OR ${query.type} = 'instructor' AND rib.instructor_uuid = ANY(${query.type === "instructor" ? query.instructorUuids : []}::uuid[]))
           AND (${query.termCode ?? null}::text IS NULL OR rc.term_code = ${query.termCode ?? null})
-          AND (${query.section ?? null}::text IS NULL OR rc.section = ${query.section ?? null})
+          AND (${query.type === "course" ? (query.section ?? null) : null}::text IS NULL
+               OR rc.section = ${query.type === "course" ? (query.section ?? null) : null})
         ORDER BY rr.published_at DESC, r.id
       `;
       return rows.map(publicReview);
@@ -612,131 +616,9 @@ function initializeRuntime() {
     }),
     reviews: createReviewService(new PostgresReviewRepository(sql), {
       reviewPolicyVersion: process.env.REVIEW_POLICY_VERSION,
-      async validateAssociations(associations: ReviewAssociations) {
-        const {
-          getInstructorIdentity,
-          getRankings,
-          InvalidRankingsQueryError,
-          RankingsUnavailableError,
-          UnknownRankingsEntityError,
-        } = await import("@/lib/rankings/server");
-        const {
-          getSchedule,
-          InvalidScheduleQueryError,
-          ScheduleUnavailableError,
-        } = await import("@/lib/schedule/server");
-        try {
-          let canonicalInstructorUuid = associations.instructorUuid;
-          if (canonicalInstructorUuid)
-            canonicalInstructorUuid = (
-              await getInstructorIdentity(canonicalInstructorUuid)
-            ).instructor.uuid;
-
-          const courseRankings = associations.course
-            ? await getRankings({ type: "course", ...associations.course })
-            : undefined;
-          if (canonicalInstructorUuid && !associations.course)
-            await getRankings(
-              { type: "instructor", uuid: canonicalInstructorUuid },
-              associations.termCode
-                ? { termCode: associations.termCode }
-                : undefined,
-            );
-          if (
-            courseRankings &&
-            canonicalInstructorUuid &&
-            !courseRankings.instructors.some(
-              (item) =>
-                item.instructor.uuid === canonicalInstructorUuid &&
-                (!associations.termCode ||
-                  item.termCode === associations.termCode),
-            )
-          )
-            return undefined;
-
-          if (associations.course && associations.termCode) {
-            const schedule = await getSchedule(
-              associations.section
-                ? {
-                    type: "class",
-                    ...associations.course,
-                    termCode: associations.termCode,
-                    section: associations.section,
-                  }
-                : {
-                    type: "course-offering",
-                    ...associations.course,
-                    termCode: associations.termCode,
-                  },
-            );
-            if (
-              canonicalInstructorUuid &&
-              schedule.type === "class" &&
-              !schedule.meetings.some((meeting) =>
-                meeting.instructors.some(
-                  (instructor) => instructor.uuid === canonicalInstructorUuid,
-                ),
-              )
-            )
-              return undefined;
-          }
-          return {
-            ...associations,
-            ...(canonicalInstructorUuid
-              ? { instructorUuid: canonicalInstructorUuid }
-              : {}),
-          };
-        } catch (error) {
-          if (
-            error instanceof UnknownRankingsEntityError ||
-            error instanceof InvalidRankingsQueryError ||
-            error instanceof InvalidScheduleQueryError
-          )
-            return undefined;
-          if (error instanceof RankingsUnavailableError)
-            throw new ReviewWriteError(
-              "rankings-unavailable",
-              "Review Bases cannot be validated while Rankings Data is unavailable",
-            );
-          if (error instanceof ScheduleUnavailableError)
-            throw new ReviewWriteError(
-              "schedule-unavailable",
-              "Review Context cannot be validated while Schedule Data is unavailable",
-            );
-          throw error;
-        }
-      },
-      async resolveInstructorAssociationStatus(review: PublicReview) {
-        if (!review.instructorUuid) return undefined;
-        const {
-          getInstructorIdentity,
-          RankingsUnavailableError,
-          UnknownRankingsEntityError,
-        } = await import("@/lib/rankings/server");
-        try {
-          const identity = await getInstructorIdentity(review.instructorUuid);
-          const courseCode = review.course
-            ? `${review.course.coursePrefix} ${review.course.courseNumber}`
-            : undefined;
-          if (
-            identity.identityHistory.affectedAssociations.some(
-              (affected) =>
-                (!affected.courseCode || affected.courseCode === courseCode) &&
-                (!affected.termCode || affected.termCode === review.termCode),
-            )
-          )
-            return "needs-resolution";
-          if (identity.instructor.uuid !== review.instructorUuid)
-            return "historical";
-          return review.instructorAssociationStatus;
-        } catch (error) {
-          if (error instanceof UnknownRankingsEntityError)
-            return "needs-resolution";
-          if (error instanceof RankingsUnavailableError)
-            return review.instructorAssociationStatus;
-          throw error;
-        }
-      },
+      validateAssociations: validateReviewAssociations,
+      resolveInstructorAssociationStatus:
+        resolveReviewInstructorAssociationStatus,
     }),
     signals: createSignalService(new PostgresSignalRepository(sql), {
       async resolveTarget(target) {

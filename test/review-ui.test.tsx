@@ -35,6 +35,43 @@ test("public Review renders equal Bases, secondary Context, and safe Markdown on
     'href="/courses/COMP/2000#review-00000000-0000-4000-8000-000000000144"',
   );
   expect(markup.match(/Useful/g)).toHaveLength(1);
+
+  const historical = renderToStaticMarkup(
+    <Reviews
+      reviews={[
+        {
+          ...review,
+          id: "00000000-0000-4000-8000-000000000145",
+          instructorAssociationStatus: "historical",
+        },
+      ]}
+    />,
+  );
+  expect(historical).toContain(
+    "Historical Instructor association retained after an identity merge.",
+  );
+});
+
+test("Instructor-only composer Terms use only matching source-backed Context choices", async () => {
+  const { ReviewComposer } = await import("@/app/courses/course-reviews");
+  const instructorUuid = review.instructorUuid;
+  const markup = renderToStaticMarkup(
+    <ReviewComposer
+      contexts={[
+        { instructorUuid, termCode: "2510" },
+        {
+          course: { coursePrefix: "COMP", courseNumber: "2000" },
+          instructorUuid,
+          termCode: "2430",
+        },
+      ]}
+      courses={[{ coursePrefix: "COMP", courseNumber: "2000" }]}
+      initialInstructorUuid={instructorUuid}
+      instructors={[{ instructorUuid, name: "Ada Instructor" }]}
+    />,
+  );
+  expect(markup).toContain('<option value="2510">2510</option>');
+  expect(markup).not.toContain('<option value="2430">2430</option>');
 });
 
 test("responsive Review composer exposes dependent Basis and Context controls and publication terms", async () => {

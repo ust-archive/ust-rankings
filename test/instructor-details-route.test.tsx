@@ -8,6 +8,7 @@ import { makeScheduleGeneration } from "./schedule-fixture";
 
 mock.module("server-only", () => ({}));
 
+const BETA_UUID = "00000000-0000-4000-8000-000000000002";
 const temporaryDirectories: string[] = [];
 
 async function configureDetails() {
@@ -171,7 +172,7 @@ test("Instructor registry preserves ITSC additions, merge redirects, split resol
   const merged = await getRankings({ type: "instructor", key: "beta" });
   expect(merged.instructor.uuid).toBe(added.instructor.uuid);
   expect(merged.route).toMatchObject({ canonicalKey: "alpha", redirect: true });
-  const { default: InstructorPage } = await import(
+  const { default: InstructorPage, renderInstructorPage } = await import(
     "@/app/instructors/[key]/page"
   );
   for (const key of ["beta", "00000000-0000-4000-8000-000000000002"]) {
@@ -197,6 +198,36 @@ test("Instructor registry preserves ITSC additions, merge redirects, split resol
     "Alpha Instructor",
     "Beta Instructor",
   ]);
+  let reviewFamilyUuids: string[] = [];
+  const mergedMarkup = renderToStaticMarkup(
+    await renderInstructorPage(
+      {
+        params: Promise.resolve({ key: "alpha" }),
+        searchParams: Promise.resolve({}),
+      },
+      async (query) => {
+        if (query.type === "instructor")
+          reviewFamilyUuids = query.instructorUuids;
+        return {
+          reviews: [
+            {
+              id: "00000000-0000-4000-8000-000000000145",
+              revisionId: "00000000-0000-4000-8000-000000000245",
+              instructorUuid: BETA_UUID,
+              markdown: "Retired Instructor Review remains visible.",
+              capturedDisplayName: "Captured Student",
+              publishedAt: new Date("2026-08-20T12:00:00Z"),
+              instructorAssociationStatus: "historical",
+            },
+          ],
+          unavailable: false as const,
+        };
+      },
+    ),
+  );
+  expect(reviewFamilyUuids).toEqual(merged.familyUuids);
+  expect(mergedMarkup).toContain("Retired Instructor Review remains visible.");
+  expect(mergedMarkup).toContain("Historical Instructor association retained");
   expect(merged.historicalEvidence).toEqual([
     expect.objectContaining({
       instructor: expect.objectContaining({ canonicalName: "Beta Instructor" }),

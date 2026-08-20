@@ -484,26 +484,31 @@ export function InstructorDetails({
     ...splitCourseCode(courseCode),
     label: courseCode,
   }));
-  const contexts = classes.flatMap((item) => [
-    { instructorUuid: identity.instructor.uuid, termCode: item.termCode },
-    {
-      course: {
-        coursePrefix: item.coursePrefix,
-        courseNumber: item.courseNumber,
-      },
+  const contexts = [
+    ...(rankings?.terms.map((term) => ({
       instructorUuid: identity.instructor.uuid,
-      termCode: item.termCode,
-    },
-    {
-      course: {
-        coursePrefix: item.coursePrefix,
-        courseNumber: item.courseNumber,
+      termCode: term.termCode,
+    })) ?? []),
+    ...classes.flatMap((item) => [
+      {
+        course: {
+          coursePrefix: item.coursePrefix,
+          courseNumber: item.courseNumber,
+        },
+        instructorUuid: identity.instructor.uuid,
+        termCode: item.termCode,
       },
-      instructorUuid: identity.instructor.uuid,
-      termCode: item.termCode,
-      section: item.section,
-    },
-  ]);
+      {
+        course: {
+          coursePrefix: item.coursePrefix,
+          courseNumber: item.courseNumber,
+        },
+        instructorUuid: identity.instructor.uuid,
+        termCode: item.termCode,
+        section: item.section,
+      },
+    ]),
+  ];
   return (
     <div className="w-full space-y-8 text-left text-slate-900">
       <header className="border-b border-slate-200 pb-7">
