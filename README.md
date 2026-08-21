@@ -25,9 +25,9 @@ npm run check
 npm run build
 ```
 
-Use `npm run dev` for local development; it refreshes the generated Course
-Catalog before starting Next.js. For fixture data, copy `.env.example` to
-`.env.local`, set `AUTH_SECRET`, and uncomment `RANKINGS_SEED_DIR` and
+Use `npm run dev` for local development. Rankings load the accepted Hugging
+Face generation without mutating source data. For Schedule fixture data, copy
+`.env.example` to `.env.local`, set `AUTH_SECRET`, and uncomment
 `SCHEDULE_SEED_DIR`. Biome is the formatter, linter, and import organizer
 (`npm run check:write`), while TypeScript remains a separate check
 (`npm run type-check`).

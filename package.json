@@ -7,9 +7,7 @@
     "data"
   ],
   "scripts": {
-    "update-data": "node scripts/update-data.mjs",
-    "dev": "npm run update-data && next dev",
-    "prebuild": "npm run update-data",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "check": "npm run toolchain:check && biome check . && npm run type-check && npm test && npm run data:check",

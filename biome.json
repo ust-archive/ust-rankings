@@ -11,7 +11,6 @@
       "!!**/.agents",
       "!!**/node_modules",
       "!!data/out",
-      "!!data/data-course-catalog.json",
       "!!rankings/seed",
       "!!schedule/seed"
     ]

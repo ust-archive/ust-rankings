@@ -23,6 +23,7 @@ const ARTIFACTS = [
   "course-instructors.parquet",
   "course-rankings.parquet",
   "course-ratings.parquet",
+  "courses.parquet",
   "instructor-rankings.parquet",
   "instructor-ratings.parquet",
 ] as const;
@@ -316,6 +317,15 @@ const schemas: Record<
   (typeof ARTIFACTS)[number],
   ReadonlyArray<readonly [string, string]>
 > = {
+  "courses.parquet": [
+    ["prefix", "VARCHAR"],
+    ["number", "VARCHAR"],
+    ["title", "VARCHAR"],
+    [
+      "attributes",
+      'STRUCT("label" VARCHAR, "value" VARCHAR, description VARCHAR)[]',
+    ],
+  ],
   "course-instructors.parquet": [
     ["name", "VARCHAR"],
     ["term_num", "INTEGER"],
@@ -413,6 +423,7 @@ type Manifest = {
 
 type Generation = {
   sha: string;
+  courseDigest: string;
   directory: string;
   instance: DuckDBInstance;
   connection: DuckDBConnection;
@@ -655,7 +666,6 @@ export class StaleRankingsCursorError extends InvalidRankingsQueryError {
   }
 }
 
-const catalogs = new Map<string, Promise<CourseCatalog>>();
 const queryQueues = new WeakMap<DuckDBConnection, Promise<void>>();
 const queuedQueryCounts = new WeakMap<DuckDBConnection, number>();
 const serializedQueries = new Map<string, string>();
@@ -803,12 +813,15 @@ async function validateRelations(
     if (count === 0) throw new Error(`${filename} is empty`);
   }
 
+  const courseDimension = sqlPath(directory, "courses.parquet");
   const courses = sqlPath(directory, "course-ratings.parquet");
   const courseRanks = sqlPath(directory, "course-rankings.parquet");
   const instructors = sqlPath(directory, "instructor-ratings.parquet");
   const instructorRanks = sqlPath(directory, "instructor-rankings.parquet");
   const links = sqlPath(directory, "course-instructors.parquet");
   const checks = [
+    `SELECT prefix, number FROM read_parquet('${courseDimension}') GROUP BY ALL HAVING count(*) > 1`,
+    `SELECT 1 FROM read_parquet('${courseDimension}') WHERE prefix IS NULL OR NOT regexp_full_match(prefix, '[A-Z]{2,8}') OR number IS NULL OR NOT regexp_full_match(number, '[0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?') OR title IS NULL OR trim(title) = '' OR attributes IS NULL OR list_has_any(list_transform(attributes, attribute -> attribute.label IS NULL OR trim(attribute.label) = '' OR attribute.value IS NULL OR trim(attribute.value) = ''), [true])`,
     `SELECT subject, code, term_num, criterion FROM read_parquet('${courses}') GROUP BY ALL HAVING count(*) > 1`,
     `SELECT subject, code, term_num, criterion FROM read_parquet('${courseRanks}') GROUP BY ALL HAVING count(*) > 1`,
     `SELECT name, term_num, criterion FROM read_parquet('${instructors}') GROUP BY ALL HAVING count(*) > 1`,
@@ -1339,6 +1352,7 @@ async function loadGeneration(
       openGenerationCount += 1;
       return {
         sha: manifest.sourceCommit,
+        courseDigest: manifest.artifacts["courses.parquet"].sha256,
         directory,
         instance,
         connection,
@@ -1896,7 +1910,6 @@ export async function resetRankingsRuntimeForTests(
   runtimeDiscovery = undefined;
   afterAcquireForTests = undefined;
   serializedQueries.clear();
-  catalogs.clear();
   await Promise.all(retained.map((loading) => retireGeneration(loading)));
 }
 
@@ -1904,19 +1917,9 @@ function number(value: unknown) {
   return typeof value === "bigint" ? Number(value) : Number(value);
 }
 
-type CatalogCourse = {
-  coursePrefix: string;
-  courseNumber: string;
-  courseName: string;
-  courseAttributes: Array<{
-    courseAttribute: string;
-    courseAttributeValue: string;
-  }>;
-};
-
-type CourseCatalog = {
-  courses: Map<string, CatalogCourse>;
-  digest: string;
+type CourseMetadata = {
+  title?: string;
+  attributes: Array<{ label: string; value: string }>;
 };
 
 type Candidate = {
@@ -1934,78 +1937,6 @@ type Candidate = {
 };
 
 type RankedCandidate = Candidate & { score: number };
-
-async function courseCatalog(directory: string) {
-  const configuredPath = process.env.RANKINGS_COURSE_CATALOG_FILE;
-  const paths = configuredPath
-    ? [resolve(configuredPath)]
-    : [
-        resolve(directory, "..", "course-catalog.json"),
-        resolve(process.cwd(), "data", "data-course-catalog.json"),
-      ];
-  const cacheKey = paths.join("\0");
-  let loading = catalogs.get(cacheKey);
-  if (!loading) {
-    loading = (async () => {
-      let contents: Buffer | undefined;
-      for (const path of paths) {
-        try {
-          contents = await readFile(/* turbopackIgnore: true */ path);
-          break;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        }
-      }
-      if (!contents) throw new Error("Course catalog is unavailable");
-      const parsed = JSON.parse(contents.toString("utf8")) as unknown;
-      if (!Array.isArray(parsed) || parsed.length === 0)
-        throw new Error("Invalid Course catalog");
-      const courses = new Map<string, CatalogCourse>();
-      for (const value of parsed) {
-        if (
-          typeof value !== "object" ||
-          value === null ||
-          !("coursePrefix" in value) ||
-          typeof value.coursePrefix !== "string" ||
-          !/^[A-Z]{2,8}$/.test(value.coursePrefix) ||
-          !("courseNumber" in value) ||
-          typeof value.courseNumber !== "string" ||
-          !/^[0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?$/.test(value.courseNumber) ||
-          !("courseName" in value) ||
-          typeof value.courseName !== "string" ||
-          !value.courseName.trim() ||
-          !("courseAttributes" in value) ||
-          !Array.isArray(value.courseAttributes) ||
-          value.courseAttributes.some(
-            (attribute) =>
-              typeof attribute !== "object" ||
-              attribute === null ||
-              !("courseAttribute" in attribute) ||
-              typeof attribute.courseAttribute !== "string" ||
-              !attribute.courseAttribute.trim() ||
-              !("courseAttributeValue" in attribute) ||
-              typeof attribute.courseAttributeValue !== "string" ||
-              !attribute.courseAttributeValue.trim(),
-          )
-        ) {
-          throw new Error("Invalid Course catalog entry");
-        }
-        const course = value as CatalogCourse;
-        const key = `${course.coursePrefix}${course.courseNumber}`;
-        if (courses.has(key)) throw new Error("Duplicate Course catalog entry");
-        courses.set(key, course);
-      }
-      return {
-        courses,
-        digest: createHash("sha256").update(contents).digest("base64url"),
-      };
-    })();
-    catalogs.set(cacheKey, loading);
-    if (catalogs.size > 3)
-      catalogs.delete(catalogs.keys().next().value as string);
-  }
-  return loading;
-}
 
 function normalizedWeights(query: RankingsQuery) {
   if (query.weights !== undefined) {
@@ -2194,29 +2125,19 @@ async function queryRankingsWithGeneration(
   if (termExists.length === 0)
     throw new InvalidRankingsQueryError("Unknown Term Code.");
 
-  let catalogSnapshot: CourseCatalog | undefined;
-  const exactInstructorUuid =
-    query.entity === "instructor" &&
-    search !== undefined &&
-    accepted.identitiesByUuid.has(search);
-  if (query.entity === "course" || (search && !exactInstructorUuid)) {
-    try {
-      catalogSnapshot = await courseCatalog(accepted.directory);
-    } catch (error) {
-      throw new RankingsUnavailableError({ cause: error });
-    }
-  }
-  const catalog = catalogSnapshot?.courses ?? new Map<string, CatalogCourse>();
-  const catalogDigest = catalogSnapshot?.digest ?? "";
+  const coursesPath = sqlPath(accepted.directory, "courses.parquet");
+  const catalogDigest = accepted.courseDigest;
   const linkRows = await queryRows(
     accepted.connection,
-    `SELECT name, subject, code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE term_code = $termCode`,
+    `SELECT links.name, links.subject, links.code, courses.title FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') links LEFT JOIN read_parquet('${coursesPath}') courses ON courses.prefix = links.subject AND courses.number = links.code WHERE links.term_code = $termCode`,
     { termCode },
   );
   const identitiesByCourse = new Map<string, InstructorIdentity[]>();
   const coursesByInstructor = new Map<string, Set<string>>();
+  const courseTitles = new Map<string, string>();
   for (const row of linkRows) {
     const courseKey = `${row.subject}${row.code}`;
+    if (row.title) courseTitles.set(courseKey, String(row.title));
     const identity = resolveInstructorAssociation(accepted, {
       sourceName: String(row.name),
       termCode,
@@ -2233,12 +2154,11 @@ async function queryRankingsWithGeneration(
     }
   }
 
-  const entityColumns = query.entity === "course" ? "subject, code" : "name";
-  const activityColumn =
-    query.entity === "course" ? "is_offered" : "is_teaching";
   const rows = await queryRows(
     accepted.connection,
-    `SELECT ${entityColumns}, criterion, bayesian, cumulative_samples, ${activityColumn} AS is_active FROM read_parquet('${source}') WHERE term_code = $termCode ORDER BY ${entityColumns}, criterion`,
+    query.entity === "course"
+      ? `SELECT ratings.subject, ratings.code, ratings.criterion, ratings.bayesian, ratings.cumulative_samples, ratings.is_offered AS is_active, courses.title, courses.attributes FROM read_parquet('${source}') ratings LEFT JOIN read_parquet('${coursesPath}') courses ON courses.prefix = ratings.subject AND courses.number = ratings.code WHERE ratings.term_code = $termCode ORDER BY ratings.subject, ratings.code, ratings.criterion`
+      : `SELECT name, criterion, bayesian, cumulative_samples, is_teaching AS is_active FROM read_parquet('${source}') WHERE term_code = $termCode ORDER BY name, criterion`,
     { termCode },
   );
   const evidence = new Map<
@@ -2246,6 +2166,7 @@ async function queryRankingsWithGeneration(
     Partial<Record<Criterion, { bayesian: number; samples: number }>>
   >();
   const activeEntities = new Set<string>();
+  const courseMetadata = new Map<string, CourseMetadata>();
   for (const row of rows) {
     const criterion = String(row.criterion) as Criterion;
     if (!CRITERIA.includes(criterion)) continue;
@@ -2254,6 +2175,12 @@ async function queryRankingsWithGeneration(
         ? `${row.subject}${row.code}`
         : String(row.name);
     if (row.is_active) activeEntities.add(key);
+    if (query.entity === "course")
+      courseMetadata.set(key, {
+        title: row.title ? String(row.title) : undefined,
+        attributes:
+          (row.attributes as CourseMetadata["attributes"] | undefined) ?? [],
+      });
     const values = evidence.get(key) ?? {};
     values[criterion] = {
       bayesian: number(row.bayesian),
@@ -2309,14 +2236,14 @@ async function queryRankingsWithGeneration(
       const prefix = key.match(/^[A-Z]+/)?.[0];
       const courseNumber = prefix ? key.slice(prefix.length) : "";
       if (!prefix || !courseNumber) continue;
-      const metadata = catalog.get(key);
+      const metadata = courseMetadata.get(key);
       const categories = (commonCoreDefinition?.categories ?? [])
         .filter(
           ({ attributeValue }) =>
-            metadata?.courseAttributes?.some(
+            metadata?.attributes.some(
               (attribute) =>
-                attribute.courseAttribute === commonCoreScheme &&
-                attribute.courseAttributeValue === attributeValue,
+                attribute.label === commonCoreScheme &&
+                attribute.value === attributeValue,
             ) ?? false,
         )
         .map(({ value }) => value);
@@ -2333,7 +2260,7 @@ async function queryRankingsWithGeneration(
           prefix,
           courseNumber,
           `${prefix} ${courseNumber}`,
-          metadata?.courseName,
+          metadata?.title,
           ...associated.flatMap((identity) => [
             identity.uuid,
             identity.canonicalName,
@@ -2349,7 +2276,7 @@ async function queryRankingsWithGeneration(
           coursePrefix: prefix,
           courseNumber,
           courseCode: `${prefix} ${courseNumber}`,
-          title: metadata?.courseName,
+          title: metadata?.title,
         },
       });
     } else {
@@ -2372,10 +2299,7 @@ async function queryRankingsWithGeneration(
           ...(identitySearchValues.get(identity.uuid) ?? []),
           ...[...courseCodes].flatMap((courseCode) => {
             const [prefix, courseNumber] = courseCode.split(" ");
-            return [
-              courseCode,
-              catalog.get(`${prefix}${courseNumber}`)?.courseName,
-            ];
+            return [courseCode, courseTitles.get(`${prefix}${courseNumber}`)];
           }),
         ]
           .filter(Boolean)
@@ -2579,15 +2503,17 @@ export async function getRankings(
         !/^[0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?$/.test(courseNumber)
       )
         throw new UnknownRankingsEntityError("Course");
-      const catalog = await courseCatalog(accepted.directory);
-      const metadata = catalog.courses.get(`${coursePrefix}${courseNumber}`);
-      const ratings = await queryRows(
+      const courseRows = await queryRows(
         accepted.connection,
-        `SELECT term_code, criterion, bayesian, confidence, samples, cumulative_samples FROM read_parquet('${sqlPath(accepted.directory, "course-ratings.parquet")}') WHERE subject = $coursePrefix AND code = $courseNumber ORDER BY term_num, criterion`,
+        `SELECT courses.title, courses.attributes, ratings.term_code, ratings.criterion, ratings.bayesian, ratings.confidence, ratings.samples, ratings.cumulative_samples FROM read_parquet('${sqlPath(accepted.directory, "courses.parquet")}') courses FULL OUTER JOIN read_parquet('${sqlPath(accepted.directory, "course-ratings.parquet")}') ratings ON ratings.subject = courses.prefix AND ratings.code = courses.number WHERE coalesce(courses.prefix, ratings.subject) = $coursePrefix AND coalesce(courses.number, ratings.code) = $courseNumber ORDER BY ratings.term_num, ratings.criterion`,
         { coursePrefix, courseNumber },
       );
-      if (!metadata && ratings.length === 0)
+      if (courseRows.length === 0)
         throw new UnknownRankingsEntityError("Course");
+      const metadata = courseRows.find((row) => row.title) as
+        | { title: string; attributes: CourseMetadata["attributes"] }
+        | undefined;
+      const ratings = courseRows.filter((row) => row.criterion);
       const courseCode = `${coursePrefix} ${courseNumber}`;
       const page = (await queryRankingsWithGeneration(
         {
@@ -2632,10 +2558,10 @@ export async function getRankings(
       const commonCore = (commonCoreSchemes.get("CC25")?.categories ?? [])
         .filter(
           ({ attributeValue }) =>
-            metadata?.courseAttributes.some(
+            metadata?.attributes.some(
               (attribute) =>
-                attribute.courseAttribute === "CC25" &&
-                attribute.courseAttributeValue === attributeValue,
+                attribute.label === "CC25" &&
+                attribute.value === attributeValue,
             ) ?? false,
         )
         .map(({ value }) => value);
@@ -2648,7 +2574,7 @@ export async function getRankings(
           coursePrefix,
           courseNumber,
           courseCode,
-          title: metadata?.courseName,
+          title: metadata?.title,
           commonCore,
         },
         ranking,

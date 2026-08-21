@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { gradeColor } from "@/lib/rankings/presentation";
-import { fixtureSha, makeRankingGeneration } from "./rankings-fixture";
+import {
+  fixtureSha,
+  makeRankingGeneration,
+  makeRankingGenerationWithSha,
+} from "./rankings-fixture";
 
 vi.mock("server-only", () => ({}));
 
@@ -11,7 +15,6 @@ const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   delete process.env.RANKINGS_SEED_DIR;
-  delete process.env.RANKINGS_COURSE_CATALOG_FILE;
   const { resetRankingsRuntimeForTests } = await import(
     "@/lib/rankings/server"
   );
@@ -43,24 +46,20 @@ test("no valid generation fails only the ranking module", async () => {
   );
 });
 
-test("an explicit RANKINGS_SEED_DIR generation is accepted before it is served", async () => {
+test("a legacy generation without the Course dimension is rejected", async () => {
   process.env.RANKINGS_SEED_DIR = join(
     process.cwd(),
     "rankings",
     "seed",
     "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d",
   );
-  const { queryRankings } = await import("@/lib/rankings/server");
-  const page = await queryRankings({
-    entity: "instructor",
-    preset: "learning",
-    limit: 1,
-  });
+  const { queryRankings, RankingsUnavailableError } = await import(
+    "@/lib/rankings/server"
+  );
 
-  expect(page.generation).toBe("0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d");
-  expect(page.population.termCode).toBe("2610");
-  expect(page.population.size).toBeGreaterThan(0);
-  expect(page.results).toHaveLength(1);
+  await expect(queryRankings({ entity: "instructor" })).rejects.toBeInstanceOf(
+    RankingsUnavailableError,
+  );
 });
 
 test("production rankings stay unavailable until a Hugging Face generation is accepted", async () => {
@@ -496,11 +495,11 @@ test("historical mode and generation-bound cursors remain reproducible", async (
     "Historical Instructor",
   ]);
 
-  process.env.RANKINGS_SEED_DIR = join(
-    process.cwd(),
-    "rankings",
-    "seed",
-    "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d",
+  const secondRoot = await mkdtemp(join(tmpdir(), "ranking-cursor-second-"));
+  temporaryDirectories.push(secondRoot);
+  process.env.RANKINGS_SEED_DIR = await makeRankingGenerationWithSha(
+    secondRoot,
+    "1123456789abcdef0123456789abcdef01234567",
   );
   await expect(
     queryRankings({
@@ -527,11 +526,11 @@ test("catalog identity binds Course and association-title cursors", async () => 
   });
   expect(first.nextCursor).toEqual(expect.any(String));
 
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(secondRoot);
-  const catalogPath = join(secondRoot, "course-catalog.json");
-  const catalog = JSON.parse(await readFile(catalogPath, "utf8"));
-  catalog[0].courseName = "Changed title";
-  await writeFile(catalogPath, JSON.stringify(catalog));
+  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
+    secondRoot,
+    undefined,
+    { firstCourseTitle: "Changed title" },
+  );
   await expect(
     queryRankings({
       entity: "course",
@@ -542,14 +541,12 @@ test("catalog identity binds Course and association-title cursors", async () => 
   ).rejects.toBeInstanceOf(StaleRankingsCursorError);
 });
 
-test("required catalog metadata fails closed without blocking unrelated Instructor queries", async () => {
+test("a malformed Course dimension fails generation acceptance", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-catalog-"));
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR =
-    await makeRankingGeneration(temporaryDirectory);
-  process.env.RANKINGS_COURSE_CATALOG_FILE = join(
+  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
     temporaryDirectory,
-    "missing-catalog.json",
+    "malformed-course-dimension",
   );
 
   const { queryRankings, RankingsUnavailableError } = await import(
@@ -560,26 +557,6 @@ test("required catalog metadata fails closed without blocking unrelated Instruct
   ).rejects.toBeInstanceOf(RankingsUnavailableError);
   await expect(
     queryRankings({ entity: "instructor", termCode: "2510" }),
-  ).resolves.toMatchObject({ population: { entity: "instructor" } });
-  await expect(
-    queryRankings({ entity: "instructor", termCode: "2510", search: "Math" }),
-  ).rejects.toBeInstanceOf(RankingsUnavailableError);
-
-  const malformed = join(temporaryDirectory, "malformed-catalog.json");
-  await writeFile(
-    malformed,
-    JSON.stringify([
-      {
-        coursePrefix: "COMP",
-        courseNumber: "1000",
-        courseName: "Broken",
-        courseAttributes: "not-an-array",
-      },
-    ]),
-  );
-  process.env.RANKINGS_COURSE_CATALOG_FILE = malformed;
-  await expect(
-    queryRankings({ entity: "course", termCode: "2510" }),
   ).rejects.toBeInstanceOf(RankingsUnavailableError);
 });
 
