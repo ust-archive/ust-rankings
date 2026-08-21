@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Target } from "lucide-react";
+import { Target } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { RankingSearch } from "@/app/rankings/ranking-search";
@@ -30,7 +30,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   RANKING_CRITERIA,
@@ -41,7 +40,6 @@ import type {
   CommonCoreSchemeDefinition,
 } from "@/lib/rankings/server";
 import { withoutRankingPagination } from "@/lib/rankings/url";
-import { cn } from "@/lib/utils";
 
 type Entity = "course" | "instructor";
 type Preset = "learning" | "grade" | "custom";
@@ -224,23 +222,15 @@ export function RankingControls({
       <Card>
         <Collapsible onOpenChange={changeOpen} open={isOpen}>
           <CardHeader className="space-y-0 p-4">
-            <CardTitle asChild>
+            <CardTitle asChild className="text-sm">
               <CollapsibleTrigger asChild>
                 <Button
-                  aria-label="Ranking Settings"
-                  className="h-auto w-full justify-between p-0 hover:bg-transparent"
+                  aria-label="Settings"
+                  className="h-auto w-full justify-start p-0 hover:bg-transparent"
                   type="button"
                   variant="ghost"
                 >
-                  Ranking Settings
-                  <ChevronDown
-                    aria-hidden="true"
-                    className={cn(
-                      "transition-transform motion-reduce:transition-none",
-                      isOpen && "rotate-180",
-                    )}
-                    data-icon="inline-end"
-                  />
+                  Settings
                 </Button>
               </CollapsibleTrigger>
             </CardTitle>
@@ -402,9 +392,13 @@ export function RankingControls({
                     <FieldLegend variant="label">
                       Common Core Categories
                     </FieldLegend>
-                    <FieldGroup className="grid gap-2 sm:grid-cols-2">
+                    <FieldGroup className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                       {selectedScheme.categories.map((category) => (
-                        <Field key={category.value} orientation="horizontal">
+                        <Field
+                          className="gap-2"
+                          key={category.value}
+                          orientation="horizontal"
+                        >
                           <Checkbox
                             checked={settings.commonCore.includes(
                               category.value,
@@ -421,7 +415,10 @@ export function RankingControls({
                             }}
                             value={category.value}
                           />
-                          <FieldLabel htmlFor={`common-core-${category.value}`}>
+                          <FieldLabel
+                            className="text-xs"
+                            htmlFor={`common-core-${category.value}`}
+                          >
                             {category.label}
                           </FieldLabel>
                         </Field>
@@ -434,12 +431,6 @@ export function RankingControls({
               <p aria-live="polite" className="sr-only">
                 {isPending ? "Updating rankings…" : "Rankings updated."}
               </p>
-              {isPending ? (
-                <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-                  <Spinner aria-hidden="true" />
-                  Updating rankings…
-                </div>
-              ) : null}
             </CardContent>
           </CollapsibleContent>
         </Collapsible>

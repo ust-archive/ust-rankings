@@ -110,7 +110,7 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
     "2026-27 Fall",
   );
   await expect(
-    page.getByRole("button", { name: "Ranking Settings" }),
+    page.getByRole("button", { name: "Settings" }),
   ).toBeVisible();
   await expect(
     page.getByText(/samples? from ust\.space/).first(),
@@ -141,7 +141,7 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   await expect(search).toHaveValue("a");
   await expect(search.locator("..")).toHaveAttribute("aria-busy", "false");
 
-  await page.getByRole("button", { name: "Ranking Settings" }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
   await expect(page).toHaveURL(/settings=open/);
   await expect(
     page.getByRole("radio", { name: "Knowledge-Focus'd" }),
@@ -218,7 +218,7 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
   await page.getByRole("option", { name: "2025-26 Fall" }).click();
   await expect(page).toHaveURL(/term=2510/);
   await expect(
-    page.getByRole("button", { name: "Ranking Settings" }),
+    page.getByRole("button", { name: "Settings" }),
   ).toBeVisible();
   await expect(page.getByText(/samples? from SFQ/).first()).toBeVisible();
   await expectWhiteGradeLabels(page);
@@ -243,12 +243,12 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
   await expect(page).toHaveURL(/\/courses\/[^/]+\/[^/?]+$/);
 
   await page.goto("/rankings/courses");
-  await page.getByRole("button", { name: "Ranking Settings" }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("combobox", { name: "Courses" }).click();
   await page.getByRole("option", { name: "All" }).click();
   await page.getByRole("combobox", { name: "Common Core Cohort" }).click();
   await page.getByRole("option", { name: "Students Admitted in 2025" }).click();
-  await page.getByLabel("Arts", { exact: true }).check();
+  await page.getByLabel("A", { exact: true }).check();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
@@ -266,7 +266,7 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/rankings/courses");
   await expect(
-    page.getByRole("button", { name: "Ranking Settings" }),
+    page.getByRole("button", { name: "Settings" }),
   ).toBeVisible();
   await expect(page.locator('a[href^="/courses/"]').first()).toBeVisible();
   expect(
