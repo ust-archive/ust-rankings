@@ -54,7 +54,7 @@ input,
 [role="checkbox"],
 [role="combobox"],
 [role="radio"] {
-  -webkit-tap-highlight-color: rgb(0 51 102 / 15%);
+  -webkit-tap-highlight-color: rgb(15 23 42 / 15%);
 }
 
 kbd {

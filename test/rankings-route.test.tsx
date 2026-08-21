@@ -187,6 +187,20 @@ test("ranking routes distinguish every empty, invalid, and stale URL state", asy
     termCode: "2510",
     limit: 1,
   });
+  const inconsistentPagination = renderToStaticMarkup(
+    await InstructorsPage({
+      searchParams: Promise.resolve({
+        term: "2510",
+        pages: "1",
+        cursor: page.nextCursor,
+      }),
+    }),
+  );
+  expect(inconsistentPagination).toContain("Invalid ranking query");
+  expect(inconsistentPagination).toContain(
+    "cursor requires pages greater than 1",
+  );
+
   delete process.env.RANKINGS_SEED_DIR;
   const stale = renderToStaticMarkup(
     await InstructorsPage({

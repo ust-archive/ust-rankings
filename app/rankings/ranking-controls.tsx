@@ -36,6 +36,7 @@ import {
   RANKING_CRITERIA,
   RANKING_CRITERION_LABELS,
 } from "@/lib/rankings/configuration";
+import { withoutRankingPagination } from "@/lib/rankings/url";
 import { cn } from "@/lib/utils";
 
 type Entity = "course" | "instructor";
@@ -85,9 +86,8 @@ export function RankingControls({
     ),
   );
 
-  function navigate(next: URLSearchParams) {
-    next.delete("cursor");
-    next.delete("pages");
+  function navigate(searchParams: URLSearchParams) {
+    const next = withoutRankingPagination(searchParams);
     startTransition(() => {
       router.replace(`${pathname}?${next}`, { scroll: false });
     });
@@ -131,34 +131,41 @@ export function RankingControls({
 
   return (
     <form action={pathname} className="flex w-full flex-col gap-4" method="get">
-      <input name="preset" type="hidden" value={preset} />
-      <input name="activity" type="hidden" value={activity} />
-      {prefix ? <input name="prefix" type="hidden" value={prefix} /> : null}
-      {entity === "instructor" && course ? (
-        <input name="course" type="hidden" value={course} />
-      ) : null}
-      {entity === "course"
-        ? commonCore.map((category) => (
-            <input
-              key={category}
-              name="commonCore"
-              type="hidden"
-              value={category}
-            />
-          ))
-        : null}
-      {preset === "custom"
-        ? criteria.map(([criterion]) => (
-            <input
-              key={criterion}
-              name={`weight_${criterion}`}
-              type="hidden"
-              value={weights[criterion] ?? "0"}
-            />
-          ))
-        : null}
+      <noscript>
+        <input name="preset" type="hidden" value={preset} />
+        <input name="activity" type="hidden" value={activity} />
+        {prefix ? <input name="prefix" type="hidden" value={prefix} /> : null}
+        {entity === "instructor" && course ? (
+          <input name="course" type="hidden" value={course} />
+        ) : null}
+        {entity === "course"
+          ? commonCore.map((category) => (
+              <input
+                key={category}
+                name="commonCore"
+                type="hidden"
+                value={category}
+              />
+            ))
+          : null}
+        {preset === "custom"
+          ? criteria.map(([criterion]) => (
+              <input
+                key={criterion}
+                name={`weight_${criterion}`}
+                type="hidden"
+                value={weights[criterion] ?? "0"}
+              />
+            ))
+          : null}
+      </noscript>
       <div className="flex w-full items-center gap-4">
-        <RankingSearch entity={entity} initialValue={initial.search} />
+        <Field className="min-w-0 flex-1 gap-0">
+          <FieldLabel className="sr-only" htmlFor="ranking-search">
+            Search Rankings
+          </FieldLabel>
+          <RankingSearch entity={entity} initialValue={initial.search} />
+        </Field>
         <Field className="w-[10.75rem] shrink-0 gap-0">
           <FieldLabel className="sr-only" htmlFor="ranking-term">
             Term
@@ -222,6 +229,7 @@ export function RankingControls({
                     <FieldLabel htmlFor="ranking-activity">Activity</FieldLabel>
                     <Select
                       defaultValue={activity}
+                      name="activity"
                       onValueChange={(value: "current" | "all") =>
                         setActivity(value)
                       }
@@ -251,6 +259,7 @@ export function RankingControls({
                       autoComplete="off"
                       id="course-prefix"
                       maxLength={8}
+                      name="prefix"
                       onChange={(event) => setPrefix(event.target.value)}
                       spellCheck={false}
                       value={prefix}
@@ -265,6 +274,7 @@ export function RankingControls({
                         autoComplete="off"
                         id="instructor-course"
                         maxLength={15}
+                        name="course"
                         onChange={(event) => setCourse(event.target.value)}
                         spellCheck={false}
                         value={course}
@@ -282,6 +292,7 @@ export function RankingControls({
                             <Checkbox
                               checked={commonCore.includes(category.value)}
                               id={`common-core-${category.value}`}
+                              name="commonCore"
                               onCheckedChange={(checked) =>
                                 setCommonCore((selected) =>
                                   checked
@@ -350,6 +361,7 @@ export function RankingControls({
                               id={`weight-${criterion}`}
                               inputMode="decimal"
                               min="0"
+                              name={`weight_${criterion}`}
                               onChange={(event) =>
                                 setWeights((current) => ({
                                   ...current,

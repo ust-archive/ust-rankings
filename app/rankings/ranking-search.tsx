@@ -8,6 +8,7 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import { withoutRankingPagination } from "@/lib/rankings/url";
 
 export function RankingSearch({
   entity,
@@ -22,22 +23,18 @@ export function RankingSearch({
   const queryString = searchParams.toString();
   const currentValue = searchParams.get("q") ?? "";
   const [value, setValue] = useState(initialValue);
-  const submittedValue = useRef(initialValue);
+  const latestSubmittedValue = useRef(initialValue);
+  const submittedValues = useRef(new Set<string>());
   const timeout = useRef<number | undefined>(undefined);
   const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    if (currentValue !== submittedValue.current) setValue(currentValue);
-  }, [currentValue]);
-
   const navigate = useCallback(
     (search: string) => {
-      const next = new URLSearchParams(queryString);
+      const next = withoutRankingPagination(queryString);
       if (search) next.set("q", search);
       else next.delete("q");
-      next.delete("cursor");
-      next.delete("pages");
-      submittedValue.current = search;
+      latestSubmittedValue.current = search;
+      submittedValues.current.add(search);
       startTransition(() => {
         router.replace(`${pathname}${next.size ? `?${next}` : ""}`, {
           scroll: false,
@@ -46,6 +43,16 @@ export function RankingSearch({
     },
     [pathname, queryString, router],
   );
+
+  useEffect(() => {
+    if (submittedValues.current.delete(currentValue)) {
+      if (currentValue !== latestSubmittedValue.current)
+        navigate(latestSubmittedValue.current);
+      return;
+    }
+    latestSubmittedValue.current = currentValue;
+    setValue(currentValue);
+  }, [currentValue, navigate]);
 
   useEffect(() => {
     if (value === currentValue) return;

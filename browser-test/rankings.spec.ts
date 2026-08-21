@@ -33,6 +33,11 @@ async function expectAccessibleGradeContrast(page: Page) {
 }
 
 test("Rankings search filters live and keeps URL state", async ({ page }) => {
+  await page.route("**/rankings/instructors**", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("q") === "T")
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await route.continue();
+  });
   await page.goto("/rankings/instructors?preset=grade");
   const search = page.getByRole("searchbox", { name: "Search Instructors" });
 
@@ -119,7 +124,9 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   ).toBeVisible();
   const search = page.getByRole("searchbox", { name: "Search Instructors" });
   await expect(search).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Term" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Term" })).toContainText(
+    "2026-27 Fall",
+  );
   await expect(
     page.getByRole("button", { name: "Ranking Settings" }),
   ).toBeVisible();
@@ -228,7 +235,11 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
   await expect(
     page.getByRole("searchbox", { name: "Search Courses" }),
   ).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Term" })).toBeVisible();
+  const term = page.getByRole("combobox", { name: "Term" });
+  await expect(term).toContainText("2026-27 Fall");
+  await term.click();
+  await page.getByRole("option", { name: "2025-26 Fall" }).click();
+  await expect(page).toHaveURL(/term=2510/);
   await expect(
     page.getByRole("button", { name: "Ranking Settings" }),
   ).toBeVisible();

@@ -46,7 +46,7 @@ export function RankingResultCard({ result }: { result: Ranking }) {
       style={{ containIntrinsicSize: "auto 7rem", contentVisibility: "auto" }}
     >
       <Link
-        className="group block touch-manipulation rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]"
+        className="group block touch-manipulation rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950"
         href={detailsHref(result)}
         style={{ textDecoration: "none" }}
       >

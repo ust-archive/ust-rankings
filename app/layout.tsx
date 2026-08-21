@@ -124,7 +124,7 @@ export default function RootLayout({
           <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:grid-cols-2 sm:px-6 lg:grid-cols-[2fr_1fr_1fr_1fr]">
             <div className="flex max-w-sm flex-col gap-4">
               <Link
-                className="flex w-fit items-center gap-2 text-lg font-bold text-slate-950 no-underline hover:text-[#003366]"
+                className="flex w-fit items-center gap-2 text-lg font-bold text-slate-950 no-underline hover:text-slate-950"
                 href="/rankings/instructors"
               >
                 <GraduationCapIcon aria-hidden="true" className="size-6" />

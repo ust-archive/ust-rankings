@@ -55,6 +55,10 @@ function loadedPages(searchParams: RankingSearchParams) {
     return single(searchParams, "cursor") === undefined ? 1 : 0;
   if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value)))
     throw new InvalidRankingsQueryError("pages must be a positive integer.");
+  if (value === "1" && single(searchParams, "cursor"))
+    throw new InvalidRankingsQueryError(
+      "cursor requires pages greater than 1.",
+    );
   return Number(value);
 }
 
