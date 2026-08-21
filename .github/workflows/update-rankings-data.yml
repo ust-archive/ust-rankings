@@ -51,7 +51,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           bun run type-check
-          bun run test
+          RANKINGS_IDENTITY_BOOTSTRAP= RANKINGS_PREVIOUS_GENERATION_DIR= bun run test
           bun run run
           cp dataset/README.md out/README.md
 
