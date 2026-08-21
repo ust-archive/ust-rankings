@@ -1,6 +1,6 @@
-import { afterEach, expect, mock, test } from "bun:test";
+import { afterEach, expect, test, vi } from "vitest";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const secret = "correct-secret-with-enough-entropy";
 
@@ -12,7 +12,7 @@ afterEach(() => {
 test("authenticated publication and cron requests invoke the same refresh operation", async () => {
   process.env.RANKINGS_REFRESH_SECRET = secret;
   const calls: Array<{ sha?: string }> = [];
-  const operation = mock(async (options: { sha?: string }) => {
+  const operation = vi.fn(async (options: { sha?: string }) => {
     calls.push(options);
     return {
       status: "activated" as const,

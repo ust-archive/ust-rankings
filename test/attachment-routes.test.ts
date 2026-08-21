@@ -1,7 +1,7 @@
-import { expect, mock, test } from "bun:test";
+import { expect, test, vi } from "vitest";
 import { jpegBytes } from "./attachment-fixtures";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 let userId: string | undefined = "00000000-0000-4000-8000-000000000048";
 const reserved: unknown[] = [];

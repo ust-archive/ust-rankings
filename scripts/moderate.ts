@@ -34,15 +34,15 @@ const RIGHTS = new Set([
 ]);
 const CONTACT = privacyContact().email;
 const USAGE = `Usage:
-  bun run contributions:moderate withdraw-review <review-uuid> <operator> <reason>
-  bun run contributions:moderate suppress-attribution <review-uuid> <operator> <reason>
-  bun run contributions:moderate remove-stored-file <stored-file-uuid> <operator> <reason>
-  bun run contributions:moderate suspend-user <user-uuid> <operator> <reason>
-  bun run contributions:moderate close-account <user-uuid> <operator> <reason>
-  bun run contributions:moderate lookup-identity <review-uuid> <operator> <lookup-reason>
-  bun run contributions:moderate rights-request <user-uuid> <operator> <access|correction|withdrawal|closure|deletion>`;
+  npm run contributions:moderate -- withdraw-review <review-uuid> <operator> <reason>
+  npm run contributions:moderate -- suppress-attribution <review-uuid> <operator> <reason>
+  npm run contributions:moderate -- remove-stored-file <stored-file-uuid> <operator> <reason>
+  npm run contributions:moderate -- suspend-user <user-uuid> <operator> <reason>
+  npm run contributions:moderate -- close-account <user-uuid> <operator> <reason>
+  npm run contributions:moderate -- lookup-identity <review-uuid> <operator> <lookup-reason>
+  npm run contributions:moderate -- rights-request <user-uuid> <operator> <access|correction|withdrawal|closure|deletion>`;
 
-const [action, target, operator, reason, ...extra] = Bun.argv.slice(2);
+const [action, target, operator, reason, ...extra] = process.argv.slice(2);
 if (
   extra.length ||
   !action ||

@@ -1,4 +1,3 @@
-import { afterEach, expect, mock, test } from "bun:test";
 import {
   access,
   mkdtemp,
@@ -9,6 +8,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, expect, test, vi } from "vitest";
 import type {
   GenerationPointer,
   RankingFailure,
@@ -16,7 +16,7 @@ import type {
 } from "@/lib/rankings/server";
 import { makeRankingGeneration } from "./rankings-fixture";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
 
@@ -499,5 +499,5 @@ test("the distributed exclusion reports busy without starting another refresh", 
   await expect(refreshRankings({}, dependencies)).resolves.toEqual({
     status: "busy",
   });
-  expect(downloaded).toBeFalse();
+  expect(downloaded).toBe(false);
 });

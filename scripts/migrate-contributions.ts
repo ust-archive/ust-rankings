@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 
 const connection = process.env.CONTRIBUTIONS_POSTGRES_URL;
@@ -18,7 +19,7 @@ try {
       )
     `;
     const directory = join(
-      import.meta.dir,
+      dirname(fileURLToPath(import.meta.url)),
       "..",
       "contributions",
       "migrations",

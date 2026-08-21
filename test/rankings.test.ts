@@ -1,11 +1,11 @@
-import { afterEach, expect, mock, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, expect, test, vi } from "vitest";
 import { gradeColor } from "@/lib/rankings/presentation";
 import { fixtureSha, makeRankingGeneration } from "./rankings-fixture";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
 
@@ -466,7 +466,7 @@ test("historical mode and generation-bound cursors remain reproducible", async (
     limit: 1,
   });
   expect(current.results).toHaveLength(1);
-  expect(current.nextCursor).toBeString();
+  expect(current.nextCursor).toEqual(expect.any(String));
 
   const next = await queryRankings({
     entity: "instructor",
@@ -525,7 +525,7 @@ test("catalog identity binds Course and association-title cursors", async () => 
     termCode: "2510",
     limit: 1,
   });
-  expect(first.nextCursor).toBeString();
+  expect(first.nextCursor).toEqual(expect.any(String));
 
   process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(secondRoot);
   const catalogPath = join(secondRoot, "course-catalog.json");
@@ -654,7 +654,7 @@ test("ranking pages stop at 100 rows and continue after the last position", asyn
     limit: 500,
   });
   expect(first.results).toHaveLength(100);
-  expect(first.nextCursor).toBeString();
+  expect(first.nextCursor).toEqual(expect.any(String));
   const second = await queryRankings({
     entity: "instructor",
     termCode: "2510",

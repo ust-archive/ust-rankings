@@ -1,11 +1,11 @@
-import { expect, mock, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import postgres from "postgres";
+import { expect, test, vi } from "vitest";
 import { HKUST_CONNECT_ISSUER } from "@/lib/auth/policy";
 import { createAccountService } from "@/lib/contributions/accounts";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const connection = process.env.TEST_CONTRIBUTIONS_POSTGRES_URL;
 

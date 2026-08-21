@@ -1,10 +1,12 @@
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 
 const forbiddenFiles = [
   "pnpm-lock.yaml",
-  "package-lock.json",
   "npm-shrinkwrap.json",
   "yarn.lock",
+  "bun.lock",
   "bun.lockb",
   ".eslintrc",
   ".eslintrc.json",
@@ -17,12 +19,10 @@ const forbiddenFiles = [
   "data/bun.lock",
 ];
 
-const tracked = Bun.spawnSync(["git", "ls-files", "-z"]);
-if (tracked.exitCode !== 0) {
-  throw new Error(tracked.stderr.toString());
-}
+const tracked = spawnSync("git", ["ls-files", "-z"], { encoding: "utf8" });
+if (tracked.status !== 0) throw new Error(tracked.stderr);
 
-const trackedFiles = tracked.stdout.toString().split("\0").filter(Boolean);
+const trackedFiles = tracked.stdout.split("\0").filter(Boolean);
 const errors = forbiddenFiles
   .filter((file) => existsSync(file))
   .map((file) => `unsupported toolchain file: ${file}`);
@@ -45,6 +45,7 @@ const activeRootFiles = new Set([
   "tsconfig.json",
   "vercel.json",
   "README.md",
+  "vitest.config.ts",
 ]);
 const ignoredFiles = new Set([
   "scripts/check-toolchain.ts",
@@ -57,9 +58,11 @@ const staleReferences = [
   ["es" + "lint", "removed linter"],
   ["pre" + "ttier", "removed formatter"],
   ["pn" + "pm ", "unsupported package manager command"],
-  ["n" + "pm ", "unsupported package manager command"],
   ["y" + "arn ", "unsupported package manager command"],
-  ["n" + "ode scripts/", "Node-invoked utility command"],
+  ["b" + "un ", "removed runtime command"],
+  ["B" + "un.", "removed runtime API"],
+  ["b" + "un:test", "removed test runner"],
+  ["setup-" + "bun", "removed CI action"],
 ] as const;
 
 for (const file of trackedFiles) {
@@ -72,7 +75,7 @@ for (const file of trackedFiles) {
     continue;
   }
 
-  const contents = await Bun.file(file).text();
+  const contents = await readFile(file, "utf8");
   for (const [reference, description] of staleReferences) {
     if (contents.includes(reference)) {
       errors.push(`${file}: ${description}`);
@@ -85,4 +88,4 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
-console.log("Toolchain references are Bun/Biome/Luxon-only.");
+console.log("Toolchain references are Node/npm/Biome/Luxon-only.");

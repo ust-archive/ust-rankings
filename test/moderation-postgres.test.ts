@@ -1,11 +1,11 @@
-import { expect, mock, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import postgres from "postgres";
+import { expect, test, vi } from "vitest";
 import { createModerationService } from "@/lib/contributions/moderation";
 import { createReviewService } from "@/lib/contributions/reviews";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const connection = process.env.TEST_CONTRIBUTIONS_POSTGRES_URL;
 const OPERATOR = "deploy-operator";

@@ -1,11 +1,11 @@
-import { expect, mock, test } from "bun:test";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { expect, test, vi } from "vitest";
 import {
   GET_EXPIRES_SECONDS,
   PUT_EXPIRES_SECONDS,
 } from "@/lib/attachments/attachments";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 test("Spaces adapter signs origin PUT/GET for opaque keys without User or filename data", async () => {
   const commands: unknown[] = [];

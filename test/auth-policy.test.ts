@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import {
   HKUST_CONNECT_ISSUER,
   HKUST_STAFF_ISSUER,

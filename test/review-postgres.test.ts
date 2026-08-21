@@ -1,13 +1,13 @@
-import { expect, mock, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import postgres from "postgres";
+import { expect, test, vi } from "vitest";
 import {
   createReviewService,
   type ReviewAssociations,
 } from "@/lib/contributions/reviews";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const connection = process.env.TEST_CONTRIBUTIONS_POSTGRES_URL;
 const INSTRUCTOR_UUID = "00000000-0000-4000-8000-000000000045";

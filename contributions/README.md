@@ -14,7 +14,7 @@ objects remain in the adapters and forward migrations under
 ## Local setup
 
 1. Create an empty disposable PostgreSQL database.
-2. Set `CONTRIBUTIONS_POSTGRES_URL` and run `bun run contributions:migrate`.
+2. Set `CONTRIBUTIONS_POSTGRES_URL` and run `npm run contributions:migrate`.
 3. Generate `AUTH_SECRET` with Auth.js tooling and configure the confidential
    Entra Web client listed in `.env.example`.
 4. Register the exact callback for the deployment origin:
@@ -27,7 +27,7 @@ objects remain in the adapters and forward migrations under
    Set `PRIVACY_CONTACT_EMAIL` (and optional title/address) so `/privacy`, the
    footer, and FAQ share one correspondence channel.
 6. Rights requests are email-based. Record them with
-   `bun run contributions:moderate rights-request <user-uuid> <operator> <access|correction|withdrawal|closure|deletion>`,
+   `npm run contributions:moderate -- rights-request <user-uuid> <operator> <access|correction|withdrawal|closure|deletion>`,
    then `withdraw-review` or `close-account` as appropriate. There is no
    self-service closure UI.
 
@@ -81,11 +81,11 @@ use the deployment-controlled operator tool. It records a Moderation Case in
 the same transaction. There is no website Moderator or Administrator role.
 
 ```sh
-bun run contributions:moderate withdraw-review <review-uuid> <operator> <reason>
-bun run contributions:moderate suppress-attribution <review-uuid> <operator> <reason>
-bun run contributions:moderate remove-stored-file <stored-file-uuid> <operator> <reason>
-bun run contributions:moderate suspend-user <user-uuid> <operator> <reason>
-bun run contributions:moderate lookup-identity <review-uuid> <operator> <lookup-reason>
+npm run contributions:moderate -- withdraw-review <review-uuid> <operator> <reason>
+npm run contributions:moderate -- suppress-attribution <review-uuid> <operator> <reason>
+npm run contributions:moderate -- remove-stored-file <stored-file-uuid> <operator> <reason>
+npm run contributions:moderate -- suspend-user <user-uuid> <operator> <reason>
+npm run contributions:moderate -- lookup-identity <review-uuid> <operator> <lookup-reason>
 ```
 
 `lookup-reason` must be `report`, `security-incident`, `rights-request`, or
@@ -115,7 +115,7 @@ When an approved Instructor registry correction merges UUIDs, run the idempotent
 deployment-controlled operation after applying migrations:
 
 ```sh
-bun run contributions:merge-instructor-signals <retired-uuid> <survivor-uuid>
+npm run contributions:merge-instructor-signals -- <retired-uuid> <survivor-uuid>
 ```
 
 It moves signals to the survivor, keeps the most recently updated conflicting
@@ -134,7 +134,7 @@ connection, human-approved privacy/community/Review and CC BY 4.0 licensing
 text, approved Privacy Contact role/title, correspondence address, and email,
 and preview/production OIDC/PostgreSQL Review lifecycle evidence. Local copy
 and tests are implementation prerequisites only and do not claim legal approval.
-Never commit those values. Preview evidence must also verify Vercel Bun Server Actions preserve same-origin
+Never commit those values. Preview evidence must also verify Vercel Node Server Actions preserve same-origin
 checks; complete Review Basis/Context association validation uses accepted
 Rankings and Schedule generations; dual-Basis Reviews appear once on each
 applicable detail page; public Course and Instructor pages remain dynamic across

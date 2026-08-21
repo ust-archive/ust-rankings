@@ -1,4 +1,3 @@
-import { afterEach, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
   mkdir,
@@ -10,10 +9,11 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, expect, test, vi } from "vitest";
 import type { GenerationPointer, RankingFailure } from "@/lib/rankings/server";
 import { makeRankingGeneration } from "./rankings-fixture";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
 
@@ -59,7 +59,7 @@ test("the upstream adapter pins all ranking LFS objects to one full commit", asy
     "instructor-split-affected-associations.parquet",
   ];
   const requests: string[] = [];
-  const request = mock(async (input: string | URL | Request) => {
+  const request = vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     requests.push(url);
     if (url.includes("/revision/"))
@@ -107,7 +107,7 @@ test("the upstream adapter aborts a response beyond its declared LFS size", asyn
     "instructor-split-affected-associations.parquet",
   ];
   let maliciousPulls = 0;
-  const request = mock(async (input: string | URL | Request) => {
+  const request = vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     if (url.includes("/revision/"))
       return Response.json({
@@ -180,7 +180,9 @@ test("the local ranking store retains a complete generation under tmp", async ()
   await mkdir(join(root, "store", retired));
   await store.writePointer(pointer);
 
-  expect(await store.downloadGeneration(pointer.activeSha)).toBeString();
+  expect(await store.downloadGeneration(pointer.activeSha)).toEqual(
+    expect.any(String),
+  );
   expect(await store.downloadGeneration(retired)).toBeUndefined();
   expect(await store.readPointer()).toEqual(pointer);
 });

@@ -36,7 +36,7 @@ the exact generated course-catalog bytes, preventing a catalog refresh from
 mixing result membership across cursor pages.
 
 Course titles and current Common Core category labels come from the generated
-course catalog refreshed by `bun run update-data` (and by `prebuild`). The
+course catalog refreshed by `npm run update-data` (and by `prebuild`). The
 ranking module validates required catalog fields before serving dependent
 queries. Ranking scores and Course–Instructor associations continue to come
 only from the validated immutable ranking generation.

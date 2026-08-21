@@ -1,12 +1,13 @@
-import { expect, mock, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import postgres from "postgres";
+import { expect, test, vi } from "vitest";
 import { createSignalService, EMOJI_CODES } from "@/lib/contributions/signals";
 import { makeRankingGeneration } from "./rankings-fixture";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const connection = process.env.TEST_CONTRIBUTIONS_POSTGRES_URL;
 const COURSE = {
@@ -37,7 +38,7 @@ async function waitForGraphLock(
       ) AS found
     `;
     if (row?.found) return;
-    await Bun.sleep(10);
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error(`Timed out waiting for ${mode} graph lock`);
 }
@@ -280,32 +281,30 @@ if (!connection) {
 
       const commandUrl = new URL(connection);
       commandUrl.searchParams.set("options", `-csearch_path=${schema}`);
-      const reverseCommand = Bun.spawn(
+      const npmCli = process.env.npm_execpath;
+      if (!npmCli) throw new Error("npm_execpath is not configured");
+      const reverseCommand = spawnSync(
+        process.execPath,
         [
-          "bun",
+          npmCli,
           "run",
           "contributions:merge-instructor-signals",
+          "--",
           SURVIVOR,
           RETIRED,
         ],
         {
           cwd: process.cwd(),
+          encoding: "utf8",
           env: {
             ...process.env,
             CONTRIBUTIONS_POSTGRES_URL: commandUrl.toString(),
           },
-          stdout: "pipe",
-          stderr: "pipe",
         },
       );
-      const [reverseExit, reverseStdout, reverseStderr] = await Promise.all([
-        reverseCommand.exited,
-        new Response(reverseCommand.stdout).text(),
-        new Response(reverseCommand.stderr).text(),
-      ]);
-      expect(reverseExit).not.toBe(0);
-      expect(reverseStdout).not.toContain("Moved Instructor signals");
-      expect(reverseStderr).toContain(
+      expect(reverseCommand.status).not.toBe(0);
+      expect(reverseCommand.stdout).not.toContain("Moved Instructor signals");
+      expect(reverseCommand.stderr).toContain(
         "invalid or cyclic Instructor signal merge",
       );
 

@@ -1,14 +1,14 @@
-import { afterEach, expect, mock, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, expect, test, vi } from "vitest";
 import {
   makeRankingGeneration,
   makeRankingGenerationWithSha,
 } from "./rankings-fixture";
 import { makeScheduleGeneration } from "./schedule-fixture";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
 

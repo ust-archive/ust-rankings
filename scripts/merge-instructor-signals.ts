@@ -2,7 +2,7 @@ import postgres from "postgres";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const [retiredInput, survivorInput, ...extra] = Bun.argv.slice(2);
+const [retiredInput, survivorInput, ...extra] = process.argv.slice(2);
 if (
   !retiredInput ||
   !survivorInput ||
@@ -12,7 +12,7 @@ if (
   retiredInput.toLowerCase() === survivorInput.toLowerCase()
 )
   throw new Error(
-    "Usage: bun run contributions:merge-instructor-signals <retired-uuid> <different-survivor-uuid>",
+    "Usage: npm run contributions:merge-instructor-signals -- <retired-uuid> <different-survivor-uuid>",
   );
 const connection = process.env.CONTRIBUTIONS_POSTGRES_URL;
 if (!connection)

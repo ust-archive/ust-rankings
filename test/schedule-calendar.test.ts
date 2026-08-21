@@ -1,13 +1,13 @@
-import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, expect, test, vi } from "vitest";
 import {
   makeScheduleGeneration,
   type ScheduleFixtureVariant,
 } from "./schedule-fixture";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
 
@@ -229,7 +229,7 @@ test("meeting UIDs survive reorder, insertion, and descriptive updates", async (
 test("malformed source meeting data fails internally without blaming the request", async () => {
   await configureFixture(undefined, "invalid-meeting");
   const { GET } = await import("@/app/schedule/calendar.ics/route");
-  const errorLog = spyOn(console, "error").mockImplementation(() => {});
+  const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
   const response = await GET(
     new Request(
       "https://example.test/schedule/calendar.ics?term=2510&class=1001",

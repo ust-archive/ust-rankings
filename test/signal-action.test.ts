@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { expect, test, vi } from "vitest";
 import { SignalWriteError } from "@/lib/contributions/signals";
 
 let origin: string | null = "https://rankings.example";
@@ -6,17 +6,17 @@ let userId: string | undefined;
 let mutationError: unknown;
 const mutations: unknown[] = [];
 
-mock.module("next/headers", () => ({
+vi.mock("next/headers", () => ({
   headers: async () =>
     new Headers({
       host: "rankings.example",
       ...(origin ? { origin } : {}),
     }),
 }));
-mock.module("@/lib/auth/user", () => ({
+vi.mock("@/lib/auth/user", () => ({
   authenticatedUserId: async () => userId,
 }));
-mock.module("@/lib/contributions/postgres", () => ({
+vi.mock("@/lib/contributions/postgres", () => ({
   getSignalService: () => ({
     async setThumbs(id: string, input: unknown) {
       if (mutationError) throw mutationError;

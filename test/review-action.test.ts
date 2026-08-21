@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { expect, test, vi } from "vitest";
 import { ReviewWriteError } from "@/lib/contributions/reviews";
 
 let origin: string | null = "https://rankings.example";
@@ -8,17 +8,17 @@ const published: unknown[] = [];
 const edited: unknown[] = [];
 const withdrawn: unknown[] = [];
 
-mock.module("next/headers", () => ({
+vi.mock("next/headers", () => ({
   headers: async () =>
     new Headers({
       host: "rankings.example",
       ...(origin ? { origin } : {}),
     }),
 }));
-mock.module("@/lib/auth/user", () => ({
+vi.mock("@/lib/auth/user", () => ({
   authenticatedUserId: async () => userId,
 }));
-mock.module("@/lib/contributions/postgres", () => ({
+vi.mock("@/lib/contributions/postgres", () => ({
   getModerationService: () => ({
     async reportReview() {
       throw new Error("not used");

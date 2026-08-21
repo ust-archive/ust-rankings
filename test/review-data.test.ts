@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import { loadCourseReviews, loadReviews } from "@/app/courses/review-data";
 import { ContributionsUnavailableError } from "@/lib/contributions/reviews";
 

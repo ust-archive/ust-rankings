@@ -1,7 +1,7 @@
 # Test seams
 
 The default suite verifies behavior through the public interfaces that callers
-use. Run all backend seams with `bun run test`, or one focused seam while
+use. Run all backend seams with `npm test`, or one focused seam while
 working:
 
 | Script | Public seam |
@@ -20,9 +20,8 @@ The Spaces test uses a deterministic local adapter by default and enables its
 remote contract only when `TEST_ATTACHMENTS_SPACE_BUCKET` is configured.
 
 Tests mock only external seams such as Auth, Postgres, Spaces, time, and remote
-sources. They do not assert internal call order. Each module runs in its own Bun
-process because Bun module mocks are process-wide; this preserves isolation
-without serializing unrelated tests inside a module.
+sources. They do not assert internal call order. Vitest isolates test files in
+workers while keeping independent files parallel.
 
 Frontend behavior is not automated in this repository. Follow `AGENTS.md`: run
 the app, inspect desktop and 390px screenshots with `agent-browser`, exercise

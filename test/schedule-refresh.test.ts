@@ -1,4 +1,3 @@
-import { afterEach, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
   access,
@@ -10,13 +9,14 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, expect, test, vi } from "vitest";
 import type {
   ScheduleGenerationPointer,
   ScheduleRefreshDependencies,
 } from "@/lib/schedule/server";
 import { makeScheduleGeneration, scheduleFixtureSha } from "./schedule-fixture";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
 
@@ -39,7 +39,7 @@ test("the Schedule source pins both files to one immutable commit", async () => 
   const bytes = Buffer.from("PAR1fixturePAR1");
   const digest = createHash("sha256").update(bytes).digest("hex");
   const requests: string[] = [];
-  const request = mock(async (input: string | URL | Request) => {
+  const request = vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     requests.push(url);
     if (url.includes("/revision/"))
@@ -389,7 +389,7 @@ test("concurrent Schedule refresh invocation reports busy without downloading", 
   await expect(refreshSchedule({}, dependencies)).resolves.toEqual({
     status: "busy",
   });
-  expect(downloaded).toBeFalse();
+  expect(downloaded).toBe(false);
 });
 
 test("a validated current Schedule generation clears a retained failure", async () => {

@@ -14,7 +14,7 @@ schedule-only coverage from the retired CQ source does not.
 
 ## Run
 
-Requires the repository-pinned Bun 1.3.14 toolchain and access to the private
+Requires the repository-pinned Node 24 and npm 12 toolchain and access to the private
 `ust-archive/ust-space` and `ust-archive/sfq` datasets. Authenticate with either
 `HF_TOKEN` or a token in the standard Hugging Face cache. The `hf` CLI is needed
 only if you choose to create that cached token with `hf auth login`; it is not
@@ -23,8 +23,8 @@ used by the runner.
 Install the repository workspace from the root, then run the pipeline:
 
 ```sh
-bun install --frozen-lockfile
-bun run data:run
+npm ci
+npm run data:run
 ```
 
 For an offline/local run, set `RANKINGS_DATA_DIR` to a directory with this
@@ -97,7 +97,7 @@ JOIN read_parquet('out/course-instructors.parquet') AS a
 ORDER BY r.rank, a.subject, a.code;
 ```
 
-Run `bun run type-check` and `bun run test` for static analysis and the
+Run `npm run type-check` and `npm run test` for static analysis and the
 end-to-end pipeline test. Model semantics and intentional behavior changes are
 documented in [`SPECIFICATION.md`](SPECIFICATION.md). Deferred validation and
 known identity limitations are tracked in [`PLAN.md`](PLAN.md).

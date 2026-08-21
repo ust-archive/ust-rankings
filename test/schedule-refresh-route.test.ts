@@ -1,6 +1,6 @@
-import { afterEach, expect, mock, test } from "bun:test";
+import { afterEach, expect, test, vi } from "vitest";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const secret = "correct-secret-with-enough-entropy";
 const cronSecret = "distinct-cron-secret-with-enough-entropy";
@@ -18,7 +18,7 @@ test("distinct daily and manual secrets invoke the intended Schedule refresh", a
   process.env.CRON_SECRET = cronSecret;
   process.env.SCHEDULE_REFRESH_SECRET = secret;
   const calls: Array<{ sha?: string }> = [];
-  const operation = mock(async (options: { sha?: string }) => {
+  const operation = vi.fn(async (options: { sha?: string }) => {
     calls.push(options);
     return {
       status: "activated" as const,

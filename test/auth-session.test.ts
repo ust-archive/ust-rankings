@@ -1,7 +1,7 @@
-import { afterEach, expect, mock, test } from "bun:test";
 import { encode, getToken } from "next-auth/jwt";
+import { afterEach, expect, test, vi } from "vitest";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 afterEach(() => {
   delete process.env.AUTH_SECRET;

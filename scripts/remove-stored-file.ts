@@ -2,7 +2,7 @@ import postgres from "postgres";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const [storedFileId, operator, reason, ...extra] = Bun.argv.slice(2);
+const [storedFileId, operator, reason, ...extra] = process.argv.slice(2);
 if (
   !storedFileId ||
   !operator?.trim() ||
@@ -11,7 +11,7 @@ if (
   !UUID.test(storedFileId)
 )
   throw new Error(
-    "Usage: bun run attachments:remove-stored-file <stored-file-uuid> <operator> <reason>",
+    "Usage: npm run attachments:remove-stored-file -- <stored-file-uuid> <operator> <reason>",
   );
 
 const connection = process.env.CONTRIBUTIONS_POSTGRES_URL;

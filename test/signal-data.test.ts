@@ -1,7 +1,7 @@
-import { expect, mock, test } from "bun:test";
+import { expect, test, vi } from "vitest";
 import { ContributionsUnavailableError } from "@/lib/contributions/signals";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const target = {
   type: "course" as const,

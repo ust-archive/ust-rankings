@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import {
   buildScheduleUrl,
   findPlannerConflicts,
@@ -62,7 +62,7 @@ test("unsupported planner values use safe defaults with validation messages", ()
   const mixed = parsePlannerQuery({
     class: ["1001", "not-a-number", "2001"],
   });
-  expect(mixed.termInvalid).toBeFalse();
+  expect(mixed.termInvalid).toBe(false);
   expect(mixed.classNumbers).toEqual([1001, 2001]);
   expect(mixed.messages).toEqual([
     'Ignored invalid Class Number "not-a-number".',

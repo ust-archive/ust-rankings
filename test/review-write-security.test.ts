@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import { courseReviewPath, isSameOriginWrite } from "@/lib/contributions/http";
 
 test("Review writes fail closed for missing, malformed, or cross-origin requests", () => {

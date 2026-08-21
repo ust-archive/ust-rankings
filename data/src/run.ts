@@ -1,9 +1,10 @@
-import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { assignInstructorIdentities } from "./identities";
 
-const root = resolve(import.meta.dir, "..");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = resolve(root, process.env.RANKINGS_OUTPUT_DIR ?? "out");
 const localDataDir = process.env.RANKINGS_DATA_DIR;
 
@@ -76,7 +77,7 @@ async function executeFile(
   connection: DuckDBConnection,
   file: string,
 ): Promise<void> {
-  const sql = await Bun.file(resolve(root, "sql", file)).text();
+  const sql = await readFile(resolve(root, "sql", file), "utf8");
   await connection.run(sql);
 }
 

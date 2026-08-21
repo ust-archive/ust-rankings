@@ -1,12 +1,12 @@
-import { afterEach, expect, mock, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, expect, test, vi } from "vitest";
 import type { PublicReview } from "@/lib/contributions/reviews";
 import { fixtureSha, makeRankingGeneration } from "./rankings-fixture";
 import { makeScheduleGeneration } from "./schedule-fixture";
 
-mock.module("server-only", () => ({}));
+vi.mock("server-only", () => ({}));
 
 const ALPHA_UUID = "00000000-0000-4000-8000-000000000001";
 const BETA_UUID = "00000000-0000-4000-8000-000000000002";
