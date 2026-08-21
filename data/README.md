@@ -6,7 +6,8 @@ the data cleanup and every calculation; [`src/run.ts`](src/run.ts) only opens
 DuckDB, supplies paths, and runs the files in [`sql/`](sql/). The
 [`SQL reading guide`](sql/README.md) documents stage order and table contracts.
 
-The inputs are [`schedule`](https://huggingface.co/datasets/ust-archive/schedule),
+The inputs are [`catalog`](https://huggingface.co/datasets/ust-archive/catalog),
+[`schedule`](https://huggingface.co/datasets/ust-archive/schedule),
 [`ust-space`](https://huggingface.co/datasets/ust-archive/ust-space), and
 [`sfq`](https://huggingface.co/datasets/ust-archive/sfq). The current schedule
 export starts at term `2510`; older rating observations remain, but historical
@@ -31,21 +32,23 @@ For an offline/local run, set `RANKINGS_DATA_DIR` to a directory with this
 layout; authentication is then unnecessary:
 
 ```text
+catalog/courses.parquet
 schedule/{classes,courses}.parquet
 ust-space/reviews.parquet
 sfq/canonical/{section_records,instructor_records}.parquet
 ```
 
 The runner reads each dataset's `main` revision by default. Set
-`SCHEDULE_REVISION`, `REVIEWS_REVISION`, and `SFQ_REVISION` to commit hashes for
-a reproducible snapshot.
+`CATALOG_REVISION`, `SCHEDULE_REVISION`, `REVIEWS_REVISION`, and `SFQ_REVISION`
+to commit hashes for a reproducible snapshot.
 
 ## Outputs
 
-The build writes five relational Parquet files to `out/`:
+The build writes relational Parquet files to `out/`, including:
 
 | File | Contents |
 | --- | --- |
+| `courses.parquet` | Current Course dimension; one row per Course Code from the latest active Catalog Term. |
 | `course-ratings.parquet` | Full course history; one row per course, term, and criterion. |
 | `instructor-ratings.parquet` | Full instructor history; one row per instructor, term, and criterion. |
 | `course-rankings.parquet` | Course ratings for the latest pipeline term only. |

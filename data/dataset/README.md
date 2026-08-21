@@ -10,6 +10,7 @@ Daily course and instructor rating marts for UST Rankings, built from the
 
 | File                          | Contents                                               |
 | ----------------------------- | ------------------------------------------------------ |
+| `courses.parquet`             | Current Course metadata by Course Code.                |
 | `course-ratings.parquet`      | Longitudinal course ratings by term and criterion.     |
 | `instructor-ratings.parquet`  | Longitudinal instructor ratings by term and criterion. |
 | `course-rankings.parquet`     | Latest-term course ratings.                            |

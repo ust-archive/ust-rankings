@@ -1,12 +1,18 @@
 -- 30_export.sql — Write aggregate result artifacts.
 --
 -- Inputs:  rating marts/views and the course-instructor bridge.
--- Outputs: five typed, relational Parquet files: full rating histories,
---          current snapshots, and course-instructor links.
+-- Outputs: typed relational Parquet files for the Course dimension, rating
+--          histories, current snapshots, Course-Instructor links, and identities.
 
 -- Parquet matches the DuckDB execution model, keeps types intact, and is easy
 -- to query without loading an entire result into memory. Explicit ordering
 -- makes repeated builds stable and ZSTD keeps full history compact.
+COPY (
+  SELECT prefix, number, title, attributes
+  FROM course_dimension
+  ORDER BY prefix, number
+) TO (getvariable('courses_parquet')) (FORMAT parquet, COMPRESSION zstd);
+
 COPY (
   SELECT
     ratings.subject,

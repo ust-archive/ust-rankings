@@ -9,6 +9,7 @@ const outputDir = resolve(root, process.env.RANKINGS_OUTPUT_DIR ?? "out");
 const localDataDir = process.env.RANKINGS_DATA_DIR;
 
 const revisions = {
+  catalog: process.env.CATALOG_REVISION ?? "main",
   schedule: process.env.SCHEDULE_REVISION ?? "main",
   reviews: process.env.REVIEWS_REVISION ?? "main",
   sfq: process.env.SFQ_REVISION ?? "main",
@@ -23,6 +24,10 @@ function source(localPath: string, remotePath: string): string {
 }
 
 const sources = {
+  catalog_courses: source(
+    "catalog/courses.parquet",
+    `hf://datasets/ust-archive/catalog@${revisions.catalog}/courses.parquet`,
+  ),
   schedule_classes: source(
     "schedule/classes.parquet",
     `hf://datasets/ust-archive/schedule@${revisions.schedule}/classes.parquet`,
@@ -46,6 +51,7 @@ const sources = {
 };
 
 const outputs = {
+  courses_parquet: sqlPath(resolve(outputDir, "courses.parquet")),
   course_ratings_parquet: sqlPath(resolve(outputDir, "course-ratings.parquet")),
   instructor_ratings_parquet: sqlPath(
     resolve(outputDir, "instructor-ratings.parquet"),
@@ -109,11 +115,34 @@ try {
     await connection.run(`SET VARIABLE ${name} = $value`, { value });
   }
 
-  for (const file of [
-    "00_sources.sql",
-    "10_observations.sql",
-    "20_ratings.sql",
-  ]) {
+  await executeFile(connection, "00_sources.sql");
+
+  const catalogValidation = await connection.runAndReadAll(`
+    SELECT
+      (SELECT count(*)::INTEGER FROM course_dimension) AS course_rows,
+      (SELECT count(*)::INTEGER FROM course_dimension
+        WHERE prefix IS NULL OR trim(prefix) = ''
+          OR number IS NULL OR trim(number) = ''
+          OR title IS NULL OR trim(title) = ''
+          OR attributes IS NULL) AS invalid_rows,
+      (SELECT count(*)::INTEGER FROM (
+        SELECT prefix, number
+        FROM course_dimension
+        GROUP BY prefix, number
+        HAVING count(*) > 1
+      )) AS conflicting_courses
+  `);
+  const [{ course_rows = 0, invalid_rows = 0, conflicting_courses = 0 } = {}] =
+    catalogValidation.getRowObjectsJson() as Array<Record<string, number>>;
+  if (course_rows === 0) throw new Error("Course dimension is empty");
+  if (invalid_rows > 0)
+    throw new Error(`Course dimension has ${invalid_rows} invalid row(s)`);
+  if (conflicting_courses > 0)
+    throw new Error(
+      `Course dimension has ${conflicting_courses} conflicting Course(s)`,
+    );
+
+  for (const file of ["10_observations.sql", "20_ratings.sql"]) {
     await executeFile(connection, file);
   }
 
