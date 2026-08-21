@@ -187,14 +187,14 @@ export function AccountView({
                 </Badge>
               </header>
               {contributions.reviews.length ? (
-                <ul className="divide-y">
+                <ul className="divide-y divide-slate-100">
                   {contributions.reviews.map((review) => (
                     <li
-                      className="flex flex-col gap-1.5 py-4 first:pt-1 last:pb-0"
+                      className="flex flex-col gap-1 py-3 first:pt-1 last:pb-0"
                       key={review.id}
                     >
                       <Link
-                        className="w-fit font-semibold underline underline-offset-4"
+                        className="w-fit font-medium !no-underline hover:!underline"
                         href={`/reviews/${review.id}`}
                       >
                         View Review
@@ -202,7 +202,7 @@ export function AccountView({
                       <p className="flex flex-wrap gap-x-1.5 text-sm text-muted-foreground">
                         {review.coursePrefix && review.courseNumber ? (
                           <Link
-                            className="underline underline-offset-4"
+                            className="!no-underline hover:!underline"
                             href={`/courses/${review.coursePrefix.toLowerCase()}/${review.courseNumber.toLowerCase()}`}
                           >
                             {review.coursePrefix} {review.courseNumber}
@@ -210,7 +210,7 @@ export function AccountView({
                         ) : null}
                         {review.instructorUuid ? (
                           <Link
-                            className="underline underline-offset-4"
+                            className="!no-underline hover:!underline"
                             href={`/instructors/${review.instructorUuid}`}
                           >
                             {instructorLabel(
@@ -253,7 +253,7 @@ export function AccountView({
                 </Badge>
               </header>
               {contributions.reactions.length ? (
-                <ul className="divide-y">
+                <ul className="divide-y divide-slate-100">
                   {contributions.reactions.map((reaction) => {
                     const target =
                       reaction.targetType === "course"
@@ -268,12 +268,12 @@ export function AccountView({
                         : `/instructors/${reaction.instructorUuid}`;
                     return (
                       <li
-                        className="flex items-center justify-between gap-3 py-4 first:pt-1 last:pb-0"
+                        className="flex items-center justify-between gap-3 py-3 first:pt-1 last:pb-0"
                         key={`${reaction.targetType}-${href}-${reaction.kind}-${reaction.code}`}
                       >
                         <div className="flex min-w-0 flex-col gap-1">
                           <Link
-                            className="truncate font-semibold underline underline-offset-4"
+                            className="truncate font-medium !no-underline hover:!underline"
                             href={href}
                           >
                             {target}
@@ -285,9 +285,9 @@ export function AccountView({
                             {contributionDate.format(reaction.createdAt)}
                           </time>
                         </div>
-                        <Badge variant="secondary">
+                        <span className="shrink-0 text-sm text-muted-foreground">
                           {REACTION_LABELS[reaction.code] ?? reaction.code}
-                        </Badge>
+                        </span>
                       </li>
                     );
                   })}
