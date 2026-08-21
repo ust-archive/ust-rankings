@@ -32,6 +32,7 @@ jobs:
             https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main \
             | jq -r .sha)"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "RANKINGS_IDENTITY_COMMIT=$sha" >> "$GITHUB_ENV"
           if curl --fail --silent --show-error \
             "https://huggingface.co/api/datasets/ust-archive/ust-rankings/tree/$sha?recursive=true" \
             | jq -e 'any(.[]; .path == "instructor-identities.parquet")' >/dev/null; then
