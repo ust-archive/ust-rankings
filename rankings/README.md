@@ -65,7 +65,7 @@ set its `RANKINGS_REFRESH_SECRET` secret to the same high-entropy value as the
 deployment's `CRON_SECRET`.
 
 The operation verifies the immutable Hugging Face revision and expanded tree,
-streams exactly the five LFS objects within configured resource bounds, checks
+streams the rating LFS objects plus identity Parquet within configured resource bounds, checks
 each declared SHA-256 and size, builds the provenance-bearing Instructor
 registry, and runs the same schema, grain, finite-value, latest-Term, and smoke
 validation used for a local seed. It retries three times with bounded backoff.

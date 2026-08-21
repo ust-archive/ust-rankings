@@ -79,6 +79,7 @@ test("canonical calendar is strict, normalized, stable, zoned, and cacheable for
   const etag = first.headers.get("etag");
 
   expect(first.status).toBe(200);
+  expect(first.headers.get("cache-control")).toBe("public, max-age=300");
   expect(first.headers.get("content-type")).toBe(
     "text/calendar; charset=utf-8",
   );

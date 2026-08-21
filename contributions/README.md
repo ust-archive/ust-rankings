@@ -26,6 +26,12 @@ objects remain in the adapters and forward migrations under
    `REVIEW_POLICY_VERSION` to the matching human-approved versions. Onboarding
    intentionally remains disabled while either account-policy version is blank;
    Review publication remains disabled while the Review version is blank.
+   Set `PRIVACY_CONTACT_EMAIL` (and optional title/address) so `/privacy`, the
+   footer, and FAQ share one correspondence channel.
+6. Rights requests are email-based. Record them with
+   `bun run contributions:moderate rights-request <user-uuid> <operator> <access|correction|withdrawal|closure|deletion>`,
+   then `withdraw-review` or `close-account` as appropriate. There is no
+   self-service closure UI.
 
 The issuers are pinned in source to the public tenant metadata for
 `connect.ust.hk` and `ust.hk`. The providers request only `openid profile email`.

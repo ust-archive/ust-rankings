@@ -1,4 +1,7 @@
+import { privacyContact } from "@/lib/privacy/contact";
+
 export default function PrivacyPage() {
+  const contact = privacyContact();
   return (
     <article className="w-full max-w-3xl space-y-8 text-left">
       <header>
@@ -41,7 +44,7 @@ export default function PrivacyPage() {
         </ul>
         <p className="mt-2">
           Deliberate self-disclosure of non-sensitive personal data is permitted
-          after warning. Identity hidden is not anonymity to UST Rankings.
+          after warning.
         </p>
       </section>
       <section>
@@ -67,11 +70,17 @@ export default function PrivacyPage() {
           not identity.
         </p>
         <p className="mt-2">
-          Writes are voluntary. Declining to sign in or publish leaves public
-          reads available and simply withholds contribution features.
+          Required for an account: External Identity issuer and subject, and
+          policy acceptances. Voluntary: Public Display Name, Reviews,
+          Attachments, votes, reactions, and reports. Purpose is operating
+          Rankings, Details, and community contributions. Writes are voluntary.
+          Declining to sign in or publish leaves public reads available.
           Processors include the hosting platform, PostgreSQL, object storage,
           and the institutional identity provider. Handling may occur outside
-          Hong Kong.
+          Hong Kong. Retention follows those purposes; closed accounts keep
+          immutable Review Revisions and Stored Files until a later
+          purpose-based deletion, with narrow holds for moderation, security,
+          rights, and legal process.
         </p>
       </section>
       <section>
@@ -92,22 +101,18 @@ export default function PrivacyPage() {
         </p>
       </section>
       <section>
-        <h2 className="text-2xl font-bold">Pre-launch community notice</h2>
+        <h2 className="text-2xl font-bold">Privacy Contact</h2>
         <p className="mt-2">
-          A complete versioned collection notice, retention terms, rights
-          channels, and approved Privacy Contact details must still be published
-          before production launch. This page is an implementation draft and
-          does not claim legal approval.
+          {contact.title}. Email{" "}
+          <a href={`mailto:${contact.email}`}>{contact.email}</a> for access,
+          correction, Review withdrawal, account closure, deletion, and
+          reconsideration. This is the correspondence channel; there is no
+          self-service closure UI and no website Moderator role.
         </p>
-      </section>
-      <section>
-        <h2 className="text-2xl font-bold">Contact</h2>
-        <p className="mt-2">
-          For current site questions, rights requests, and reconsideration,
-          email{" "}
-          <a href="mailto:ust-rankings@flandia.dev">ust-rankings@flandia.dev</a>
-          . This general channel is not presented as the future approved Privacy
-          Contact.
+        {contact.address ? <p className="mt-2">{contact.address}</p> : null}
+        <p className="mt-2 text-sm text-slate-600">
+          Qualified legal approval of this policy text remains external and is
+          not claimed here.
         </p>
       </section>
     </article>

@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { privacyContact } from "../lib/privacy/contact";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -24,14 +25,22 @@ const LOOKUP_REASONS = new Set([
   "rights-request",
   "legal-request",
 ]);
-const CONTACT = "ust-rankings@flandia.dev";
+const RIGHTS = new Set([
+  "access",
+  "correction",
+  "withdrawal",
+  "closure",
+  "deletion",
+]);
+const CONTACT = privacyContact().email;
 const USAGE = `Usage:
   bun run contributions:moderate withdraw-review <review-uuid> <operator> <reason>
   bun run contributions:moderate suppress-attribution <review-uuid> <operator> <reason>
   bun run contributions:moderate remove-stored-file <stored-file-uuid> <operator> <reason>
   bun run contributions:moderate suspend-user <user-uuid> <operator> <reason>
   bun run contributions:moderate close-account <user-uuid> <operator> <reason>
-  bun run contributions:moderate lookup-identity <review-uuid> <operator> <lookup-reason>`;
+  bun run contributions:moderate lookup-identity <review-uuid> <operator> <lookup-reason>
+  bun run contributions:moderate rights-request <user-uuid> <operator> <access|correction|withdrawal|closure|deletion>`;
 
 const [action, target, operator, reason, ...extra] = Bun.argv.slice(2);
 if (
@@ -58,7 +67,17 @@ const sql = postgres(connection, { max: 1 });
 try {
   const targetId = target.toLowerCase();
   const operatorIdentifier = operator.trim();
-  if (action === "lookup-identity") {
+  if (action === "rights-request") {
+    if (!RIGHTS.has(reason)) throw new Error(USAGE);
+    const [row] = await sql<{ id: string }[]>`
+      INSERT INTO rights_requests (user_id, kind, operator_identifier)
+      VALUES (${targetId}, ${reason}, ${operatorIdentifier})
+      RETURNING id
+    `;
+    if (!row) throw new Error("Rights request was not recorded");
+    console.log(`Recorded rights request ${row.id} (${reason}) for ${targetId}.`);
+    notify();
+  } else if (action === "lookup-identity") {
     if (!LOOKUP_REASONS.has(reason)) throw new Error(USAGE);
     const [row] = await sql<{ id: string; user_id: string }[]>`
       SELECT id, user_id FROM operator_lookup_identity(
@@ -69,6 +88,33 @@ try {
     console.log(
       `Looked up User ${row.user_id} for Review ${targetId}; Moderation Case ${row.id}.`,
     );
+    notify();
+  } else if (action === "close-account") {
+    const closed = await sql.begin(async (transaction) => {
+      await transaction`
+        INSERT INTO rights_requests (user_id, kind, operator_identifier)
+        VALUES (${targetId}, 'closure', ${operatorIdentifier})
+      `;
+      await transaction`
+        UPDATE reviews
+        SET publication_state = 'withdrawn', updated_at = now()
+        WHERE author_user_id = ${targetId}
+          AND publication_state = 'active'
+      `;
+      await transaction`DELETE FROM course_thumbs_votes WHERE user_id = ${targetId}`;
+      await transaction`DELETE FROM instructor_thumbs_votes WHERE user_id = ${targetId}`;
+      await transaction`DELETE FROM course_emoji_reactions WHERE user_id = ${targetId}`;
+      await transaction`DELETE FROM instructor_emoji_reactions WHERE user_id = ${targetId}`;
+      const [row] = await transaction<{ id: string }[]>`
+        UPDATE contribution_users
+        SET status = 'closed', updated_at = now()
+        WHERE id = ${targetId} AND status <> 'closed'
+        RETURNING id
+      `;
+      if (!row) throw new Error("Account closure did not complete");
+      return row;
+    });
+    console.log(`Closed account ${closed.id}.`);
     notify();
   } else {
     if (!REASONS.has(reason)) throw new Error(USAGE);
@@ -89,27 +135,6 @@ try {
               ? sql<
                   { id: string }[]
                 >`SELECT id FROM operator_suspend_user(${operatorIdentifier}, ${targetId}, ${reason})`
-              : action === "close-account"
-                ? sql.begin(async (transaction) => {
-                    await transaction`
-                      UPDATE reviews
-                      SET publication_state = 'withdrawn', updated_at = now()
-                      WHERE author_user_id = ${targetId}
-                        AND publication_state = 'active'
-                    `;
-                    await transaction`DELETE FROM course_thumbs_votes WHERE user_id = ${targetId}`;
-                    await transaction`DELETE FROM instructor_thumbs_votes WHERE user_id = ${targetId}`;
-                    await transaction`DELETE FROM course_emoji_reactions WHERE user_id = ${targetId}`;
-                    await transaction`DELETE FROM instructor_emoji_reactions WHERE user_id = ${targetId}`;
-                    const [closed] = await transaction<{ id: string }[]>`
-                      UPDATE contribution_users
-                      SET status = 'closed', updated_at = now()
-                      WHERE id = ${targetId} AND status <> 'closed'
-                      RETURNING id
-                    `;
-                    if (!closed) throw new Error("Account closure did not complete");
-                    return [{ id: closed.id }];
-                  })
               : undefined;
     if (!query) throw new Error(USAGE);
     const [row] = await query;

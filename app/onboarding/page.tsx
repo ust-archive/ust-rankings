@@ -59,8 +59,8 @@ export default async function OnboardingPage({
           className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
           role="status"
         >
-          Account writes remain disabled until approved policy versions and
-          Privacy Contact details are configured.
+          Account writes remain disabled until approved policy versions are
+          configured.
         </p>
       ) : null}
       <form action={completeOnboarding} className="space-y-5">
@@ -91,7 +91,11 @@ export default async function OnboardingPage({
           />
           <span>
             I accept the current collection notice and{" "}
-            <Link href="/privacy">Privacy and Community Policy</Link>.
+            <Link href="/privacy">Privacy and Community Policy</Link>. Signing
+            in stores an External Identity, Public Display Name, and later
+            contribution writes. Identity hidden is not anonymity to UST
+            Rankings. Rights requests go through the Privacy Contact on that
+            page.
           </span>
         </label>
         <label className="flex items-start gap-3">

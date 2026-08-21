@@ -13,6 +13,7 @@ import Link from "next/link";
 import type React from "react";
 import { Separator } from "@/components/ui/separator";
 import { Toaster } from "@/components/ui/sonner";
+import { privacyContactMailto } from "@/lib/privacy/contact";
 import { cn } from "@/lib/utils";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -144,7 +145,7 @@ export default function RootLayout({
               links={[
                 ["FAQ", "/faq"],
                 ["Account", "/account"],
-                ["Contact", "mailto:ust-rankings@flandia.dev"],
+                ["Contact", privacyContactMailto()],
               ]}
             />
             <nav aria-labelledby="footer-legal" className="flex flex-col gap-3">

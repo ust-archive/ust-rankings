@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { endSession, updateAccount } from "@/app/account/actions";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { getAccountService } from "@/lib/contributions/postgres";
+import { privacyContactMailto } from "@/lib/privacy/contact";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,13 @@ export default async function AccountPage({
           {STATUS_COPY[user.status]}
         </p>
       )}
+      <p className="text-sm text-slate-600">
+        Access, correction, withdrawal, or account closure: email the{" "}
+        <a className="underline" href={privacyContactMailto()}>
+          Privacy Contact
+        </a>
+        . There is no self-service closure UI.
+      </p>
       <form action={endSession}>
         <button className="text-sm font-semibold underline" type="submit">
           Sign out

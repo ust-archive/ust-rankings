@@ -39,7 +39,30 @@ bun run build
 
 Use `bun run dev` for local development. Biome is the single formatter, linter,
 and import organizer (`bun run check:write`), while TypeScript remains a
-separate check (`bun run type-check`).
+separate check (`bun run type-check`). Frontend Playwright tests are not run
+(`AGENTS.md`).
+
+## Production
+
+Production is DigitalOcean App Platform in Singapore with a Node 22 Docker
+image (Vercel Bun Functions hit SIGILL). Rankings and Schedule download from
+Hugging Face into `/tmp` at runtime; do not bake seed data into the image.
+Neon `POSTGRES_URL` is the advisory lock database. Contributions use
+`CONTRIBUTIONS_POSTGRES_URL`. Attachments use a private SGP1 Space.
+
+Required configuration is listed in `.env.example`. Health:
+
+- `GET /api/health/rankings`
+- `GET /api/health/schedule`
+
+Auth callbacks:
+
+- `/api/auth/callback/hkust-connect`
+- `/api/auth/callback/hkust-staff`
+
+Privacy Contact is `PRIVACY_CONTACT_EMAIL` (default `ust-rankings@flandia.dev`).
+Rotate Entra and Space credentials after first production use if they were
+shared in a working session.
 
 ## Connect
 

@@ -37,6 +37,9 @@ test("onboarding confirms Public Display Name and both current policies", async 
   expect(markup).toContain('name="acceptPrivacy"');
   expect(markup).toContain('name="acceptCommunity"');
   expect(markup).toContain("Account writes remain disabled");
+  expect(markup).toContain("Privacy and Community Policy");
+  expect(markup).toContain("Identity hidden");
+  expect(markup).toContain("Privacy Contact");
 });
 
 test("account reflects current database status and only active Users may edit", async () => {
@@ -51,6 +54,8 @@ test("account reflects current database status and only active Users may edit", 
   );
   expect(active).toContain("Save account settings");
   expect(active).toContain("Current Name");
+  expect(active).toContain("Privacy Contact");
+  expect(active).toContain("no self-service closure UI");
 
   currentUser = { ...currentUser, status: "suspended" };
   const suspended = renderToStaticMarkup(

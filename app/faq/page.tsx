@@ -1,7 +1,9 @@
+import { privacyContact, privacyContactMailto } from "@/lib/privacy/contact";
 import styles from "./styles.module.css";
 
-const Email = "mailto:waver_velvet@hotmail.com";
-const Issue = "https://github.com/Waver-Velvet/ust-rankings/issues/new";
+const contact = privacyContact();
+const Email = privacyContactMailto();
+const Issue = "https://github.com/ust-archive/ust-rankings/issues/new";
 
 export default function Faq() {
   return (
@@ -104,9 +106,19 @@ export default function Faq() {
       <h1 className="text-logo-gradient">Others</h1>
 
       <section>
+        <h2>How do I request access, correction, or account closure?</h2>
+        <p>
+          Email the Privacy Contact at <a href={Email}>{contact.email}</a>.
+          There is no self-service account-closure UI. The same channel is
+          listed on the <a href="/privacy">Privacy and Community Policy</a>{" "}
+          page and in the site footer.
+        </p>
+      </section>
+      <section>
         <h2>Any Feedbacks? </h2>
         <p>
-          Please send email to <a href={Email}>me</a>, or open an issue on{" "}
+          Please send email to <a href={Email}>the Privacy Contact</a>, or open
+          an issue on{" "}
           <a href={Issue} target="_blank" rel="noopener">
             GitHub
           </a>

@@ -78,6 +78,36 @@ if (!connection) {
       expect(String(bindingError)).toContain(
         "External Identity bindings are immutable",
       );
+
+      for (const migration of [
+        "0002_course_reviews.sql",
+        "0003_signals.sql",
+      ]) {
+        await sql.unsafe(
+          await readFile(
+            join(process.cwd(), "contributions", "migrations", migration),
+            "utf8",
+          ),
+        );
+      }
+      await sql`UPDATE contribution_users SET status = 'active' WHERE id = ${first.id}`;
+      await sql`
+        INSERT INTO reviews (id, author_user_id, publication_state, course_prefix, course_number)
+        VALUES (
+          ${crypto.randomUUID()}, ${first.id}, 'active', 'COMP', '2000'
+        )
+      `;
+      expect(await accounts.closeAccount(first.id)).toMatchObject({
+        id: first.id,
+        status: "closed",
+      });
+      const [reviewState] = await sql<{ state: string }[]>`
+        SELECT publication_state AS state FROM reviews WHERE author_user_id = ${first.id}
+      `;
+      expect(reviewState?.state).toBe("withdrawn");
+      await expect(accounts.requireActiveUser(first.id)).rejects.toMatchObject({
+        code: "account-closed",
+      });
     } finally {
       await sql.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       await sql.end();
