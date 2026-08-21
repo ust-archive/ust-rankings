@@ -460,7 +460,7 @@ export function InstructorDetailLoading() {
     <div
       aria-busy="true"
       aria-live="polite"
-      className="w-full space-y-8 text-left"
+      className="flex w-full flex-col gap-8 text-left"
     >
       <DetailsHeader eyebrow="Instructor" title="Loading Instructor details…" />
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">

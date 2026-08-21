@@ -19,7 +19,7 @@ export default async function SignInPage({
   const { r, error } = await searchParams;
   const returnPath = safeReturnPath(r);
   return (
-    <section className="w-full max-w-lg space-y-6 rounded-2xl border border-slate-200 bg-white p-6 text-left text-slate-950 shadow-sm sm:p-8">
+    <section className="flex w-full max-w-lg flex-col gap-6 rounded-2xl border border-slate-200 bg-white p-6 text-left text-slate-950 shadow-sm sm:p-8">
       <header>
         <h1 className="text-3xl font-bold tracking-tight">
           Sign in to contribute

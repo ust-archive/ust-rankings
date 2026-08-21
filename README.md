@@ -1,35 +1,22 @@
 # UST Rankings
 
-[UST Rankings](https://ust-rankings.com/) provides a basic rankings for instructors at HKUST, based on their teaching performance.
+[UST Rankings](https://ust-rankings.com/) provides Course and Instructor
+rankings, teaching Details, calendar subscriptions, and authenticated community
+contributions for HKUST students.
 
-**Features**
-
-- Data are updated time-by-time.
-- Easily search for any instructor.
-- Grade instructors by A+, A, etc. for intuitive understanding.
-- Check trends on instructors' ratings.
-
-![UST Rankings](https://github.com/Waver-Velvet/ust-rankings/assets/42676149/067b716a-7c74-4eb6-a232-cedf342d7dd0)
-_The actual names are redacted because the rankings are changing time-by-time._
-
-## UST Schedule
-
-[UST Schedule](https://ust-rankings.vercel.app/schedule) is a sub-site of UST Rankings. It provides the functionality to inspect class schedules, marking them and importing them into user's calendar app.
-
-**Features**
-
-- Data are updated time-by-time.
-- Both `webcal://` link and `.ics` file are available.
-- Directly links the venue to Path Advisor.
-
-![UST Schedule](https://github.com/Waver-Velvet/ust-rankings/assets/42676149/f553e971-bd62-4b0f-a487-8b77215e57ec)
-_This is the dark theme, for demonstrational purpose._
+Ranking evidence is published as immutable Hugging Face generations. Schedule
+data resolves Course Offerings, Classes, and Instructor identities for Details
+and calendar subscriptions. See [`rankings/README.md`](rankings/README.md),
+[`schedule/README.md`](schedule/README.md), and
+[`contributions/README.md`](contributions/README.md) for each module's runtime
+contract.
 
 ## Development
 
-The repository uses Bun 1.3.14 for dependency installation, scripts, tests, the
-Next.js runtime, and the data workspace. Install from the repository root and
-run the complete local gate with:
+The repository uses Bun 1.3.14 for dependency installation, scripts, tests, and
+the data workspace. Next.js runs on Node 22 because the native DuckDB package is
+not reliable under the Bun runtime. Install from the repository root and run
+the complete local gate with:
 
 ```sh
 bun install --frozen-lockfile
@@ -37,10 +24,16 @@ bun run check
 bun run build
 ```
 
-Use `bun run dev` for local development. Biome is the single formatter, linter,
-and import organizer (`bun run check:write`), while TypeScript remains a
-separate check (`bun run type-check`). Frontend Playwright tests are not run
-(`AGENTS.md`).
+Use `bun run dev` for local development; it refreshes the generated Course
+Catalog before starting Next.js. For fixture data, copy `.env.example` to
+`.env.local`, set `AUTH_SECRET`, and uncomment `RANKINGS_SEED_DIR` and
+`SCHEDULE_SEED_DIR`. Biome is the formatter, linter, and import organizer
+(`bun run check:write`), while TypeScript remains a separate check
+(`bun run type-check`).
+
+Backend tests are grouped by public seam so one module can be checked quickly;
+see [`test/README.md`](test/README.md). Frontend verification is visual with
+`agent-browser`, as required by [`AGENTS.md`](AGENTS.md).
 
 ## Production
 

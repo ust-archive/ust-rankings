@@ -12,10 +12,6 @@
       "!!**/node_modules",
       "!!data/out",
       "!!data/data-course-catalog.json",
-      "!!data/data-cq-terms.json",
-      "!!data/data-cq.json",
-      "!!data/ratings-course.json",
-      "!!data/ratings-instructor.json",
       "!!rankings/seed",
       "!!schedule/seed"
     ]

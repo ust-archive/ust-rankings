@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 @config "../tailwind.config.ts";
+@custom-variant dark (&:where(.dark, .dark *));
 
 .review-markdown-editor {
   --baseBorderHover: #475569;
@@ -16,18 +17,10 @@
 }
 
 :root {
+  color-scheme: light;
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 255, 255, 255;
   --background-end-rgb: 214, 219, 220;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 21, 18, 18;
-    --background-end-rgb: 0, 0, 0;
-  }
 }
 
 body {
@@ -50,12 +43,6 @@ body {
 .text-logo-gradient {
   @apply -m-4 p-4;
   @apply bg-gradient-to-br from-[#CC9900] to-[#996600] bg-clip-text text-transparent;
-}
-
-@media (prefers-color-scheme: dark) {
-  .text-logo-gradient {
-    @apply bg-gradient-to-br from-[#FFBF00] to-[#CC8800] bg-clip-text text-transparent;
-  }
 }
 
 a {

@@ -7,6 +7,20 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: ust_rankings_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@v6
 
@@ -18,6 +32,7 @@ jobs:
       - run: bun run check
         env:
           TZ: America/New_York
-      - run: bunx playwright install --with-deps chromium
-      - run: bun run test:browser
+      - run: bun run test:contracts
+        env:
+          TEST_CONTRIBUTIONS_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/ust_rankings_test
       - run: bun run build

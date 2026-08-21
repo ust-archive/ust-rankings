@@ -2,18 +2,12 @@
 
 ### Generated web data
 data/data-course-catalog.json
-data/data-cq-terms.json
-data/data-cq.json
-data/ratings-course.json
-data/ratings-instructor.json
 
 # dependencies
 /node_modules
 
 # testing
 /coverage
-/playwright-report
-/test-results
 
 # next.js
 /.next/

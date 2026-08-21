@@ -25,9 +25,9 @@ export default async function ClassPage({
   }>;
   searchParams: Promise<RouteSearchParams>;
 }) {
-  const query = await searchParams;
+  const [query, route] = await Promise.all([searchParams, params]);
   const { coursePrefix, courseNumber, termCode, section } =
-    normalizeCourseRoute(await params, query);
+    normalizeCourseRoute(route, query);
   if (!termCode || !section) notFound();
   const rankingPreference = await readRankingPreferenceQuery();
   try {

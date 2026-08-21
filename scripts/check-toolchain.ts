@@ -40,7 +40,7 @@ const activeRootFiles = new Set([
   "package.json",
   "biome.json",
   "next.config.mjs",
-  "postcss.config.js",
+  "postcss.config.cjs",
   "tailwind.config.ts",
   "tsconfig.json",
   "vercel.json",

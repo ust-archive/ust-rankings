@@ -29,12 +29,9 @@ export async function renderCoursePage(
   { params, searchParams }: CoursePageProps,
   readReviews: typeof loadCourseReviews = loadCourseReviews,
 ) {
-  const query = await searchParams;
-  const { coursePrefix, courseNumber } = normalizeCourseRoute(
-    await params,
-    query,
-  );
-  const scheduleResult = await getSchedule({
+  const [query, route] = await Promise.all([searchParams, params]);
+  const { coursePrefix, courseNumber } = normalizeCourseRoute(route, query);
+  const schedulePromise = getSchedule({
     type: "course",
     coursePrefix,
     courseNumber,
@@ -51,21 +48,23 @@ export async function renderCoursePage(
       throw error;
     },
   );
+  const [scheduleResult, rankingPreference, community, signalResult] =
+    await Promise.all([
+      schedulePromise,
+      readRankingPreferenceQuery(),
+      readReviews(coursePrefix, courseNumber),
+      loadSignals({ type: "course", coursePrefix, courseNumber }),
+    ]);
   const selectedTerm =
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
       : scheduleResult.schedule?.offerings.at(-1)?.termCode;
-  const rankingPreference = await readRankingPreferenceQuery();
-  const [rankings, community, signalResult] = await Promise.all([
-    loadCourseRankings(
-      coursePrefix,
-      courseNumber,
-      selectedTerm,
-      rankingPreference,
-    ),
-    readReviews(coursePrefix, courseNumber),
-    loadSignals({ type: "course", coursePrefix, courseNumber }),
-  ]);
+  const rankings = await loadCourseRankings(
+    coursePrefix,
+    courseNumber,
+    selectedTerm,
+    rankingPreference,
+  );
   if (!rankings && !scheduleResult.schedule && !scheduleResult.unavailable)
     notFound();
 

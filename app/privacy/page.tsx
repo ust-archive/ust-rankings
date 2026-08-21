@@ -3,7 +3,7 @@ import { privacyContact } from "@/lib/privacy/contact";
 export default function PrivacyPage() {
   const contact = privacyContact();
   return (
-    <article className="w-full max-w-3xl space-y-8 text-left">
+    <article className="w-full max-w-3xl gap-8 text-left">
       <header>
         <h1 className="text-4xl font-bold tracking-tight">
           Privacy and Community Policy
@@ -20,7 +20,7 @@ export default function PrivacyPage() {
           automatic content moderation.
         </p>
         <p className="mt-2">The following are prohibited:</p>
-        <ul className="mt-2 list-disc space-y-1 pl-6">
+        <ul className="mt-2 flex list-disc flex-col gap-1 pl-6">
           <li>
             Third-party personal data except necessary public professional
             information
@@ -65,9 +65,9 @@ export default function PrivacyPage() {
           Public Rankings and Schedule reads do not require an account. If you
           sign in, we store the External Identity issuer and subject, a Public
           Display Name you choose, policy acceptances, Reviews and Review
-          Revisions, Thumbs Votes, Emoji Reactions, Attachments, and reports
-          you submit. Provider profile name and email are mutable profile data,
-          not identity.
+          Revisions, Thumbs Votes, Emoji Reactions, Attachments, and reports you
+          submit. Provider profile name and email are mutable profile data, not
+          identity.
         </p>
         <p className="mt-2">
           Required for an account: External Identity issuer and subject, and

@@ -8,118 +8,86 @@ const Issue = "https://github.com/ust-archive/ust-rankings/issues/new";
 export default function Faq() {
   return (
     <article className={styles.faq}>
-      <h1 className="text-logo-gradient">FAQ - Rankings</h1>
+      <h1 className="text-logo-gradient">FAQ – Rankings</h1>
 
       <section>
-        <h2>Does It Ranks the Instructors Themselves?</h2>
+        <h2>What Do the Rankings Measure?</h2>
         <p>
-          No, the website ranks instructors based on their teaching performance,
-          not on the person themselves.
+          Rankings compare Course and Instructor teaching evidence for a
+          selected Term and scoring configuration. They do not measure a
+          person&apos;s overall worth or performance outside that evidence.
         </p>
       </section>
 
       <section>
-        <h2>Where are the Data from? </h2>
+        <h2>Where Does the Evidence Come From?</h2>
         <p>
-          The Data of the website is from another UST review website{" "}
-          <a href="https://ust.space/">UST.space</a>.
+          Teaching ratings come from <a href="https://ust.space/">UST Space</a>{" "}
+          and HKUST&apos;s Student Feedback Questionnaire (SFQ). Course titles
+          and descriptions come from the HKUST Course Catalog, while current
+          teaching and offering status comes from Schedule data.
         </p>
       </section>
 
       <section>
-        <h2>What are the Ranking Criteria? </h2>
-        <p>The criteria of the ranking are:</p>
-        <ol>
-          <li>the ratings (of teaching) the instructor from the students;</li>
-          <li>
-            whether the instructor receives a "thumbs up" or "thumbs down" from
-            the students;
-          </li>
-          <li>the number of reviews that are taken into consideration.</li>
-        </ol>
-      </section>
-
-      <section>
-        <h2>How are the Ratings & Scores Calculated? </h2>
+        <h2>Which Criteria Can I Use?</h2>
         <p>
-          First of all, the reviews are collected and preprocessed, including
-          statistical techniques like standardization. Only the ratings and the
-          semester that the review is posted are kept.
-        </p>
-        <p>
-          Next, the ratings of each instructor are averaged by EWMA, so that the
-          reviews posted recently will weight more than the ones posted early. I
-          personally choose the smoothing factor to be <code>0.08425</code>,
-          which makes the weightings of the last 2 years 50% of the whole.
-        </p>
-        <p>
-          Now is the turn of comparing instructors. The ratings of teaching and
-          the ratings of "thumbs up" are averaged to find the "overall" rating,
-          and the numbers of reviews are taken into consideration in this step.
-          Bayesian Average is adopted in this case. The final score is
-          calculated by
-        </p>
-        <pre>
-          <code>((mn * mr) + (n * r)) / (mn + n)</code>
-        </pre>
-        <p>
-          where <code>mn, n</code> are the mean number of reviews and the number
-          of reviews respectively; <code>mr, r</code> are the mean rating and
-          the rating respectively. "Mean" here refers to the mean value among
-          the instructors.
-        </p>
-        <p>
-          The rankings are then calculated by the score. Hope you think this
-          calculation is fair!
+          The available criteria are Content, Teaching, Grading, Workload,
+          Course SFQ, and Instructor SFQ. Choose a preset or select Custom to
+          assign non-negative weights to each criterion.
         </p>
       </section>
 
       <section>
-        <h2>What is the Grading Scheme? </h2>
-        <ul>
-          <li>A range: 25%</li>
-          <li>B range: 40%</li>
-          <li>C range: 15%</li>
-          <li>D range: 10%</li>
-        </ul>
-        <p>It is ever more lenient than most of the UST instructors!</p>
-      </section>
-
-      <section>
-        <h2>Do You Think Ranking Instructors is Impolite?</h2>
-        <p>No, as long as the result is objective.</p>
+        <h2>How Are Scores and Ranks Calculated?</h2>
         <p>
-          Subjective data, such as opinions, preferences, or feelings, can be
-          quantified and analyzed using statistical methods. By collecting a
-          large sample size and applying appropriate statistical techniques, we
-          can identify trends, patterns, or relationships within the subjective
-          data, which can lead to objective conclusions or insights.
+          Each criterion uses a Bayesian-adjusted rating so sparse evidence is
+          pulled toward its population mean. The selected weights combine those
+          adjusted ratings into one score. Rank is then calculated within the
+          selected Term and activity population; Rank of All Time compares all
+          known entities with a score by that Term.
         </p>
         <p>
-          Moreover, the behavior of ranking is common. We have QS Rankings,
-          Times Rankings, etc. for universities. Instructors rank students with
-          A+, A, etc. by their performance in class. So, we rank instructors by
-          their teaching performance. This is reasonable, isn't it?
+          Thumbs Votes, Emoji Reactions, and community Reviews are displayed
+          separately and do not affect the current rankings.
         </p>
       </section>
 
-      <h1 className="text-logo-gradient">Others</h1>
-
       <section>
-        <h2>How do I request access, correction, or account closure?</h2>
+        <h2>What Do the Letter Grades Mean?</h2>
         <p>
-          Email the Privacy Contact at <a href={Email}>{contact.email}</a>.
-          There is no self-service account-closure UI. The same channel is
-          listed on the <a href="/privacy">Privacy and Community Policy</a>{" "}
-          page and in the site footer.
+          Letter grades summarize percentile position within the ranking
+          population. A-range grades cover the top 25%, B-range grades the next
+          40%, C-range grades the next 15%, D the next 10%, and F the remaining
+          10%.
         </p>
       </section>
+
       <section>
-        <h2>Any Feedbacks? </h2>
+        <h2>How Should I Interpret a Ranking?</h2>
         <p>
-          Please send email to <a href={Email}>the Privacy Contact</a>, or open
-          an issue on{" "}
-          <a href={Issue} target="_blank" rel="noopener">
+          Treat it as one evidence-based input, not a definitive judgment.
+          Samples, confidence, selected criteria, and the comparison population
+          all shape the result. Use Course and Instructor Details to inspect the
+          underlying context before making a decision.
+        </p>
+      </section>
+
+      <section>
+        <h2>How Do I Request Access, Correction, or Account Closure?</h2>
+        <p>
+          Email the Privacy Contact at <a href={Email}>{contact.email}</a>. The
+          same channel is listed on the{" "}
+          <a href="/privacy">Privacy &amp; Community Policy</a> page and in the
+          site footer.
+        </p>
+      </section>
+
+      <section>
+        <h2>How Can I Send Feedback?</h2>
+        <p>
+          Email <a href={Email}>the Privacy Contact</a>, or open an issue on{" "}
+          <a href={Issue} target="_blank" rel="noopener noreferrer">
             GitHub
           </a>
           .

@@ -33,7 +33,7 @@ export default async function OnboardingPage({
   );
 
   return (
-    <section className="w-full max-w-xl space-y-6 rounded-2xl border border-slate-200 bg-white p-6 text-left text-slate-950 shadow-sm sm:p-8">
+    <section className="flex w-full max-w-xl flex-col gap-6 rounded-2xl border border-slate-200 bg-white p-6 text-left text-slate-950 shadow-sm sm:p-8">
       <header>
         <p className="text-sm font-semibold uppercase tracking-wide text-blue-800">
           First login
@@ -63,7 +63,7 @@ export default async function OnboardingPage({
           configured.
         </p>
       ) : null}
-      <form action={completeOnboarding} className="space-y-5">
+      <form action={completeOnboarding} className="flex flex-col gap-5">
         <input name="r" type="hidden" value={returnPath} />
         <div>
           <label className="font-semibold" htmlFor="publicDisplayName">

@@ -36,17 +36,20 @@ export async function renderInstructorPage(
   { params, searchParams }: InstructorPageProps,
   readReviews: typeof loadReviews = loadReviews,
 ) {
-  const query = await searchParams;
-  const key = normalizeInstructorRoute((await params).key, query);
+  const [query, route] = await Promise.all([searchParams, params]);
+  const key = normalizeInstructorRoute(route.key, query);
   const selectedTerm =
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
       : undefined;
-  const identity = await getInstructorIdentity(key).catch((error) => {
-    if (error instanceof UnknownRankingsEntityError) notFound();
-    if (!(error instanceof RankingsUnavailableError)) throw error;
-    return undefined;
-  });
+  const [identity, rankingPreference] = await Promise.all([
+    getInstructorIdentity(key).catch((error) => {
+      if (error instanceof UnknownRankingsEntityError) notFound();
+      if (!(error instanceof RankingsUnavailableError)) throw error;
+      return undefined;
+    }),
+    readRankingPreferenceQuery(),
+  ]);
   if (!identity)
     return (
       <section
@@ -66,7 +69,6 @@ export async function renderInstructorPage(
     instructorRedirect(identity.route.canonicalKey, query);
 
   let invalidTermCode: string | undefined;
-  const rankingPreference = await readRankingPreferenceQuery();
   const rankingsPromise = getRankings(
     { type: "instructor", uuid: identity.instructor.uuid },
     { ...rankingPreference, termCode: selectedTerm },

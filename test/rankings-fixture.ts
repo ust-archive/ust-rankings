@@ -295,9 +295,7 @@ export async function makeRankingGeneration(
       .map(
         (identity) =>
           `('${identity.uuid}', '${identity.canonicalName.replaceAll("'", "''")}', ${
-            "itsc" in identity && identity.itsc
-              ? `'${identity.itsc}'`
-              : "NULL"
+            "itsc" in identity && identity.itsc ? `'${identity.itsc}'` : "NULL"
           })`,
       )
       .join(", ");
@@ -335,7 +333,9 @@ export async function makeRankingGeneration(
                 ? `('${event.type}', '${event.sourceCommit}', '${event.uuid}', '${event.itsc}', NULL, NULL, NULL, NULL)`
                 : `('${event.type}', '${event.sourceCommit}', NULL, NULL, '${event.retiredUuid}', '${event.survivorUuid}', NULL, NULL)`,
             )
-            .join(", ")}) AS t(event_type, source_commit, uuid, itsc, retired_uuid, survivor_uuid, source_uuid, new_uuid)`,
+            .join(
+              ", ",
+            )}) AS t(event_type, source_commit, uuid, itsc, retired_uuid, survivor_uuid, source_uuid, new_uuid)`,
     );
     await copy(
       "instructor-split-affected-associations.parquet",

@@ -79,10 +79,7 @@ if (!connection) {
         "External Identity bindings are immutable",
       );
 
-      for (const migration of [
-        "0002_course_reviews.sql",
-        "0003_signals.sql",
-      ]) {
+      for (const migration of ["0002_course_reviews.sql", "0003_signals.sql"]) {
         await sql.unsafe(
           await readFile(
             join(process.cwd(), "contributions", "migrations", migration),

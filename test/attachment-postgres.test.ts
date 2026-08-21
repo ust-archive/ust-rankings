@@ -75,86 +75,18 @@ if (!connection) {
       expect(bytes.byteLength).toBeLessThan(100);
 
       const racing = await Promise.allSettled([
-        (async () => {
-          const client = postgres(connection, {
-            max: 1,
-            connection: { search_path: schema },
-            onnotice: () => {},
-          });
-          try {
-            return await createAttachmentService(
-              new PostgresAttachmentRepository(client, {
-                userQuota: 100,
-                globalQuota: 150,
-              }),
-              {
-                async presignPut({ key }) {
-                  return { url: `https://space.test/${key}`, headers: {} };
-                },
-                async presignGet({ key }) {
-                  return { url: `https://space.test/${key}`, headers: {} };
-                },
-                async head() {
-                  return undefined;
-                },
-                async get() {
-                  return undefined;
-                },
-                async delete() {},
-                async exists() {
-                  return false;
-                },
-              },
-            ).reserveUpload({
-              userId: userA,
-              byteSize: 80,
-              filename: "a.jpg",
-              contentType: "image/jpeg",
-            });
-          } finally {
-            await client.end({ timeout: 0 });
-          }
-        })(),
-        (async () => {
-          const client = postgres(connection, {
-            max: 1,
-            connection: { search_path: schema },
-            onnotice: () => {},
-          });
-          try {
-            return await createAttachmentService(
-              new PostgresAttachmentRepository(client, {
-                userQuota: 100,
-                globalQuota: 150,
-              }),
-              {
-                async presignPut({ key }) {
-                  return { url: `https://space.test/${key}`, headers: {} };
-                },
-                async presignGet({ key }) {
-                  return { url: `https://space.test/${key}`, headers: {} };
-                },
-                async head() {
-                  return undefined;
-                },
-                async get() {
-                  return undefined;
-                },
-                async delete() {},
-                async exists() {
-                  return false;
-                },
-              },
-            ).reserveUpload({
-              userId: userA,
-              byteSize: 80,
-              filename: "b.jpg",
-              contentType: "image/jpeg",
-            });
-          } finally {
-            await client.end({ timeout: 0 });
-          }
-        })(),
+        attachments.reserveUpload({
+          userId: userA,
+          byteSize: 80,
+          filename: "a.jpg",
+          contentType: "image/jpeg",
+        }),
+        attachments.reserveUpload({
+          userId: userA,
+          byteSize: 80,
+          filename: "b.jpg",
+          contentType: "image/jpeg",
+        }),
       ]);
       const succeeded = racing.filter(
         (result) => result.status === "fulfilled",
@@ -243,10 +175,10 @@ if (!connection) {
         attachments.signPublicRead(attachment.id),
       ).rejects.toMatchObject({ code: "attachment-unavailable" });
     } finally {
-      await sql.end({ timeout: 0 });
+      await sql.end();
       const drop = postgres(connection, { max: 1, onnotice: () => {} });
       await drop.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-      await drop.end({ timeout: 0 });
+      await drop.end();
     }
   });
 }

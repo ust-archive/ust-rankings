@@ -8,8 +8,6 @@ node_modules
 .agents
 scripts/provision-rankings-refresh.sh
 *.md
-browser-test
-playwright.config.ts
 test
 data/test
 data/out

@@ -99,9 +99,7 @@ async function exists(path: string): Promise<boolean> {
 async function loadPreviousParquet(directory: string) {
   const identitiesPath = join(directory, "instructor-identities.parquet");
   if (!(await exists(identitiesPath)))
-    throw new Error(
-      `Previous identities are missing: ${identitiesPath}`,
-    );
+    throw new Error(`Previous identities are missing: ${identitiesPath}`);
   return {
     identities: join(directory, IDENTITY_FILES[0]).replaceAll("\\", "/"),
     aliases: join(directory, IDENTITY_FILES[1]).replaceAll("\\", "/"),
@@ -301,8 +299,7 @@ export async function assignInstructorIdentities(
       });
     else {
       const current = identities.get(uuid);
-      if (current)
-        identities.set(uuid, { ...current, canonical_name });
+      if (current) identities.set(uuid, { ...current, canonical_name });
     }
   }
 
@@ -350,8 +347,7 @@ export async function assignInstructorIdentities(
     a.canonical_name.localeCompare(b.canonical_name),
   );
   const aliasList = aliases.sort(
-    (a, b) =>
-      a.uuid.localeCompare(b.uuid) || a.name.localeCompare(b.name),
+    (a, b) => a.uuid.localeCompare(b.uuid) || a.name.localeCompare(b.name),
   );
 
   await connection.run(`
@@ -393,9 +389,7 @@ export async function assignInstructorIdentities(
           `(${sqlLiteral(row.uuid)}, ${sqlLiteral(row.canonical_name)}, ${sqlLiteral(row.itsc)})`,
       )
       .join(",\n");
-    await connection.run(
-      `INSERT INTO instructor_identities VALUES ${values}`,
-    );
+    await connection.run(`INSERT INTO instructor_identities VALUES ${values}`);
   }
   if (aliasList.length > 0) {
     const values = aliasList

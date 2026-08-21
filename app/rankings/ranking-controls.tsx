@@ -237,7 +237,7 @@ export function RankingControls({
 
       <Card>
         <Collapsible onOpenChange={changeOpen} open={isOpen}>
-          <CardHeader className="space-y-0 p-4">
+          <CardHeader className="p-4">
             <CardTitle asChild className="text-sm">
               <CollapsibleTrigger asChild>
                 <Button
@@ -281,7 +281,7 @@ export function RankingControls({
                     value="learning"
                   >
                     <span>Knowledge-Focus&apos;d</span>
-                    <span className="whitespace-normal text-xs font-normal text-gray-500">
+                    <span className="whitespace-normal text-xs font-normal text-gray-600">
                       Prioritize things learned.
                     </span>
                   </ToggleGroupItem>
@@ -290,7 +290,7 @@ export function RankingControls({
                     value="grade"
                   >
                     <span>Grading-Focus&apos;d</span>
-                    <span className="whitespace-normal text-xs font-normal text-gray-500">
+                    <span className="whitespace-normal text-xs font-normal text-gray-600">
                       Prioritize grading evidence.
                     </span>
                   </ToggleGroupItem>
@@ -299,7 +299,7 @@ export function RankingControls({
                     value="custom"
                   >
                     <span>Custom</span>
-                    <span className="whitespace-normal text-xs font-normal text-gray-500">
+                    <span className="whitespace-normal text-xs font-normal text-gray-600">
                       Set every criterion weight.
                     </span>
                   </ToggleGroupItem>

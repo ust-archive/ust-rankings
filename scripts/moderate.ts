@@ -75,7 +75,9 @@ try {
       RETURNING id
     `;
     if (!row) throw new Error("Rights request was not recorded");
-    console.log(`Recorded rights request ${row.id} (${reason}) for ${targetId}.`);
+    console.log(
+      `Recorded rights request ${row.id} (${reason}) for ${targetId}.`,
+    );
     notify();
   } else if (action === "lookup-identity") {
     if (!LOOKUP_REASONS.has(reason)) throw new Error(USAGE);

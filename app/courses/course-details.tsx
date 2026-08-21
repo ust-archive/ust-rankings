@@ -100,31 +100,6 @@ function ClassLinks({ offering }: { offering: CourseOffering }) {
   );
 }
 
-export function DetailLoading({
-  entity,
-}: {
-  entity: "Course" | "Course Offering" | "Class";
-}) {
-  return (
-    <div
-      aria-busy="true"
-      aria-live="polite"
-      className="w-full space-y-8 text-left"
-    >
-      <header className="border-b border-slate-200 pb-7">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-700">
-          {entity}
-        </p>
-        <h1 className="mt-2 text-3xl font-bold">Loading {entity} details…</h1>
-      </header>
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="h-56 rounded-2xl bg-slate-100 motion-safe:animate-pulse" />
-        <div className="h-40 rounded-2xl bg-slate-100 motion-safe:animate-pulse lg:col-start-2 lg:row-start-1" />
-      </div>
-    </div>
-  );
-}
-
 export function UnavailableDetail({
   entity,
   title,

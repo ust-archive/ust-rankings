@@ -25,7 +25,7 @@ const roboto_mono = Roboto_Mono({
 
 export const metadata: Metadata = {
   title: "UST Rankings",
-  description: "The Rankings of Instructors at HKUST. ",
+  description: "Course and Instructor rankings for HKUST students.",
 };
 
 export const viewport: Viewport = {
@@ -146,7 +146,7 @@ export default function RootLayout({
           </div>
         </header>
         <main
-          className="mx-auto flex w-full max-w-7xl flex-1 flex-col items-center space-y-8 px-4 py-12 text-center sm:px-6 lg:py-16"
+          className="mx-auto flex w-full max-w-7xl flex-1 flex-col items-center gap-8 px-4 py-12 text-center sm:px-6 lg:py-16"
           id="main-content"
         >
           {children}
@@ -212,8 +212,12 @@ export default function RootLayout({
           </div>
         </footer>
         <Toaster />
-        <Analytics />
-        <SpeedInsights />
+        {process.env.VERCEL ? (
+          <>
+            <Analytics />
+            <SpeedInsights />
+          </>
+        ) : null}
       </body>
       <GoogleAnalytics gaId="G-C8B9VFGTRH" />
     </html>

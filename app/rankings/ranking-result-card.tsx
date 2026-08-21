@@ -54,7 +54,7 @@ export function RankingResultCard({ result }: { result: Ranking }) {
             </p>
             <p className="text-xs tabular-nums sm:hidden">Score {score}</p>
           </CardContent>
-          <CardHeader className="min-w-0 space-y-0 p-0 text-left">
+          <CardHeader className="min-w-0 gap-0 p-0 text-left">
             <CardTitle asChild>
               <h2 className="wrap-break-word text-xl leading-tight tracking-normal text-slate-950 sm:text-2xl">
                 {result.entity === "course"

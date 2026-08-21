@@ -701,7 +701,7 @@ function WithdrawReviewDialog({ review }: { review: PublicReview }) {
             value={review.revisionId}
           />
           {associationFields(review)}
-          <DialogHeader className="gap-3 space-y-0 px-6 pt-6 pr-12 pb-3">
+          <DialogHeader className="gap-3 px-6 pt-6 pr-12 pb-3">
             <DialogTitle>Withdraw this Review?</DialogTitle>
             <DialogDescription className="leading-6">
               It will disappear from public display. Justified immutable

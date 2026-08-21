@@ -23,9 +23,9 @@ export default async function CourseOfferingPage({
   params: Promise<{ prefix: string; number: string; termCode: string }>;
   searchParams: Promise<RouteSearchParams>;
 }) {
-  const query = await searchParams;
+  const [query, route] = await Promise.all([searchParams, params]);
   const { coursePrefix, courseNumber, termCode } = normalizeCourseRoute(
-    await params,
+    route,
     query,
   );
   if (!termCode) notFound();

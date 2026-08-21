@@ -159,9 +159,9 @@ test("Schedule still serves when Rankings are unavailable", async () => {
   const { querySchedule } = await import("@/lib/schedule/server");
   const page = await querySchedule({ termCode: "2510", search: "COMP 2000" });
   expect(page.results[0]?.courseCode).toBe("COMP 2000");
-  expect(
-    page.results[0]?.classes[0]?.meetings[0]?.instructors,
-  ).toContainEqual({ sourceName: "Alpha Instructor" });
+  expect(page.results[0]?.classes[0]?.meetings[0]?.instructors).toContainEqual({
+    sourceName: "Alpha Instructor",
+  });
 });
 
 test("bounded Schedule search covers Course, Instructor, room, Section, and Class Number", async () => {

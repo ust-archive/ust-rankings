@@ -892,8 +892,10 @@ async function rankingInstructorUuids(names: string[]) {
 function collectSourceNames(rows: Array<Record<string, unknown>>) {
   const names: string[] = [];
   for (const row of rows) {
-    for (const meeting of (row.schedules as NestedMeeting[] | undefined) ?? []) {
-      for (const value of (meeting.instructors as unknown[] | undefined) ?? []) {
+    for (const meeting of (row.schedules as NestedMeeting[] | undefined) ??
+      []) {
+      for (const value of (meeting.instructors as unknown[] | undefined) ??
+        []) {
         const sourceName = text(value).trim();
         if (sourceName && sourceName.toLocaleLowerCase() !== "tba")
           names.push(sourceName);
@@ -1104,9 +1106,9 @@ export async function getSchedule(
         const { observedNamesForInstructorUuids } = await import(
           "@/lib/rankings/server"
         );
-        sourceNames = (
-          await observedNamesForInstructorUuids([...wanted])
-        ).map((name) => name.trim().toLocaleLowerCase());
+        sourceNames = (await observedNamesForInstructorUuids([...wanted])).map(
+          (name) => name.trim().toLocaleLowerCase(),
+        );
       } catch {
         sourceNames = [];
       }
@@ -1138,9 +1140,7 @@ export async function getSchedule(
       return {
         type: "instructor",
         instructorUuids: [...wanted],
-        classes: (await mapRows(rows)).flatMap(
-          (offering) => offering.classes,
-        ),
+        classes: (await mapRows(rows)).flatMap((offering) => offering.classes),
       };
     }
     const { coursePrefix, courseNumber } = validateCourse(
