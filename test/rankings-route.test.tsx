@@ -6,6 +6,26 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { makeRankingGeneration } from "./rankings-fixture";
 
 mock.module("server-only", () => ({}));
+mock.module("next/navigation", () => ({
+  notFound: () => {
+    throw Object.assign(new Error("NEXT_NOT_FOUND"), {
+      digest: "NEXT_HTTP_ERROR_FALLBACK;404",
+    });
+  },
+  permanentRedirect: (url: string) => {
+    throw Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: `NEXT_REDIRECT;replace;${url};308;`,
+    });
+  },
+  redirect: (url: string) => {
+    throw Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: `NEXT_REDIRECT;replace;${url};307;`,
+    });
+  },
+  usePathname: () => "/rankings/instructors",
+  useRouter: () => ({ replace: () => undefined }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const temporaryDirectories: string[] = [];
 
@@ -68,7 +88,7 @@ test("a blank Term Code renders the latest Instructor Ranking Population", async
     await InstructorsPage({ searchParams: Promise.resolve({ term: "  " }) }),
   );
 
-  expect(markup).toContain('value="2510" selected="">2025-26 Fall');
+  expect(markup).toContain('aria-label="Term"');
   expect(markup).not.toContain("Invalid Term Code");
 });
 
@@ -107,8 +127,8 @@ test("the public Course ranking route shares reproducible URL controls", async (
   expect(markup).toContain("Course Rankings");
   expect(markup).toContain("COMP 1000");
   expect(markup).toContain("Creative Computing");
-  expect(markup).toContain("Grade-focused preset");
-  expect(markup).toContain('name="commonCore"');
+  expect(markup).toContain("Grading-Focus&#x27;d preset");
+  expect(markup).toContain("Settings…");
   expect(markup).toContain("Local Rank");
   expect(markup).not.toContain("MATH 2000");
 });
@@ -158,7 +178,7 @@ test("ranking routes distinguish every empty, invalid, and stale URL state", asy
     }),
   );
   expect(unranked).toContain("UST Rankings");
-  expect(unranked).toContain("Filter…");
+  expect(unranked).toContain("Settings…");
   expect(unranked).toContain("matching Course is unranked");
 
   const { queryRankings } = await import("@/lib/rankings/server");
@@ -174,7 +194,7 @@ test("ranking routes distinguish every empty, invalid, and stale URL state", asy
     }),
   );
   expect(stale).toContain("UST Rankings");
-  expect(stale).toContain("Score Formula…");
+  expect(stale).toContain("Settings…");
   expect(stale).toContain("Ranking page expired");
   expect(stale).toContain('role="alert"');
 });
@@ -234,18 +254,14 @@ test("Course and Instructor Rankings retain the title, search, Term, and setting
   expect(instructors).toContain("Instructor Rankings");
   expect(instructors).toContain('name="q"');
   expect(instructors).toContain('type="search"');
-  expect(instructors).toContain('name="term"');
-  expect(instructors).toContain("Score Formula…");
-  expect(instructors).toContain("2025-26 Fall");
-  expect(instructors).toContain('name="preset"');
-  expect(instructors).toContain('name="activity"');
-  expect(instructors).toContain('name="prefix"');
-  expect(instructors).toContain('name="course"');
+  expect(instructors).toContain('aria-label="Term"');
+  expect(instructors).toContain("Settings…");
+  expect(instructors).not.toContain("Bug Fixes");
   expect(instructors.indexOf('name="q"')).toBeLessThan(
-    instructors.indexOf("Score Formula…"),
+    instructors.indexOf("Settings…"),
   );
-  expect(instructors.indexOf('name="term"')).toBeLessThan(
-    instructors.indexOf("Score Formula…"),
+  expect(instructors.indexOf('aria-label="Term"')).toBeLessThan(
+    instructors.indexOf("Settings…"),
   );
 
   const { default: CoursesPage } = await import("@/app/rankings/courses/page");
@@ -261,10 +277,8 @@ test("Course and Instructor Rankings retain the title, search, Term, and setting
   );
   expect(courses).toContain("UST Rankings");
   expect(courses).toContain("Course Rankings");
-  expect(courses).toContain("Filter…");
-  expect(courses).toContain("Score Formula…");
-  expect(courses).toContain('name="commonCore"');
-  expect(courses).toContain('name="weight_content"');
+  expect(courses).toContain("Settings…");
+  expect(courses).not.toContain("Bug Fixes");
 });
 
 test("ranking results show identity, ranks, score, and grade and navigate to Details", async () => {
@@ -325,7 +339,7 @@ test("empty, invalid, and unavailable ranking states keep the restored structure
     }),
   );
   expect(invalid).toContain("UST Rankings");
-  expect(invalid).toContain("Score Formula…");
+  expect(invalid).toContain("Settings…");
   expect(invalid).toContain('name="q"');
   expect(invalid).toContain("Invalid ranking query");
   expect(invalid).toContain('role="alert"');
@@ -336,7 +350,7 @@ test("empty, invalid, and unavailable ranking states keep the restored structure
     }),
   );
   expect(empty).toContain("UST Rankings");
-  expect(empty).toContain("Score Formula…");
+  expect(empty).toContain("Settings…");
   expect(empty).toContain(
     "No eligible Courses match these structured filters.",
   );

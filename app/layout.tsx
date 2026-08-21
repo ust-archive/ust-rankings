@@ -8,6 +8,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import Link from "next/link";
 import type React from "react";
+import { Separator } from "@/components/ui/separator";
 import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,32 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#003366",
 };
+
+function FooterLinks({
+  heading,
+  links,
+}: {
+  heading: string;
+  links: ReadonlyArray<readonly [label: string, href: string]>;
+}) {
+  const id = `footer-${heading.toLowerCase()}`;
+  return (
+    <nav aria-labelledby={id} className="flex flex-col gap-3">
+      <h2 className="text-sm font-semibold text-slate-950" id={id}>
+        {heading}
+      </h2>
+      {links.map(([label, href]) => (
+        <Link
+          className="w-fit text-sm underline-offset-4 hover:text-slate-950"
+          href={href}
+          key={href}
+        >
+          {label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
 
 export default function RootLayout({
   children,
@@ -94,27 +121,70 @@ export default function RootLayout({
           {children}
         </main>
         <footer className="border-t border-slate-200 bg-white text-slate-700">
-          <nav
-            aria-label="Footer navigation"
-            className="mx-auto flex max-w-7xl flex-wrap gap-x-6 gap-y-3 px-4 py-8 text-sm sm:px-6"
-          >
-            <Link href="/privacy">Privacy and community policy</Link>
-            <Link href="/faq">FAQ</Link>
+          <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:grid-cols-2 sm:px-6 lg:grid-cols-[2fr_1fr_1fr_1fr]">
+            <div className="flex max-w-sm flex-col gap-4">
+              <Link
+                className="flex w-fit items-center gap-2 text-lg font-bold text-slate-950 no-underline hover:text-[#003366]"
+                href="/rankings/instructors"
+              >
+                <GraduationCapIcon aria-hidden="true" className="size-6" />
+                UST Rankings
+              </Link>
+              <p className="text-pretty text-sm leading-relaxed text-slate-600">
+                Community-built Course and Instructor rankings for informed
+                study choices at HKUST.
+              </p>
+            </div>
+            <FooterLinks
+              heading="Explore"
+              links={[
+                ["Instructor Rankings", "/rankings/instructors"],
+                ["Course Rankings", "/rankings/courses"],
+                ["Schedule", "/schedule"],
+              ]}
+            />
+            <FooterLinks
+              heading="Project"
+              links={[
+                ["FAQ", "/faq"],
+                ["Account", "/account"],
+                ["Contact", "mailto:ust-rankings@flandia.dev"],
+              ]}
+            />
+            <nav aria-labelledby="footer-legal" className="flex flex-col gap-3">
+              <h2
+                className="text-sm font-semibold text-slate-950"
+                id="footer-legal"
+              >
+                Legal
+              </h2>
+              <Link
+                className="text-sm underline-offset-4 hover:text-slate-950"
+                href="/privacy"
+              >
+                Privacy &amp; Community Policy
+              </Link>
+              <a
+                className="text-sm underline-offset-4 hover:text-slate-950"
+                href="https://creativecommons.org/licenses/by/4.0/"
+                rel="license"
+              >
+                Review Text: CC BY 4.0
+              </a>
+            </nav>
+          </div>
+          <Separator />
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm sm:px-6">
+            <p>Independent community project for HKUST students.</p>
             <a
+              className="inline-flex items-center gap-2 underline-offset-4 hover:text-slate-950"
               href="https://github.com/ust-archive/ust-rankings"
               rel="noopener noreferrer"
             >
-              <SiGithub aria-hidden="true" className="mr-1 inline h-4 w-4" />
-              Source
+              <SiGithub aria-hidden="true" className="size-4" />
+              Source on GitHub
             </a>
-            <a href="mailto:ust-rankings@flandia.dev">Contact</a>
-            <a
-              href="https://creativecommons.org/licenses/by/4.0/"
-              rel="license"
-            >
-              Review text: CC BY 4.0
-            </a>
-          </nav>
+          </div>
         </footer>
         <Toaster />
         <Analytics />

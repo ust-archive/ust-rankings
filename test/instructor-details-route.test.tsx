@@ -7,6 +7,26 @@ import { fixtureSha, makeRankingGeneration } from "./rankings-fixture";
 import { makeScheduleGeneration } from "./schedule-fixture";
 
 mock.module("server-only", () => ({}));
+mock.module("next/navigation", () => ({
+  notFound: () => {
+    throw Object.assign(new Error("NEXT_NOT_FOUND"), {
+      digest: "NEXT_HTTP_ERROR_FALLBACK;404",
+    });
+  },
+  permanentRedirect: (url: string) => {
+    throw Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: `NEXT_REDIRECT;replace;${url};308;`,
+    });
+  },
+  redirect: (url: string) => {
+    throw Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: `NEXT_REDIRECT;replace;${url};307;`,
+    });
+  },
+  usePathname: () => "/rankings/instructors",
+  useRouter: () => ({ replace: () => undefined }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const BETA_UUID = "00000000-0000-4000-8000-000000000002";
 const temporaryDirectories: string[] = [];
