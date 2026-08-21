@@ -1,7 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   authorizedInlineImage,
   contentTypeForFilename,
@@ -15,6 +26,7 @@ import type {
   ReviewAssociations,
   ReviewAttribution,
 } from "@/lib/contributions/reviews";
+import { rankingTermName } from "@/lib/rankings/presentation";
 import {
   editReview,
   publishReview,
@@ -88,12 +100,13 @@ export function ReviewComposer({
   initialCourse,
   initialInstructorUuid,
   review,
+  displayTermNames = false,
 }: ReviewEditorOptions & {
   initialCourse?: ReviewCourseOption;
   initialInstructorUuid?: string;
   review?: PublicReview;
+  displayTermNames?: boolean;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const edit = Boolean(review);
   const selectedInitialCourse = review?.course ?? initialCourse;
   const selectedInitialInstructor =
@@ -169,12 +182,20 @@ export function ReviewComposer({
       ...new Map(
         validContexts.flatMap((item) =>
           item.termCode
-            ? [[item.termCode, item.termName ?? item.termCode] as const]
+            ? [
+                [
+                  item.termCode,
+                  item.termName ??
+                    (displayTermNames
+                      ? rankingTermName(item.termCode)
+                      : item.termCode),
+                ] as const,
+              ]
             : [],
         ),
       ).entries(),
     ],
-    [validContexts],
+    [displayTermNames, validContexts],
   );
   const sections = useMemo(
     () =>
@@ -233,7 +254,10 @@ export function ReviewComposer({
   const displayedTerms =
     review?.termCode && !terms.some(([value]) => value === review.termCode)
       ? [
-          [review.termCode, `${review.termCode} (current snapshot)`] as const,
+          [
+            review.termCode,
+            `${displayTermNames ? rankingTermName(review.termCode) : review.termCode} (current snapshot)`,
+          ] as const,
           ...terms,
         ]
       : terms;
@@ -325,26 +349,17 @@ export function ReviewComposer({
     }
   }
   const inputId = review ? `review-markdown-${review.id}` : "review-markdown";
-  const titleId = review
-    ? `review-composer-title-${review.id}`
-    : "review-composer-title";
   return (
-    <>
-      <button
-        className="mt-4 min-h-11 w-full rounded-xl bg-[#003366] px-4 py-3 font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]"
-        onClick={() => dialog.current?.showModal()}
-        type="button"
-      >
-        {edit ? "Edit Review" : "Write a Review"}
-      </button>
-      <dialog
-        aria-labelledby={titleId}
-        className="m-auto max-h-[calc(100%-2rem)] w-[min(42rem,calc(100%-2rem))] overflow-y-auto rounded-2xl p-0 text-left shadow-2xl backdrop:bg-slate-950/60"
-        ref={dialog}
-      >
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button type="button">
+          {edit ? "Edit Review" : "Create a Review"}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-2xl overflow-x-hidden overflow-y-auto p-0 text-left">
         <form
           action={edit ? editReview : publishReview}
-          className="space-y-5 p-6 sm:p-8"
+          className="flex min-w-0 flex-col gap-5 p-6 sm:p-8"
         >
           {review ? (
             <>
@@ -356,21 +371,21 @@ export function ReviewComposer({
               />
             </>
           ) : null}
-          <header>
+          <DialogHeader>
             <p className="text-xs font-bold uppercase tracking-widest text-blue-700">
               Your experience
             </p>
-            <h2 className="mt-1 text-2xl font-black" id={titleId}>
-              {edit ? "Edit your Review" : "Write your Review"}
-            </h2>
-            <p className="mt-2 text-sm text-slate-600">
+            <DialogTitle className="text-2xl">
+              {edit ? "Edit Review" : "Create a Review"}
+            </DialogTitle>
+            <DialogDescription>
               Choose one or two co-equal Review Bases, then optional Review
               Context.
-            </p>
-          </header>
-          <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4">
+            </DialogDescription>
+          </DialogHeader>
+          <fieldset className="min-w-0 space-y-3 rounded-xl border border-slate-200 p-4">
             <legend className="px-1 font-bold">Review Bases</legend>
-            <label className="flex min-h-11 items-center gap-3">
+            <label className="flex min-h-11 min-w-0 items-center gap-3">
               <input
                 aria-label="Include Course Basis"
                 checked={courseEnabled}
@@ -381,7 +396,7 @@ export function ReviewComposer({
               <span className="w-24 font-semibold">Course</span>
               <select
                 aria-label="Course Basis"
-                className="min-h-11 flex-1 rounded-lg border border-slate-300 px-3"
+                className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 px-3"
                 disabled={!courseEnabled}
                 name="course"
                 onChange={(event) => setCourse(event.target.value)}
@@ -394,7 +409,7 @@ export function ReviewComposer({
                 ))}
               </select>
             </label>
-            <label className="flex min-h-11 items-center gap-3">
+            <label className="flex min-h-11 min-w-0 items-center gap-3">
               <input
                 aria-label="Include Instructor Basis"
                 checked={instructorEnabled}
@@ -405,7 +420,7 @@ export function ReviewComposer({
               <span className="w-24 font-semibold">Instructor</span>
               <select
                 aria-label="Instructor Basis"
-                className="min-h-11 flex-1 rounded-lg border border-slate-300 px-3"
+                className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 px-3"
                 disabled={!instructorEnabled}
                 name="instructorUuid"
                 onChange={(event) => setInstructorUuid(event.target.value)}
@@ -424,7 +439,7 @@ export function ReviewComposer({
               </p>
             ) : null}
           </fieldset>
-          <fieldset className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-2">
+          <fieldset className="grid min-w-0 gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-2">
             <legend className="px-1 font-bold">
               Review Context{" "}
               <span className="font-normal text-slate-500">(optional)</span>
@@ -482,7 +497,7 @@ export function ReviewComposer({
             ) : null}
           </fieldset>
           <div>
-            <div className="flex items-end justify-between gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <label className="font-bold" htmlFor={inputId}>
                 Review · Markdown
               </label>
@@ -532,7 +547,7 @@ export function ReviewComposer({
               used as alt text. Document Attachments are never embedded.
             </p>
           </div>
-          <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4">
+          <fieldset className="min-w-0 space-y-3 rounded-xl border border-slate-200 p-4">
             <legend className="px-1 font-bold">Attachments</legend>
             <input
               name="attachments"
@@ -560,6 +575,7 @@ export function ReviewComposer({
             </p>
             <input
               accept=".jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.pdf,.txt,.md,.csv,.docx,.xlsx,.pptx,.odt,.ods,.odp,image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,application/pdf,text/plain,text/markdown,text/csv"
+              aria-label="Add Attachments"
               disabled={attachments.length >= 4}
               onChange={(event) => {
                 void addFiles(event.target.files);
@@ -610,7 +626,7 @@ export function ReviewComposer({
               license to store, deliver, display, and moderate them.
             </p>
           </fieldset>
-          <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4">
+          <fieldset className="min-w-0 space-y-3 rounded-xl border border-slate-200 p-4">
             <legend className="px-1 font-bold">Public identity</legend>
             <label className="flex items-start gap-3">
               <input
@@ -658,25 +674,22 @@ export function ReviewComposer({
             granted to obtained copies cannot be recalled, even after
             withdrawal.
           </div>
-          <div className="flex items-center justify-between gap-4 border-t border-slate-200 pt-5">
-            <button
-              className="min-h-11 px-3 font-semibold text-slate-600"
-              onClick={() => dialog.current?.close()}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="min-h-11 rounded-xl bg-[#003366] px-5 py-3 font-bold text-white disabled:bg-slate-400"
+          <DialogFooter className="gap-2 border-t border-slate-200 pt-5">
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
               disabled={!hasBasis || (edit && !selectionSupported)}
               type="submit"
             >
               Publish Revision
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </dialog>
-    </>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -700,9 +713,11 @@ function associationFields(review: PublicReview) {
 export function Reviews({
   reviews,
   editor,
+  displayTermNames = false,
 }: {
   reviews: PublicReview[];
   editor?: ReviewEditorOptions;
+  displayTermNames?: boolean;
 }) {
   if (reviews.length === 0)
     return (
@@ -713,9 +728,7 @@ export function Reviews({
       {reviews.map((review) => {
         const permalink = `/reviews/${review.id}`;
         const identityHidden = review.attribution === "identity-hidden";
-        const credit = identityHidden
-          ? "UST Rankings contributor"
-          : (review.capturedDisplayName ?? review.attributionCredit);
+        const credit = review.capturedDisplayName ?? review.attributionCredit;
         return (
           <li
             className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
@@ -723,7 +736,9 @@ export function Reviews({
             key={review.id}
           >
             <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 pb-3">
-              <p className="font-bold">{credit}</p>
+              <p className="font-bold">
+                {identityHidden ? <i>Anonymous Reviewer</i> : credit}
+              </p>
               <time
                 className="text-xs text-slate-500"
                 dateTime={review.publishedAt.toISOString()}
@@ -747,7 +762,10 @@ export function Reviews({
             </fieldset>
             {review.termCode ? (
               <p className="mt-2 text-sm text-slate-600">
-                Review Context · Term {review.termCode}
+                Review Context · Term{" "}
+                {displayTermNames
+                  ? rankingTermName(review.termCode)
+                  : review.termCode}
                 {review.section ? ` · Section ${review.section}` : ""}
               </p>
             ) : null}
@@ -812,10 +830,7 @@ export function Reviews({
               </ul>
             ) : null}
             <p className="mt-4 text-xs text-slate-500">
-              {identityHidden
-                ? "Identity-hidden Review Revision"
-                : "Attributed Review Revision"}{" "}
-              · Review text licensed {review.license ?? "CC BY 4.0"} ·{" "}
+              Review text licensed {review.license ?? "CC BY 4.0"} ·{" "}
               <a href={permalink}>Review permalink</a>
             </p>
             <form action={reportReview} className="mt-3">
@@ -849,7 +864,11 @@ export function Reviews({
             </form>
             {review.viewerCanEdit && editor ? (
               <div className="mt-4 border-t border-slate-200 pt-4">
-                <ReviewComposer {...editor} review={review} />
+                <ReviewComposer
+                  {...editor}
+                  displayTermNames={displayTermNames}
+                  review={review}
+                />
                 <form action={withdrawReview} className="mt-3">
                   <input name="reviewId" type="hidden" value={review.id} />
                   <input

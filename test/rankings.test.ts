@@ -169,6 +169,16 @@ test("getRankings exposes Course evidence and associated Instructors", async () 
     bayesian: 0.25,
     samples: 1,
   });
+  expect(details.scoreDistribution.count).toBe(details.population.size);
+  expect(
+    details.scoreDistribution.bins.reduce((sum, count) => sum + count, 0),
+  ).toBe(details.population.size);
+  expect(details.scoreDistribution.minimum).toBeLessThanOrEqual(
+    details.ranking?.score ?? Number.NEGATIVE_INFINITY,
+  );
+  expect(details.scoreDistribution.maximum).toBeGreaterThanOrEqual(
+    details.ranking?.score ?? Number.POSITIVE_INFINITY,
+  );
   expect(details.instructors).toEqual([
     {
       termCode: "2430",

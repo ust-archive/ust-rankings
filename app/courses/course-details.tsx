@@ -2,8 +2,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { instructorPath } from "@/app/instructors/routes";
 import { SignalControls } from "@/app/signals/signal-controls";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import type { PublicReview } from "@/lib/contributions/reviews";
 import type { SignalSummary } from "@/lib/contributions/signals";
+import { rankingTermName } from "@/lib/rankings/presentation";
 import type { CourseRankings } from "@/lib/rankings/server";
 import { buildScheduleUrl } from "@/lib/schedule/planner";
 import type {
@@ -17,6 +20,13 @@ import {
   type ReviewEditorOptions,
   Reviews,
 } from "./course-reviews";
+import styles from "./details.module.css";
+import {
+  DetailsCommunity,
+  DetailsHeader,
+  DetailsRankings,
+  ExpandCardTrigger,
+} from "./details-sections";
 import { coursePath } from "./routes";
 
 const criterionLabels = {
@@ -492,27 +502,43 @@ export function CourseDetails({
   signalError?: string;
 }) {
   const offerings = schedule?.offerings ?? [];
-  const selected = selectedTermCode
+  const selectedOffering = selectedTermCode
     ? offerings.find((offering) => offering.termCode === selectedTermCode)
     : offerings.at(-1);
-  const scheduleSelection = selected ?? offerings.at(-1);
+  const currentOffering = selectedOffering ?? offerings.at(-1);
   const evidenceTermCode =
     selectedTermCode ??
-    scheduleSelection?.termCode ??
+    currentOffering?.termCode ??
     rankings?.population.termCode;
   const title =
-    scheduleSelection?.title ??
+    currentOffering?.title ??
     rankings?.course.title ??
     "Catalog details unavailable";
+  const termNames = new Map(
+    offerings.map((offering) => [offering.termCode, offering.termName]),
+  );
   const instructors = uniqueInstructors(offerings, rankings);
+  const currentInstructors = evidenceTermCode
+    ? instructors.filter((instructor) =>
+        instructor.termCodes.has(evidenceTermCode),
+      )
+    : [];
+  const earlierTeachings = instructors.flatMap((instructor) => {
+    const terms = [...instructor.termCodes].filter(
+      (termCode) => termCode !== evidenceTermCode,
+    );
+    return terms.length ? [{ instructor, terms }] : [];
+  });
+  const earlierOfferings = currentOffering
+    ? offerings.filter(
+        (offering) => offering.termCode !== currentOffering.termCode,
+      )
+    : [];
   const reviewEditor: ReviewEditorOptions = {
     courses: [{ coursePrefix, courseNumber }],
-    instructors: instructors
-      .filter((item) => item.uuid)
-      .map((item) => ({
-        instructorUuid: item.uuid as string,
-        name: item.name,
-      })),
+    instructors: instructors.flatMap((item) =>
+      item.uuid ? [{ instructorUuid: item.uuid, name: item.name }] : [],
+    ),
     contexts: offerings.flatMap((offering) => {
       const course = { coursePrefix, courseNumber };
       const courseContexts = [
@@ -557,129 +583,197 @@ export function CourseDetails({
       return [...courseContexts, ...instructorContexts];
     }),
   };
-  return (
-    <DetailShell
-      eyebrow="Course"
-      title={`${coursePrefix} ${courseNumber}`}
-      subtitle={title}
-      action={
-        <ActionArea
-          type="Course"
-          scheduleHref={
-            scheduleSelection
-              ? scheduleUrl(
-                  scheduleSelection.termCode,
-                  scheduleSelection.classes,
-                )
-              : undefined
-          }
-          instructors={instructors
-            .filter((item) => item.uuid)
-            .map((item) => ({
-              name: item.name,
-              href: instructorPath({
-                uuid: item.uuid as string,
-                itsc: item.itsc,
-              }),
-            }))}
-          signalControls={
-            <SignalControls
-              error={signalError}
-              signedIn={signedIn}
-              summary={signals}
-              target={{ type: "course", coursePrefix, courseNumber }}
-              unavailable={signalsUnavailable}
-              updated={signalUpdated}
-            />
-          }
-          reviewComposer={
-            <ReviewComposer
-              {...reviewEditor}
-              initialCourse={{ coursePrefix, courseNumber }}
-            />
-          }
-        />
-      }
-      evidence={
-        <RankingEvidence rankings={rankings} termCode={evidenceTermCode} />
-      }
-      community={
-        <CommunityArea
-          editor={reviewEditor}
-          error={reviewError}
-          published={reviewPublished}
-          withdrawn={reviewWithdrawn}
-          reviews={reviews}
-          unavailable={reviewsUnavailable}
-        />
-      }
-      associations={
-        <div className="space-y-6 rounded-2xl border bg-white p-5 shadow-sm">
-          <div>
-            <h2 className="text-xl font-bold">Course Offerings and Classes</h2>
-            {offerings.length ? (
-              <ul className="mt-3 space-y-4">
-                {[...offerings].reverse().map((offering) => (
-                  <li key={offering.termCode}>
-                    <Link
-                      className="font-bold"
-                      href={coursePath(
-                        offering.coursePrefix,
-                        offering.courseNumber,
-                        offering.termCode,
-                      )}
-                    >
-                      {offering.termName}
-                    </Link>
-                    <ClassLinks offering={offering} />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-sm text-amber-900">
-                Course Offerings are unavailable.
-              </p>
+  const instructorEntry = (
+    instructor: (typeof instructors)[number],
+    terms: string[],
+  ) => (
+    <section
+      className="flex flex-col gap-1"
+      key={instructor.uuid ?? instructor.name}
+    >
+      <h3 className="font-semibold text-balance">
+        {instructor.uuid ? (
+          <Link
+            href={instructorPath({
+              itsc: instructor.itsc,
+              uuid: instructor.uuid,
+            })}
+          >
+            {instructor.name}
+          </Link>
+        ) : (
+          instructor.name
+        )}
+      </h3>
+      <p className="text-sm text-slate-700">
+        {terms
+          .slice()
+          .sort()
+          .reverse()
+          .map(
+            (termCode) => termNames.get(termCode) ?? rankingTermName(termCode),
+          )
+          .join(" · ")}
+      </p>
+    </section>
+  );
+  const offeringEntry = (offering: CourseOffering) => (
+    <section className="flex flex-col gap-3" key={offering.termCode}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="font-semibold text-balance">
+          <Link
+            href={coursePath(
+              offering.coursePrefix,
+              offering.courseNumber,
+              offering.termCode,
             )}
-          </div>
-          <div>
-            <h2 className="text-xl font-bold">Associated Instructors</h2>
-            {instructors.length ? (
-              <ul className="mt-3 space-y-2">
-                {instructors.map((instructor) => (
-                  <li key={instructor.uuid ?? instructor.name}>
-                    {instructor.uuid ? (
-                      <Link
-                        className="font-semibold"
-                        href={instructorPath({
-                          uuid: instructor.uuid,
-                          itsc: instructor.itsc,
-                        })}
-                      >
-                        {instructor.name}
-                      </Link>
-                    ) : (
-                      instructor.name
-                    )}{" "}
-                    <span className="text-xs text-slate-500">
-                      ·{" "}
-                      {instructor.uuid
-                        ? "resolved Instructor"
-                        : "unresolved source name"}{" "}
-                      · {instructor.termCodes.size} Term
-                      {instructor.termCodes.size === 1 ? "" : "s"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-sm text-slate-600">
-                No resolved Instructor association is available.
+          >
+            {offering.termName}
+          </Link>
+        </h3>
+        <p className="text-sm text-slate-600">{offering.credits} credits</p>
+      </div>
+      {offering.classes.length ? (
+        <div className="flex flex-col gap-3">
+          {offering.classes.map((scheduleClass) => (
+            <section
+              className="flex flex-col gap-1"
+              key={scheduleClass.classNumber}
+            >
+              <h4 className="font-medium">
+                <Link
+                  href={coursePath(
+                    offering.coursePrefix,
+                    offering.courseNumber,
+                    offering.termCode,
+                    scheduleClass.section,
+                  )}
+                >
+                  {scheduleClass.section} · Class {scheduleClass.classNumber}
+                </Link>
+              </h4>
+              <p className="text-sm text-slate-600 tabular-nums">
+                {scheduleClass.enrollment} of {scheduleClass.capacity} enrolled
               </p>
-            )}
-          </div>
+            </section>
+          ))}
         </div>
-      }
-    />
+      ) : (
+        <p className="text-sm text-slate-600">No Classes are reported.</p>
+      )}
+    </section>
+  );
+  return (
+    <div className="flex w-full flex-col gap-8 text-left text-slate-900">
+      <DetailsHeader
+        eyebrow="Course"
+        subtitle={title}
+        termName={
+          termNames.get(evidenceTermCode ?? "") ??
+          rankingTermName(evidenceTermCode)
+        }
+        title={`${coursePrefix} ${courseNumber}`}
+      />
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+        <section
+          aria-label="Rankings and Community"
+          className="flex min-w-0 flex-col gap-6"
+        >
+          <DetailsRankings
+            rankings={rankings}
+            scoreDistribution={rankings?.scoreDistribution}
+            selectedTermCode={evidenceTermCode}
+            termNames={termNames}
+          />
+          <DetailsCommunity
+            description="Published experiences and signals for this Course."
+            editor={reviewEditor}
+            error={reviewError}
+            published={reviewPublished}
+            reviewComposer={
+              <ReviewComposer
+                {...reviewEditor}
+                displayTermNames
+                initialCourse={{ coursePrefix, courseNumber }}
+              />
+            }
+            reviews={reviews}
+            reviewsUnavailable={reviewsUnavailable}
+            signalControls={
+              <SignalControls
+                error={signalError}
+                signedIn={signedIn}
+                summary={signals}
+                target={{ type: "course", coursePrefix, courseNumber }}
+                unavailable={signalsUnavailable}
+                updated={signalUpdated}
+              />
+            }
+            withdrawn={reviewWithdrawn}
+          />
+        </section>
+        <aside className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-6">
+          <Collapsible className="group">
+            <Card>
+              <CardHeader className="flex-row items-center justify-between gap-3">
+                <CardTitle asChild className={styles.heading}>
+                  <h2>Teachings</h2>
+                </CardTitle>
+                <ExpandCardTrigger
+                  count={earlierTeachings.length}
+                  label="Teachings"
+                />
+              </CardHeader>
+              <CardContent className="flex flex-col gap-5">
+                {currentInstructors.length ? (
+                  currentInstructors.map((instructor) =>
+                    instructorEntry(
+                      instructor,
+                      evidenceTermCode ? [evidenceTermCode] : [],
+                    ),
+                  )
+                ) : (
+                  <p className="text-sm text-slate-700">
+                    No teaching is reported for this Term.
+                  </p>
+                )}
+                <CollapsibleContent className="flex flex-col gap-5">
+                  {earlierTeachings.map(({ instructor, terms }) =>
+                    instructorEntry(instructor, terms),
+                  )}
+                </CollapsibleContent>
+              </CardContent>
+            </Card>
+          </Collapsible>
+          <Collapsible className="group">
+            <Card>
+              <CardHeader className="flex-row items-center justify-between gap-3">
+                <CardTitle asChild className={styles.heading}>
+                  <h2>Offerings</h2>
+                </CardTitle>
+                <ExpandCardTrigger
+                  count={earlierOfferings.length}
+                  label="Offerings"
+                />
+              </CardHeader>
+              <CardContent className="flex flex-col gap-6">
+                {currentOffering ? (
+                  offeringEntry(currentOffering)
+                ) : (
+                  <p className="text-sm text-amber-900">
+                    Offerings are unavailable. Rankings and Community remain
+                    available.
+                  </p>
+                )}
+                <CollapsibleContent className="flex flex-col gap-6">
+                  {[...earlierOfferings].reverse().map(offeringEntry)}
+                </CollapsibleContent>
+              </CardContent>
+            </Card>
+          </Collapsible>
+        </aside>
+      </div>
+    </div>
   );
 }
 

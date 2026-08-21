@@ -1,5 +1,16 @@
 export type RankingColor = [number, number, number];
 
+export function rankingTermName(termCode?: string) {
+  if (!termCode || !/^[0-9]{4}$/.test(termCode)) return "Term name unavailable";
+  const year = 2000 + Number(termCode.slice(0, 2));
+  const season = ["Fall", "Winter", "Spring", "Summer"][
+    Number(termCode[2]) - 1
+  ];
+  return season
+    ? `${year}-${String(year + 1).slice(-2)} ${season}`
+    : "Term name unavailable";
+}
+
 export function letterGrade(percentile: number) {
   for (const [threshold, grade] of [
     [0.9, "A+"],

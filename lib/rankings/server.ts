@@ -17,6 +17,7 @@ import {
   RANKING_CRITERIA as CRITERIA,
   type RankingCriterion as Criterion,
 } from "@/lib/rankings/configuration";
+import { rankingTermName } from "@/lib/rankings/presentation";
 import defaultInstructorRegistry from "../../rankings/instructor-registry.json";
 
 const SEED_SHA = "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d";
@@ -27,14 +28,8 @@ const ARTIFACTS = [
   "instructor-rankings.parquet",
   "instructor-ratings.parquet",
 ] as const;
-export function rankingTermName(termCode: string) {
-  if (!/^[0-9]{4}$/.test(termCode)) return termCode;
-  const year = 2000 + Number(termCode.slice(0, 2));
-  const season = ["Fall", "Winter", "Spring", "Summer"][
-    Number(termCode.slice(2, 3)) - 1
-  ];
-  return season ? `${year}-${String(year + 1).slice(-2)} ${season}` : termCode;
-}
+
+export { rankingTermName } from "@/lib/rankings/presentation";
 
 export type RankingPreset = "learning" | "grade";
 export type RankingWeights = Partial<Record<Criterion, number>>;
@@ -533,6 +528,13 @@ export type CourseRanking = RankFields & {
   commonCore: CommonCoreCategory[];
 };
 
+export type ScoreDistribution = {
+  bins: number[];
+  count: number;
+  maximum: number;
+  minimum: number;
+};
+
 export type RankingsPage<
   Entity extends "course" | "instructor" = "course" | "instructor",
 > = {
@@ -596,6 +598,8 @@ export type Rankings = InstructorIdentityLookup & {
 export type CourseRankings = {
   generation: string;
   population: RankingsPage<"course">["population"];
+  configuration: RankingsPage<"course">["configuration"];
+  scoreDistribution: ScoreDistribution;
   course: Pick<
     CourseRanking,
     "coursePrefix" | "courseNumber" | "courseCode" | "title" | "commonCore"
@@ -2070,10 +2074,16 @@ export async function queryRankings(
   }
 }
 
+type RankingsQueryResult = RankingsPage & {
+  scoreDistribution: ScoreDistribution;
+};
+type EntityRankingsQueryResult<Entity extends "course" | "instructor"> =
+  RankingsPage<Entity> & Pick<RankingsQueryResult, "scoreDistribution">;
+
 async function queryRankingsWithGeneration(
   query: RankingsQuery,
   accepted: Generation,
-): Promise<RankingsPage> {
+): Promise<RankingsQueryResult> {
   if (query.entity !== "course" && query.entity !== "instructor")
     throw new InvalidRankingsQueryError("Unknown ranking entity.");
   const activity = query.activity ?? "current";
@@ -2393,7 +2403,7 @@ async function queryRankingsWithGeneration(
     .digest("base64url");
   const cacheKey = `${accepted.sha}:${catalogDigest}:${fingerprint}:${query.cursor ?? ""}`;
   const cached = serializedQueries.get(cacheKey);
-  if (cached) return JSON.parse(cached) as RankingsPage;
+  if (cached) return JSON.parse(cached) as RankingsQueryResult;
   let start = 0;
   if (query.cursor) {
     const cursor = decodeCursor(query.cursor);
@@ -2440,7 +2450,19 @@ async function queryRankingsWithGeneration(
         }),
       ).toString("base64url")
     : undefined;
-  const response: RankingsPage = {
+  const scores = eligible.map((candidate) => candidate.score);
+  const minimum = scores.length ? Math.min(...scores) : 0;
+  const maximum = scores.length ? Math.max(...scores) : 0;
+  const bins = Array.from({ length: 20 }, () => 0);
+  const range = maximum - minimum || 1;
+  for (const score of scores) {
+    const index = Math.min(
+      bins.length - 1,
+      Math.floor(((score - minimum) / range) * bins.length),
+    );
+    bins[index] += 1;
+  }
+  const response: RankingsQueryResult = {
     generation: accepted.sha,
     population: {
       entity: query.entity,
@@ -2454,6 +2476,12 @@ async function queryRankingsWithGeneration(
     results,
     nextCursor,
     unrankedMatchCount,
+    scoreDistribution: {
+      bins,
+      count: scores.length,
+      maximum,
+      minimum,
+    },
   };
   serializedQueries.set(cacheKey, JSON.stringify(response));
   if (serializedQueries.size > 256)
@@ -2520,7 +2548,7 @@ export async function getRankings(
           search: courseCode,
         },
         accepted,
-      )) as RankingsPage<"course">;
+      )) as EntityRankingsQueryResult<"course">;
       const ranking = page.results.find(
         (candidate) => candidate.courseCode === courseCode,
       );
@@ -2561,6 +2589,8 @@ export async function getRankings(
       return {
         generation: accepted.sha,
         population: page.population,
+        configuration: page.configuration,
+        scoreDistribution: page.scoreDistribution,
         course: {
           coursePrefix,
           courseNumber,
