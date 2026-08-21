@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { endSession, updateAccount } from "@/app/account/actions";
+import { Button } from "@/components/ui/button";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { getAccountService } from "@/lib/contributions/postgres";
 import { privacyContactMailto } from "@/lib/privacy/contact";
@@ -66,23 +67,35 @@ export default async function AccountPage({
               required
             />
           </div>
-          <button
-            className="self-start rounded-lg bg-[#003366] px-4 py-2 font-semibold text-white"
-            type="submit"
-          >
-            Save
-          </button>
+          <div className="flex items-center justify-between">
+            <button
+              className="rounded-lg bg-[#003366] px-4 py-2 font-semibold text-white"
+              type="submit"
+            >
+              Save
+            </button>
+            <Button
+              formAction={endSession}
+              formNoValidate
+              type="submit"
+              variant="outline"
+            >
+              Sign out
+            </Button>
+          </div>
         </form>
       ) : (
-        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-          {STATUS_COPY[user.status]}
-        </p>
+        <>
+          <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+            {STATUS_COPY[user.status]}
+          </p>
+          <form action={endSession}>
+            <Button type="submit" variant="outline">
+              Sign out
+            </Button>
+          </form>
+        </>
       )}
-      <form action={endSession}>
-        <button className="text-sm font-semibold underline" type="submit">
-          Sign out
-        </button>
-      </form>
     </section>
   );
 }

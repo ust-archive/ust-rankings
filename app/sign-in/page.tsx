@@ -1,15 +1,7 @@
-import { signIn } from "@/auth";
-import { HKUST_PROVIDER_ID, safeReturnPath } from "@/lib/auth/policy";
+import { startSignIn } from "@/app/sign-in/actions";
+import { safeReturnPath } from "@/lib/auth/policy";
 
 export const dynamic = "force-dynamic";
-
-async function startSignIn(r: string) {
-  "use server";
-  const returnPath = safeReturnPath(r);
-  await signIn(HKUST_PROVIDER_ID, {
-    redirectTo: `/auth/continue?r=${encodeURIComponent(returnPath)}`,
-  });
-}
 
 export default async function SignInPage({
   searchParams,

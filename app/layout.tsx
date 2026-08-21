@@ -9,6 +9,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import Link from "next/link";
 import type React from "react";
+import { startSignIn } from "@/app/sign-in/actions";
 import { Toaster } from "@/components/ui/sonner";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { getAccountService } from "@/lib/contributions/postgres";
@@ -61,17 +62,19 @@ async function HeaderAuth() {
     "max-w-40 truncate rounded-full border border-white/60 px-3 py-1.5 no-underline hover:bg-white/10";
   if (!process.env.AUTH_SECRET) {
     return (
-      <Link className={pill} href="/sign-in?r=%2Faccount">
+      <button className={pill} disabled type="button">
         Login
-      </Link>
+      </button>
     );
   }
   const userId = await authenticatedUserId();
   if (!userId) {
     return (
-      <Link className={pill} href="/sign-in?r=%2Faccount">
-        Login
-      </Link>
+      <form action={startSignIn.bind(null, "/account")}>
+        <button className={pill} type="submit">
+          Login
+        </button>
+      </form>
     );
   }
   let label = "Account";
