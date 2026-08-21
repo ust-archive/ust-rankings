@@ -57,12 +57,13 @@ The build writes relational Parquet files to `out/`, including:
 
 The rating files are longitudinal marts. The ranking files are convenient
 latest-term snapshots of those marts, not a separate model. Course rows join
-on `(subject, code, term_num)` and instructor rows on `(name, term_num)` through
+on `(subject, code, term_num)` and Instructor rows on `(uuid, term_num)` through
 `course-instructors.parquet`. The bridge contains associations inferred from
 rating evidence as well as current schedule assignments.
 
-`name` is the canonical spelling selected after alias clustering. Include
-`criterion` when joining or identifying a rating row. `is_offered` and
+`uuid` is the Instructor identity key; `name` is display and alias data selected
+after source-name clustering. Include `criterion` when joining or identifying a
+rating row. `is_offered` and
 `is_teaching` come from active schedule data for that exact term;
 `is_teaching` specifically means a primary (`E` role) `LEC` or `IND`
 assignment. Filter those flags first, then calculate rank or percentile
@@ -85,6 +86,7 @@ LIMIT 20;
 
 WITH current AS (
   SELECT
+    uuid,
     name,
     term_num,
     bayesian,
@@ -93,10 +95,10 @@ WITH current AS (
   WHERE criterion = 'teaching'
     AND is_teaching
 )
-SELECT r.name, a.subject, a.code, r.bayesian, r.rank
+SELECT r.uuid, r.name, a.subject, a.code, r.bayesian, r.rank
 FROM current AS r
 JOIN read_parquet('out/course-instructors.parquet') AS a
-  USING (name, term_num)
+  USING (uuid, term_num)
 ORDER BY r.rank, a.subject, a.code;
 ```
 

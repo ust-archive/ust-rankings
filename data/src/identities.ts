@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DuckDBConnection } from "@duckdb/node-api";
@@ -286,17 +285,11 @@ export async function assignInstructorIdentities(
 
   for (const { canonical_name } of names) {
     const key = canonical_name.trim().toLocaleLowerCase();
-    let uuid = byName.get(key);
-    if (!uuid) {
-      uuid = randomUUID();
-      byName.set(key, uuid);
-    }
+    const uuid = byName.get(key);
+    if (!uuid)
+      throw new Error(`Unmatched Instructor identity: ${canonical_name}`);
     if (!identities.has(uuid))
-      identities.set(uuid, {
-        uuid,
-        canonical_name,
-        itsc: null,
-      });
+      throw new Error(`Unknown Instructor UUID: ${uuid}`);
     else {
       const current = identities.get(uuid);
       if (current) identities.set(uuid, { ...current, canonical_name });

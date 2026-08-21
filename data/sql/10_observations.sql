@@ -364,7 +364,8 @@ WHERE NOT EXISTS (
 );
 
 -- Resolve all aliases to their exact or accepted one-hop anchor. The chosen
--- canonical name is also the entity key; no second hashed identifier is needed.
+-- canonical name is the pipeline's intermediate key; export attaches the
+-- registry-owned Instructor UUID.
 CREATE OR REPLACE TABLE instructor_aliases AS
 WITH resolved AS (
   SELECT
@@ -626,7 +627,7 @@ FROM (
   FROM schedule_teaching_assignments
 );
 
--- Instructor grids and course metadata use the canonical clustered name.
+-- Instructor grids use the canonical clustered name before UUID attachment.
 CREATE OR REPLACE TABLE instructor_entities AS
 SELECT name, min(term_num)::INTEGER AS min_term_num
 FROM course_term_instructors

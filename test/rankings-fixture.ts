@@ -258,16 +258,16 @@ export async function makeRankingGeneration(
               : 1;
         const isTeaching = identity.canonicalName !== "Historical Instructor";
         rows.push(
-          `('${identity.canonicalName}', 100, '2510', ${isTeaching}, '${criterion}', ${score}, ${score}, ${priorOnly ? 0 : 1.0}, ${priorOnly ? 0 : 1}::BIGINT, ${cumulativeSamples}::BIGINT, ${priorOnly ? 0 : 1.0}, ${priorOnly ? 0 : 0.5}, 0.1)`,
+          `('${identity.uuid}', '${identity.canonicalName}', 100, '2510', ${isTeaching}, '${criterion}', ${score}, ${score}, ${priorOnly ? 0 : 1.0}, ${priorOnly ? 0 : 1}::BIGINT, ${cumulativeSamples}::BIGINT, ${priorOnly ? 0 : 1.0}, ${priorOnly ? 0 : 0.5}, 0.1)`,
         );
       }
     }
     const instructorValues = rows.join(",\n");
     await copy(
       "instructor-ratings.parquet",
-      `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(name, ${ratingColumns.replace("is_active", "is_teaching")})`,
+      `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(uuid, name, ${ratingColumns.replace("is_active", "is_teaching")})`,
     );
-    const instructorRankings = `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(name, ${ratingColumns.replace("is_active", "is_teaching")})`;
+    const instructorRankings = `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(uuid, name, ${ratingColumns.replace("is_active", "is_teaching")})`;
     const malformedInstructorRankings =
       malformation === "invalid-schema"
         ? `SELECT * EXCLUDE (posterior_stddev) FROM (${instructorRankings})`
@@ -283,15 +283,15 @@ export async function makeRankingGeneration(
     await copy("instructor-rankings.parquet", malformedInstructorRankings);
     await copy(
       "course-instructors.parquet",
-      `SELECT ${malformation === "failed-smoke-query" ? "* REPLACE ('No ' || name AS name)" : "*"} FROM (VALUES
-        ('Alpha Instructor', 100, '2510', 'COMP', '1000'),
-        ('Beta Instructor', 100, '2510', 'MATH', '2000'),
-        ('Beta Instructor', 100, '2510', 'COMP', '1029C'),
-        ('Delta Instructor', 100, '2510', 'HIST', '3000'),
-        ('Gamma Instructor', 100, '2510', 'MISS', '4000'),
-        ('Historical Instructor', 100, '2510', 'COMP', '1000')
-        ${options.includeScheduleCourse ? ", ('Alpha Instructor', 100, '2510', 'COMP', '2000'), ('Alpha Instructor', 99, '2430', 'COMP', '2000')" : ""}
-      ) AS t(name, term_num, term_code, subject, code)`,
+      `SELECT ${malformation === "failed-smoke-query" ? "* REPLACE ('10000000-0000-4000-8000-000000000000' AS uuid)" : "*"} FROM (VALUES
+        ('00000000-0000-4000-8000-000000000001', 'Alpha Instructor', 100, '2510', 'COMP', '1000'),
+        ('00000000-0000-4000-8000-000000000002', 'Beta Instructor', 100, '2510', 'MATH', '2000'),
+        ('00000000-0000-4000-8000-000000000002', 'Beta Instructor', 100, '2510', 'COMP', '1029C'),
+        ('00000000-0000-4000-8000-000000000003', 'Delta Instructor', 100, '2510', 'HIST', '3000'),
+        ('00000000-0000-4000-8000-000000000004', 'Gamma Instructor', 100, '2510', 'MISS', '4000'),
+        ('00000000-0000-4000-8000-000000000005', 'Historical Instructor', 100, '2510', 'COMP', '1000')
+        ${options.includeScheduleCourse ? ", ('00000000-0000-4000-8000-000000000001', 'Alpha Instructor', 100, '2510', 'COMP', '2000'), ('00000000-0000-4000-8000-000000000001', 'Alpha Instructor', 99, '2430', 'COMP', '2000')" : ""}
+      ) AS t(uuid, name, term_num, term_code, subject, code)`,
     );
     const courseDimension = `SELECT * FROM (VALUES
       ('COMP', '1000', '${options.firstCourseTitle ?? "Creative Computing"}', [

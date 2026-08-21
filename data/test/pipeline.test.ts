@@ -168,6 +168,35 @@ async function makeFixtures(
   }
 }
 
+async function writeIdentityBootstrap(
+  path: string,
+  omittedName?: string,
+): Promise<void> {
+  const names = [
+    "ALPHA, Alice Beatrice",
+    "Adam Blake DELTA",
+    "Cara Gamma",
+    "DELTA, A B",
+    "Dora Delta",
+    "Eve Epsilon",
+    "WANG, Wei",
+    "WEI, Wang",
+  ];
+  await writeFile(
+    path,
+    JSON.stringify({
+      schemaMajor: 0,
+      identities: names
+        .filter((canonicalName) => canonicalName !== omittedName)
+        .map((canonicalName, index) => ({
+          uuid: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          canonicalName,
+        })),
+      events: [],
+    }),
+  );
+}
+
 function runPipeline(
   dataDir: string,
   runDir: string,
@@ -224,6 +253,7 @@ const outputColumns = {
     "posterior_stddev",
   ],
   "instructor-ratings": [
+    "uuid",
     "name",
     "term_num",
     "term_code",
@@ -255,6 +285,7 @@ const outputColumns = {
     "posterior_stddev",
   ],
   "instructor-rankings": [
+    "uuid",
     "name",
     "term_num",
     "term_code",
@@ -269,7 +300,14 @@ const outputColumns = {
     "reliability",
     "posterior_stddev",
   ],
-  "course-instructors": ["name", "term_num", "term_code", "subject", "code"],
+  "course-instructors": [
+    "uuid",
+    "name",
+    "term_num",
+    "term_code",
+    "subject",
+    "code",
+  ],
   courses: ["prefix", "number", "title", "attributes"],
 } as const;
 
@@ -285,11 +323,8 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const bootstrap = join(temp, "empty-identities.json");
-    await writeFile(
-      bootstrap,
-      JSON.stringify({ schemaMajor: 0, identities: [], events: [] }),
-    );
+    const bootstrap = join(temp, "identities.json");
+    await writeIdentityBootstrap(bootstrap);
 
     const first = runPipeline(dataDir, join(temp, "first"), {
       RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
@@ -506,11 +541,8 @@ test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () =
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const bootstrap = join(temp, "empty-identities.json");
-    await writeFile(
-      bootstrap,
-      JSON.stringify({ schemaMajor: 0, identities: [], events: [] }),
-    );
+    const bootstrap = join(temp, "identities.json");
+    await writeIdentityBootstrap(bootstrap);
     const first = runPipeline(dataDir, join(temp, "first"), {
       RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
     });
@@ -549,11 +581,8 @@ test("zero-sample teaching Instructors and offered Courses receive the evidence-
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const bootstrap = join(temp, "empty-identities.json");
-    await writeFile(
-      bootstrap,
-      JSON.stringify({ schemaMajor: 0, identities: [], events: [] }),
-    );
+    const bootstrap = join(temp, "identities.json");
+    await writeIdentityBootstrap(bootstrap);
     const output = runPipeline(dataDir, join(temp, "out"), {
       RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
     });
@@ -624,6 +653,35 @@ test("the pipeline rejects conflicting cross-campus Course metadata", async () =
     });
     assert.notEqual(result.status, 0);
     assert.match(`${result.stderr}${result.stdout}`, /conflicting Course/i);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("the pipeline rejects unmatched Instructor names", async () => {
+  const temp = await mkdtemp(
+    join(tmpdir(), "ust-rankings-identity-unmatched-"),
+  );
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const bootstrap = join(temp, "identities.json");
+    await writeIdentityBootstrap(bootstrap, "Cara Gamma");
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        RANKINGS_DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "out"),
+        RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(
+      `${result.stderr}${result.stdout}`,
+      /Unmatched Instructor identity/,
+    );
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
