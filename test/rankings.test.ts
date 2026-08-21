@@ -147,7 +147,7 @@ test("getRankings exposes Course evidence and associated Instructors", async () 
     { includeScheduleCourse: true },
   );
 
-  const { getRankings } = await import("@/lib/rankings/server");
+  const { getRankings, queryRankings } = await import("@/lib/rankings/server");
   const details = await getRankings(
     { type: "course", coursePrefix: "comp", courseNumber: "2000" },
     { termCode: "2510" },
@@ -168,6 +168,15 @@ test("getRankings exposes Course evidence and associated Instructors", async () 
   ).toEqual({
     bayesian: 0.25,
     samples: 1,
+  });
+  const population = await queryRankings({
+    entity: "course",
+    termCode: "2510",
+  });
+  expect(details).toMatchObject({
+    generation: population.generation,
+    population: population.population,
+    configuration: population.configuration,
   });
   expect(details.scoreDistribution.count).toBe(details.population.size);
   expect(
