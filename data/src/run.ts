@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
+import { assignInstructorIdentities } from "./identities";
 
 const root = resolve(import.meta.dir, "..");
 const outputDir = resolve(root, process.env.RANKINGS_OUTPUT_DIR ?? "out");
@@ -57,6 +58,18 @@ const outputs = {
   course_instructors_parquet: sqlPath(
     resolve(outputDir, "course-instructors.parquet"),
   ),
+  instructor_identities_parquet: sqlPath(
+    resolve(outputDir, "instructor-identities.parquet"),
+  ),
+  instructor_aliases_parquet: sqlPath(
+    resolve(outputDir, "instructor-aliases.parquet"),
+  ),
+  instructor_identity_events_parquet: sqlPath(
+    resolve(outputDir, "instructor-identity-events.parquet"),
+  ),
+  instructor_split_affected_associations_parquet: sqlPath(
+    resolve(outputDir, "instructor-split-affected-associations.parquet"),
+  ),
 };
 
 async function executeFile(
@@ -102,6 +115,26 @@ try {
   ]) {
     await executeFile(connection, file);
   }
+
+  const defaultBootstrap = resolve(
+    root,
+    "..",
+    "rankings",
+    "seed",
+    "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d",
+    "manifest.json",
+  );
+  await assignInstructorIdentities(connection, {
+    previousGenerationDir: process.env.RANKINGS_PREVIOUS_GENERATION_DIR,
+    bootstrapPath:
+      process.env.RANKINGS_IDENTITY_BOOTSTRAP ??
+      (process.env.RANKINGS_REQUIRE_PREVIOUS_IDENTITIES === "1"
+        ? undefined
+        : defaultBootstrap),
+    requirePrevious: process.env.RANKINGS_REQUIRE_PREVIOUS_IDENTITIES === "1",
+    sourceCommit: process.env.RANKINGS_IDENTITY_COMMIT ?? "local",
+    correctionsPath: process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE,
+  });
 
   await executeFile(connection, "30_export.sql");
 

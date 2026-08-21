@@ -14,4 +14,7 @@ test("privacy page states community rules, post-publication moderation, and one 
   expect(markup).toContain("no website Moderator or Administrator role");
   expect(markup).toContain("reconsideration");
   expect(markup).toContain("ust-rankings@flandia.dev");
+  expect(markup).toContain("Identity hidden");
+  expect(markup).toContain("account closure");
+  expect(markup).toContain("no self-service");
 });

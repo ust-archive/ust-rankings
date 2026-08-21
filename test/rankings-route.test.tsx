@@ -3,7 +3,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import { makeRankingGeneration } from "./rankings-fixture";
+import {
+  makeRankingGeneration,
+  makeRankingGenerationWithSha,
+} from "./rankings-fixture";
 
 mock.module("server-only", () => ({}));
 mock.module("next/navigation", () => ({
@@ -32,6 +35,10 @@ const temporaryDirectories: string[] = [];
 afterEach(async () => {
   delete process.env.RANKINGS_SEED_DIR;
   delete process.env.RANKINGS_COURSE_CATALOG_FILE;
+  const { resetRankingsRuntimeForTests } = await import(
+    "@/lib/rankings/server"
+  );
+  await resetRankingsRuntimeForTests();
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -92,18 +99,28 @@ test("a blank Term Code renders the latest Instructor Ranking Population", async
   expect(markup).not.toContain("Invalid Term Code");
 });
 
-test("a malformed Term Code renders an accessible validation message", async () => {
-  const { default: InstructorsPage } = await import(
-    "@/app/rankings/instructors/page"
-  );
-  const markup = renderToStaticMarkup(
-    await InstructorsPage({ searchParams: Promise.resolve({ term: "25x0" }) }),
-  );
+test(
+  "a malformed Term Code renders an accessible validation message",
+  async () => {
+    const temporaryDirectory = await mkdtemp(
+      join(tmpdir(), "rankings-malformed-term-"),
+    );
+    temporaryDirectories.push(temporaryDirectory);
+    process.env.RANKINGS_SEED_DIR =
+      await makeRankingGeneration(temporaryDirectory);
+    const { default: InstructorsPage } = await import(
+      "@/app/rankings/instructors/page"
+    );
+    const markup = renderToStaticMarkup(
+      await InstructorsPage({ searchParams: Promise.resolve({ term: "25x0" }) }),
+    );
 
-  expect(markup).toContain("Invalid ranking query");
-  expect(markup).toContain("Invalid Term Code");
-  expect(markup).toContain('role="alert"');
-});
+    expect(markup).toContain("Invalid ranking query");
+    expect(markup).toContain("Invalid Term Code");
+    expect(markup).toContain('role="alert"');
+  },
+  15_000,
+);
 
 test("the public Course ranking route shares reproducible URL controls", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "course-route-"));
@@ -205,7 +222,16 @@ test("ranking routes distinguish every empty, invalid, and stale URL state", asy
     "cursor requires pages greater than 1",
   );
 
-  delete process.env.RANKINGS_SEED_DIR;
+  const staleRoot = await mkdtemp(join(tmpdir(), "ranking-stale-seed-"));
+  temporaryDirectories.push(staleRoot);
+  const { resetRankingsRuntimeForTests } = await import(
+    "@/lib/rankings/server"
+  );
+  await resetRankingsRuntimeForTests();
+  process.env.RANKINGS_SEED_DIR = await makeRankingGenerationWithSha(
+    staleRoot,
+    "aaaabbbbccccddddeeeeffff0000111122223333",
+  );
   const stale = renderToStaticMarkup(
     await InstructorsPage({
       searchParams: Promise.resolve({ term: "2510", cursor: page.nextCursor }),

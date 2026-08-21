@@ -30,6 +30,7 @@ const USAGE = `Usage:
   bun run contributions:moderate suppress-attribution <review-uuid> <operator> <reason>
   bun run contributions:moderate remove-stored-file <stored-file-uuid> <operator> <reason>
   bun run contributions:moderate suspend-user <user-uuid> <operator> <reason>
+  bun run contributions:moderate close-account <user-uuid> <operator> <reason>
   bun run contributions:moderate lookup-identity <review-uuid> <operator> <lookup-reason>`;
 
 const [action, target, operator, reason, ...extra] = Bun.argv.slice(2);
@@ -88,6 +89,27 @@ try {
               ? sql<
                   { id: string }[]
                 >`SELECT id FROM operator_suspend_user(${operatorIdentifier}, ${targetId}, ${reason})`
+              : action === "close-account"
+                ? sql.begin(async (transaction) => {
+                    await transaction`
+                      UPDATE reviews
+                      SET publication_state = 'withdrawn', updated_at = now()
+                      WHERE author_user_id = ${targetId}
+                        AND publication_state = 'active'
+                    `;
+                    await transaction`DELETE FROM course_thumbs_votes WHERE user_id = ${targetId}`;
+                    await transaction`DELETE FROM instructor_thumbs_votes WHERE user_id = ${targetId}`;
+                    await transaction`DELETE FROM course_emoji_reactions WHERE user_id = ${targetId}`;
+                    await transaction`DELETE FROM instructor_emoji_reactions WHERE user_id = ${targetId}`;
+                    const [closed] = await transaction<{ id: string }[]>`
+                      UPDATE contribution_users
+                      SET status = 'closed', updated_at = now()
+                      WHERE id = ${targetId} AND status <> 'closed'
+                      RETURNING id
+                    `;
+                    if (!closed) throw new Error("Account closure did not complete");
+                    return [{ id: closed.id }];
+                  })
               : undefined;
     if (!query) throw new Error(USAGE);
     const [row] = await query;

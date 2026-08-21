@@ -90,6 +90,7 @@ test("public ranking health is bounded and non-sensitive", async () => {
   const body = await response.json();
 
   expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("public, max-age=60");
   expect(body).toEqual({
     status: "stale",
     activeGeneration: "0123456789abcdef0123456789abcdef01234567",
@@ -100,4 +101,6 @@ test("public ranking health is bounded and non-sensitive", async () => {
   });
   expect(JSON.stringify(body)).not.toContain("credential");
   expect(JSON.stringify(body)).not.toContain("generations/");
+  expect(JSON.stringify(body)).not.toContain("email");
+  expect(JSON.stringify(body)).not.toContain("session");
 });

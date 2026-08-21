@@ -158,6 +158,35 @@ export class PostgresAccountRepository implements AccountRepository {
     `;
     return row ? account(row) : undefined;
   }
+
+  async closeAccount(userId: string) {
+    return this.sql.begin(async (transaction) => {
+      const [current] = await transaction<AccountDatabaseRow[]>`
+        SELECT id, status, public_display_name AS "publicDisplayName"
+        FROM contribution_users
+        WHERE id = ${userId}
+        FOR UPDATE
+      `;
+      if (!current || current.status === "closed")
+        return current ? account(current) : undefined;
+      await transaction`
+        UPDATE reviews
+        SET publication_state = 'withdrawn', updated_at = now()
+        WHERE author_user_id = ${userId} AND publication_state = 'active'
+      `;
+      await transaction`DELETE FROM course_thumbs_votes WHERE user_id = ${userId}`;
+      await transaction`DELETE FROM instructor_thumbs_votes WHERE user_id = ${userId}`;
+      await transaction`DELETE FROM course_emoji_reactions WHERE user_id = ${userId}`;
+      await transaction`DELETE FROM instructor_emoji_reactions WHERE user_id = ${userId}`;
+      const [closed] = await transaction<AccountDatabaseRow[]>`
+        UPDATE contribution_users
+        SET status = 'closed', updated_at = now()
+        WHERE id = ${userId}
+        RETURNING id, status, public_display_name AS "publicDisplayName"
+      `;
+      return closed ? account(closed) : undefined;
+    });
+  }
 }
 
 type ReviewDatabaseRow = {

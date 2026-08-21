@@ -67,3 +67,39 @@ COPY (
   ORDER BY term_num, subject, code, name
 ) TO (getvariable('course_instructors_parquet'))
   (FORMAT parquet, COMPRESSION zstd);
+
+COPY (
+  SELECT uuid, canonical_name, itsc
+  FROM instructor_identities
+  ORDER BY canonical_name, uuid
+) TO (getvariable('instructor_identities_parquet'))
+  (FORMAT parquet, COMPRESSION zstd);
+
+COPY (
+  SELECT uuid, name, source, source_commit, source_file
+  FROM instructor_identity_aliases
+  ORDER BY uuid, name
+) TO (getvariable('instructor_aliases_parquet'))
+  (FORMAT parquet, COMPRESSION zstd);
+
+COPY (
+  SELECT
+    event_type,
+    source_commit,
+    uuid,
+    itsc,
+    retired_uuid,
+    survivor_uuid,
+    source_uuid,
+    new_uuid
+  FROM instructor_identity_events
+  ORDER BY source_commit, event_type, uuid, retired_uuid, new_uuid
+) TO (getvariable('instructor_identity_events_parquet'))
+  (FORMAT parquet, COMPRESSION zstd);
+
+COPY (
+  SELECT source_commit, new_uuid, source_name, term_code, course_code
+  FROM instructor_split_affected_associations
+  ORDER BY source_commit, new_uuid, source_name
+) TO (getvariable('instructor_split_affected_associations_parquet'))
+  (FORMAT parquet, COMPRESSION zstd);

@@ -240,7 +240,7 @@ test("refresh extends the current stored Instructor registry across instances", 
     search: "Alpha Instructor",
   });
 
-  expect(page.results[0]?.uuid).toBe("90000000-0000-4000-8000-000000000001");
+  expect(page.results[0]?.uuid).toBe("00000000-0000-4000-8000-000000000001");
 });
 
 test("getRankings retains one generation snapshot across activation", async () => {

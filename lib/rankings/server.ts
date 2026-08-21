@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import {
@@ -18,14 +18,18 @@ import {
   type RankingCriterion as Criterion,
 } from "@/lib/rankings/configuration";
 import { rankingTermName } from "@/lib/rankings/presentation";
-import defaultInstructorRegistry from "../../rankings/instructor-registry.json";
-
 const ARTIFACTS = [
   "course-instructors.parquet",
   "course-rankings.parquet",
   "course-ratings.parquet",
   "instructor-rankings.parquet",
   "instructor-ratings.parquet",
+] as const;
+const IDENTITY_ARTIFACTS = [
+  "instructor-aliases.parquet",
+  "instructor-identities.parquet",
+  "instructor-identity-events.parquet",
+  "instructor-split-affected-associations.parquet",
 ] as const;
 
 export { rankingTermName } from "@/lib/rankings/presentation";
@@ -673,34 +677,6 @@ function seedDirectory() {
   return directory;
 }
 
-async function configuredInstructorRegistry() {
-  const configuredPath = process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE;
-  const value = (
-    configuredPath
-      ? JSON.parse(
-          await readFile(
-            /* turbopackIgnore: true */ resolve(configuredPath),
-            "utf8",
-          ),
-        )
-      : defaultInstructorRegistry
-  ) as {
-    schemaMajor?: unknown;
-    identities?: unknown;
-    events?: unknown;
-  };
-  if (
-    value.schemaMajor !== 0 ||
-    !Array.isArray(value.identities) ||
-    !Array.isArray(value.events)
-  )
-    throw new Error("Invalid configured Instructor registry");
-  return {
-    identities: value.identities as InstructorIdentity[],
-    events: value.events as InstructorIdentityEvent[],
-  };
-}
-
 function sqlPath(directory: string, filename: string) {
   return resolve(directory, filename)
     .replaceAll("\\", "/")
@@ -753,8 +729,13 @@ async function validateFiles(directory: string, manifest: Manifest) {
   const parquetFiles = (await readdir(directory))
     .filter((name) => name.endsWith(".parquet"))
     .sort();
-  if (JSON.stringify(parquetFiles) !== JSON.stringify(ARTIFACTS))
+  if (ARTIFACTS.some((name) => !parquetFiles.includes(name)))
     throw new Error("Unexpected ranking artifacts");
+  if (
+    !process.env.RANKINGS_SEED_DIR &&
+    IDENTITY_ARTIFACTS.some((name) => !parquetFiles.includes(name))
+  )
+    throw new Error("Ranking generation is missing Instructor identity Parquet");
   if (
     manifest.schemaMajor !== 0 ||
     !/^[0-9a-f]{40}$/.test(manifest.sourceCommit) ||
@@ -869,6 +850,7 @@ type InstructorRegistry = Pick<
   | "sha"
   | "identitiesByUuid"
   | "identitiesByItsc"
+  | "identitiesByObservedName"
   | "redirectByUuid"
   | "identifiersByUuid"
   | "identityEvents"
@@ -1199,6 +1181,129 @@ function resolveInstructorAssociation(
     : undefined;
 }
 
+async function applyIdentityParquet(
+  connection: DuckDBConnection,
+  directory: string,
+  manifest: Manifest,
+) {
+  try {
+    await stat(resolve(directory, "instructor-identities.parquet"));
+  } catch {
+    if (!process.env.RANKINGS_SEED_DIR)
+      throw new Error("Ranking generation is missing Instructor identity Parquet");
+    return;
+  }
+  const extraIdentities = [...manifest.identities];
+  const extraEvents = [...(manifest.identityEvents ?? [])];
+  const identityRows = await queryRows(
+    connection,
+    `SELECT uuid, canonical_name, itsc FROM read_parquet('${sqlPath(directory, "instructor-identities.parquet")}')`,
+  );
+  const aliasRows = await queryRows(
+    connection,
+    `SELECT uuid, name, source, source_commit, source_file FROM read_parquet('${sqlPath(directory, "instructor-aliases.parquet")}')`,
+  );
+  const eventRows = await queryRows(
+    connection,
+    `SELECT event_type, source_commit, uuid, itsc, retired_uuid, survivor_uuid, source_uuid, new_uuid FROM read_parquet('${sqlPath(directory, "instructor-identity-events.parquet")}')`,
+  );
+  const aliasesByUuid = new Map<string, InstructorIdentity["aliases"]>();
+  for (const row of aliasRows) {
+    const uuid = String(row.uuid);
+    const aliases = aliasesByUuid.get(uuid) ?? [];
+    aliases.push({
+      name: String(row.name),
+      source: String(row.source) as InstructorIdentity["aliases"][number]["source"],
+      sourceCommit: String(row.source_commit),
+      sourceFile:
+        row.source_file === null || row.source_file === undefined
+          ? undefined
+          : (String(row.source_file) as "instructor-ratings.parquet"),
+    });
+    aliasesByUuid.set(uuid, aliases);
+  }
+  manifest.identities = identityRows.map((row) => ({
+    uuid: String(row.uuid),
+    canonicalName: String(row.canonical_name),
+    itsc:
+      row.itsc === null || row.itsc === undefined
+        ? undefined
+        : String(row.itsc),
+    aliases: aliasesByUuid.get(String(row.uuid)) ?? [],
+  }));
+  const affectedRows = await queryRows(
+    connection,
+    `SELECT source_commit, new_uuid, source_name, term_code, course_code FROM read_parquet('${sqlPath(directory, "instructor-split-affected-associations.parquet")}')`,
+  );
+  const affectedByNewUuid = new Map<string, AffectedInstructorAssociation[]>();
+  for (const row of affectedRows) {
+    const newUuid = String(row.new_uuid);
+    const affected = affectedByNewUuid.get(newUuid) ?? [];
+    affected.push({
+      sourceCommit: String(row.source_commit),
+      sourceName: String(row.source_name),
+      termCode:
+        row.term_code === null || row.term_code === undefined
+          ? undefined
+          : String(row.term_code),
+      courseCode:
+        row.course_code === null || row.course_code === undefined
+          ? undefined
+          : String(row.course_code),
+    });
+    affectedByNewUuid.set(newUuid, affected);
+  }
+  const identitiesByUuid = new Map(
+    manifest.identities.map((identity) => [identity.uuid, identity]),
+  );
+  const identityEvents: InstructorIdentityEvent[] = eventRows.flatMap(
+    (row): InstructorIdentityEvent[] => {
+    const type = String(row.event_type);
+    const sourceCommit = String(row.source_commit);
+    if (type === "itsc-added")
+      return [
+        {
+          type: "itsc-added" as const,
+          uuid: String(row.uuid),
+          itsc: String(row.itsc),
+          sourceCommit,
+        },
+      ];
+    if (type === "merge")
+      return [
+        {
+          type: "merge" as const,
+          retiredUuid: String(row.retired_uuid),
+          survivorUuid: String(row.survivor_uuid),
+          sourceCommit,
+        },
+      ];
+    if (type === "split") {
+      const newIdentity = identitiesByUuid.get(String(row.new_uuid));
+      if (!newIdentity) return [];
+      return [
+        {
+          type: "split" as const,
+          sourceUuid: String(row.source_uuid),
+          newUuid: String(row.new_uuid),
+          newIdentity,
+          sourceCommit,
+          affectedAssociations: affectedByNewUuid.get(String(row.new_uuid)) ?? [],
+        },
+      ];
+    }
+    return [];
+    },
+  );
+  const known = new Set(manifest.identities.map((identity) => identity.uuid));
+  for (const identity of extraIdentities)
+    if (!known.has(identity.uuid)) {
+      manifest.identities.push(identity);
+      known.add(identity.uuid);
+    }
+  manifest.identityEvents = [...identityEvents, ...extraEvents];
+}
+
 async function loadGeneration(
   directory: string,
   cleanup?: () => Promise<void>,
@@ -1214,6 +1319,7 @@ async function loadGeneration(
     await connection.run("SET memory_limit = '384MB'");
     try {
       await validateRelations(connection, directory);
+      await applyIdentityParquet(connection, directory, manifest);
       const nameRows = await queryRows(
         connection,
         `SELECT DISTINCT name FROM read_parquet('${sqlPath(directory, "instructor-ratings.parquet")}') ORDER BY name`,
@@ -1265,11 +1371,20 @@ async function loadInstructorRegistry(
       basename(resolve(directory)) !== manifest.sourceCommit
     )
       throw new Error("Invalid Instructor registry manifest");
+    const instance = await DuckDBInstance.create(":memory:");
+    const connection = await instance.connect();
+    try {
+      await applyIdentityParquet(connection, directory, manifest);
+    } finally {
+      connection.closeSync();
+      instance.closeSync();
+    }
     const identities = validateIdentities(manifest, []);
     return {
       sha: manifest.sourceCommit,
       identitiesByUuid: identities.identitiesByUuid,
       identitiesByItsc: identities.identitiesByItsc,
+      identitiesByObservedName: identities.observedNames,
       redirectByUuid: identities.redirectByUuid,
       identifiersByUuid: identities.identifiersByUuid,
       identityEvents: identities.identityEvents,
@@ -1312,6 +1427,59 @@ async function instructorRegistry(): Promise<InstructorRegistry> {
 
 export async function getInstructorIdentity(key: string) {
   return lookupInstructorIdentity(await instructorRegistry(), key.trim());
+}
+
+function rankingGenerationIsReady() {
+  return Boolean(
+    process.env.RANKINGS_SEED_DIR || runtimeActive || explicitGeneration,
+  );
+}
+
+export async function resolveObservedInstructorNames(names: string[]) {
+  const resolved = new Map<string, string>();
+  const unique = [
+    ...new Set(
+      names.map((name) => name.trim()).filter((name) => name.length > 0),
+    ),
+  ];
+  if (unique.length === 0 || !rankingGenerationIsReady()) return resolved;
+  try {
+    const registry = await instructorRegistry();
+    for (const name of unique) {
+      if (name.toLocaleLowerCase() === "tba") continue;
+      const observed = registry.identitiesByObservedName.get(
+        normalizedInstructorName(name),
+      );
+      if (observed?.length !== 1) continue;
+      resolved.set(
+        name,
+        resolvedInstructorIdentity(registry, observed[0]).uuid,
+      );
+    }
+  } catch {
+    // Rankings unavailable: Schedule names stay unresolved.
+  }
+  return resolved;
+}
+
+export async function observedNamesForInstructorUuids(uuids: string[]) {
+  const wanted = new Set(uuids);
+  if (wanted.size === 0 || !rankingGenerationIsReady()) return [];
+  try {
+    const registry = await instructorRegistry();
+    const names: string[] = [];
+    for (const identity of registry.identitiesByUuid.values()) {
+      const resolved = resolvedInstructorIdentity(registry, identity);
+      if (!wanted.has(resolved.uuid)) continue;
+      names.push(
+        identity.canonicalName,
+        ...identity.aliases.map((alias) => alias.name),
+      );
+    }
+    return [...new Set(names)];
+  } catch {
+    return [];
+  }
 }
 
 export type InstructorAssociationLookup = {
@@ -1378,11 +1546,6 @@ async function acquireGeneration(loading = generation()) {
       await closeRetiredGeneration(accepted);
     },
   };
-}
-
-function seedGeneration() {
-  seedLoading ??= loadGeneration(seedDirectory());
-  return seedLoading;
 }
 
 function explicitSeedGeneration(directory: string) {
@@ -1483,15 +1646,11 @@ function generation() {
   return runtimeDiscovery;
 }
 
-async function prepareCandidateManifest(
-  candidate: {
-    sha: string;
-    directory: string;
-    artifacts?: Record<string, { sha256: string; size: number }>;
-  },
-  current: GenerationPointer | undefined,
-  dependencies: RankingRefreshDependencies,
-) {
+async function prepareCandidateManifest(candidate: {
+  sha: string;
+  directory: string;
+  artifacts?: Record<string, { sha256: string; size: number }>;
+}) {
   try {
     await stat(resolve(candidate.directory, "manifest.json"));
     return;
@@ -1504,165 +1663,26 @@ async function prepareCandidateManifest(
       JSON.stringify(ARTIFACTS)
   )
     throw new Error("Upstream tree declarations are incomplete");
-  let previous: Pick<Generation, "sha" | "identitiesByUuid" | "identityEvents">;
-  let closePrevious: Generation | undefined;
-  if (current) {
-    const directory = await dependencies.store.downloadGeneration(
-      current.activeSha,
-    );
-    if (!directory)
-      throw new Error("The current Instructor registry is unavailable");
-    let retainedCurrent: Generation | undefined;
-    for (const loading of [runtimeActive, runtimePrevious]) {
-      if (!loading) continue;
-      try {
-        const retainedGeneration = await loading;
-        if (
-          retainedGeneration.sha === current.activeSha &&
-          retainedGeneration.directory === directory &&
-          !retainedGeneration.closed
-        ) {
-          retainedCurrent = retainedGeneration;
-          break;
-        }
-      } catch {}
-    }
-    if (retainedCurrent) previous = retainedCurrent;
-    else {
-      const removeCachedGeneration =
-        dependencies.store.removeCachedGeneration?.bind(dependencies.store);
-      closePrevious = await loadGeneration(
-        directory,
-        removeCachedGeneration
-          ? () => removeCachedGeneration(current.activeSha)
-          : undefined,
-      );
-      previous = closePrevious;
-    }
-    if (previous.sha !== current.activeSha) {
-      if (closePrevious) await retireGeneration(Promise.resolve(closePrevious));
-      throw new Error(
-        "The current Instructor registry does not match its pointer",
-      );
-    }
-  } else if (process.env.RANKINGS_SEED_DIR) {
-    previous = await seedGeneration();
-  } else {
-    // ponytail: empty identity history, durable registry if Instructor URLs must survive deploys
-    previous = {
-      sha: "",
-      identitiesByUuid: new Map(),
-      identityEvents: [],
-    };
-  }
-  const retained = structuredClone([...previous.identitiesByUuid.values()]);
-  const previousUuids = new Set(previous.identitiesByUuid.keys());
-  const identityEvents = structuredClone(previous.identityEvents);
-  const configured = await configuredInstructorRegistry();
-  for (const identity of configured.identities) {
-    const existing = retained.find(
-      (candidate) => candidate.uuid === identity.uuid,
-    );
-    if (existing) {
-      const { itsc: existingItsc, ...existingBase } = existing;
-      const { itsc: configuredItsc, ...configuredBase } = identity;
-      if (
-        JSON.stringify(existingBase) !== JSON.stringify(configuredBase) ||
-        (configuredItsc !== undefined && configuredItsc !== existingItsc)
-      )
-        throw new Error("Configured Instructor identity rewrites history");
-    } else retained.push(identity);
-  }
-  if (
-    configured.events.length < identityEvents.length ||
-    JSON.stringify(configured.events.slice(0, identityEvents.length)) !==
-      JSON.stringify(identityEvents)
-  )
-    throw new Error("Configured Instructor events rewrite history");
-  for (const event of configured.events.slice(identityEvents.length))
-    if (event.type === "split") {
-      const configuredIdentity = configured.identities.find(
-        (identity) => identity.uuid === event.newUuid,
-      );
-      if (
-        previousUuids.has(event.newUuid) ||
-        !configuredIdentity ||
-        JSON.stringify(configuredIdentity) !== JSON.stringify(event.newIdentity)
-      )
-        throw new Error("Instructor split must introduce its new UUID");
-    }
-  identityEvents.push(
-    ...structuredClone(configured.events.slice(identityEvents.length)),
-  );
   try {
-    const instance = await DuckDBInstance.create(":memory:");
-    const connection = await instance.connect();
-    let names: string[];
-    try {
-      const rows = await queryRows(
-        connection,
-        `SELECT DISTINCT name FROM read_parquet('${sqlPath(candidate.directory, "instructor-ratings.parquet")}') ORDER BY name`,
-      );
-      names = rows.map((row) => String(row.name));
-    } finally {
-      connection.closeSync();
-      instance.closeSync();
-    }
-    for (const name of names) {
-      const normalized = normalizedInstructorName(name);
-      const matches = retained.filter(
-        (identity) =>
-          normalizedInstructorName(identity.canonicalName) === normalized ||
-          identity.aliases.some(
-            (alias) =>
-              alias.source === "ranking-generation" &&
-              alias.sourceCommit === previous?.sha &&
-              normalizedInstructorName(alias.name) === normalized,
-          ),
-      );
-      if (matches.length > 1)
-        throw new Error("Current Instructor name is ambiguous");
-      const identity = matches[0];
-      if (identity) {
-        identity.aliases.push({
-          name,
-          source: "ranking-generation",
-          sourceCommit: candidate.sha,
-          sourceFile: "instructor-ratings.parquet",
-        });
-      } else {
-        retained.push({
-          uuid: randomUUID(),
-          canonicalName: name,
-          aliases: [
-            {
-              name,
-              source: "ranking-generation",
-              sourceCommit: candidate.sha,
-              sourceFile: "instructor-ratings.parquet",
-            },
-          ],
-        });
-      }
-    }
-    await writeFile(
-      resolve(candidate.directory, "manifest.json"),
-      `${JSON.stringify(
-        {
-          schemaMajor: 0,
-          sourceCommit: candidate.sha,
-          artifacts: candidate.artifacts,
-          identities: retained,
-          identityEvents,
-        },
-        null,
-        2,
-      )}\n`,
-      { flag: "wx" },
-    );
-  } finally {
-    if (closePrevious) await retireGeneration(Promise.resolve(closePrevious));
+    await stat(resolve(candidate.directory, "instructor-identities.parquet"));
+  } catch {
+    throw new Error("Ranking generation is missing Instructor identity Parquet");
   }
+  await writeFile(
+    resolve(candidate.directory, "manifest.json"),
+    `${JSON.stringify(
+      {
+        schemaMajor: 0,
+        sourceCommit: candidate.sha,
+        artifacts: candidate.artifacts,
+        identities: [],
+        identityEvents: [],
+      },
+      null,
+      2,
+    )}\n`,
+    { flag: "wx" },
+  );
 }
 
 export async function refreshRankings(
@@ -1700,7 +1720,7 @@ export async function refreshRankings(
             );
           if (!Number.isFinite(Date.parse(candidate.sourceUpdatedAt)))
             throw new Error("Upstream publication time is invalid");
-          await prepareCandidateManifest(candidate, current, dependencies);
+          await prepareCandidateManifest(candidate);
           const temporaryRoot = candidate.temporary
             ? resolve(candidate.directory, "..")
             : undefined;

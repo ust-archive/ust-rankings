@@ -43,7 +43,7 @@ afterEach(async () => {
   );
 });
 
-test("the upstream adapter pins all five LFS objects to one full commit", async () => {
+test("the upstream adapter pins all ranking LFS objects to one full commit", async () => {
   const sha = "2123456789abcdef0123456789abcdef01234567";
   const bytes = Buffer.from("PAR1fixturePAR1");
   const digest = createHash("sha256").update(bytes).digest("hex");
@@ -51,8 +51,12 @@ test("the upstream adapter pins all five LFS objects to one full commit", async 
     "course-instructors.parquet",
     "course-rankings.parquet",
     "course-ratings.parquet",
+    "instructor-aliases.parquet",
+    "instructor-identities.parquet",
+    "instructor-identity-events.parquet",
     "instructor-rankings.parquet",
     "instructor-ratings.parquet",
+    "instructor-split-affected-associations.parquet",
   ];
   const requests: string[] = [];
   const request = mock(async (input: string | URL | Request) => {
@@ -84,7 +88,7 @@ test("the upstream adapter pins all five LFS objects to one full commit", async 
   expect(Object.keys(candidate.artifacts)).toEqual(filenames);
   expect(
     requests.filter((url) => url.includes(`/resolve/${sha}/`)),
-  ).toHaveLength(5);
+  ).toHaveLength(9);
 });
 
 test("the upstream adapter aborts a response beyond its declared LFS size", async () => {
@@ -95,8 +99,12 @@ test("the upstream adapter aborts a response beyond its declared LFS size", asyn
     "course-instructors.parquet",
     "course-rankings.parquet",
     "course-ratings.parquet",
+    "instructor-aliases.parquet",
+    "instructor-identities.parquet",
+    "instructor-identity-events.parquet",
     "instructor-rankings.parquet",
     "instructor-ratings.parquet",
+    "instructor-split-affected-associations.parquet",
   ];
   let maliciousPulls = 0;
   const request = mock(async (input: string | URL | Request) => {
@@ -242,34 +250,28 @@ test("a complete refresh activates one immutable generation atomically", async (
   ).toBe("0123456789abcdef0123456789abcdef01234567");
 });
 
-test("configured Instructor corrections survive refresh and reject history removal", async () => {
-  const seedRoot = await mkdtemp(join(tmpdir(), "ranking-registry-seed-"));
+test("identity Parquet merge events redirect retired Instructor UUIDs", async () => {
   const candidateRoot = await mkdtemp(
-    join(tmpdir(), "ranking-registry-candidate-"),
+    join(tmpdir(), "ranking-identity-merge-"),
   );
-  const nextRoot = await mkdtemp(join(tmpdir(), "ranking-registry-next-"));
-  const removalRoot = await mkdtemp(
-    join(tmpdir(), "ranking-registry-removal-"),
-  );
-  const configRoot = await mkdtemp(join(tmpdir(), "ranking-registry-config-"));
-  temporaryDirectories.push(
-    seedRoot,
-    candidateRoot,
-    nextRoot,
-    removalRoot,
-    configRoot,
-  );
-  const seed = await makeRankingGeneration(seedRoot, undefined, {
-    includeScheduleCourse: true,
-  });
-  const seedManifest = JSON.parse(
-    await readFile(join(seed, "manifest.json"), "utf8"),
-  );
-  process.env.RANKINGS_SEED_DIR = seed;
+  temporaryDirectories.push(candidateRoot);
   const candidateSha = "3123456789abcdef0123456789abcdef01234567";
   const candidate = await reidentifyGeneration(
     await makeRankingGeneration(candidateRoot, undefined, {
-      includeScheduleCourse: true,
+      identityEvents: [
+        {
+          type: "itsc-added",
+          uuid: "00000000-0000-4000-8000-000000000001",
+          itsc: "alpha",
+          sourceCommit: candidateSha,
+        },
+        {
+          type: "merge",
+          retiredUuid: "00000000-0000-4000-8000-000000000002",
+          survivorUuid: "00000000-0000-4000-8000-000000000001",
+          sourceCommit: candidateSha,
+        },
+      ],
     }),
     candidateSha,
   );
@@ -277,73 +279,24 @@ test("configured Instructor corrections survive refresh and reject history remov
     await readFile(join(candidate, "manifest.json"), "utf8"),
   );
   await rm(join(candidate, "manifest.json"));
-  const splitIdentity = {
-    uuid: "00000000-0000-4000-8000-00000000000a",
-    canonicalName: "Split Instructor",
-    aliases: [
-      {
-        name: "Split Source Name",
-        source: "schedule",
-        sourceCommit: candidateSha,
-      },
-    ],
-  };
-  const registryPath = join(configRoot, "instructor-registry.json");
-  const events = [
-    {
-      type: "itsc-added",
-      uuid: "00000000-0000-4000-8000-000000000001",
-      itsc: "alpha",
-      sourceCommit: candidateSha,
-    },
-    {
-      type: "merge",
-      retiredUuid: "00000000-0000-4000-8000-000000000002",
-      survivorUuid: "00000000-0000-4000-8000-000000000001",
-      sourceCommit: candidateSha,
-    },
-    {
-      type: "split",
-      sourceUuid: "00000000-0000-4000-8000-000000000001",
-      newUuid: splitIdentity.uuid,
-      newIdentity: splitIdentity,
-      sourceCommit: candidateSha,
-      affectedAssociations: [
-        {
-          sourceCommit: candidateSha,
-          sourceName: "Alpha Instructor",
-          termCode: "2510",
-          courseCode: "COMP 2000",
-        },
-      ],
-    },
-  ];
-  await writeFile(
-    registryPath,
-    JSON.stringify({ schemaMajor: 0, identities: [splitIdentity], events }),
-  );
-  process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE = registryPath;
-
   const {
     getInstructorIdentity,
     getRankings,
     queryRankings,
     refreshRankings,
     resetRankingsRuntimeForTests,
-    RankingsRefreshError,
   } = await import("@/lib/rankings/server");
   let pointer: GenerationPointer | undefined;
   const stored = new Map<string, string>();
-  let source = {
-    sha: candidateSha,
-    sourceUpdatedAt: "2026-08-20T06:00:00.000Z",
-    directory: candidate,
-    artifacts: candidateManifest.artifacts,
-  };
   const dependencies = {
     upstream: {
       async download() {
-        return source;
+        return {
+          sha: candidateSha,
+          sourceUpdatedAt: "2026-08-20T06:00:00.000Z",
+          directory: candidate,
+          artifacts: candidateManifest.artifacts,
+        };
       },
     },
     store: {
@@ -370,43 +323,10 @@ test("configured Instructor corrections survive refresh and reject history remov
     async sleep() {},
   };
 
-  await writeFile(
-    registryPath,
-    JSON.stringify({
-      schemaMajor: 0,
-      identities: [],
-      events: [
-        {
-          type: "split",
-          sourceUuid: "00000000-0000-4000-8000-000000000001",
-          newUuid: "00000000-0000-4000-8000-000000000002",
-          newIdentity: seedManifest.identities[1],
-          sourceCommit: candidateSha,
-          affectedAssociations: [
-            {
-              sourceCommit: candidateSha,
-              sourceName: "Second Teacher",
-              termCode: "2510",
-              courseCode: "MATH 2000",
-            },
-          ],
-        },
-      ],
-    }),
-  );
-  await expect(refreshRankings({}, dependencies)).rejects.toBeInstanceOf(
-    RankingsRefreshError,
-  );
-  expect(pointer).toBeUndefined();
-  await writeFile(
-    registryPath,
-    JSON.stringify({ schemaMajor: 0, identities: [splitIdentity], events }),
-  );
   await expect(refreshRankings({}, dependencies)).resolves.toMatchObject({
     status: "activated",
     generation: candidateSha,
   });
-  delete process.env.RANKINGS_SEED_DIR;
   const merged = await getRankings({ type: "instructor", key: "beta" });
   expect(merged.route).toMatchObject({ canonicalKey: "alpha", redirect: true });
   expect(merged.historicalEvidence).toEqual([
@@ -417,10 +337,6 @@ test("configured Instructor corrections survive refresh and reject history remov
       ]),
     }),
   ]);
-  expect(merged.courses).not.toContainEqual({
-    termCode: "2510",
-    courseCode: "COMP 2000",
-  });
   expect(
     (
       await queryRankings({
@@ -437,57 +353,63 @@ test("configured Instructor corrections survive refresh and reject history remov
     canonicalKey: "alpha",
     redirect: true,
   });
+});
 
-  const nextSha = "4123456789abcdef0123456789abcdef01234567";
-  const next = await reidentifyGeneration(
-    await makeRankingGeneration(nextRoot, undefined, {
-      includeScheduleCourse: true,
-    }),
-    nextSha,
+test("refresh rejects a generation missing Instructor identity Parquet", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ranking-missing-identity-"));
+  temporaryDirectories.push(root);
+  const sha = "6123456789abcdef0123456789abcdef01234567";
+  const directory = await reidentifyGeneration(
+    await makeRankingGeneration(root),
+    sha,
   );
-  const nextManifest = JSON.parse(
-    await readFile(join(next, "manifest.json"), "utf8"),
+  const manifest = JSON.parse(
+    await readFile(join(directory, "manifest.json"), "utf8"),
   );
-  await rm(join(next, "manifest.json"));
-  source = {
-    sha: nextSha,
-    sourceUpdatedAt: "2026-08-20T07:00:00.000Z",
-    directory: next,
-    artifacts: nextManifest.artifacts,
-  };
-  await expect(refreshRankings({}, dependencies)).resolves.toMatchObject({
-    status: "activated",
-    generation: nextSha,
-  });
-  expect(
-    (await getRankings({ type: "instructor", key: "alpha" })).courses,
-  ).not.toContainEqual({ termCode: "2510", courseCode: "COMP 2000" });
-
-  await writeFile(
-    registryPath,
-    JSON.stringify({ schemaMajor: 0, identities: [], events: [] }),
+  await rm(join(directory, "manifest.json"));
+  await rm(join(directory, "instructor-identities.parquet"));
+  const { refreshRankings, RankingsRefreshError } = await import(
+    "@/lib/rankings/server"
   );
-  const removalSha = "5123456789abcdef0123456789abcdef01234567";
-  const removal = await reidentifyGeneration(
-    await makeRankingGeneration(removalRoot, undefined, {
-      includeScheduleCourse: true,
-    }),
-    removalSha,
-  );
-  const removalManifest = JSON.parse(
-    await readFile(join(removal, "manifest.json"), "utf8"),
-  );
-  await rm(join(removal, "manifest.json"));
-  source = {
-    sha: removalSha,
-    sourceUpdatedAt: "2026-08-20T08:00:00.000Z",
-    directory: removal,
-    artifacts: removalManifest.artifacts,
-  };
-  await expect(refreshRankings({}, dependencies)).rejects.toBeInstanceOf(
-    RankingsRefreshError,
-  );
-  expect(pointer?.activeSha).toBe(nextSha);
+  let pointer: GenerationPointer | undefined;
+  await expect(
+    refreshRankings(
+      {},
+      {
+        upstream: {
+          async download() {
+            return {
+              sha,
+              sourceUpdatedAt: "2026-08-20T06:00:00.000Z",
+              directory,
+              artifacts: manifest.artifacts,
+            };
+          },
+        },
+        store: {
+          async readPointer() {
+            return pointer;
+          },
+          async downloadGeneration() {
+            return undefined;
+          },
+          async putGeneration() {},
+          async writePointer(value) {
+            pointer = structuredClone(value);
+          },
+          async readFailure() {
+            return undefined;
+          },
+          async writeFailure() {},
+        },
+        async withLock<T>(operation: () => Promise<T>) {
+          return operation();
+        },
+        async sleep() {},
+      },
+    ),
+  ).rejects.toBeInstanceOf(RankingsRefreshError);
+  expect(pointer).toBeUndefined();
 });
 
 test("a mixed-commit candidate is rejected before persistence", async () => {

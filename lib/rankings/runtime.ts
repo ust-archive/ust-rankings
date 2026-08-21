@@ -22,8 +22,12 @@ const ARTIFACTS = [
   "course-instructors.parquet",
   "course-rankings.parquet",
   "course-ratings.parquet",
+  "instructor-aliases.parquet",
+  "instructor-identities.parquet",
+  "instructor-identity-events.parquet",
   "instructor-rankings.parquet",
   "instructor-ratings.parquet",
+  "instructor-split-affected-associations.parquet",
 ] as const;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const LFS_SHA = /^[0-9a-f]{64}$/;

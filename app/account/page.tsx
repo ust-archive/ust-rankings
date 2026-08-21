@@ -3,6 +3,8 @@ import { endSession, updateAccount } from "@/app/account/actions";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { getAccountService } from "@/lib/contributions/postgres";
 
+export const dynamic = "force-dynamic";
+
 const STATUS_COPY = {
   suspended:
     "This User is suspended. Current database status blocks contribution writes.",

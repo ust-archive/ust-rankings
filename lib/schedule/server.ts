@@ -8,10 +8,7 @@ import {
   DuckDBInstance,
   type DuckDBValue,
 } from "@duckdb/node-api";
-import {
-  INSTRUCTOR_UUID_PATTERN,
-  normalizeInstructorUuid,
-} from "@/lib/instructor-identity";
+import { normalizeInstructorUuid } from "@/lib/instructor-identity";
 
 const ARTIFACTS = ["classes.parquet", "courses.parquet"] as const;
 const schemas = {
@@ -366,23 +363,10 @@ async function validateFiles(directory: string, manifest: Manifest) {
 }
 
 function validateInstructorMappings(manifest: Manifest) {
+  if (manifest.instructors === undefined) return new Map<string, string>();
   if (!Array.isArray(manifest.instructors))
     throw new Error("Invalid Schedule Instructor mappings");
-  const mappings = new Map<string, string>();
-  const uuidPattern = INSTRUCTOR_UUID_PATTERN;
-  for (const instructor of manifest.instructors) {
-    const sourceName = instructor.sourceName?.trim();
-    const normalized = sourceName?.toLocaleLowerCase();
-    if (
-      !sourceName ||
-      normalized === "tba" ||
-      !uuidPattern.test(instructor.uuid) ||
-      mappings.has(normalized)
-    )
-      throw new Error("Invalid Schedule Instructor mapping");
-    mappings.set(normalized, instructor.uuid);
-  }
-  return mappings;
+  return new Map<string, string>();
 }
 
 async function validateRelations(
@@ -599,8 +583,6 @@ async function prepareCandidateManifest(
   candidate: Awaited<
     ReturnType<ScheduleRefreshDependencies["upstream"]["download"]>
   >,
-  current: ScheduleGenerationPointer | undefined,
-  dependencies: ScheduleRefreshDependencies,
 ) {
   try {
     await stat(resolve(candidate.directory, "manifest.json"));
@@ -614,28 +596,6 @@ async function prepareCandidateManifest(
       JSON.stringify(ARTIFACTS)
   )
     throw new Error("Upstream tree declarations are incomplete");
-  let retainedInstructors: Manifest["instructors"];
-  if (current) {
-    const directory = await dependencies.store.downloadGeneration(
-      current.activeSha,
-    );
-    if (!directory)
-      throw new Error("The current Schedule generation is unavailable");
-    retainedInstructors = (
-      JSON.parse(
-        await readFile(resolve(directory, "manifest.json"), "utf8"),
-      ) as Manifest
-    ).instructors;
-  } else if (process.env.SCHEDULE_SEED_DIR) {
-    retainedInstructors = (
-      JSON.parse(
-        await readFile(resolve(seedDirectory(), "manifest.json"), "utf8"),
-      ) as Manifest
-    ).instructors;
-  } else {
-    // ponytail: empty Instructor mappings, durable registry if names must survive deploys
-    retainedInstructors = [];
-  }
   await writeFile(
     resolve(candidate.directory, "manifest.json"),
     `${JSON.stringify(
@@ -643,7 +603,7 @@ async function prepareCandidateManifest(
         schemaMajor: 0,
         sourceCommit: candidate.sha,
         artifacts: candidate.artifacts,
-        instructors: retainedInstructors,
+        instructors: [],
       },
       null,
       2,
@@ -691,7 +651,7 @@ export async function refreshSchedule(
             !Number.isFinite(Date.parse(candidate.sourceUpdatedAt))
           )
             throw new Error("Invalid immutable Schedule generation");
-          await prepareCandidateManifest(candidate, current, dependencies);
+          await prepareCandidateManifest(candidate);
           const temporaryRoot = candidate.temporary
             ? resolve(candidate.directory, "..")
             : undefined;
@@ -918,7 +878,33 @@ type NestedMeeting = {
   instructors?: unknown;
 };
 
-function mapRows(rows: Array<Record<string, unknown>>, accepted: Generation) {
+async function rankingInstructorUuids(names: string[]) {
+  try {
+    const { resolveObservedInstructorNames } = await import(
+      "@/lib/rankings/server"
+    );
+    return await resolveObservedInstructorNames(names);
+  } catch {
+    return new Map<string, string>();
+  }
+}
+
+function collectSourceNames(rows: Array<Record<string, unknown>>) {
+  const names: string[] = [];
+  for (const row of rows) {
+    for (const meeting of (row.schedules as NestedMeeting[] | undefined) ?? []) {
+      for (const value of (meeting.instructors as unknown[] | undefined) ?? []) {
+        const sourceName = text(value).trim();
+        if (sourceName && sourceName.toLocaleLowerCase() !== "tba")
+          names.push(sourceName);
+      }
+    }
+  }
+  return names;
+}
+
+async function mapRows(rows: Array<Record<string, unknown>>) {
+  const instructors = await rankingInstructorUuids(collectSourceNames(rows));
   const offerings = new Map<string, CourseOffering>();
   for (const row of rows) {
     const key = `${row.term_num}\0${row.course_id}`;
@@ -968,7 +954,7 @@ function mapRows(rows: Array<Record<string, unknown>>, accepted: Generation) {
           const sourceName = text(value).trim();
           if (!sourceName || sourceName.toLocaleLowerCase() === "tba")
             return [];
-          const uuid = accepted.instructors.get(sourceName.toLocaleLowerCase());
+          const uuid = instructors.get(sourceName);
           return [uuid ? { sourceName, uuid } : { sourceName }];
         }),
       }),
@@ -1080,7 +1066,7 @@ export async function querySchedule(
       `${offeringSql(accepted.directory)} WHERE course.term_code = $termCode ORDER BY course.prefix, course.number, class.section`,
       { termCode: term.termCode },
     );
-    let offerings = mapRows(rows, accepted);
+    let offerings = await mapRows(rows);
     if (search) {
       const normalized = search.toLocaleLowerCase();
       offerings = offerings.filter((offering) =>
@@ -1113,9 +1099,17 @@ export async function getSchedule(
       )
         throw new InvalidScheduleQueryError("Invalid Instructor UUIDs.");
       const wanted = new Set(instructorUuids as string[]);
-      const sourceNames = [...accepted.instructors]
-        .filter(([, uuid]) => wanted.has(uuid))
-        .map(([sourceName]) => sourceName);
+      let sourceNames: string[] = [];
+      try {
+        const { observedNamesForInstructorUuids } = await import(
+          "@/lib/rankings/server"
+        );
+        sourceNames = (
+          await observedNamesForInstructorUuids([...wanted])
+        ).map((name) => name.trim().toLocaleLowerCase());
+      } catch {
+        sourceNames = [];
+      }
       if (sourceNames.length === 0)
         return {
           type: "instructor",
@@ -1144,7 +1138,7 @@ export async function getSchedule(
       return {
         type: "instructor",
         instructorUuids: [...wanted],
-        classes: mapRows(rows, accepted).flatMap(
+        classes: (await mapRows(rows)).flatMap(
           (offering) => offering.classes,
         ),
       };
@@ -1168,7 +1162,7 @@ export async function getSchedule(
       `${offeringSql(accepted.directory)} ${where} ORDER BY course.term_num, class.section`,
       parameters,
     );
-    const offerings = mapRows(rows, accepted);
+    const offerings = await mapRows(rows);
     if (offerings.length === 0)
       throw new InvalidScheduleQueryError("Unknown Schedule entity.");
     if (entity.type === "course")
@@ -1225,7 +1219,7 @@ export async function resolveClassesWithGeneration(
     )
       throw new InvalidScheduleQueryError("Unknown Term Code.");
     const wanted = new Set(numbers);
-    const classes = mapRows(rows, accepted)
+    const classes = (await mapRows(rows))
       .flatMap((offering) => offering.classes)
       .filter((scheduleClass) => wanted.has(scheduleClass.classNumber))
       .sort((left, right) => left.classNumber - right.classNumber);

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { signIn } from "@/auth";
 import { safeReturnPath } from "@/lib/auth/policy";
 
+export const dynamic = "force-dynamic";
+
 async function startSignIn(
   provider: "hkust-connect" | "hkust-staff",
   r: string,

@@ -5,6 +5,8 @@ import { safeReturnPath } from "@/lib/auth/policy";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { getAccountService } from "@/lib/contributions/postgres";
 
+export const dynamic = "force-dynamic";
+
 const ERRORS: Record<string, string> = {
   "acceptance-required": "Accept both current policies to continue.",
   "invalid-display-name":

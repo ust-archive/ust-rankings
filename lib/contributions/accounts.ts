@@ -35,6 +35,7 @@ export interface AccountRepository {
     userId: string,
     publicDisplayName: string,
   ): Promise<AccountRow | undefined>;
+  closeAccount(userId: string): Promise<AccountRow | undefined>;
 }
 
 export type AccountWriteErrorCode =
@@ -170,6 +171,15 @@ export function createAccountService(
       const error = statusError(await repository.findUser(userId));
       if (error) throw error;
       throw new Error("Active User account update did not complete");
+    },
+
+    async closeAccount(userId: string) {
+      const closed = await repository.closeAccount(userId);
+      if (closed) return closed;
+      throw (
+        statusError(await repository.findUser(userId)) ??
+        new AccountWriteError("account-not-found", "User was not found")
+      );
     },
   };
 }

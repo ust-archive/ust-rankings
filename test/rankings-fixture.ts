@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
 
@@ -81,6 +81,20 @@ type Malformation =
   | "failed-smoke-query"
   | "tba-alias";
 
+export type FixtureIdentityEvent =
+  | {
+      type: "itsc-added";
+      uuid: string;
+      itsc: string;
+      sourceCommit: string;
+    }
+  | {
+      type: "merge";
+      retiredUuid: string;
+      survivorUuid: string;
+      sourceCommit: string;
+    };
+
 export async function makeRankingGeneration(
   root: string,
   malformation?: Malformation,
@@ -88,11 +102,26 @@ export async function makeRankingGeneration(
     extraCourses?: number;
     extraInstructors?: number;
     includeScheduleCourse?: boolean;
+    includePriorOnly?: boolean;
+    identityEvents?: FixtureIdentityEvent[];
   } = {},
 ) {
   const directory = join(root, fixtureSha);
   await mkdir(directory, { recursive: true });
   const fixtureIdentities = structuredClone(identities);
+  if (options.includePriorOnly) {
+    fixtureIdentities.push({
+      uuid: "00000000-0000-4000-8000-000000000006",
+      canonicalName: "Prior Instructor",
+      aliases: [
+        {
+          name: "Prior Instructor",
+          source: "schedule",
+          sourceCommit: fixtureSha,
+        },
+      ],
+    });
+  }
   for (let index = 0; index < (options.extraInstructors ?? 0); index += 1) {
     const suffix = String(index + 1).padStart(12, "0");
     fixtureIdentities.push({
@@ -130,6 +159,8 @@ export async function makeRankingGeneration(
     ];
     if (options.includeScheduleCourse)
       fixtureCourses.push(["COMP", "2000", true, ""]);
+    if (options.includePriorOnly)
+      fixtureCourses.push(["OFFR", "5000", true, ""]);
     for (let index = 0; index < (options.extraCourses ?? 0); index += 1)
       fixtureCourses.push(["BULK", String(1000 + index), true, ""]);
     for (const [
@@ -147,10 +178,17 @@ export async function makeRankingGeneration(
         "instructor",
       ]) {
         if (criterion === missingCriterion) continue;
-        const cumulativeSamples =
-          criterion === "content" ? 11 : criterion === "course" ? 22 : 33;
-        const score =
-          prefix === "COMP" && courseNumber === "1000"
+        const priorOnly = prefix === "OFFR";
+        const cumulativeSamples = priorOnly
+          ? 0
+          : criterion === "content"
+            ? 11
+            : criterion === "course"
+              ? 22
+              : 33;
+        const score = priorOnly
+          ? 0.75
+          : prefix === "COMP" && courseNumber === "1000"
             ? Number(criterion === "content")
             : prefix === "MATH"
               ? 0.5
@@ -158,7 +196,7 @@ export async function makeRankingGeneration(
                 ? 0.125
                 : 0.25;
         courseRows.push(
-          `('${prefix}', '${courseNumber}', 100, '2510', ${isOffered}, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, ${cumulativeSamples}::BIGINT, 1.0, 0.5, 0.1)`,
+          `('${prefix}', '${courseNumber}', 100, '2510', ${isOffered}, '${criterion}', ${score}, ${score}, ${priorOnly ? 0 : 1.0}, ${priorOnly ? 0 : 1}::BIGINT, ${cumulativeSamples}::BIGINT, ${priorOnly ? 0 : 1.0}, ${priorOnly ? 0 : 0.5}, 0.1)`,
         );
       }
     }
@@ -197,10 +235,17 @@ export async function makeRankingGeneration(
           criterion === "instructor"
         )
           continue;
-        const cumulativeSamples =
-          criterion === "content" ? 11 : criterion === "course" ? 22 : 33;
-        const score =
-          identity.canonicalName === "Delta Instructor"
+        const priorOnly = identity.canonicalName === "Prior Instructor";
+        const cumulativeSamples = priorOnly
+          ? 0
+          : criterion === "content"
+            ? 11
+            : criterion === "course"
+              ? 22
+              : 33;
+        const score = priorOnly
+          ? 0.75
+          : identity.canonicalName === "Delta Instructor"
             ? Number(criterion === "content")
             : identity.canonicalName === "Gamma Instructor" ||
                 identity.canonicalName === "Historical Instructor"
@@ -208,7 +253,7 @@ export async function makeRankingGeneration(
               : 1;
         const isTeaching = identity.canonicalName !== "Historical Instructor";
         rows.push(
-          `('${identity.canonicalName}', 100, '2510', ${isTeaching}, '${criterion}', ${score}, ${score}, 1.0, 1::BIGINT, ${cumulativeSamples}::BIGINT, 1.0, 0.5, 0.1)`,
+          `('${identity.canonicalName}', 100, '2510', ${isTeaching}, '${criterion}', ${score}, ${score}, ${priorOnly ? 0 : 1.0}, ${priorOnly ? 0 : 1}::BIGINT, ${cumulativeSamples}::BIGINT, ${priorOnly ? 0 : 1.0}, ${priorOnly ? 0 : 0.5}, 0.1)`,
         );
       }
     }
@@ -243,6 +288,62 @@ export async function makeRankingGeneration(
         ${options.includeScheduleCourse ? ", ('Alpha Instructor', 100, '2510', 'COMP', '2000'), ('Alpha Instructor', 99, '2430', 'COMP', '2000')" : ""}
       ) AS t(name, term_num, term_code, subject, code)`,
     );
+    if (malformation === "tba-alias") {
+      fixtureIdentities[0].aliases[0].name = " TBA ";
+    }
+    const identityRows = fixtureIdentities
+      .map(
+        (identity) =>
+          `('${identity.uuid}', '${identity.canonicalName.replaceAll("'", "''")}', ${
+            "itsc" in identity && identity.itsc
+              ? `'${identity.itsc}'`
+              : "NULL"
+          })`,
+      )
+      .join(", ");
+    await copy(
+      "instructor-identities.parquet",
+      `SELECT * FROM (VALUES ${identityRows}) AS t(uuid, canonical_name, itsc)`,
+    );
+    const aliasRows = fixtureIdentities
+      .flatMap((identity) =>
+        identity.aliases.map(
+          (alias) =>
+            `('${identity.uuid}', '${alias.name.replaceAll("'", "''")}', '${alias.source}', '${alias.sourceCommit}', ${
+              "sourceFile" in alias && alias.sourceFile
+                ? `'${alias.sourceFile}'`
+                : "NULL"
+            })`,
+        ),
+      )
+      .join(", ");
+    await copy(
+      "instructor-aliases.parquet",
+      `SELECT * FROM (VALUES ${aliasRows}) AS t(uuid, name, source, source_commit, source_file)`,
+    );
+    const identityEvents = options.identityEvents ?? [];
+    await copy(
+      "instructor-identity-events.parquet",
+      identityEvents.length === 0
+        ? `SELECT * FROM (VALUES
+        (NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR)
+      ) AS t(event_type, source_commit, uuid, itsc, retired_uuid, survivor_uuid, source_uuid, new_uuid)
+      WHERE 1 = 0`
+        : `SELECT * FROM (VALUES ${identityEvents
+            .map((event) =>
+              event.type === "itsc-added"
+                ? `('${event.type}', '${event.sourceCommit}', '${event.uuid}', '${event.itsc}', NULL, NULL, NULL, NULL)`
+                : `('${event.type}', '${event.sourceCommit}', NULL, NULL, '${event.retiredUuid}', '${event.survivorUuid}', NULL, NULL)`,
+            )
+            .join(", ")}) AS t(event_type, source_commit, uuid, itsc, retired_uuid, survivor_uuid, source_uuid, new_uuid)`,
+    );
+    await copy(
+      "instructor-split-affected-associations.parquet",
+      `SELECT * FROM (VALUES
+        (NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR)
+      ) AS t(source_commit, new_uuid, source_name, term_code, course_code)
+      WHERE 1 = 0`,
+    );
   } finally {
     connection.closeSync();
     instance.closeSync();
@@ -266,9 +367,6 @@ export async function makeRankingGeneration(
       ]),
     ),
   );
-  if (malformation === "tba-alias") {
-    fixtureIdentities[0].aliases[0].name = " TBA ";
-  }
   await writeFile(
     join(directory, "manifest.json"),
     `${JSON.stringify({ schemaMajor: 0, sourceCommit: fixtureSha, artifacts, identities: fixtureIdentities }, null, 2)}\n`,
@@ -315,6 +413,17 @@ export async function makeRankingGeneration(
             },
           ]
         : []),
+      ...(options.includePriorOnly
+        ? [
+            {
+              coursePrefix: "OFFR",
+              courseNumber: "5000",
+              courseCode: "OFFR5000",
+              courseName: "Offered Without Samples",
+              courseAttributes: [],
+            },
+          ]
+        : []),
       ...Array.from({ length: options.extraCourses ?? 0 }, (_, index) => ({
         coursePrefix: "BULK",
         courseNumber: String(1000 + index),
@@ -334,4 +443,25 @@ export async function makeRankingGeneration(
     ]),
   );
   return directory;
+}
+
+export async function makeRankingGenerationWithSha(
+  root: string,
+  sha: string,
+  malformation?: Malformation,
+  options?: Parameters<typeof makeRankingGeneration>[2],
+) {
+  const original = await makeRankingGeneration(root, malformation, options);
+  const target = join(root, sha);
+  const manifestPath = join(original, "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    sourceCommit: string;
+    identities: Array<{ aliases: Array<{ sourceCommit: string }> }>;
+  };
+  manifest.sourceCommit = sha;
+  for (const identity of manifest.identities)
+    for (const alias of identity.aliases) alias.sourceCommit = sha;
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  await rename(original, target);
+  return target;
 }

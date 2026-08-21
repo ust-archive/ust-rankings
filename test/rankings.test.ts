@@ -692,3 +692,49 @@ for (const [malformation, label] of [
     ).rejects.toBeInstanceOf(RankingsUnavailableError);
   });
 }
+
+test("zero-sample teaching Instructors and offered Courses receive a Rank from the prior", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "rankings-prior-"));
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
+    temporaryDirectory,
+    undefined,
+    { includePriorOnly: true },
+  );
+  const { getRankings, queryRankings } = await import("@/lib/rankings/server");
+  const instructors = await queryRankings({
+    entity: "instructor",
+    termCode: "2510",
+  });
+  const priorInstructor = instructors.results.find(
+    (row) => row.canonicalName === "Prior Instructor",
+  );
+  expect(priorInstructor).toMatchObject({
+    uuid: "00000000-0000-4000-8000-000000000006",
+    score: 0.75,
+    ustSpaceSamples: 0,
+    sfqSamples: 0,
+  });
+  expect(priorInstructor?.rank).toBeGreaterThan(0);
+  const details = await getRankings({
+    type: "instructor",
+    key: "00000000-0000-4000-8000-000000000006",
+  });
+  expect(details.ranking).toMatchObject({
+    uuid: "00000000-0000-4000-8000-000000000006",
+    rank: priorInstructor?.rank,
+  });
+  const courses = await queryRankings({
+    entity: "course",
+    termCode: "2510",
+  });
+  const priorCourse = courses.results.find(
+    (row) => row.courseCode === "OFFR 5000",
+  );
+  expect(priorCourse).toMatchObject({
+    score: 0.75,
+    ustSpaceSamples: 0,
+    sfqSamples: 0,
+  });
+  expect(priorCourse?.rank).toBeGreaterThan(0);
+});

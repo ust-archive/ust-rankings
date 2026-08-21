@@ -261,6 +261,87 @@ SELECT
   posterior_stddev
 FROM adjusted;
 
+-- Zero-sample Instructors and offered Courses receive the evidence-only prior.
+-- They compete in Rankings but do not enter the mean or variance.
+CREATE OR REPLACE TABLE prior_only_entity_ratings AS
+WITH evidence_priors AS (
+  SELECT
+    family,
+    criterion,
+    term_num,
+    sum(confidence * rating) / sum(confidence) AS population_mean,
+    greatest(
+      sum(confidence * rating * rating) / sum(confidence)
+        - pow(sum(confidence * rating) / sum(confidence), 2)
+        - count(*) / sum(confidence),
+      1e-6
+    ) AS prior_variance
+  FROM entity_ratings
+  GROUP BY family, criterion, term_num
+), course_grid AS (
+  SELECT
+    'course' AS family,
+    entities.subject || chr(31) || entities.code AS entity_id,
+    entities.subject,
+    entities.code,
+    NULL::VARCHAR AS name,
+    terms.term_num,
+    criteria.criterion
+  FROM course_entities AS entities
+  JOIN terms ON terms.term_num >= entities.min_term_num
+  JOIN evidence_priors AS criteria
+    ON criteria.family = 'course' AND criteria.term_num = terms.term_num
+), instructor_grid AS (
+  SELECT
+    'instructor' AS family,
+    entities.name AS entity_id,
+    NULL::VARCHAR AS subject,
+    NULL::VARCHAR AS code,
+    entities.name,
+    terms.term_num,
+    criteria.criterion
+  FROM instructor_entities AS entities
+  JOIN terms ON terms.term_num >= entities.min_term_num
+  JOIN evidence_priors AS criteria
+    ON criteria.family = 'instructor' AND criteria.term_num = terms.term_num
+), grid AS (
+  SELECT * FROM course_grid
+  UNION ALL
+  SELECT * FROM instructor_grid
+)
+SELECT
+  grid.family,
+  grid.entity_id,
+  grid.subject,
+  grid.code,
+  grid.name,
+  grid.term_num,
+  grid.criterion,
+  priors.population_mean AS rating,
+  priors.population_mean AS bayesian,
+  0::DOUBLE AS confidence,
+  0::BIGINT AS samples,
+  0::BIGINT AS cumulative_samples,
+  0::DOUBLE AS effective_samples,
+  0::DOUBLE AS reliability,
+  sqrt(priors.prior_variance) AS posterior_stddev
+FROM grid
+JOIN evidence_priors AS priors
+  USING (family, criterion, term_num)
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM entity_ratings AS evidence
+  WHERE evidence.family = grid.family
+    AND evidence.entity_id = grid.entity_id
+    AND evidence.criterion = grid.criterion
+    AND evidence.term_num = grid.term_num
+);
+
+CREATE OR REPLACE TABLE scored_entity_ratings AS
+SELECT * FROM entity_ratings
+UNION ALL
+SELECT * FROM prior_only_entity_ratings;
+
 -- Family-specific marts keep consumer schemas simple while sharing one model.
 CREATE OR REPLACE TABLE course_ratings AS
 SELECT
@@ -277,7 +358,7 @@ SELECT
   effective_samples,
   reliability,
   posterior_stddev
-FROM entity_ratings AS ratings
+FROM scored_entity_ratings AS ratings
 LEFT JOIN schedule_course_terms AS schedule
   USING (subject, code, term_num)
 WHERE family = 'course';
@@ -296,7 +377,7 @@ SELECT
   ratings.effective_samples,
   ratings.reliability,
   ratings.posterior_stddev
-FROM entity_ratings AS ratings
+FROM scored_entity_ratings AS ratings
 LEFT JOIN (
   SELECT DISTINCT name, term_num
   FROM schedule_teaching_assignments

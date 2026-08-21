@@ -2,6 +2,7 @@ import { afterEach, expect, mock, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeRankingGeneration } from "./rankings-fixture";
 import { makeScheduleGeneration, scheduleFixtureSha } from "./schedule-fixture";
 
 mock.module("server-only", () => ({}));
@@ -12,19 +13,26 @@ async function configureFixture(
   malformation?: "duplicate-event" | "orphan-class",
 ) {
   const root = await mkdtemp(join(tmpdir(), "schedule-generation-"));
-  temporaryDirectories.push(root);
+  const rankingRoot = await mkdtemp(join(tmpdir(), "ranking-for-schedule-"));
+  temporaryDirectories.push(root, rankingRoot);
   process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(
     root,
     malformation,
   );
+  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(rankingRoot);
 }
 
 afterEach(async () => {
   delete process.env.SCHEDULE_SEED_DIR;
+  delete process.env.RANKINGS_SEED_DIR;
   const { resetScheduleRuntimeForTests } = await import(
     "@/lib/schedule/server"
   );
+  const { resetRankingsRuntimeForTests } = await import(
+    "@/lib/rankings/server"
+  );
   await resetScheduleRuntimeForTests();
+  await resetRankingsRuntimeForTests();
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -125,6 +133,35 @@ test("querySchedule reconstructs latest events before ACTIVE filtering", async (
   });
   expect(JSON.stringify(page)).not.toContain("Old hidden Course");
   expect(JSON.stringify(page)).not.toContain('"section":"T1"');
+});
+
+test("unmatched Class source names stay unresolved and TBA is omitted", async () => {
+  await configureFixture();
+  const { querySchedule } = await import("@/lib/schedule/server");
+  const page = await querySchedule({ termCode: "2510", search: "MATH 1000" });
+  const instructors = page.results
+    .flatMap((offering) => offering.classes)
+    .flatMap((scheduleClass) => scheduleClass.meetings)
+    .flatMap((meeting) => meeting.instructors);
+  expect(instructors).toContainEqual({ sourceName: "Unresolved Teacher" });
+  expect(instructors.some((instructor) => instructor.uuid)).toBe(false);
+  expect(
+    instructors.some(
+      (instructor) => instructor.sourceName.toLocaleLowerCase() === "tba",
+    ),
+  ).toBe(false);
+});
+
+test("Schedule still serves when Rankings are unavailable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "schedule-without-rankings-"));
+  temporaryDirectories.push(root);
+  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(root);
+  const { querySchedule } = await import("@/lib/schedule/server");
+  const page = await querySchedule({ termCode: "2510", search: "COMP 2000" });
+  expect(page.results[0]?.courseCode).toBe("COMP 2000");
+  expect(
+    page.results[0]?.classes[0]?.meetings[0]?.instructors,
+  ).toContainEqual({ sourceName: "Alpha Instructor" });
 });
 
 test("bounded Schedule search covers Course, Instructor, room, Section, and Class Number", async () => {

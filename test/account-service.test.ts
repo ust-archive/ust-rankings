@@ -60,6 +60,13 @@ class MemoryAccountRepository implements AccountRepository {
     return user;
   }
 
+  async closeAccount(userId: string) {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    user.status = "closed";
+    return user;
+  }
+
   async updateDisplayName(userId: string, publicDisplayName: string) {
     const user = this.users.get(userId);
     if (user?.status !== "active") return undefined;
@@ -172,4 +179,29 @@ test("account edits and every write resolve current User status", async () => {
   await expect(accounts.requireActiveUser(user.id)).rejects.toMatchObject({
     code: "account-closed",
   });
+});
+
+test("account closure sets closed status and blocks later writes", async () => {
+  const { accounts, repository } = setup();
+  const user = await accounts.establishUser({
+    iss: HKUST_CONNECT_ISSUER,
+    sub: "closure-subject",
+    name: "Closing Student",
+  });
+  await accounts.completeOnboarding(user.id, {
+    publicDisplayName: "Closing Student",
+    acceptPrivacy: true,
+    acceptCommunity: true,
+  });
+  expect(await accounts.closeAccount(user.id)).toMatchObject({
+    id: user.id,
+    status: "closed",
+  });
+  expect(repository.users.get(user.id)?.status).toBe("closed");
+  await expect(accounts.requireActiveUser(user.id)).rejects.toMatchObject({
+    code: "account-closed",
+  });
+  await expect(
+    accounts.updateAccount(user.id, { publicDisplayName: "After Close" }),
+  ).rejects.toBeInstanceOf(AccountWriteError);
 });

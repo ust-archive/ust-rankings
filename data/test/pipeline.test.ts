@@ -1,6 +1,6 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
@@ -32,7 +32,8 @@ async function makeFixtures(dataDir: string): Promise<void> {
       `
       SELECT * FROM (VALUES
         (100, 'high', TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '1000', '2510'),
-        (100, 'low',  TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '2000', '2510')
+        (100, 'low',  TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '2000', '2510'),
+        (100, 'prior', TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '3000', '2510')
       ) AS courses(term_num, id, "timestamp", status, prefix, number, term_code)
     `,
     );
@@ -48,7 +49,9 @@ async function makeFixtures(dataDir: string): Promise<void> {
             'WANG, Wei', 'WEI, Wang', 'TBA', 'MSC(TLE) PROGRAM, .'
           ]}], 'high', 'E', 'LEC'),
         (100, 'class-low', TIMESTAMP '2025-01-01', 'ACTIVE',
-          [{'instructors': ['Cara Gamma']}], 'low', 'E', 'LEC')
+          [{'instructors': ['Cara Gamma']}], 'low', 'E', 'LEC'),
+        (100, 'class-prior', TIMESTAMP '2025-01-01', 'ACTIVE',
+          [{'instructors': ['Eve Epsilon']}], 'prior', 'E', 'LEC')
       ) AS classes(term_num, number, "timestamp", status, schedules, course_id, role, type)
     `,
     );
@@ -132,7 +135,11 @@ async function makeFixtures(dataDir: string): Promise<void> {
   }
 }
 
-function runPipeline(dataDir: string, runDir: string): string {
+function runPipeline(
+  dataDir: string,
+  runDir: string,
+  extraEnv: Record<string, string> = {},
+): string {
   const outputDir = join(runDir, "out");
   const result = Bun.spawnSync({
     cmd: [process.execPath, join(root, "src", "run.ts")],
@@ -141,6 +148,7 @@ function runPipeline(dataDir: string, runDir: string): string {
       ...process.env,
       RANKINGS_DATA_DIR: dataDir,
       RANKINGS_OUTPUT_DIR: outputDir,
+      ...extraEnv,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -249,9 +257,18 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
+    const bootstrap = join(temp, "empty-identities.json");
+    await writeFile(
+      bootstrap,
+      JSON.stringify({ schemaMajor: 0, identities: [], events: [] }),
+    );
 
-    const first = runPipeline(dataDir, join(temp, "first"));
-    const second = runPipeline(dataDir, join(temp, "second"));
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+    });
     const courseRatings = parquet(first, "course-ratings");
     const instructorRatings = parquet(first, "instructor-ratings");
     const courseRankings = parquet(first, "course-rankings");
@@ -358,7 +375,7 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
     `);
     assert.deepEqual(
       frontendOrder.map((row) => row.code),
-      ["1000", "2000"],
+      ["1000", "3000", "2000"],
     );
 
     // The schedule spelling is preferred when review and SFQ aliases cluster.
@@ -428,6 +445,135 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
         `${name}.parquet is not logically reproducible`,
       );
     }
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-identity-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const bootstrap = join(temp, "empty-identities.json");
+    await writeFile(
+      bootstrap,
+      JSON.stringify({ schemaMajor: 0, identities: [], events: [] }),
+    );
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+    });
+    const identities = parquet(first, "instructor-identities");
+    const aliases = parquet(first, "instructor-aliases");
+    const firstIds = await rows(
+      `SELECT canonical_name, uuid FROM read_parquet('${identities}') ORDER BY canonical_name`,
+    );
+    const secondIds = await rows(
+      `SELECT canonical_name, uuid FROM read_parquet('${parquet(second, "instructor-identities")}') ORDER BY canonical_name`,
+    );
+    assert.ok(firstIds.length > 0, "identities.parquet is empty");
+    assert.deepEqual(firstIds, secondIds);
+    assert.deepEqual(
+      await rows(
+        `SELECT count(*)::INTEGER AS count FROM read_parquet('${identities}') WHERE lower(canonical_name) = 'tba'`,
+      ),
+      [{ count: 0 }],
+    );
+    assert.deepEqual(
+      await rows(
+        `SELECT count(*)::INTEGER AS count FROM read_parquet('${aliases}') WHERE lower(name) = 'tba'`,
+      ),
+      [{ count: 0 }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("zero-sample teaching Instructors and offered Courses receive the evidence-only prior", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-prior-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const bootstrap = join(temp, "empty-identities.json");
+    await writeFile(
+      bootstrap,
+      JSON.stringify({ schemaMajor: 0, identities: [], events: [] }),
+    );
+    const output = runPipeline(dataDir, join(temp, "out"), {
+      RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+    });
+    const instructorRatings = parquet(output, "instructor-ratings");
+    const courseRatings = parquet(output, "course-ratings");
+    assert.deepEqual(
+      await rows(`
+      SELECT samples::INTEGER AS samples
+      FROM read_parquet('${instructorRatings}')
+      WHERE name = 'Eve Epsilon' AND term_num = 100 AND criterion = 'instructor'
+    `),
+      [{ samples: 0 }],
+    );
+    assert.deepEqual(
+      await rows(`
+      SELECT samples::INTEGER AS samples
+      FROM read_parquet('${courseRatings}')
+      WHERE subject = 'COMP' AND code = '3000' AND term_num = 100
+        AND criterion = 'course'
+    `),
+      [{ samples: 0 }],
+    );
+    const evidenceMean = await rows(`
+      SELECT round(sum(confidence * rating) / sum(confidence), 8) AS mean
+      FROM read_parquet('${instructorRatings}')
+      WHERE confidence > 0 AND term_num = 100 AND criterion = 'instructor'
+    `);
+    assert.deepEqual(
+      await rows(`
+      SELECT round(bayesian, 8) AS bayesian
+      FROM read_parquet('${instructorRatings}')
+      WHERE name = 'Eve Epsilon' AND term_num = 100 AND criterion = 'instructor'
+    `),
+      [{ bayesian: evidenceMean[0]?.mean }],
+    );
+    assert.deepEqual(
+      await rows(`
+      SELECT count(*)::INTEGER AS count
+      FROM read_parquet('${instructorRatings}')
+      WHERE lower(name) = 'tba'
+    `),
+      [{ count: 0 }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("the pipeline fails when previous identities are required but missing", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-identity-fail-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const outputDir = join(temp, "out");
+    const result = Bun.spawnSync({
+      cmd: [process.execPath, join(root, "src", "run.ts")],
+      cwd: root,
+      env: {
+        ...process.env,
+        RANKINGS_DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: outputDir,
+        RANKINGS_REQUIRE_PREVIOUS_IDENTITIES: "1",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    assert.notEqual(result.exitCode, 0);
+    assert.match(
+      `${result.stderr.toString()}${result.stdout.toString()}`,
+      /previous identities/i,
+    );
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
