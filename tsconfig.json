@@ -23,6 +23,7 @@
       "@/*": ["./*"]
     },
     "allowArbitraryExtensions": true,
+    "allowImportingTsExtensions": true,
     "noImplicitAny": false
   },
   "include": [

@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { privacyContact } from "../lib/privacy/contact";
+import { privacyContact } from "../lib/privacy/contact.ts";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;

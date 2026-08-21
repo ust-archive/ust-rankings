@@ -143,20 +143,16 @@ function runPipeline(
   extraEnv: Record<string, string> = {},
 ): string {
   const outputDir = join(runDir, "out");
-  const result = spawnSync(
-    process.execPath,
-    ["--import=tsx", join(root, "src", "run.ts")],
-    {
-      cwd: root,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        RANKINGS_DATA_DIR: dataDir,
-        RANKINGS_OUTPUT_DIR: outputDir,
-        ...extraEnv,
-      },
+  const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+    cwd: root,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      RANKINGS_DATA_DIR: dataDir,
+      RANKINGS_OUTPUT_DIR: outputDir,
+      ...extraEnv,
     },
-  );
+  });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return outputDir;
 }
@@ -557,20 +553,16 @@ test("the pipeline fails when previous identities are required but missing", asy
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
     const outputDir = join(temp, "out");
-    const result = spawnSync(
-      process.execPath,
-      ["--import=tsx", join(root, "src", "run.ts")],
-      {
-        cwd: root,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          RANKINGS_DATA_DIR: dataDir,
-          RANKINGS_OUTPUT_DIR: outputDir,
-          RANKINGS_REQUIRE_PREVIOUS_IDENTITIES: "1",
-        },
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        RANKINGS_DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: outputDir,
+        RANKINGS_REQUIRE_PREVIOUS_IDENTITIES: "1",
       },
-    );
+    });
     assert.notEqual(result.status, 0);
     assert.match(`${result.stderr}${result.stdout}`, /previous identities/i);
   } finally {

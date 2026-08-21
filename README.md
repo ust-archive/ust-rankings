@@ -13,8 +13,9 @@ contract.
 
 ## Development
 
-The repository uses Node 24.19 and npm 12 for dependency installation,
-scripts, tests, and the data workspace. Install npm 12 with
+The repository uses Node 26.7 and npm 12 for dependency installation,
+scripts, tests, and the data workspace. Node runs erasable TypeScript utility
+scripts natively. Install npm 12 with
 `npm install --global npm@12.0.2`, then run the complete local gate from the
 repository root:
 
@@ -37,7 +38,7 @@ see [`test/README.md`](test/README.md). Frontend verification is visual with
 
 ## Production
 
-Production is DigitalOcean App Platform in Singapore with a Node 24 Docker
+Production is DigitalOcean App Platform in Singapore with a Node 26 Docker
 image. Rankings and Schedule download from
 Hugging Face into `/tmp` at runtime; do not bake seed data into the image.
 Neon `POSTGRES_URL` is the advisory lock database. Contributions use

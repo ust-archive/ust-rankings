@@ -14,7 +14,7 @@ schedule-only coverage from the retired CQ source does not.
 
 ## Run
 
-Requires the repository-pinned Node 24 and npm 12 toolchain and access to the private
+Requires the repository-pinned Node 26 and npm 12 toolchain and access to the private
 `ust-archive/ust-space` and `ust-archive/sfq` datasets. Authenticate with either
 `HF_TOKEN` or a token in the standard Hugging Face cache. The `hf` CLI is needed
 only if you choose to create that cached token with `hf auth login`; it is not

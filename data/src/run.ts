@@ -2,7 +2,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
-import { assignInstructorIdentities } from "./identities";
+import { assignInstructorIdentities } from "./identities.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = resolve(root, process.env.RANKINGS_OUTPUT_DIR ?? "out");

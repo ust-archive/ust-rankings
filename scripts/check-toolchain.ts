@@ -63,6 +63,8 @@ const staleReferences = [
   ["B" + "un.", "removed runtime API"],
   ["b" + "un:test", "removed test runner"],
   ["setup-" + "bun", "removed CI action"],
+  ["t" + "sx ", "removed TypeScript runtime"],
+  ["--import=" + "tsx", "removed TypeScript runtime hook"],
 ] as const;
 
 for (const file of trackedFiles) {

@@ -4,7 +4,7 @@
   "version": "4.0.0",
   "private": true,
   "scripts": {
-    "run": "tsx src/run.ts",
+    "run": "node src/run.ts",
     "test": "vitest run test/pipeline.test.ts",
     "type-check": "tsc --noEmit"
   },
@@ -13,7 +13,7 @@
     "@duckdb/node-api": "^1.5.5-r.4"
   },
   "engines": {
-    "node": ">=24.15.0 <25",
+    "node": ">=26.7.0 <27",
     "npm": ">=12 <13"
   }
 }
