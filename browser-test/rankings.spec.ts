@@ -52,8 +52,29 @@ test("Rankings search filters live and keeps URL state", async ({ page }) => {
   expect(new URL(page.url()).searchParams.get("preset")).toBe("grade");
 });
 
+test("Rankings search retains a GET fallback without JavaScript", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto("/rankings/instructors?preset=grade");
+
+  await page
+    .getByRole("searchbox", { name: "Search Instructors" })
+    .fill("TSOI");
+  await page
+    .getByRole("searchbox", { name: "Search Instructors" })
+    .press("Enter");
+
+  await expect(page).toHaveURL(/q=TSOI/);
+  await expect(
+    page.getByRole("heading", { name: "TSOI, Yau Chat" }),
+  ).toBeVisible();
+  await context.close();
+});
+
 test("Rankings append the next cursor page automatically", async ({ page }) => {
-  await page.goto("/rankings/instructors");
+  await page.goto("/rankings/instructors?preset=grade");
   const results = page.locator('ol[aria-label="Instructor rankings"] > li');
   await expect(results).toHaveCount(100);
   await expect(
@@ -66,9 +87,16 @@ test("Rankings append the next cursor page automatically", async ({ page }) => {
   await expect(results.first()).toContainText(/^#1\s/);
   await expect(results.nth(100)).toContainText(/^#101\s/);
   await expect(page).toHaveURL(/cursor=/);
-  expect(new URL(page.url()).searchParams.get("pages")).toBe("2");
+  const paginationUrl = new URL(page.url());
+  expect(paginationUrl.searchParams.get("pages")).toBe("2");
+  expect(paginationUrl.searchParams.get("preset")).toBe("grade");
 
   await page.reload();
+  await expect(results.first()).toContainText(/^#1\s/);
+  await expect(results.nth(100)).toContainText(/^#101\s/);
+
+  paginationUrl.searchParams.delete("pages");
+  await page.goto(paginationUrl.toString());
   await expect(results.first()).toContainText(/^#1\s/);
   await expect(results.nth(100)).toContainText(/^#101\s/);
 });

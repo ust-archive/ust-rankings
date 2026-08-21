@@ -36,6 +36,7 @@ import {
   RANKING_CRITERIA,
   RANKING_CRITERION_LABELS,
 } from "@/lib/rankings/configuration";
+import { cn } from "@/lib/utils";
 
 type Entity = "course" | "instructor";
 type Preset = "learning" | "grade" | "custom";
@@ -129,7 +130,8 @@ export function RankingControls({
   }
 
   return (
-    <div className="flex w-full flex-col gap-4">
+    <form action={pathname} className="flex w-full flex-col gap-4" method="get">
+      <input name="preset" type="hidden" value={preset} />
       <div className="flex w-full items-center gap-4">
         <RankingSearch entity={entity} initialValue={initial.search} />
         <Field className="w-[10.75rem] shrink-0 gap-0">
@@ -168,12 +170,16 @@ export function RankingControls({
               <Button
                 aria-label="Ranking Settings"
                 className="h-auto w-full justify-between p-0 hover:bg-transparent"
+                type="button"
                 variant="ghost"
               >
                 Settings…
                 <ChevronDown
                   aria-hidden="true"
-                  className={isOpen ? "rotate-180" : undefined}
+                  className={cn(
+                    "transition-transform motion-reduce:transition-none",
+                    isOpen && "rotate-180",
+                  )}
                   data-icon="inline-end"
                 />
               </Button>
@@ -359,6 +365,6 @@ export function RankingControls({
           </CollapsibleContent>
         </Collapsible>
       </Card>
-    </div>
+    </form>
   );
 }

@@ -2,7 +2,7 @@
 
 import { Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -23,29 +23,35 @@ export function RankingSearch({
   const currentValue = searchParams.get("q") ?? "";
   const [value, setValue] = useState(initialValue);
   const submittedValue = useRef(initialValue);
+  const timeout = useRef<number | undefined>(undefined);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (currentValue !== submittedValue.current) setValue(currentValue);
   }, [currentValue]);
 
-  useEffect(() => {
-    if (value === currentValue) return;
-    const timeout = window.setTimeout(() => {
+  const navigate = useCallback(
+    (search: string) => {
       const next = new URLSearchParams(queryString);
-      if (value) next.set("q", value);
+      if (search) next.set("q", search);
       else next.delete("q");
       next.delete("cursor");
       next.delete("pages");
-      submittedValue.current = value;
+      submittedValue.current = search;
       startTransition(() => {
         router.replace(`${pathname}${next.size ? `?${next}` : ""}`, {
           scroll: false,
         });
       });
-    }, 300);
-    return () => window.clearTimeout(timeout);
-  }, [currentValue, pathname, queryString, router, value]);
+    },
+    [pathname, queryString, router],
+  );
+
+  useEffect(() => {
+    if (value === currentValue) return;
+    timeout.current = window.setTimeout(() => navigate(value), 300);
+    return () => window.clearTimeout(timeout.current);
+  }, [currentValue, navigate, value]);
 
   const label = entity === "course" ? "Search Courses" : "Search Instructors";
   return (
@@ -63,6 +69,12 @@ export function RankingSearch({
         maxLength={100}
         name="q"
         onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          window.clearTimeout(timeout.current);
+          navigate(value);
+        }}
         placeholder={
           entity === "course"
             ? "Search for courses by name / instructor / etc…"

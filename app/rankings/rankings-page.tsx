@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -20,6 +20,7 @@ import {
   StaleRankingsCursorError,
 } from "@/lib/rankings/server";
 import { RankingControls } from "./ranking-controls";
+import { RankingResultCard } from "./ranking-result-card";
 import { RankingResults } from "./ranking-results";
 
 type Entity = "course" | "instructor";
@@ -29,11 +30,32 @@ function rankingPath(entity: Entity) {
   return `/rankings/${entity === "course" ? "courses" : "instructors"}`;
 }
 
+function nextPageHref(
+  entity: Entity,
+  searchParams: RankingSearchParams,
+  cursor: string,
+  termCode: string,
+  pages: number,
+) {
+  const next = new URLSearchParams();
+  for (const [name, value] of Object.entries(searchParams)) {
+    if (["cursor", "pages"].includes(name) || value === undefined) continue;
+    for (const item of Array.isArray(value) ? value : [value])
+      next.append(name, item);
+  }
+  next.set("term", termCode);
+  next.set("pages", String(pages + 1));
+  next.set("cursor", cursor);
+  return `${rankingPath(entity)}?${next}`;
+}
+
 function loadedPages(searchParams: RankingSearchParams) {
   const value = single(searchParams, "pages");
-  if (value === undefined) return 1;
-  if (!/^(?:[1-9]|10)$/.test(value))
-    throw new InvalidRankingsQueryError("pages must be between 1 and 10.");
+  if (value === undefined)
+    return single(searchParams, "cursor") === undefined ? 1 : 2;
+  // ponytail: 10,000 restored rows caps reload work; raise with measured population growth.
+  if (!/^[1-9][0-9]?$|^100$/.test(value))
+    throw new InvalidRankingsQueryError("pages must be between 1 and 100.");
   return Number(value);
 }
 
@@ -228,9 +250,7 @@ function RankingAlert({
 }) {
   return (
     <Alert className="p-6" variant="destructive">
-      <AlertTitle className="text-balance text-2xl font-bold">
-        {title}
-      </AlertTitle>
+      <h2 className="text-balance text-2xl font-bold">{title}</h2>
       <AlertDescription>{message}</AlertDescription>
       {actionHref && actionLabel ? (
         <Button asChild className="mt-4" variant="outline">
@@ -294,11 +314,32 @@ export async function RankingPage({
       >
         {rankings.results.length > 0 ? (
           <RankingResults
-            initialPage={rankings}
+            entity={entity}
+            fallbackHref={
+              rankings.nextCursor && pages < 100
+                ? nextPageHref(
+                    entity,
+                    searchParams,
+                    rankings.nextCursor,
+                    rankings.population.termCode,
+                    pages,
+                  )
+                : undefined
+            }
+            initialNextCursor={rankings.nextCursor}
             initialPages={pages}
             key={JSON.stringify(query)}
             query={query}
-          />
+          >
+            {rankings.results.map((result) => (
+              <RankingResultCard
+                key={
+                  result.entity === "course" ? result.courseCode : result.uuid
+                }
+                result={result}
+              />
+            ))}
+          </RankingResults>
         ) : rankings.unrankedMatchCount > 0 ? (
           <RankingEmpty>
             {rankings.unrankedMatchCount} matching {label}
@@ -351,9 +392,9 @@ export async function RankingPage({
     return (
       <RankingChrome entity={entity} query={query} searchParams={searchParams}>
         <Alert className="p-6">
-          <AlertTitle className="text-balance text-2xl font-bold">
+          <h2 className="text-balance text-2xl font-bold">
             {label} rankings are unavailable
-          </AlertTitle>
+          </h2>
           <AlertDescription>
             The validated ranking generation could not be loaded. Other public
             pages remain available.
