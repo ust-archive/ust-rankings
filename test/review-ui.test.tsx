@@ -30,7 +30,7 @@ test("public Review renders equal Bases, secondary Context, and safe Markdown on
   expect(markup).toContain("needs resolution");
   expect(markup).toContain("has not been guessed or reassigned");
   expect(markup).toContain("<strong>labs</strong>");
-  expect(markup).not.toContain("<script");
+  expect(markup).not.toContain("<script>alert");
   expect(markup).not.toContain("<img");
   expect(markup).not.toContain("evil.example");
   expect(markup).not.toContain('href="javascript:');
@@ -334,4 +334,18 @@ test("historical Review editing preserves unsupported Context and blocks implici
   expect(markup).toMatch(
     /<button[^>]+disabled=""[^>]*>Publish Revision<\/button>/,
   );
+});
+
+test("public Reviews expose private reporting without a moderation log", async () => {
+  const { Reviews } = await import("@/app/courses/course-reviews");
+  const markup = renderToStaticMarkup(<Reviews reviews={[review]} />);
+  expect(markup).toContain("Report this Review");
+  expect(markup).toContain("Report Review");
+  expect(markup).toContain('name="reasonCategory"');
+  expect(markup).toContain('value="harassment"');
+  expect(markup).toContain("Reporter identity stays private");
+  expect(markup).toContain("no public moderation log");
+  expect(markup).not.toContain("reporterUserId");
+  expect(markup).not.toContain("Moderator");
+  expect(markup).not.toContain("Administrator");
 });

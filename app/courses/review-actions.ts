@@ -4,7 +4,14 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { courseReviewPath, isSameOriginWrite } from "@/lib/contributions/http";
-import { getReviewService } from "@/lib/contributions/postgres";
+import {
+  ModerationWriteError,
+  REPORT_REASON_CATEGORIES,
+} from "@/lib/contributions/moderation";
+import {
+  getModerationService,
+  getReviewService,
+} from "@/lib/contributions/postgres";
 import type {
   ReviewAssociations,
   ReviewAttachmentDraft,
@@ -79,7 +86,11 @@ async function authorizeWrite(path: string) {
 }
 
 function redirectReviewError(error: unknown, path: string): never {
-  if (!(error instanceof ReviewWriteError)) throw error;
+  if (
+    !(error instanceof ReviewWriteError) &&
+    !(error instanceof ModerationWriteError)
+  )
+    throw error;
   if (error.code === "onboarding-required")
     redirect(`/onboarding?r=${encodeURIComponent(path)}`);
   redirect(`${path}?reviewError=${error.code}#reviews`);
@@ -173,4 +184,24 @@ export async function withdrawReview(formData: FormData) {
     redirectReviewError(error, parsed.path);
   }
   redirect(`${parsed.path}?review=withdrawn#reviews`);
+}
+
+export async function reportReview(formData: FormData) {
+  const parsed = parseReviewForm(formData);
+  const userId = await authorizeWrite(parsed.path);
+  const reviewId = stringEntry(formData, "reviewId");
+  const reasonCategory = stringEntry(formData, "reasonCategory");
+  if (!reviewId || !UUID.test(reviewId))
+    redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
+  if (
+    !reasonCategory ||
+    !(REPORT_REASON_CATEGORIES as readonly string[]).includes(reasonCategory)
+  )
+    redirect(`${parsed.path}?reviewError=invalid-reason#reviews`);
+  try {
+    await getModerationService().reportReview(userId, reviewId, reasonCategory);
+  } catch (error) {
+    redirectReviewError(error, parsed.path);
+  }
+  redirect(`${parsed.path}?review=reported#reviews`);
 }

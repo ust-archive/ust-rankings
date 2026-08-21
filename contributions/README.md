@@ -1,13 +1,15 @@
 # Contribution module
 
-Issues #43–#49 introduce accounts, complete Review Bases and Context,
+Issues #43–#50 introduce accounts, complete Review Bases and Context,
 optimistic immutable Review editing, per-Revision attribution, author
 withdrawal, private-identity Course/Instructor signals, raster Image
-Attachments, and mixed-format Document Attachments. Application routes cross
+Attachments, mixed-format Document Attachments, authenticated Review reports,
+and deployment-controlled moderation. Application routes cross
 `lib/contributions/accounts.ts`, `lib/contributions/reviews.ts`,
-`lib/contributions/signals.ts`, and `lib/attachments/attachments.ts`;
-PostgreSQL transactions, Space keys, and objects remain in the adapters and
-forward migrations under `contributions/migrations`.
+`lib/contributions/signals.ts`, `lib/contributions/moderation.ts`, and
+`lib/attachments/attachments.ts`; PostgreSQL transactions, Space keys, and
+objects remain in the adapters and forward migrations under
+`contributions/migrations`.
 
 ## Local setup
 
@@ -51,7 +53,9 @@ are never revalidated or guessed when current source data changes.
 
 `0006_raster_attachments.sql` adds Upload Intents, Stored Files, and immutable
 Attachments. `0007_document_attachments.sql` expands accepted document MIME
-types and adds operator byte-removal columns. The attachment module owns
+types and adds operator byte-removal columns. `0008_moderation.sql` adds
+private Review reports and minimal Moderation Cases for reports, operator
+actions, and justified identity lookups. The attachment module owns
 reservation, opaque object keys, validation, association, signed delivery,
 cleanup, removal, and S3 operations. Configure the dedicated private Space
 origin (not CDN) variables in `.env.example` and exact-origin CORS allowing
@@ -64,13 +68,26 @@ Accepted files are not malware-scanned; UI copy must not claim otherwise.
 Attachments receive only a non-exclusive site license and are not automatically
 CC BY 4.0.
 
-To remove Stored File bytes while preserving Attachment Tombstones:
+To withdraw a Review, suppress abusive attribution, remove Stored File bytes
+while preserving Attachment Tombstones, suspend a User, or inspect identity,
+use the deployment-controlled operator tool. It records a Moderation Case in
+the same transaction. There is no website Moderator or Administrator role.
 
 ```sh
-bun run attachments:remove-stored-file <stored-file-uuid>
+bun run contributions:moderate withdraw-review <review-uuid> <operator> <reason>
+bun run contributions:moderate suppress-attribution <review-uuid> <operator> <reason>
+bun run contributions:moderate remove-stored-file <stored-file-uuid> <operator> <reason>
+bun run contributions:moderate suspend-user <user-uuid> <operator> <reason>
+bun run contributions:moderate lookup-identity <review-uuid> <operator> <lookup-reason>
 ```
 
-Then call authenticated `GET /api/attachments/cleanup` (or wait for the daily cron) so bytes are deleted, the Tombstone remains, and quota is released.
+`lookup-reason` must be `report`, `security-incident`, `rights-request`, or
+`legal-request`. A `report` lookup requires an existing report on that Review.
+After `remove-stored-file`, call authenticated `GET /api/attachments/cleanup`
+(or wait for the daily cron) so bytes are deleted, the Tombstone remains, and
+quota is released. Notify affected Users through the published contact when
+practical; reconsideration uses the same contact. There is no public
+moderation log.
 
 Identity-hidden public reads emit no captured Public Display Name and use `UST
 Rankings contributor` plus the stable `/reviews/{review-id}` permalink for CC BY

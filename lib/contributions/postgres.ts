@@ -11,6 +11,16 @@ import {
   type EstablishIdentityInput,
 } from "./accounts";
 import {
+  createModerationService,
+  type IdentityLookup,
+  type IdentityLookupReason,
+  type ModerationCase,
+  type ModerationRepository,
+  ModerationWriteError,
+  type ModerationWriteErrorCode,
+  type ReportReasonCategory,
+} from "./moderation";
+import {
   resolveReviewInstructorAssociationStatus,
   validateReviewAssociations,
 } from "./review-associations";
@@ -366,8 +376,8 @@ export class PostgresReviewRepository implements ReviewRepository {
                rc.term_code AS "termCode",
                rc.section,
                rr.markdown,
-               rr.attribution,
-               rr.captured_display_name AS "capturedDisplayName",
+               CASE WHEN r.attribution_suppressed THEN 'identity-hidden' ELSE rr.attribution END AS attribution,
+               CASE WHEN r.attribution_suppressed THEN NULL ELSE rr.captured_display_name END AS "capturedDisplayName",
                rr.published_at AS "publishedAt",
                r.instructor_association_status AS "instructorAssociationStatus",
                (${viewerUserId ?? null}::uuid IS NOT NULL
@@ -408,8 +418,8 @@ export class PostgresReviewRepository implements ReviewRepository {
                rc.term_code AS "termCode",
                rc.section,
                rr.markdown,
-               rr.attribution,
-               rr.captured_display_name AS "capturedDisplayName",
+               CASE WHEN r.attribution_suppressed THEN 'identity-hidden' ELSE rr.attribution END AS attribution,
+               CASE WHEN r.attribution_suppressed THEN NULL ELSE rr.captured_display_name END AS "capturedDisplayName",
                rr.published_at AS "publishedAt",
                r.instructor_association_status AS "instructorAssociationStatus",
                (${viewerUserId ?? null}::uuid IS NOT NULL
@@ -443,6 +453,322 @@ export class PostgresReviewRepository implements ReviewRepository {
       return rows.map(publicReview);
     } catch (error) {
       throw new ContributionsUnavailableError(undefined, { cause: error });
+    }
+  }
+}
+
+function mapModerationWriteError(error: unknown): never {
+  if (error instanceof ModerationWriteError) throw error;
+  if (typeof error === "object" && error !== null) {
+    if (
+      "code" in error &&
+      error.code === "23505" &&
+      (("constraint_name" in error &&
+        error.constraint_name === "review_reports_one_per_user") ||
+        ("constraint" in error &&
+          error.constraint === "review_reports_one_per_user"))
+    )
+      throw new ModerationWriteError(
+        "duplicate-report",
+        "This User already reported this Review",
+      );
+    if ("message" in error && typeof error.message === "string") {
+      const code = [
+        "account-not-found",
+        "onboarding-required",
+        "account-suspended",
+        "account-closed",
+        "review-not-found",
+        "review-withdrawn",
+        "stored-file-not-found",
+        "user-not-found",
+        "duplicate-report",
+        "unjustified-lookup",
+        "no-concrete-report",
+      ].find((code) => error.message === code);
+      if (code)
+        throw new ModerationWriteError(
+          code as ModerationWriteErrorCode,
+          "This moderation action cannot be completed",
+        );
+    }
+  }
+  throw error;
+}
+
+function rejectModerationUser(status: string | undefined): never {
+  if (!status)
+    throw new ModerationWriteError("account-not-found", "User was not found");
+  if (status === "onboarding")
+    throw new ModerationWriteError(
+      "onboarding-required",
+      "Complete onboarding before writing",
+    );
+  if (status === "suspended")
+    throw new ModerationWriteError(
+      "account-suspended",
+      "This User is suspended from writing",
+    );
+  if (status === "closed")
+    throw new ModerationWriteError(
+      "account-closed",
+      "This User account is closed",
+    );
+  throw new ModerationWriteError("account-not-found", "User was not found");
+}
+
+export class PostgresModerationRepository implements ModerationRepository {
+  constructor(private readonly sql: ReturnType<typeof postgres>) {}
+
+  private async insertCase(input: {
+    targetType: ModerationCase["targetType"];
+    targetId: string;
+    reasonCategory: string;
+    action: ModerationCase["action"];
+    outcome: string;
+    operatorIdentifier?: string;
+    identityLookupReason?: IdentityLookupReason;
+  }) {
+    const id = crypto.randomUUID();
+    await this.sql`
+      INSERT INTO moderation_cases (
+        id, target_type, target_id, reason_category, operator_identifier,
+        action, outcome, identity_lookup_reason
+      ) VALUES (
+        ${id}, ${input.targetType}, ${input.targetId}, ${input.reasonCategory},
+        ${input.operatorIdentifier ?? null}, ${input.action}, ${input.outcome},
+        ${input.identityLookupReason ?? null}
+      )
+    `;
+    return {
+      id,
+      createdAt: new Date(),
+      targetType: input.targetType,
+      targetId: input.targetId,
+      reasonCategory: input.reasonCategory,
+      action: input.action,
+      outcome: input.outcome,
+      ...(input.operatorIdentifier
+        ? { operatorIdentifier: input.operatorIdentifier }
+        : {}),
+      ...(input.identityLookupReason
+        ? { identityLookupReason: input.identityLookupReason }
+        : {}),
+    };
+  }
+
+  async reportReview(input: {
+    userId: string;
+    reviewId: string;
+    reasonCategory: ReportReasonCategory;
+  }) {
+    try {
+      const [user] = await this.sql<{ status: string }[]>`
+        SELECT status FROM contribution_users WHERE id = ${input.userId}
+      `;
+      if (user?.status !== "active") rejectModerationUser(user?.status);
+      const [review] = await this.sql<{ publicationState: string }[]>`
+        SELECT publication_state AS "publicationState" FROM reviews
+        WHERE id = ${input.reviewId}
+      `;
+      if (review?.publicationState !== "active")
+        throw new ModerationWriteError(
+          "review-not-found",
+          "Review was not found",
+        );
+      await this.sql`
+        INSERT INTO review_reports (review_id, reporter_user_id, reason_category)
+        VALUES (${input.reviewId}, ${input.userId}, ${input.reasonCategory})
+      `;
+      return this.insertCase({
+        targetType: "review",
+        targetId: input.reviewId,
+        reasonCategory: input.reasonCategory,
+        action: "report",
+        outcome: "recorded",
+      });
+    } catch (error) {
+      mapModerationWriteError(error);
+    }
+  }
+
+  async withdrawReview(input: {
+    operatorIdentifier: string;
+    reviewId: string;
+    reasonCategory: ReportReasonCategory;
+  }) {
+    try {
+      const [review] = await this.sql<{ publicationState: string }[]>`
+        SELECT publication_state AS "publicationState" FROM reviews
+        WHERE id = ${input.reviewId}
+      `;
+      if (!review)
+        throw new ModerationWriteError(
+          "review-not-found",
+          "Review was not found",
+        );
+      if (review.publicationState !== "active")
+        throw new ModerationWriteError(
+          "review-withdrawn",
+          "Review is already withdrawn",
+        );
+      await this.sql`
+        UPDATE reviews
+        SET publication_state = 'withdrawn', updated_at = now()
+        WHERE id = ${input.reviewId}
+      `;
+      return this.insertCase({
+        targetType: "review",
+        targetId: input.reviewId,
+        reasonCategory: input.reasonCategory,
+        action: "withdraw-review",
+        outcome: "withdrawn",
+        operatorIdentifier: input.operatorIdentifier,
+      });
+    } catch (error) {
+      mapModerationWriteError(error);
+    }
+  }
+
+  async suppressAttribution(input: {
+    operatorIdentifier: string;
+    reviewId: string;
+    reasonCategory: ReportReasonCategory;
+  }) {
+    try {
+      const [review] = await this.sql<{ publicationState: string }[]>`
+        SELECT publication_state AS "publicationState" FROM reviews
+        WHERE id = ${input.reviewId}
+      `;
+      if (!review)
+        throw new ModerationWriteError(
+          "review-not-found",
+          "Review was not found",
+        );
+      if (review.publicationState !== "active")
+        throw new ModerationWriteError(
+          "review-withdrawn",
+          "Review is already withdrawn",
+        );
+      await this.sql`
+        UPDATE reviews
+        SET attribution_suppressed = true, updated_at = now()
+        WHERE id = ${input.reviewId}
+      `;
+      return this.insertCase({
+        targetType: "review",
+        targetId: input.reviewId,
+        reasonCategory: input.reasonCategory,
+        action: "suppress-attribution",
+        outcome: "attribution-suppressed",
+        operatorIdentifier: input.operatorIdentifier,
+      });
+    } catch (error) {
+      mapModerationWriteError(error);
+    }
+  }
+
+  async removeStoredFile(input: {
+    operatorIdentifier: string;
+    storedFileId: string;
+    reasonCategory: ReportReasonCategory;
+  }) {
+    try {
+      const [file] = await this.sql<{ id: string }[]>`
+        UPDATE stored_files
+        SET removal_requested_at = COALESCE(removal_requested_at, now())
+        WHERE id = ${input.storedFileId} AND removed_at IS NULL
+        RETURNING id
+      `;
+      if (!file)
+        throw new ModerationWriteError(
+          "stored-file-not-found",
+          "Stored File was not found",
+        );
+      return this.insertCase({
+        targetType: "stored-file",
+        targetId: input.storedFileId,
+        reasonCategory: input.reasonCategory,
+        action: "remove-stored-file",
+        outcome: "removal-queued",
+        operatorIdentifier: input.operatorIdentifier,
+      });
+    } catch (error) {
+      mapModerationWriteError(error);
+    }
+  }
+
+  async suspendUser(input: {
+    operatorIdentifier: string;
+    userId: string;
+    reasonCategory: ReportReasonCategory;
+  }) {
+    try {
+      const [user] = await this.sql<{ status: string }[]>`
+        SELECT status FROM contribution_users WHERE id = ${input.userId}
+      `;
+      if (!user)
+        throw new ModerationWriteError("user-not-found", "User was not found");
+      if (user.status === "closed")
+        throw new ModerationWriteError(
+          "account-closed",
+          "This User account is closed",
+        );
+      await this.sql`
+        UPDATE contribution_users
+        SET status = 'suspended', updated_at = now()
+        WHERE id = ${input.userId}
+      `;
+      return this.insertCase({
+        targetType: "user",
+        targetId: input.userId,
+        reasonCategory: input.reasonCategory,
+        action: "suspend-user",
+        outcome: "suspended",
+        operatorIdentifier: input.operatorIdentifier,
+      });
+    } catch (error) {
+      mapModerationWriteError(error);
+    }
+  }
+
+  async lookupIdentity(input: {
+    operatorIdentifier: string;
+    reviewId: string;
+    reason: IdentityLookupReason;
+  }): Promise<IdentityLookup> {
+    try {
+      const [review] = await this.sql<{ authorUserId: string }[]>`
+        SELECT author_user_id AS "authorUserId" FROM reviews
+        WHERE id = ${input.reviewId}
+      `;
+      if (!review)
+        throw new ModerationWriteError(
+          "review-not-found",
+          "Review was not found",
+        );
+      if (input.reason === "report") {
+        const [report] = await this.sql<{ id: string }[]>`
+          SELECT id FROM review_reports WHERE review_id = ${input.reviewId} LIMIT 1
+        `;
+        if (!report)
+          throw new ModerationWriteError(
+            "no-concrete-report",
+            "Identity lookup requires a concrete report",
+          );
+      }
+      const recorded = await this.insertCase({
+        targetType: "review",
+        targetId: input.reviewId,
+        reasonCategory: input.reason,
+        action: "identity-lookup",
+        outcome: "inspected",
+        operatorIdentifier: input.operatorIdentifier,
+        identityLookupReason: input.reason,
+      });
+      return { userId: review.authorUserId, case: recorded };
+    } catch (error) {
+      mapModerationWriteError(error);
     }
   }
 }
@@ -767,6 +1093,7 @@ let runtime:
       accounts: ReturnType<typeof createAccountService>;
       reviews: ReturnType<typeof createReviewService>;
       signals: ReturnType<typeof createSignalService>;
+      moderation: ReturnType<typeof createModerationService>;
     }
   | undefined;
 
@@ -788,6 +1115,7 @@ function initializeRuntime() {
       resolveInstructorAssociationStatus:
         resolveReviewInstructorAssociationStatus,
     }),
+    moderation: createModerationService(new PostgresModerationRepository(sql)),
     signals: createSignalService(new PostgresSignalRepository(sql), {
       async resolveTarget(target) {
         const {
@@ -829,6 +1157,12 @@ export function getReviewService() {
   if (!process.env.CONTRIBUTIONS_POSTGRES_URL)
     throw new ContributionsUnavailableError();
   return initializeRuntime().reviews;
+}
+
+export function getModerationService() {
+  if (!process.env.CONTRIBUTIONS_POSTGRES_URL)
+    throw new ContributionsUnavailableError();
+  return initializeRuntime().moderation;
 }
 
 export function getSignalService() {

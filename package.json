@@ -25,6 +25,7 @@
     "toolchain:check": "bun scripts/check-toolchain.ts",
     "contributions:migrate": "bun scripts/migrate-contributions.ts",
     "contributions:merge-instructor-signals": "bun scripts/merge-instructor-signals.ts",
+    "contributions:moderate": "bun scripts/moderate.ts",
     "attachments:remove-stored-file": "bun scripts/remove-stored-file.ts"
   },
   "dependencies": {

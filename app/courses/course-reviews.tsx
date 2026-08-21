@@ -6,12 +6,21 @@ import {
   authorizedInlineImage,
   contentTypeForFilename,
 } from "@/lib/attachments/attachments";
+import {
+  REPORT_REASON_CATEGORIES,
+  REPORT_REASON_LABELS,
+} from "@/lib/contributions/moderation";
 import type {
   PublicReview,
   ReviewAssociations,
   ReviewAttribution,
 } from "@/lib/contributions/reviews";
-import { editReview, publishReview, withdrawReview } from "./review-actions";
+import {
+  editReview,
+  publishReview,
+  reportReview,
+  withdrawReview,
+} from "./review-actions";
 
 export type ReviewCourseOption = {
   coursePrefix: string;
@@ -809,6 +818,35 @@ export function Reviews({
               · Review text licensed {review.license ?? "CC BY 4.0"} ·{" "}
               <a href={permalink}>Review permalink</a>
             </p>
+            <form action={reportReview} className="mt-3">
+              <input name="reviewId" type="hidden" value={review.id} />
+              {associationFields(review)}
+              <label className="block text-sm">
+                Report this Review
+                <select
+                  className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3"
+                  name="reasonCategory"
+                  required
+                >
+                  <option value="">Select a reason</option>
+                  {REPORT_REASON_CATEGORIES.map((reason) => (
+                    <option key={reason} value={reason}>
+                      {REPORT_REASON_LABELS[reason]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="mt-1 text-xs text-slate-600">
+                Reporter identity stays private and is never shown to the author
+                or the public. There is no public moderation log.
+              </p>
+              <button
+                className="mt-2 min-h-11 rounded-xl border border-slate-300 px-4 py-2 font-bold"
+                type="submit"
+              >
+                Report Review
+              </button>
+            </form>
             {review.viewerCanEdit && editor ? (
               <div className="mt-4 border-t border-slate-200 pt-4">
                 <ReviewComposer {...editor} review={review} />
