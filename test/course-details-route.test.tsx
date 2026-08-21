@@ -60,7 +60,7 @@ test("Course details compose evidence, Offerings, Classes, Instructors, and isol
   expect(markup).toContain("COMP 2000");
   expect(markup).toContain("Updated Course title");
   expect(markup).toContain("Rankings");
-  expect(markup).toContain("Global Rank");
+  expect(markup).toContain("Rank of all time");
   expect(markup).toContain("Offerings");
   expect(markup).toContain("2025-26 Fall");
   expect(markup).toContain("Alpha Instructor");
@@ -134,7 +134,7 @@ test("Course Offering and Class routes validate nested relationships and preserv
   expect(offering).toContain("Earlier Offering");
   expect(offering).toContain("COMP 2000 L1 (3001)");
   expect(offering).toContain("Selected Term 2024-25 Spring");
-  expect(offering).toContain("Global Rank");
+  expect(offering).toContain("Rank of all time");
   expect(offering).toContain("History");
   expect(offering).toContain("0.10");
 
@@ -188,7 +188,7 @@ test("Course evidence remains visible when the independent Schedule provider is 
   );
 
   expect(markup).toContain("Selected Term 2025-26 Fall");
-  expect(markup).toContain("Global Rank");
+  expect(markup).toContain("Rank of all time");
   expect(markup).toContain("Offerings are unavailable");
 });
 
@@ -201,7 +201,7 @@ test("ranking detail loading propagates unexpected programming errors", async ()
   };
 
   await expect(
-    loadCourseRankings("COMP", "2000", "2510", readRankings),
+    loadCourseRankings("COMP", "2000", "2510", {}, readRankings),
   ).rejects.toBe(unexpected);
   expect(await loadCourseRankings("ZZZZ", "9999")).toBeUndefined();
 });

@@ -6,6 +6,7 @@ import {
   normalizeCourseRoute,
   type RouteSearchParams,
 } from "@/app/courses/routes";
+import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
 import {
   getSchedule,
   InvalidScheduleQueryError,
@@ -28,6 +29,7 @@ export default async function ClassPage({
   const { coursePrefix, courseNumber, termCode, section } =
     normalizeCourseRoute(await params, query);
   if (!termCode || !section) notFound();
+  const rankingPreference = await readRankingPreferenceQuery();
   try {
     const [scheduleClass, rankings, community] = await Promise.all([
       getSchedule({
@@ -37,7 +39,12 @@ export default async function ClassPage({
         termCode,
         section,
       }),
-      loadCourseRankings(coursePrefix, courseNumber, termCode),
+      loadCourseRankings(
+        coursePrefix,
+        courseNumber,
+        termCode,
+        rankingPreference,
+      ),
       loadReviews({
         type: "course",
         coursePrefix,

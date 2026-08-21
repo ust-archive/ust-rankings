@@ -502,12 +502,12 @@ export type RankingsQuery = {
 
 type RankFields = {
   score: number;
-  globalRank: number;
-  globalPopulation: number;
-  globalPercentile: number;
-  localRank: number;
-  localPopulation: number;
-  localPercentile: number;
+  rank?: number;
+  rankPopulation: number;
+  percentile?: number;
+  allTimeRank: number;
+  allTimePopulation: number;
+  allTimePercentile: number;
   ustSpaceSamples: number;
   sfqSamples: number;
 };
@@ -1895,6 +1895,7 @@ type CourseCatalog = {
 
 type Candidate = {
   key: string;
+  active: boolean;
   score?: number;
   searchText: string;
   coursePrefix?: string;
@@ -2211,13 +2212,14 @@ async function queryRankingsWithGeneration(
     query.entity === "course" ? "is_offered" : "is_teaching";
   const rows = await queryRows(
     accepted.connection,
-    `SELECT ${entityColumns}, criterion, bayesian, cumulative_samples FROM read_parquet('${source}') WHERE term_code = $termCode AND ($current = false OR ${activityColumn}) ORDER BY ${entityColumns}, criterion`,
-    { termCode, current: activity === "current" },
+    `SELECT ${entityColumns}, criterion, bayesian, cumulative_samples, ${activityColumn} AS is_active FROM read_parquet('${source}') WHERE term_code = $termCode ORDER BY ${entityColumns}, criterion`,
+    { termCode },
   );
   const evidence = new Map<
     string,
     Partial<Record<Criterion, { bayesian: number; samples: number }>>
   >();
+  const activeEntities = new Set<string>();
   for (const row of rows) {
     const criterion = String(row.criterion) as Criterion;
     if (!CRITERIA.includes(criterion)) continue;
@@ -2225,6 +2227,7 @@ async function queryRankingsWithGeneration(
       query.entity === "course"
         ? `${row.subject}${row.code}`
         : String(row.name);
+    if (row.is_active) activeEntities.add(key);
     const values = evidence.get(key) ?? {};
     values[criterion] = {
       bayesian: number(row.bayesian),
@@ -2294,6 +2297,7 @@ async function queryRankingsWithGeneration(
       const associated = identitiesByCourse.get(key) ?? [];
       candidates.push({
         key,
+        active: activeEntities.has(key),
         score,
         evidenceSummary,
         coursePrefix: prefix,
@@ -2333,6 +2337,7 @@ async function queryRankingsWithGeneration(
       const courseCodes = coursesByInstructor.get(identity.uuid) ?? new Set();
       candidates.push({
         key: identity.uuid,
+        active: activeEntities.has(key),
         score: retired ? undefined : score,
         evidenceSummary,
         courseCodes,
@@ -2359,13 +2364,17 @@ async function queryRankingsWithGeneration(
       });
     }
   }
-  const eligible = candidates.filter(
+  const allTimeEligible = candidates.filter(
     (candidate): candidate is RankedCandidate => candidate.score !== undefined,
   );
-  eligible.sort(
+  allTimeEligible.sort(
     (left, right) =>
       right.score - left.score || left.key.localeCompare(right.key),
   );
+  const currentEligible = allTimeEligible.filter(
+    (candidate) => candidate.active,
+  );
+  const eligible = activity === "current" ? currentEligible : allTimeEligible;
   const matchesFilters = (candidate: Candidate) => {
     if (coursePrefix) {
       const matchesPrefix =
@@ -2384,15 +2393,16 @@ async function queryRankingsWithGeneration(
       return false;
     return true;
   };
-  const globalRanks = ranks(eligible);
+  const rankByEntity = ranks(currentEligible);
+  const allTimeRankByEntity = ranks(allTimeEligible);
   const filtered = eligible.filter(matchesFilters);
-  const localRanks = ranks(filtered);
   const searched = search
     ? filtered.filter((candidate) => candidate.searchText.includes(search))
     : filtered;
   const unrankedMatchCount = candidates.filter(
     (candidate) =>
       candidate.score === undefined &&
+      (activity === "all" || candidate.active) &&
       matchesFilters(candidate) &&
       (!search || candidate.searchText.includes(search)),
   ).length;
@@ -2433,21 +2443,21 @@ async function queryRankingsWithGeneration(
   }
   const page = searched.slice(start, start + limit);
   const results = page.map((candidate) => {
-    const global = globalRanks.get(candidate.key);
-    const local = localRanks.get(candidate.key);
-    if (!global || !local) throw new Error("Missing rank");
+    const rank = rankByEntity.get(candidate.key);
+    const allTimeRank = allTimeRankByEntity.get(candidate.key);
+    if (!allTimeRank) throw new Error("Missing rank");
     return {
       ...candidate.result,
       ...candidate.evidenceSummary,
       commonCore:
         candidate.result.entity === "course" ? candidate.commonCore : undefined,
       score: candidate.score,
-      globalRank: global.rank,
-      globalPopulation: global.population,
-      globalPercentile: global.percentile,
-      localRank: local.rank,
-      localPopulation: local.population,
-      localPercentile: local.percentile,
+      rank: rank?.rank,
+      rankPopulation: currentEligible.length,
+      percentile: rank?.percentile,
+      allTimeRank: allTimeRank.rank,
+      allTimePopulation: allTimeRank.population,
+      allTimePercentile: allTimeRank.percentile,
     } as CourseRanking | InstructorRanking;
   });
   const hasMore = start + page.length < searched.length;
@@ -2500,9 +2510,11 @@ async function queryRankingsWithGeneration(
   return response;
 }
 
-type RankingsOptions = {
+export type RankingsOptions = {
   activity?: "current" | "all";
   termCode?: string;
+  preset?: RankingPreset;
+  weights?: RankingWeights;
 };
 
 export function getRankings(
@@ -2554,8 +2566,10 @@ export async function getRankings(
       const page = (await queryRankingsWithGeneration(
         {
           entity: "course",
-          activity: options.activity,
+          activity: options.activity ?? "all",
           termCode: options.termCode,
+          preset: options.preset,
+          weights: options.weights,
           search: courseCode,
         },
         accepted,
@@ -2622,8 +2636,10 @@ export async function getRankings(
     const page = (await queryRankingsWithGeneration(
       {
         entity: "instructor",
-        activity: options.activity,
+        activity: options.activity ?? "all",
         termCode: options.termCode,
+        preset: options.preset,
+        weights: options.weights,
         search: identity.instructor.uuid,
       },
       accepted,

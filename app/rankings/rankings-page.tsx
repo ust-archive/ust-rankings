@@ -8,6 +8,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { RANKING_CRITERIA } from "@/lib/rankings/configuration";
+import type { RankingPreference } from "@/lib/rankings/preference";
+import { readRankingPreference } from "@/lib/rankings/preference-server";
 import {
   COMMON_CORE_SCHEMES,
   type CommonCoreCategory,
@@ -113,14 +115,23 @@ function first(
   return Array.isArray(value) ? value[0] : value;
 }
 
-function pageQuery(entity: Entity, searchParams: RankingSearchParams) {
-  const preset = single(searchParams, "preset") ?? "learning";
+function pageQuery(
+  entity: Entity,
+  searchParams: RankingSearchParams,
+  preference: RankingPreference,
+) {
+  const queryPreset = single(searchParams, "preset");
+  const preset = queryPreset ?? preference.preset;
   const weights =
     preset === "custom"
       ? Object.fromEntries(
           RANKING_CRITERIA.map((criterion) => [
             criterion,
-            Number(single(searchParams, `weight_${criterion}`) ?? 0),
+            Number(
+              single(searchParams, `weight_${criterion}`) ??
+                (queryPreset ? 0 : preference.weights[criterion]) ??
+                0,
+            ),
           ]).filter(([, value]) => value !== 0),
         )
       : undefined;
@@ -295,10 +306,11 @@ export async function RankingPage({
   searchParams: RankingSearchParams;
 }) {
   const label = entity === "course" ? "Course" : "Instructor";
+  const preference = await readRankingPreference();
   let query: RankingsQuery | undefined;
   let pages = 1;
   try {
-    query = pageQuery(entity, searchParams);
+    query = pageQuery(entity, searchParams, preference);
     pages = loadedPages(searchParams);
   } catch (error) {
     if (!(error instanceof InvalidRankingsQueryError)) throw error;
@@ -378,7 +390,7 @@ export async function RankingPage({
           </RankingEmpty>
         ) : (
           <RankingEmpty>
-            No {label}s in the Local Ranking Population match this search.
+            No {label}s matching the structured filters match this search.
           </RankingEmpty>
         )}
         <p className="sr-only" role="status">

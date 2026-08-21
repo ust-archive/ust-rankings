@@ -35,6 +35,10 @@ import {
   RANKING_CRITERIA,
   RANKING_CRITERION_LABELS,
 } from "@/lib/rankings/configuration";
+import {
+  RANKING_PREFERENCE_COOKIE,
+  serializeRankingPreference,
+} from "@/lib/rankings/preference";
 import type {
   CommonCoreScheme,
   CommonCoreSchemeDefinition,
@@ -98,6 +102,18 @@ export function RankingControls({
     schemes[0];
 
   function navigate(nextSettings: Settings) {
+    // biome-ignore lint/suspicious/noDocumentCookie: This preference must be readable by server-rendered Detail pages.
+    document.cookie = `${RANKING_PREFERENCE_COOKIE}=${serializeRankingPreference(
+      {
+        preset: nextSettings.preset,
+        weights: Object.fromEntries(
+          criteria.map(([criterion]) => [
+            criterion,
+            Number(nextSettings.weights[criterion] ?? 0),
+          ]),
+        ),
+      },
+    )}; Path=/; Max-Age=31536000; SameSite=Lax`;
     const next = withoutRankingPagination(window.location.search);
     next.delete("prefix");
     next.delete("course");

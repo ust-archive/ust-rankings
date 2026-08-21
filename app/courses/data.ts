@@ -2,6 +2,7 @@ import {
   type CourseRankings,
   getRankings,
   InvalidRankingsQueryError,
+  type RankingsOptions,
   RankingsUnavailableError,
   UnknownRankingsEntityError,
 } from "@/lib/rankings/server";
@@ -12,7 +13,7 @@ type ReadCourseRankings = (
     coursePrefix: string;
     courseNumber: string;
   },
-  options?: { termCode?: string },
+  options?: RankingsOptions,
 ) => Promise<CourseRankings>;
 
 const readCourseRankings: ReadCourseRankings = (entity, options) =>
@@ -29,15 +30,16 @@ export async function loadCourseRankings(
   coursePrefix: string,
   courseNumber: string,
   termCode?: string,
+  configuration: Pick<RankingsOptions, "preset" | "weights"> = {},
   readRankings: ReadCourseRankings = readCourseRankings,
 ): Promise<CourseRankings | undefined> {
   const entity = { type: "course" as const, coursePrefix, courseNumber };
   try {
-    return await readRankings(entity, { termCode });
+    return await readRankings(entity, { ...configuration, termCode });
   } catch (error) {
     if (error instanceof InvalidRankingsQueryError && termCode) {
       try {
-        return await readRankings(entity);
+        return await readRankings(entity, configuration);
       } catch (fallbackError) {
         if (isUnavailableCourse(fallbackError)) return undefined;
         throw fallbackError;

@@ -7,6 +7,7 @@ import {
   type RouteSearchParams,
 } from "@/app/courses/routes";
 import { loadSignals } from "@/app/signals/data";
+import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
 import {
   getSchedule,
   InvalidScheduleQueryError,
@@ -54,8 +55,14 @@ export async function renderCoursePage(
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
       : scheduleResult.schedule?.offerings.at(-1)?.termCode;
+  const rankingPreference = await readRankingPreferenceQuery();
   const [rankings, community, signalResult] = await Promise.all([
-    loadCourseRankings(coursePrefix, courseNumber, selectedTerm),
+    loadCourseRankings(
+      coursePrefix,
+      courseNumber,
+      selectedTerm,
+      rankingPreference,
+    ),
     readReviews(coursePrefix, courseNumber),
     loadSignals({ type: "course", coursePrefix, courseNumber }),
   ]);

@@ -30,12 +30,10 @@ function sampleCount(value: number, source: string) {
 }
 
 export function RankingResultCard({ result }: { result: Ranking }) {
-  const grade = letterGrade(result.globalPercentile);
+  const percentile = result.percentile ?? result.allTimePercentile;
+  const grade = letterGrade(percentile);
   const score = scoreFormat.format(result.score * 100);
-  const background = gradeColor(result.globalPercentile);
-  const hasLocalContext =
-    result.localRank !== result.globalRank ||
-    result.localPopulation !== result.globalPopulation;
+  const background = gradeColor(percentile);
   return (
     <li
       data-ranking-result=""
@@ -51,7 +49,7 @@ export function RankingResultCard({ result }: { result: Ranking }) {
         <Card className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 bg-white p-4 transition-shadow motion-reduce:transition-none hover:border-slate-300 hover:shadow-md group-focus-visible:border-slate-400 sm:gap-5 sm:p-6">
           <CardContent className="w-20 shrink-0 p-0 text-slate-600 sm:w-32">
             <p className="text-xl font-semibold tabular-nums sm:text-2xl">
-              #{result.localRank}{" "}
+              {result.rank ? `#${result.rank}` : "—"}{" "}
               <span className="hidden font-medium sm:inline">({score})</span>
             </p>
             <p className="text-xs tabular-nums sm:hidden">Score {score}</p>
@@ -74,10 +72,13 @@ export function RankingResultCard({ result }: { result: Ranking }) {
               {sampleCount(result.sfqSamples, "SFQ")}.
             </CardDescription>
             <CardDescription className="text-xs leading-snug text-slate-500 tabular-nums">
-              Global Rank {result.globalRank} of {result.globalPopulation}
-              {hasLocalContext
-                ? ` · Local Rank ${result.localRank} of ${result.localPopulation}`
-                : ""}
+              {result.rank
+                ? `Rank ${result.rank} of ${result.rankPopulation}`
+                : result.entity === "course"
+                  ? "Not offered this Term"
+                  : "Not teaching this Term"}{" "}
+              · Rank of all time {result.allTimeRank} of{" "}
+              {result.allTimePopulation}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">

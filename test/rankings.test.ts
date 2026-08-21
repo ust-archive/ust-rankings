@@ -77,15 +77,15 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
     filteredSize: 3,
   });
   expect(
-    page.results.map(({ canonicalName, globalRank, localRank }) => [
+    page.results.map(({ canonicalName, rank, allTimePopulation }) => [
       canonicalName,
-      globalRank,
-      localRank,
+      rank,
+      allTimePopulation,
     ]),
   ).toEqual([
-    ["Alpha Instructor", 1, 1],
-    ["Beta Instructor", 1, 1],
-    ["Delta Instructor", 3, 3],
+    ["Alpha Instructor", 1, 4],
+    ["Beta Instructor", 1, 4],
+    ["Delta Instructor", 3, 4],
   ]);
   expect(page.configuration).toEqual({
     preset: "learning",
@@ -101,8 +101,8 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
   expect(page.results[0]?.uuid).toBe("00000000-0000-4000-8000-000000000001");
   expect(page.results[0]?.score).toBe(1);
   expect(page.results[2]?.score).toBe(0.2667);
-  expect(page.results[0]?.globalPercentile).toBe(1);
-  expect(page.results[0]?.localPercentile).toBe(1);
+  expect(page.results[0]?.percentile).toBe(1);
+  expect(page.results[0]?.allTimePercentile).toBe(1);
   expect(page.results[0]?.ustSpaceSamples).toBe(11);
   expect(page.results[0]?.sfqSamples).toBe(33);
   expect(page.terms).toEqual([{ termCode: "2510", termName: "2025-26 Fall" }]);
@@ -115,10 +115,7 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
   });
   expect(searched.population.size).toBe(3);
   expect(
-    searched.results.map(({ canonicalName, globalRank }) => [
-      canonicalName,
-      globalRank,
-    ]),
+    searched.results.map(({ canonicalName, rank }) => [canonicalName, rank]),
   ).toEqual([["Beta Instructor", 1]]);
 
   const detail = await getRankings({
@@ -180,6 +177,7 @@ test("getRankings exposes Course evidence and associated Instructors", async () 
   const population = await queryRankings({
     entity: "course",
     termCode: "2510",
+    activity: "all",
   });
   expect(details).toMatchObject({
     generation: population.generation,
@@ -214,7 +212,7 @@ test("getRankings exposes Course evidence and associated Instructors", async () 
   ]);
 });
 
-test("Course details retain exact Global Rank beyond the first 100 results", async () => {
+test("Course details retain exact Rank beyond the first 100 results", async () => {
   const temporaryDirectory = await mkdtemp(
     join(tmpdir(), "course-detail-rank-"),
   );
@@ -241,8 +239,8 @@ test("Course details retain exact Global Rank beyond the first 100 results", asy
   );
   expect(details.ranking).toMatchObject({
     courseCode: "BULK 1109",
-    globalRank: 4,
-    globalPopulation: 113,
+    rank: 4,
+    rankPopulation: 113,
   });
 });
 
@@ -339,7 +337,7 @@ test("queryRankings serves Course presets and normalized custom weights", async 
   expect(extreme.configuration.weights).toEqual({ teaching: 1 });
 });
 
-test("structured filters create Local Ranks while search preserves both ranks", async () => {
+test("structured filters preserve Rank and Rank of all time", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-filters-"));
   temporaryDirectories.push(temporaryDirectory);
   process.env.RANKINGS_SEED_DIR =
@@ -356,10 +354,9 @@ test("structured filters create Local Ranks while search preserves both ranks", 
   expect(instructors.results).toEqual([
     expect.objectContaining({
       canonicalName: "Delta Instructor",
-      globalRank: 3,
-      globalPopulation: 3,
-      localRank: 1,
-      localPopulation: 1,
+      rank: 3,
+      rankPopulation: 3,
+      allTimePopulation: 4,
     }),
   ]);
 
@@ -374,7 +371,7 @@ test("structured filters create Local Ranks while search preserves both ranks", 
     expect.objectContaining({
       courseCode: "COMP 1000",
       title: "Creative Computing",
-      localRank: 1,
+      rank: 2,
     }),
   ]);
 

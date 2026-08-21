@@ -78,16 +78,16 @@ A special value indicating that no Instructor is specified for a Class. It does 
 ## Rankings
 
 **Ranking Population**:
-The eligible Courses or Instructors compared by a ranking for one Term, activity mode, and scoring configuration.
+The eligible Courses or Instructors compared by a ranking for one Term and scoring configuration.
 
-**Global Rank**:
-An entity's competition rank in the Ranking Population before structured filters or text search are applied.
+**Rank**:
+An entity's competition rank among Courses offered or Instructors teaching in the selected Term, before structured filters or text search. An entity not active in that Term has no Rank.
 
-**Local Rank**:
-An entity's competition rank after structured filters narrow the Ranking Population but before text search is applied. Without structured filters, Local Rank equals Global Rank.
+**Rank of All Time**:
+An entity's competition rank, using the selected Term's scoring model, among every known Course or Instructor with evidence by that Term, including entities not active in that Term. It does not compare peak scores or mix scores from different Terms.
 
 **Ranking Preset**:
-A named starting configuration of non-negative criterion weights. Users may customize a preset without changing the preset itself.
+A named starting configuration of non-negative criterion weights. The selected preset or custom weights form one Ranking Preference shared by Course and Instructor rankings and Details.
 
 ## Accounts
 

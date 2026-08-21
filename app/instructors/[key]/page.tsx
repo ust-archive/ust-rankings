@@ -7,6 +7,7 @@ import {
   normalizeInstructorRoute,
 } from "@/app/instructors/routes";
 import { loadSignals } from "@/app/signals/data";
+import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
 import {
   getInstructorIdentity,
   getRankings,
@@ -65,16 +66,20 @@ export async function renderInstructorPage(
     instructorRedirect(identity.route.canonicalKey, query);
 
   let invalidTermCode: string | undefined;
+  const rankingPreference = await readRankingPreferenceQuery();
   const rankingsPromise = getRankings(
     { type: "instructor", uuid: identity.instructor.uuid },
-    { termCode: selectedTerm },
+    { ...rankingPreference, termCode: selectedTerm },
   ).catch(async (error) => {
     if (error instanceof InvalidRankingsQueryError && selectedTerm) {
       invalidTermCode = selectedTerm;
-      return getRankings({
-        type: "instructor",
-        uuid: identity.instructor.uuid,
-      });
+      return getRankings(
+        {
+          type: "instructor",
+          uuid: identity.instructor.uuid,
+        },
+        rankingPreference,
+      );
     }
     if (
       error instanceof RankingsUnavailableError ||

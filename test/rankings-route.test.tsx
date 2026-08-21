@@ -68,7 +68,7 @@ test("the public Instructor ranking route renders accepted-generation results", 
 
   expect(markup).toContain("Instructor Rankings");
   expect(markup).toContain("Beta Instructor");
-  expect(markup).toContain("Global Rank 1 of 3");
+  expect(markup).toContain("Rank 1 of 3");
   expect(markup).not.toContain("Alpha Instructor");
   expect(markup).toContain("0123456789abcdef0123456789abcdef01234567");
 });
@@ -129,7 +129,7 @@ test("the public Course ranking route shares reproducible URL controls", async (
   expect(markup).toContain("Creative Computing");
   expect(markup).toContain("Grading-Focus&#x27;d preset");
   expect(markup).toContain("Settings");
-  expect(markup).toContain("Local Rank");
+  expect(markup).toContain("Rank of all time");
   expect(markup).not.toContain("MATH 2000");
 });
 
@@ -173,7 +173,7 @@ test("ranking routes distinguish every empty, invalid, and stale URL state", asy
     }),
   );
   expect(searchEmpty).toContain(
-    "No Courses in the Local Ranking Population match this search.",
+    "No Courses matching the structured filters match this search.",
   );
 
   const unranked = renderToStaticMarkup(
@@ -319,8 +319,8 @@ test("ranking results show identity, ranks, score, and grade and navigate to Det
     }),
   );
   expect(instructors).toContain("Beta Instructor");
-  expect(instructors).toContain("Global Rank 1 of 3");
-  expect(instructors).not.toContain("Local Rank 1 of 3");
+  expect(instructors).toContain("Rank 1 of 3");
+  expect(instructors).toContain("Rank of all time 1 of 4");
   expect(instructors).toContain("#1");
   expect(instructors).toContain("A+");
   expect(instructors).toContain("11 samples from ust.space");
@@ -338,7 +338,7 @@ test("ranking results show identity, ranks, score, and grade and navigate to Det
   expect(courses).toContain("COMP 1000");
   expect(courses).toContain("Creative Computing");
   expect(courses).toContain('href="/courses/COMP/1000"');
-  expect(courses).toContain("Global Rank");
+  expect(courses).toContain("Rank of all time");
   expect(courses).not.toContain("Current Instructors");
   expect(courses).not.toContain("Historical Instructors");
 });

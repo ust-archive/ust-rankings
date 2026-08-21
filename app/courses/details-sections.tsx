@@ -158,23 +158,36 @@ function RankMetric({
   rank,
   population,
   percentileValue,
+  unavailable,
 }: {
   label: string;
-  rank: number;
+  rank?: number;
   population: number;
-  percentileValue: number;
+  percentileValue?: number;
+  unavailable?: string;
 }) {
   return (
     <span className="block rounded-lg border border-slate-200 bg-white p-4 text-slate-900">
       <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">
         {label}
       </span>
-      <span className="mt-1 block text-xl font-bold tabular-nums">
-        #{integer.format(rank)} of {integer.format(population)}
-      </span>
-      <span className="mt-1 block text-sm text-slate-700 tabular-nums">
-        {percentile.format(percentileValue)} Percentile
-      </span>
+      {rank === undefined || percentileValue === undefined ? (
+        <>
+          <span className="mt-1 block text-xl font-bold">No Rank</span>
+          <span className="mt-1 block text-sm text-slate-700">
+            {unavailable}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="mt-1 block text-xl font-bold tabular-nums">
+            #{integer.format(rank)} of {integer.format(population)}
+          </span>
+          <span className="mt-1 block text-sm text-slate-700 tabular-nums">
+            {percentile.format(percentileValue)} Percentile
+          </span>
+        </>
+      )}
     </span>
   );
 }
@@ -198,7 +211,9 @@ export function DetailsRankings({
       ? rankings.ranking
       : undefined;
   const grade = selectedRanking
-    ? letterGrade(selectedRanking.globalPercentile)
+    ? letterGrade(
+        selectedRanking.percentile ?? selectedRanking.allTimePercentile,
+      )
     : undefined;
   return (
     <details className="group overflow-hidden rounded-lg border border-gray-200 bg-white text-gray-950 shadow-sm">
@@ -246,16 +261,21 @@ export function DetailsRankings({
               </span>
             </span>
             <RankMetric
-              label="Global Rank"
-              percentileValue={selectedRanking.globalPercentile}
-              population={selectedRanking.globalPopulation}
-              rank={selectedRanking.globalRank}
+              label="Rank"
+              percentileValue={selectedRanking.percentile}
+              population={selectedRanking.rankPopulation}
+              rank={selectedRanking.rank}
+              unavailable={
+                rankings?.population.entity === "course"
+                  ? "Not offered this Term"
+                  : "Not teaching this Term"
+              }
             />
             <RankMetric
-              label="Local Rank"
-              percentileValue={selectedRanking.localPercentile}
-              population={selectedRanking.localPopulation}
-              rank={selectedRanking.localRank}
+              label="Rank of all time"
+              percentileValue={selectedRanking.allTimePercentile}
+              population={selectedRanking.allTimePopulation}
+              rank={selectedRanking.allTimeRank}
             />
           </span>
         ) : (

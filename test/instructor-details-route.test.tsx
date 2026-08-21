@@ -91,7 +91,7 @@ test("Instructor details combine ranking evidence, Courses, Classes, aliases, an
   expect(markup).toContain("Instructor");
   expect(markup).toContain("Alpha Instructor");
   expect(markup).toContain("Rankings");
-  expect(markup).toContain("Global Rank");
+  expect(markup).toContain("Rank of all time");
   expect(markup).toContain("Learning-focused");
   expect(markup).toContain("Courses");
   expect(markup).toContain("COMP 2000");

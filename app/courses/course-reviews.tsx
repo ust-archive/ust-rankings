@@ -496,10 +496,12 @@ export function ReviewComposer({
                   </SelectContent>
                 </Select>
               </Field>
+              {!hasBasis ? (
+                <FieldError className="sm:col-span-2">
+                  Select at least one Review Basis.
+                </FieldError>
+              ) : null}
             </FieldGroup>
-            {!hasBasis ? (
-              <FieldError>Select at least one Review Basis.</FieldError>
-            ) : null}
           </FieldSet>
           {hasBasis ? (
             <>
