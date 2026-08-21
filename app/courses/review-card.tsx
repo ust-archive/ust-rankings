@@ -112,7 +112,9 @@ function ReviewCardHeader({
   const identityHidden = review.attribution === "identity-hidden";
   const author = reviewCreditName(review);
   const details = [
-    review.instructorUuid ? (instructorName ?? "Instructor") : undefined,
+    review.instructorUuid
+      ? (instructorName ?? review.instructorUuid)
+      : undefined,
     review.course
       ? `${review.course.coursePrefix} ${review.course.courseNumber}`
       : undefined,

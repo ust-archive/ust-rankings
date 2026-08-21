@@ -105,8 +105,13 @@ if (!connection) {
       `;
       await sql`
         INSERT INTO course_emoji_reactions
-          (user_id, course_prefix, course_number, code)
-        VALUES (${first.id}, 'COMP', '2000', 'love')
+          (user_id, course_prefix, course_number, code, created_at)
+        VALUES (${first.id}, 'COMP', '2000', 'love', '2026-08-21T00:00:00Z')
+      `;
+      await sql`
+        INSERT INTO course_thumbs_votes
+          (user_id, course_prefix, course_number, state, updated_at)
+        VALUES (${first.id}, 'COMP', '2000', 'up', '2026-08-20T00:00:00Z')
       `;
       expect(await accounts.getContributions(first.id)).toMatchObject({
         reviews: [
@@ -122,7 +127,15 @@ if (!connection) {
             targetType: "course",
             coursePrefix: "COMP",
             courseNumber: "2000",
+            kind: "emoji",
             code: "love",
+          },
+          {
+            targetType: "course",
+            coursePrefix: "COMP",
+            courseNumber: "2000",
+            kind: "thumb",
+            code: "up",
           },
         ],
       });

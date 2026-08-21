@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Reviews } from "@/app/courses/course-reviews";
 import { loadReview } from "@/app/reviews/review-data";
 import { Separator } from "@/components/ui/separator";
+import { instructorNamesForUuids } from "@/lib/rankings/server";
 
 export const dynamic = "force-dynamic";
 
@@ -38,24 +39,32 @@ export async function renderReviewPage(
     );
   if (!result.review) notFound();
   const review = result.review;
-  const editor = review.viewerCanEdit
-    ? {
-        courses: review.course ? [review.course] : [],
-        instructors: review.instructorUuid
-          ? [{ instructorUuid: review.instructorUuid, name: "Instructor" }]
-          : [],
-        contexts: review.termCode
-          ? [
-              {
-                course: review.course,
-                instructorUuid: review.instructorUuid,
-                termCode: review.termCode,
-                section: review.section,
-              },
-            ]
-          : [],
-      }
-    : undefined;
+  const instructorNames = await instructorNamesForUuids(
+    review.instructorUuid ? [review.instructorUuid] : [],
+  );
+  const editor = {
+    courses: review.course ? [review.course] : [],
+    instructors: review.instructorUuid
+      ? [
+          {
+            instructorUuid: review.instructorUuid,
+            name:
+              instructorNames.get(review.instructorUuid) ??
+              review.instructorUuid,
+          },
+        ]
+      : [],
+    contexts: review.termCode
+      ? [
+          {
+            course: review.course,
+            instructorUuid: review.instructorUuid,
+            termCode: review.termCode,
+            section: review.section,
+          },
+        ]
+      : [],
+  };
   return (
     <article className="w-full max-w-3xl text-left text-slate-900">
       <header>

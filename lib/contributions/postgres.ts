@@ -134,20 +134,27 @@ export class PostgresAccountRepository implements AccountRepository {
                course_prefix AS "coursePrefix",
                course_number AS "courseNumber",
                NULL::uuid AS "instructorUuid",
+               'emoji'::text AS kind,
                code,
                created_at AS "createdAt"
         FROM course_emoji_reactions
         WHERE user_id = ${userId}
         UNION ALL
-        SELECT 'instructor'::text,
-               NULL::text,
-               NULL::text,
-               instructor_uuid,
-               code,
-               created_at
+        SELECT 'instructor'::text, NULL::text, NULL::text, instructor_uuid,
+               'emoji'::text, code, created_at
         FROM instructor_emoji_reactions
         WHERE user_id = ${userId}
-        ORDER BY "createdAt" DESC, code
+        UNION ALL
+        SELECT 'course'::text, course_prefix, course_number, NULL::uuid,
+               'thumb'::text, state, updated_at
+        FROM course_thumbs_votes
+        WHERE user_id = ${userId}
+        UNION ALL
+        SELECT 'instructor'::text, NULL::text, NULL::text, instructor_uuid,
+               'thumb'::text, state, updated_at
+        FROM instructor_thumbs_votes
+        WHERE user_id = ${userId}
+        ORDER BY "createdAt" DESC, kind, code
       `,
     ]);
     return { reviews, reactions };

@@ -22,22 +22,24 @@ export type AccountContributions = {
     publishedAt: Date;
   }>;
   reactions: Array<
-    | {
-        targetType: "course";
-        coursePrefix: string;
-        courseNumber: string;
-        instructorUuid: null;
-        code: string;
-        createdAt: Date;
-      }
-    | {
-        targetType: "instructor";
-        coursePrefix: null;
-        courseNumber: null;
-        instructorUuid: string;
-        code: string;
-        createdAt: Date;
-      }
+    (
+      | {
+          targetType: "course";
+          coursePrefix: string;
+          courseNumber: string;
+          instructorUuid: null;
+        }
+      | {
+          targetType: "instructor";
+          coursePrefix: null;
+          courseNumber: null;
+          instructorUuid: string;
+        }
+    ) &
+      (
+        | { kind: "emoji"; code: string; createdAt: Date }
+        | { kind: "thumb"; code: "up" | "down"; createdAt: Date }
+      )
   >;
 };
 
@@ -145,8 +147,14 @@ export function createAccountService(
       return repository.findUser(userId);
     },
 
-    getContributions(userId: string) {
-      return repository.findContributions(userId);
+    async getContributions(userId: string) {
+      const contributions = await repository.findContributions(userId);
+      return {
+        ...contributions,
+        reviews: contributions.reviews.filter(
+          (review) => review.publicationState === "active",
+        ),
+      };
     },
 
     async requireActiveUser(userId: string) {

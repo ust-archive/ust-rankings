@@ -187,7 +187,7 @@ test("account edits and every write resolve current User status", async () => {
   });
 });
 
-test("a User can retrieve their submitted Reviews and Emoji Reactions", async () => {
+test("a User sees active Reviews and selected reactions", async () => {
   const { accounts, repository } = setup();
   const user = await accounts.establishUser({
     iss: HKUST_CONNECT_ISSUER,
@@ -204,6 +204,14 @@ test("a User can retrieve their submitted Reviews and Emoji Reactions", async ()
         instructorUuid: null,
         publishedAt: new Date("2026-08-21T00:00:00Z"),
       },
+      {
+        id: "10000000-0000-4000-8000-000000000002",
+        publicationState: "withdrawn",
+        coursePrefix: null,
+        courseNumber: null,
+        instructorUuid: "20000000-0000-4000-8000-000000000001",
+        publishedAt: new Date("2026-08-20T00:00:00Z"),
+      },
     ],
     reactions: [
       {
@@ -211,15 +219,26 @@ test("a User can retrieve their submitted Reviews and Emoji Reactions", async ()
         coursePrefix: "COMP",
         courseNumber: "1000",
         instructorUuid: null,
+        kind: "emoji",
         code: "love",
         createdAt: new Date("2026-08-21T00:00:00Z"),
+      },
+      {
+        targetType: "instructor",
+        coursePrefix: null,
+        courseNumber: null,
+        instructorUuid: "20000000-0000-4000-8000-000000000001",
+        kind: "thumb",
+        code: "up",
+        createdAt: new Date("2026-08-20T00:00:00Z"),
       },
     ],
   };
 
-  await expect(accounts.getContributions(user.id)).resolves.toEqual(
-    repository.contributions,
-  );
+  await expect(accounts.getContributions(user.id)).resolves.toEqual({
+    ...repository.contributions,
+    reviews: [repository.contributions.reviews[0]],
+  });
 });
 
 test("account closure sets closed status and blocks later writes", async () => {
