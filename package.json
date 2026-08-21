@@ -24,10 +24,13 @@
     "data:check": "bun run --cwd data type-check && bun run --cwd data test",
     "toolchain:check": "bun scripts/check-toolchain.ts",
     "contributions:migrate": "bun scripts/migrate-contributions.ts",
-    "contributions:merge-instructor-signals": "bun scripts/merge-instructor-signals.ts"
+    "contributions:merge-instructor-signals": "bun scripts/merge-instructor-signals.ts",
+    "contributions:moderate": "bun scripts/moderate.ts",
+    "attachments:remove-stored-file": "bun scripts/remove-stored-file.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1114.0",
+    "@aws-sdk/s3-request-presigner": "^3.1114.0",
     "@duckdb/node-api": "^1.5.5-r.4",
     "@icons-pack/react-simple-icons": "^13.15.1",
     "@next/third-parties": "16.3.1",

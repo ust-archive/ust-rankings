@@ -1,3 +1,10 @@
+import {
+  type ImageAttachment,
+  MAX_REVISION_ATTACHMENTS,
+  normalizeAttachmentDescription,
+  normalizeAttachmentFilename,
+} from "@/lib/attachments/attachments";
+
 export type CourseBasis = {
   coursePrefix: string;
   courseNumber: string;
@@ -17,6 +24,13 @@ export type InstructorAssociationStatus =
 
 export type ReviewAttribution = "attributed" | "identity-hidden";
 
+export type ReviewAttachmentDraft = {
+  id?: string;
+  storedFileId: string;
+  filename: string;
+  description: string;
+};
+
 export type PublicReview = ReviewAssociations & {
   id: string;
   revisionId: string;
@@ -28,6 +42,7 @@ export type PublicReview = ReviewAssociations & {
   publishedAt: Date;
   viewerCanEdit?: boolean;
   instructorAssociationStatus?: InstructorAssociationStatus;
+  attachments?: ImageAttachment[];
 };
 
 export type PublishReviewRecord = {
@@ -36,6 +51,7 @@ export type PublishReviewRecord = {
   markdown: string;
   attribution: ReviewAttribution;
   policyVersion: string;
+  attachments?: ReviewAttachmentDraft[];
 };
 
 export type EditReviewRecord = PublishReviewRecord & {
@@ -175,10 +191,45 @@ function normalizeAssociations(input: ReviewAssociations): ReviewAssociations {
   return { course, instructorUuid, termCode, section };
 }
 
+function normalizeAttachments(input: ReviewAttachmentDraft[] | undefined) {
+  if (input === undefined) return undefined;
+  if (!Array.isArray(input))
+    throw new ReviewWriteError("invalid-review", "Attachments are malformed");
+  if (input.length > MAX_REVISION_ATTACHMENTS)
+    throw new ReviewWriteError(
+      "invalid-review",
+      "A Review Revision has at most four Attachments",
+    );
+  try {
+    return input.map((attachment) => {
+      if (attachment.id && !UUID.test(attachment.id))
+        throw new ReviewWriteError(
+          "invalid-review",
+          "Attachments are malformed",
+        );
+      if (!UUID.test(attachment.storedFileId))
+        throw new ReviewWriteError(
+          "invalid-review",
+          "Attachments are malformed",
+        );
+      return {
+        ...(attachment.id ? { id: attachment.id.toLowerCase() } : {}),
+        storedFileId: attachment.storedFileId.toLowerCase(),
+        filename: normalizeAttachmentFilename(attachment.filename),
+        description: normalizeAttachmentDescription(attachment.description),
+      };
+    });
+  } catch (error) {
+    if (error instanceof ReviewWriteError) throw error;
+    throw new ReviewWriteError("invalid-review", "Attachments are malformed");
+  }
+}
+
 function normalizeRevisionInput(input: {
   associations: ReviewAssociations;
   markdown: string;
   attribution?: ReviewAttribution;
+  attachments?: ReviewAttachmentDraft[];
 }) {
   const associations = normalizeAssociations(input.associations);
   if (typeof input.markdown !== "string" || !input.markdown.trim())
@@ -192,7 +243,12 @@ function normalizeRevisionInput(input: {
       "invalid-review",
       "Review attribution is malformed",
     );
-  return { associations, markdown: input.markdown, attribution };
+  return {
+    associations,
+    markdown: input.markdown,
+    attribution,
+    attachments: normalizeAttachments(input.attachments),
+  };
 }
 
 export function createReviewService(
@@ -214,6 +270,7 @@ export function createReviewService(
         associations: ReviewAssociations;
         markdown: string;
         attribution?: ReviewAttribution;
+        attachments?: ReviewAttachmentDraft[];
       },
     ) {
       if (!UUID.test(userId))
@@ -238,6 +295,7 @@ export function createReviewService(
         markdown: normalized.markdown,
         attribution: normalized.attribution,
         policyVersion: options.reviewPolicyVersion,
+        attachments: normalized.attachments,
       });
     },
 
@@ -249,6 +307,7 @@ export function createReviewService(
         associations: ReviewAssociations;
         markdown: string;
         attribution: ReviewAttribution;
+        attachments?: ReviewAttachmentDraft[];
       },
     ) {
       if (!UUID.test(userId))
@@ -280,6 +339,7 @@ export function createReviewService(
         markdown: normalized.markdown,
         attribution: normalized.attribution,
         policyVersion: options.reviewPolicyVersion,
+        attachments: normalized.attachments,
       });
     },
 

@@ -4,9 +4,17 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { courseReviewPath, isSameOriginWrite } from "@/lib/contributions/http";
-import { getReviewService } from "@/lib/contributions/postgres";
+import {
+  ModerationWriteError,
+  REPORT_REASON_CATEGORIES,
+} from "@/lib/contributions/moderation";
+import {
+  getModerationService,
+  getReviewService,
+} from "@/lib/contributions/postgres";
 import type {
   ReviewAssociations,
+  ReviewAttachmentDraft,
   ReviewAttribution,
 } from "@/lib/contributions/reviews";
 import { ReviewWriteError } from "@/lib/contributions/reviews";
@@ -17,6 +25,18 @@ const UUID =
 function stringEntry(formData: FormData, name: string) {
   const value = formData.get(name);
   return typeof value === "string" ? value : undefined;
+}
+
+function parseAttachments(formData: FormData) {
+  const raw = stringEntry(formData, "attachments");
+  if (raw === undefined || raw === "") return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return "invalid" as const;
+    return parsed as ReviewAttachmentDraft[];
+  } catch {
+    return "invalid" as const;
+  }
 }
 
 function parseReviewForm(formData: FormData) {
@@ -66,7 +86,11 @@ async function authorizeWrite(path: string) {
 }
 
 function redirectReviewError(error: unknown, path: string): never {
-  if (!(error instanceof ReviewWriteError)) throw error;
+  if (
+    !(error instanceof ReviewWriteError) &&
+    !(error instanceof ModerationWriteError)
+  )
+    throw error;
   if (error.code === "onboarding-required")
     redirect(`/onboarding?r=${encodeURIComponent(path)}`);
   redirect(`${path}?reviewError=${error.code}#reviews`);
@@ -85,11 +109,15 @@ export async function publishReview(formData: FormData) {
     redirect(`${parsed.path}?reviewError=invalid-context#reviews`);
   if (attribution !== "attributed" && attribution !== "identity-hidden")
     redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
+  const attachments = parseAttachments(formData);
+  if (attachments === "invalid")
+    redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
   try {
     await getReviewService().publishReview(userId, {
       associations: parsed.associations,
       markdown,
       attribution,
+      attachments,
     });
   } catch (error) {
     redirectReviewError(error, parsed.path);
@@ -117,12 +145,16 @@ export async function editReview(formData: FormData) {
     redirect(`${parsed.path}?reviewError=invalid-basis#reviews`);
   if (parsed.invalidContext)
     redirect(`${parsed.path}?reviewError=invalid-context#reviews`);
+  const attachments = parseAttachments(formData);
+  if (attachments === "invalid")
+    redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
   try {
     await getReviewService().editReview(userId, reviewId, {
       expectedRevisionId,
       associations: parsed.associations,
       markdown,
       attribution: attribution as ReviewAttribution,
+      attachments,
     });
   } catch (error) {
     redirectReviewError(error, parsed.path);
@@ -152,4 +184,24 @@ export async function withdrawReview(formData: FormData) {
     redirectReviewError(error, parsed.path);
   }
   redirect(`${parsed.path}?review=withdrawn#reviews`);
+}
+
+export async function reportReview(formData: FormData) {
+  const parsed = parseReviewForm(formData);
+  const userId = await authorizeWrite(parsed.path);
+  const reviewId = stringEntry(formData, "reviewId");
+  const reasonCategory = stringEntry(formData, "reasonCategory");
+  if (!reviewId || !UUID.test(reviewId))
+    redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
+  if (
+    !reasonCategory ||
+    !(REPORT_REASON_CATEGORIES as readonly string[]).includes(reasonCategory)
+  )
+    redirect(`${parsed.path}?reviewError=invalid-reason#reviews`);
+  try {
+    await getModerationService().reportReview(userId, reviewId, reasonCategory);
+  } catch (error) {
+    redirectReviewError(error, parsed.path);
+  }
+  redirect(`${parsed.path}?review=reported#reviews`);
 }

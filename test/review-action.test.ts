@@ -19,6 +19,11 @@ mock.module("@/lib/auth/user", () => ({
   authenticatedUserId: async () => userId,
 }));
 mock.module("@/lib/contributions/postgres", () => ({
+  getModerationService: () => ({
+    async reportReview() {
+      throw new Error("not used");
+    },
+  }),
   getReviewService: () => ({
     async publishReview(id: string, input: unknown) {
       if (publicationError) throw publicationError;
