@@ -5,6 +5,7 @@ import type { ImageAttachment } from "@/lib/attachments/attachments";
 import { AttachmentWriteError } from "@/lib/attachments/attachments";
 import { PostgresAttachmentRepository } from "@/lib/attachments/postgres";
 import {
+  type AccountContributions,
   type AccountRepository,
   type AccountRow,
   createAccountService,
@@ -112,6 +113,44 @@ export class PostgresAccountRepository implements AccountRepository {
       WHERE id = ${userId}
     `;
     return row ? account(row) : undefined;
+  }
+
+  async findContributions(userId: string): Promise<AccountContributions> {
+    const [reviews, reactions] = await Promise.all([
+      this.sql<AccountContributions["reviews"]>`
+        SELECT r.id,
+               r.publication_state AS "publicationState",
+               r.course_prefix AS "coursePrefix",
+               r.course_number AS "courseNumber",
+               r.instructor_uuid AS "instructorUuid",
+               coalesce(rr.published_at, r.created_at) AS "publishedAt"
+        FROM reviews r
+        LEFT JOIN review_revisions rr ON rr.id = r.current_revision_id
+        WHERE r.author_user_id = ${userId}
+        ORDER BY coalesce(rr.published_at, r.created_at) DESC, r.id
+      `,
+      this.sql<AccountContributions["reactions"]>`
+        SELECT 'course'::text AS "targetType",
+               course_prefix AS "coursePrefix",
+               course_number AS "courseNumber",
+               NULL::uuid AS "instructorUuid",
+               code,
+               created_at AS "createdAt"
+        FROM course_emoji_reactions
+        WHERE user_id = ${userId}
+        UNION ALL
+        SELECT 'instructor'::text,
+               NULL::text,
+               NULL::text,
+               instructor_uuid,
+               code,
+               created_at
+        FROM instructor_emoji_reactions
+        WHERE user_id = ${userId}
+        ORDER BY "createdAt" DESC, code
+      `,
+    ]);
+    return { reviews, reactions };
   }
 
   async activateUser(

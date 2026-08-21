@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { HKUST_CONNECT_ISSUER } from "@/lib/auth/policy";
 import {
+  type AccountContributions,
   type AccountRepository,
   type AccountRow,
   AccountWriteError,
@@ -16,6 +17,7 @@ class MemoryAccountRepository implements AccountRepository {
   >();
   acceptances: Array<{ userId: string; policy: string; version: string }> = [];
   nextId = 1;
+  contributions: AccountContributions = { reviews: [], reactions: [] };
 
   async establishIdentity(input: EstablishIdentityInput) {
     const key = `${input.issuer}\u0000${input.subject}`;
@@ -43,6 +45,10 @@ class MemoryAccountRepository implements AccountRepository {
 
   async findUser(userId: string) {
     return this.users.get(userId);
+  }
+
+  async findContributions() {
+    return this.contributions;
   }
 
   async activateUser(
@@ -179,6 +185,41 @@ test("account edits and every write resolve current User status", async () => {
   await expect(accounts.requireActiveUser(user.id)).rejects.toMatchObject({
     code: "account-closed",
   });
+});
+
+test("a User can retrieve their submitted Reviews and Emoji Reactions", async () => {
+  const { accounts, repository } = setup();
+  const user = await accounts.establishUser({
+    iss: HKUST_CONNECT_ISSUER,
+    sub: "contributions-subject",
+    name: "Contributor",
+  });
+  repository.contributions = {
+    reviews: [
+      {
+        id: "10000000-0000-4000-8000-000000000001",
+        publicationState: "active",
+        coursePrefix: "COMP",
+        courseNumber: "1000",
+        instructorUuid: null,
+        publishedAt: new Date("2026-08-21T00:00:00Z"),
+      },
+    ],
+    reactions: [
+      {
+        targetType: "course",
+        coursePrefix: "COMP",
+        courseNumber: "1000",
+        instructorUuid: null,
+        code: "love",
+        createdAt: new Date("2026-08-21T00:00:00Z"),
+      },
+    ],
+  };
+
+  await expect(accounts.getContributions(user.id)).resolves.toEqual(
+    repository.contributions,
+  );
 });
 
 test("account closure sets closed status and blocks later writes", async () => {

@@ -12,6 +12,35 @@ export type AccountRow = {
   publicDisplayName: string | null;
 };
 
+export type AccountContributions = {
+  reviews: Array<{
+    id: string;
+    publicationState: "active" | "withdrawn";
+    coursePrefix: string | null;
+    courseNumber: string | null;
+    instructorUuid: string | null;
+    publishedAt: Date;
+  }>;
+  reactions: Array<
+    | {
+        targetType: "course";
+        coursePrefix: string;
+        courseNumber: string;
+        instructorUuid: null;
+        code: string;
+        createdAt: Date;
+      }
+    | {
+        targetType: "instructor";
+        coursePrefix: null;
+        courseNumber: null;
+        instructorUuid: string;
+        code: string;
+        createdAt: Date;
+      }
+  >;
+};
+
 export type EstablishIdentityInput = {
   issuer: string;
   subject: string;
@@ -23,6 +52,7 @@ export type EstablishIdentityInput = {
 export interface AccountRepository {
   establishIdentity(input: EstablishIdentityInput): Promise<AccountRow>;
   findUser(userId: string): Promise<AccountRow | undefined>;
+  findContributions(userId: string): Promise<AccountContributions>;
   activateUser(
     userId: string,
     publicDisplayName: string,
@@ -113,6 +143,10 @@ export function createAccountService(
 
     getUser(userId: string) {
       return repository.findUser(userId);
+    },
+
+    getContributions(userId: string) {
+      return repository.findContributions(userId);
     },
 
     async requireActiveUser(userId: string) {
