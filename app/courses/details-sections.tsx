@@ -53,12 +53,14 @@ export function DetailsHeader({
   title,
   subtitle,
   termName,
+  description,
   notice,
 }: {
   eyebrow: string;
   title: string;
   subtitle?: string;
   termName?: string;
+  description?: string;
   notice?: ReactNode;
 }) {
   return (
@@ -76,6 +78,11 @@ export function DetailsHeader({
       ) : null}
       {termName ? (
         <p className="mt-2 text-sm font-medium text-slate-600">{termName}</p>
+      ) : null}
+      {description ? (
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700">
+          {description}
+        </p>
       ) : null}
       {notice}
     </header>

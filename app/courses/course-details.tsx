@@ -67,28 +67,36 @@ function uniqueInstructors(
 
 function ClassLinks({ offering }: { offering: CourseOffering }) {
   return (
-    <ul className="mt-3 space-y-2">
+    <div className="flex flex-col gap-3">
       {offering.classes.map((scheduleClass) => (
-        <li key={scheduleClass.classNumber}>
-          <Link
-            className={`${styles.sidebarLink} inline-flex items-center gap-1 font-semibold`}
-            href={coursePath(
-              offering.coursePrefix,
-              offering.courseNumber,
-              offering.termCode,
-              scheduleClass.section,
-            )}
-          >
-            {offering.courseCode} {scheduleClass.section} (
-            {scheduleClass.classNumber})
-            <ArrowUpRight aria-hidden="true" className="size-3" />
-          </Link>{" "}
-          <span className="text-sm text-slate-600">
-            · {scheduleClass.enrollment}/{scheduleClass.capacity} enrolled
-          </span>
-        </li>
+        <section
+          className="flex flex-col gap-1"
+          key={scheduleClass.classNumber}
+        >
+          <h3 className="font-semibold text-balance">
+            <Link
+              className={`${styles.sidebarLink} inline-flex items-center gap-1`}
+              href={coursePath(
+                offering.coursePrefix,
+                offering.courseNumber,
+                offering.termCode,
+                scheduleClass.section,
+              )}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              {offering.courseCode} {scheduleClass.section} (
+              {scheduleClass.classNumber})
+              <ArrowUpRight aria-hidden="true" className="size-3" />
+              <span className="sr-only"> (opens in a new tab)</span>
+            </Link>
+          </h3>
+          <p className="text-sm text-slate-600 tabular-nums">
+            {scheduleClass.enrollment} of {scheduleClass.capacity} enrolled
+          </p>
+        </section>
       ))}
-    </ul>
+    </div>
   );
 }
 
@@ -283,9 +291,12 @@ export function CourseDetails({
               itsc: instructor.itsc,
               uuid: instructor.uuid,
             })}
+            rel="noopener noreferrer"
+            target="_blank"
           >
             {instructor.name}
             <ArrowUpRight aria-hidden="true" className="size-3" />
+            <span className="sr-only"> (opens in a new tab)</span>
           </Link>
         ) : (
           instructor.name
@@ -314,9 +325,12 @@ export function CourseDetails({
               offering.courseNumber,
               offering.termCode,
             )}
+            rel="noopener noreferrer"
+            target="_blank"
           >
             {offering.termName}
             <ArrowUpRight aria-hidden="true" className="size-3" />
+            <span className="sr-only"> (opens in a new tab)</span>
           </Link>
         </h3>
         <p className="text-sm text-slate-600">{offering.credits} credits</p>
@@ -337,10 +351,13 @@ export function CourseDetails({
                     offering.termCode,
                     scheduleClass.section,
                   )}
+                  rel="noopener noreferrer"
+                  target="_blank"
                 >
                   {offering.courseCode} {scheduleClass.section} (
                   {scheduleClass.classNumber})
                   <ArrowUpRight aria-hidden="true" className="size-3" />
+                  <span className="sr-only"> (opens in a new tab)</span>
                 </Link>
               </h4>
               <p className="text-sm text-slate-600 tabular-nums">
@@ -357,6 +374,7 @@ export function CourseDetails({
   return (
     <div className="flex w-full flex-col gap-8 text-left text-slate-900">
       <DetailsHeader
+        description={currentOffering?.description}
         eyebrow="Course"
         subtitle={title}
         termName={
@@ -522,6 +540,7 @@ export function CourseOfferingDetails({
   return (
     <div className="flex w-full flex-col gap-8 text-left text-slate-900">
       <DetailsHeader
+        description={offering.description}
         eyebrow="Course Offering"
         subtitle={offering.title}
         termName={offering.termName}
@@ -567,9 +586,6 @@ export function CourseOfferingDetails({
               </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-3 text-sm">
-              <p className="text-slate-700">
-                {offering.description || "No description is published."}
-              </p>
               <p className="text-slate-600">
                 {offering.credits} credits · {offering.career}
               </p>
@@ -599,26 +615,43 @@ export function CourseOfferingDetails({
             </CardHeader>
             <CardContent>
               {instructors.length ? (
-                <ul className="flex flex-col gap-3 text-sm text-slate-700">
+                <div className="flex flex-col gap-3 text-sm text-slate-700">
                   {instructors.map((instructor) => (
-                    <li key={instructor.uuid ?? instructor.name}>
-                      {instructor.uuid ? (
-                        <Link
-                          className={`${styles.sidebarLink} inline-flex items-center gap-1 font-semibold`}
-                          href={instructorPath({
-                            itsc: instructor.itsc,
-                            uuid: instructor.uuid,
-                          })}
-                        >
-                          {instructor.name}
-                          <ArrowUpRight aria-hidden="true" className="size-3" />
-                        </Link>
-                      ) : (
-                        `${instructor.name} (unresolved source name)`
-                      )}
-                    </li>
+                    <section
+                      className="flex flex-col gap-1"
+                      key={instructor.uuid ?? instructor.name}
+                    >
+                      <h3 className="font-semibold text-balance">
+                        {instructor.uuid ? (
+                          <Link
+                            className={`${styles.sidebarLink} inline-flex items-center gap-1`}
+                            href={instructorPath({
+                              itsc: instructor.itsc,
+                              uuid: instructor.uuid,
+                            })}
+                            rel="noopener noreferrer"
+                            target="_blank"
+                          >
+                            {instructor.name}
+                            <ArrowUpRight
+                              aria-hidden="true"
+                              className="size-3"
+                            />
+                            <span className="sr-only">
+                              {" "}
+                              (opens in a new tab)
+                            </span>
+                          </Link>
+                        ) : (
+                          `${instructor.name} (unresolved source name)`
+                        )}
+                      </h3>
+                      <p className="text-sm text-slate-600">
+                        {offering.termName}
+                      </p>
+                    </section>
                   ))}
-                </ul>
+                </div>
               ) : (
                 <p className="text-sm text-slate-600">
                   No Instructor association is available.
@@ -699,6 +732,7 @@ export function ClassDetails({
   return (
     <div className="flex w-full flex-col gap-8 text-left text-slate-900">
       <DetailsHeader
+        description={scheduleClass.courseDescription}
         eyebrow="Class"
         subtitle={scheduleClass.courseTitle}
         termName={termName}
@@ -737,18 +771,26 @@ export function ClassDetails({
                 </p>
                 <div className="flex flex-wrap gap-2 font-semibold">
                   <Link
-                    className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5"
+                    className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5"
                     href={`${coursePath(scheduleClass.coursePrefix, scheduleClass.courseNumber)}#signals`}
+                    rel="noopener noreferrer"
+                    target="_blank"
                   >
-                    Course Basis signals
+                    Course Basis
+                    <ArrowUpRight aria-hidden="true" className="size-3" />
+                    <span className="sr-only"> (opens in a new tab)</span>
                   </Link>
                   {instructorOptions.map((instructor) => (
                     <Link
-                      className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5"
+                      className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5"
                       href={`${instructorPath(instructor.instructorUuid)}#signals`}
                       key={instructor.instructorUuid}
+                      rel="noopener noreferrer"
+                      target="_blank"
                     >
                       Instructor Basis · {instructor.name}
+                      <ArrowUpRight aria-hidden="true" className="size-3" />
+                      <span className="sr-only"> (opens in a new tab)</span>
                     </Link>
                   ))}
                 </div>
@@ -823,13 +865,17 @@ export function ClassDetails({
               <p>
                 Course ·{" "}
                 <Link
-                  className="font-semibold"
+                  className={`${styles.sidebarLink} inline-flex items-center gap-1 font-semibold`}
                   href={coursePath(
                     scheduleClass.coursePrefix,
                     scheduleClass.courseNumber,
                   )}
+                  rel="noopener noreferrer"
+                  target="_blank"
                 >
                   {scheduleClass.courseCode}
+                  <ArrowUpRight aria-hidden="true" className="size-3" />
+                  <span className="sr-only"> (opens in a new tab)</span>
                 </Link>
               </p>
               {instructors.size ? (
@@ -838,10 +884,14 @@ export function ClassDetails({
                     Instructor ·{" "}
                     {instructor.uuid ? (
                       <Link
-                        className="font-semibold"
+                        className={`${styles.sidebarLink} inline-flex items-center gap-1 font-semibold`}
                         href={instructorPath(instructor.uuid)}
+                        rel="noopener noreferrer"
+                        target="_blank"
                       >
                         {instructor.name}
+                        <ArrowUpRight aria-hidden="true" className="size-3" />
+                        <span className="sr-only"> (opens in a new tab)</span>
                       </Link>
                     ) : (
                       `${instructor.name} (unresolved source name)`

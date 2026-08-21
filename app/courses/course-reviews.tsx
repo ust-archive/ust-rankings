@@ -226,23 +226,24 @@ export function ReviewComposer({
     ],
   );
   const terms = useMemo(
-    () => [
-      ...new Map(
-        validContexts.flatMap((item) =>
-          item.termCode
-            ? [
-                [
-                  item.termCode,
-                  item.termName ??
-                    (displayTermNames
-                      ? rankingTermName(item.termCode)
-                      : item.termCode),
-                ] as const,
-              ]
-            : [],
-        ),
-      ).entries(),
-    ],
+    () =>
+      [
+        ...new Map(
+          validContexts.flatMap((item) =>
+            item.termCode
+              ? [
+                  [
+                    item.termCode,
+                    item.termName ??
+                      (displayTermNames
+                        ? rankingTermName(item.termCode)
+                        : item.termCode),
+                  ] as const,
+                ]
+              : [],
+          ),
+        ).entries(),
+      ].sort(([left], [right]) => right.localeCompare(left)),
     [displayTermNames, validContexts],
   );
   const sections = useMemo(
@@ -446,11 +447,7 @@ export function ReviewComposer({
             <FieldGroup className="grid gap-4 sm:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor={`${inputId}-course`}>Course</FieldLabel>
-                <Select
-                  name={courseEnabled ? "course" : undefined}
-                  onValueChange={setCourse}
-                  value={course}
-                >
+                <Select name="course" onValueChange={setCourse} value={course}>
                   <SelectTrigger id={`${inputId}-course`}>
                     <SelectValue />
                   </SelectTrigger>
@@ -475,7 +472,7 @@ export function ReviewComposer({
                   Instructor
                 </FieldLabel>
                 <Select
-                  name={instructorEnabled ? "instructorUuid" : undefined}
+                  name="instructorUuid"
                   onValueChange={setInstructorUuid}
                   value={instructorUuid}
                 >
@@ -504,174 +501,177 @@ export function ReviewComposer({
               <FieldError>Select at least one Review Basis.</FieldError>
             ) : null}
           </FieldSet>
-          <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
-            <FieldLegend>
-              Review Context{" "}
-              <span className="font-normal text-gray-500">(optional)</span>
-            </FieldLegend>
-            <input name="termCode" type="hidden" value={termCode} />
-            <input name="section" type="hidden" value={section} />
-            <FieldGroup className="grid gap-4 sm:grid-cols-2">
+          {hasBasis ? (
+            <>
+              <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
+                <FieldLegend>
+                  Review Context{" "}
+                  <span className="font-normal text-gray-500">(optional)</span>
+                </FieldLegend>
+                <input name="termCode" type="hidden" value={termCode} />
+                <input name="section" type="hidden" value={section} />
+                <FieldGroup className="grid gap-4 sm:grid-cols-2">
+                  <Field>
+                    <FieldLabel htmlFor={`${inputId}-term`}>Term</FieldLabel>
+                    <Select
+                      onValueChange={(value) => {
+                        setTermCode(value === "general" ? "" : value);
+                        setSection("");
+                      }}
+                      value={termCode || "general"}
+                    >
+                      <SelectTrigger id={`${inputId}-term`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        <SelectGroup>
+                          <SelectItem value="general">(All terms)</SelectItem>
+                          {displayedTerms.map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field data-disabled={!courseEnabled || !termCode}>
+                    <FieldLabel htmlFor={`${inputId}-section`}>
+                      Section
+                    </FieldLabel>
+                    <Select
+                      disabled={!courseEnabled || !termCode}
+                      onValueChange={(value) =>
+                        setSection(value === "all" ? "" : value)
+                      }
+                      value={section || "all"}
+                    >
+                      <SelectTrigger id={`${inputId}-section`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="all">(All sections)</SelectItem>
+                          {displayedSections.map((value) => (
+                            <SelectItem key={value} value={value}>
+                              {value}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </FieldGroup>
+                <FieldDescription>
+                  Term qualifies every selected Review Basis. Section requires a
+                  Course Basis and Term and identifies a Class.
+                </FieldDescription>
+                {edit && !selectionSupported ? (
+                  <FieldError>
+                    This Review snapshot is no longer source-backed. Select
+                    supported Review Bases and Review Context before publishing.
+                    Persisted values are shown as the current snapshot and will
+                    not be removed automatically.
+                  </FieldError>
+                ) : null}
+              </FieldSet>
               <Field>
-                <FieldLabel htmlFor={`${inputId}-term`}>Term</FieldLabel>
-                <Select
-                  onValueChange={(value) => {
-                    setTermCode(value === "general" ? "" : value);
-                    setSection("");
+                <FieldLabel>Review</FieldLabel>
+                <input name="markdown" type="hidden" value={markdown} />
+                <ReviewMarkdownEditor
+                  markdown={markdown}
+                  onChange={setMarkdown}
+                  uploadImage={uploadImage}
+                />
+                <FieldDescription>
+                  Write with the toolbar. Paste or drop images to upload and
+                  embed them as Attachments.
+                </FieldDescription>
+              </Field>
+              <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
+                <FieldLegend>Attachments</FieldLegend>
+                <input
+                  name="attachments"
+                  type="hidden"
+                  value={JSON.stringify(
+                    readyAttachments.map(
+                      ({ id, storedFileId, filename, description }) => ({
+                        id,
+                        storedFileId,
+                        filename,
+                        description,
+                      }),
+                    ),
+                  )}
+                />
+                <Input
+                  accept=".jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.pdf,.txt,.md,.csv,.docx,.xlsx,.pptx,.odt,.ods,.odp,image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,application/pdf,text/plain,text/markdown,text/csv"
+                  aria-label="Add Attachments"
+                  disabled={attachments.length >= 4}
+                  multiple
+                  onChange={(event) => {
+                    void addFiles(event.target.files);
+                    event.target.value = "";
                   }}
-                  value={termCode || "general"}
-                >
-                  <SelectTrigger id={`${inputId}-term`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="general">All terms</SelectItem>
-                      {displayedTerms.map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field data-disabled={!courseEnabled || !termCode}>
-                <FieldLabel htmlFor={`${inputId}-section`}>Section</FieldLabel>
-                <Select
-                  disabled={!courseEnabled || !termCode}
-                  onValueChange={(value) =>
-                    setSection(value === "all" ? "" : value)
-                  }
-                  value={section || "all"}
-                >
-                  <SelectTrigger id={`${inputId}-section`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="all">All sections</SelectItem>
-                      {displayedSections.map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {value}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
-            </FieldGroup>
-            <FieldDescription>
-              Term qualifies every selected Review Basis. Section requires a
-              Course Basis and Term and identifies a Class.
-            </FieldDescription>
-            {edit && !selectionSupported ? (
-              <FieldError>
-                This Review snapshot is no longer source-backed. Select
-                supported Review Bases and Review Context before publishing.
-                Persisted values are shown as the current snapshot and will not
-                be removed automatically.
-              </FieldError>
-            ) : null}
-          </FieldSet>
-          <Field>
-            <FieldLabel>Review</FieldLabel>
-            <input name="markdown" type="hidden" value={markdown} />
-            <ReviewMarkdownEditor
-              markdown={markdown}
-              onChange={setMarkdown}
-              uploadImage={uploadImage}
-            />
-            <FieldDescription>
-              Write with the toolbar. Paste or drop images to upload and embed
-              them as Attachments.
-            </FieldDescription>
-          </Field>
-          <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
-            <FieldLegend>Attachments</FieldLegend>
-            <input
-              name="attachments"
-              type="hidden"
-              value={JSON.stringify(
-                readyAttachments.map(
-                  ({ id, storedFileId, filename, description }) => ({
-                    id,
-                    storedFileId,
-                    filename,
-                    description,
-                  }),
-                ),
-              )}
-            />
-            <FieldDescription className="text-amber-950">
-              Embedded metadata is preserved and may expose names, device
-              information, or location. UST Rankings does not resize, strip,
-              transcode, or malware-scan files. Strict format validation is not
-              antivirus assurance. Accepted JPEG, PNG, GIF, WebP, HEIC/HEIF,
-              PDF, TXT, Markdown, CSV, macro-free DOCX/XLSX/PPTX, and
-              ODT/ODS/ODP files count toward a 32 MiB distinct Stored File
-              quota, including pending uploads. A Revision has at most four
-              Attachments. Review text can publish while an upload is pending.
-            </FieldDescription>
-            <Input
-              accept=".jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.pdf,.txt,.md,.csv,.docx,.xlsx,.pptx,.odt,.ods,.odp,image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,application/pdf,text/plain,text/markdown,text/csv"
-              aria-label="Add Attachments"
-              disabled={attachments.length >= 4}
-              multiple
-              onChange={(event) => {
-                void addFiles(event.target.files);
-                event.target.value = "";
-              }}
-              type="file"
-            />
-            {attachments.map((attachment) => (
-              <p className="text-sm" key={attachment.id}>
-                {attachment.filename} · {attachment.status}
-              </p>
-            ))}
-          </FieldSet>
-          <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
-            <FieldLegend>Public identity</FieldLegend>
-            <input name="attribution" type="hidden" value={attribution} />
-            <ToggleGroup
-              aria-label="Public identity"
-              className="grid grid-cols-2"
-              onValueChange={(value) => {
-                if (value) setAttribution(value as ReviewAttribution);
-              }}
-              type="single"
-              value={attribution}
-              variant="outline"
-            >
-              <ToggleGroupItem value="attributed">Attributed</ToggleGroupItem>
-              <ToggleGroupItem value="identity-hidden">
-                Identity Hidden
-              </ToggleGroupItem>
-            </ToggleGroup>
-            <FieldDescription>
-              Attributed displays your current Public Display Name. Identity
-              Hidden displays no author name, but an authorized operator can
-              still link the Review to your account for moderation, security,
-              rights, and legal purposes.
-            </FieldDescription>
-          </FieldSet>
-          <Alert className="bg-amber-50 text-amber-950">
-            <AlertDescription>
-              Review text is licensed under{" "}
-              <a
-                className="font-semibold underline"
-                href="https://creativecommons.org/licenses/by/4.0/"
-              >
-                CC BY 4.0
-              </a>
-              . Attributed Reviews credit your captured Public Display Name and
-              Review permalink; Identity Hidden Reviews credit “UST Rankings
-              contributor” and the permalink. You also grant UST Rankings a
-              non-exclusive license to host, format, display, and moderate the
-              Review. Publishing permissions already granted under CC BY 4.0
-              cannot be withdrawn from copies already obtained.
-            </AlertDescription>
-          </Alert>
+                  type="file"
+                />
+                {attachments.map((attachment) => (
+                  <p className="text-sm" key={attachment.id}>
+                    {attachment.filename} · {attachment.status}
+                  </p>
+                ))}
+              </FieldSet>
+              <div className="flex flex-col">
+                <FieldSet className="min-w-0 gap-4 rounded-b-none rounded-t-xl border border-gray-200 p-4">
+                  <FieldLegend>Public Identity</FieldLegend>
+                  <input name="attribution" type="hidden" value={attribution} />
+                  <ToggleGroup
+                    aria-label="Public Identity"
+                    className="grid grid-cols-2 gap-3"
+                    onValueChange={(value) => {
+                      if (value) setAttribution(value as ReviewAttribution);
+                    }}
+                    type="single"
+                    value={attribution}
+                    variant="outline"
+                  >
+                    <ToggleGroupItem value="attributed">
+                      Attributed
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="identity-hidden">
+                      Identity Hidden
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                  <FieldDescription>
+                    Attributed displays your current Public Display Name.
+                    Identity Hidden displays no author name, but an authorized
+                    operator can still link the Review to your account for
+                    moderation, security, rights, and legal purposes.
+                  </FieldDescription>
+                </FieldSet>
+                <Alert className="rounded-t-none border-t-0 bg-amber-50 text-amber-950">
+                  <AlertDescription>
+                    Review text is licensed under{" "}
+                    <a
+                      className="font-semibold underline"
+                      href="https://creativecommons.org/licenses/by/4.0/"
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      CC BY 4.0
+                    </a>
+                    . Attributed Reviews credit your captured Public Display
+                    Name and Review permalink; Identity Hidden Reviews credit
+                    “UST Rankings contributor” and the permalink. You also grant
+                    UST Rankings a non-exclusive license to host, format,
+                    display, and moderate the Review. Publishing permissions
+                    already granted under CC BY 4.0 cannot be withdrawn from
+                    copies already obtained.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            </>
+          ) : null}
           <DialogFooter className="gap-2 border-t border-slate-200 pt-5">
             <DialogClose asChild>
               <Button type="button" variant="outline">

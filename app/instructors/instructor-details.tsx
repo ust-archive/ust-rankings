@@ -1,3 +1,4 @@
+import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import {
   ReviewComposer,
@@ -40,7 +41,16 @@ function CourseEntry({
   return (
     <section className="flex flex-col gap-1">
       <h3 className="font-semibold text-balance">
-        <Link href={coursePath(coursePrefix, courseNumber)}>{courseCode}</Link>
+        <Link
+          className={`${detailsStyles.sidebarLink} inline-flex items-center gap-1`}
+          href={coursePath(coursePrefix, courseNumber)}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          {courseCode}
+          <ArrowUpRight aria-hidden="true" className="size-3" />
+          <span className="sr-only"> (opens in a new tab)</span>
+        </Link>
       </h3>
       <p className="text-sm text-slate-600">
         {termCodes
@@ -59,15 +69,20 @@ function ClassEntry({ scheduleClass }: { scheduleClass: ScheduleClass }) {
     <section className="flex flex-col gap-1">
       <h3 className="font-semibold text-balance">
         <Link
+          className={`${detailsStyles.sidebarLink} inline-flex items-center gap-1`}
           href={coursePath(
             scheduleClass.coursePrefix,
             scheduleClass.courseNumber,
             scheduleClass.termCode,
             scheduleClass.section,
           )}
+          rel="noopener noreferrer"
+          target="_blank"
         >
           {scheduleClass.courseCode} {scheduleClass.section} (
           {scheduleClass.classNumber})
+          <ArrowUpRight aria-hidden="true" className="size-3" />
+          <span className="sr-only"> (opens in a new tab)</span>
         </Link>
       </h3>
       <p className="text-sm text-slate-600">

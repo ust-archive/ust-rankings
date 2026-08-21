@@ -170,6 +170,7 @@ export type ScheduleClass = {
   courseNumber: string;
   courseCode: string;
   courseTitle: string;
+  courseDescription?: string;
   section: string;
   classNumber: number;
   role: "E" | "N";
@@ -986,6 +987,7 @@ function mapRows(rows: Array<Record<string, unknown>>, accepted: Generation) {
       courseNumber: offering.courseNumber,
       courseCode: offering.courseCode,
       courseTitle: offering.title,
+      courseDescription: offering.description,
       section: text(row.section),
       classNumber: numeric(row.class_number),
       role: text(row.role) as ScheduleClass["role"],

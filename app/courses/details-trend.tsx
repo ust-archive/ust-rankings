@@ -279,7 +279,6 @@ export function DetailsTrend({
                     scope="row"
                   >
                     {term.termName}
-                    {term.termCode === selectedTermCode ? " · selected" : ""}
                   </th>
                   {selectedCriteria.map((criterion) => {
                     const value = term.criteria[criterion];

@@ -44,10 +44,14 @@ function parseReviewForm(formData: FormData) {
   const rawInstructor = formData.get("instructorUuid");
   const rawTermCode = formData.get("termCode");
   const rawSection = formData.get("section");
-  const courseEntry = stringEntry(formData, "course");
+  const submittedCourse = stringEntry(formData, "course");
+  const courseEntry =
+    submittedCourse === "all-courses" ? undefined : submittedCourse;
   const courseParts = courseEntry?.split("|") ?? [];
   const [coursePrefix = "", courseNumber = ""] = courseParts;
-  const instructorEntry = stringEntry(formData, "instructorUuid");
+  const submittedInstructor = stringEntry(formData, "instructorUuid");
+  const instructorEntry =
+    submittedInstructor === "all-instructors" ? undefined : submittedInstructor;
   const instructorUuid = instructorEntry?.trim().toLowerCase();
   const termCode = stringEntry(formData, "termCode")?.trim() || undefined;
   const section = stringEntry(formData, "section")?.trim() || undefined;
