@@ -1,7 +1,5 @@
 ## Agent skills
 
-IMPORTANT: DO NOT run and DO NOT create tests for frontend (e.g., playwright). Use visual criterion, i.e., screenshot and see.
-
 ### Matt
 
 Always use matching `mattpocock/skills` skills.
@@ -12,7 +10,7 @@ Always use matching `ponytail` skills.
 
 ### Vercel
 
-Always use matching `vercel-*` and `agent-browser` (esp. the screenshot feature) skills for frontend work.
+Always use matching `vercel-*` and `agent-browser` (esp. the screenshot feature) skills for frontend work. Use screenshots and see screenshots to design UI/UX.
 
 ### Issue tracker
 
