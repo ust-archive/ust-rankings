@@ -38,77 +38,224 @@ export function rankingTermName(termCode: string) {
 
 export type RankingPreset = "learning" | "grade";
 export type RankingWeights = Partial<Record<Criterion, number>>;
+export type CommonCoreScheme = "4Y" | "CC22" | "CC25" | "CC26";
 export type CommonCoreCategory =
-  | "critical-thinking-data-literacy"
-  | "healthy-lifestyle-mindfulness-well-being"
+  | "ssc-humanities"
+  | "ssc-social-analysis"
+  | "ssc-science-technology"
+  | "humanities"
+  | "social-analysis"
+  | "science-technology"
+  | "quantitative-reasoning"
+  | "arts"
   | "english-communication"
   | "chinese-communication"
-  | "arts"
-  | "humanities"
+  | "health"
+  | "critical-thinking-data-literacy"
+  | "healthy-lifestyle-mindfulness-well-being"
   | "science"
   | "technology"
-  | "social-analysis"
   | "sustainability"
+  | "haic"
   | "undergraduate-research"
   | "undergraduate-teaching"
   | "undergraduate-participation"
   | "undergraduate-community";
 
-export const COMMON_CORE_CATEGORIES: ReadonlyArray<{
+type CommonCoreCategoryDefinition = {
   value: CommonCoreCategory;
   label: string;
-  cc25Value: string;
-}> = [
+  attributeValue: string;
+};
+
+export type CommonCoreSchemeDefinition = {
+  value: CommonCoreScheme;
+  label: string;
+  categories: ReadonlyArray<CommonCoreCategoryDefinition>;
+};
+
+const opportunities: ReadonlyArray<
+  Omit<CommonCoreCategoryDefinition, "attributeValue">
+> = [
+  { value: "undergraduate-research", label: "UxOP-UROP" },
+  { value: "undergraduate-teaching", label: "UxOP-UTOP" },
+  { value: "undergraduate-participation", label: "UxOP-UPOP" },
+  { value: "undergraduate-community", label: "UxOP-UCOP" },
+];
+
+export const COMMON_CORE_SCHEMES: ReadonlyArray<CommonCoreSchemeDefinition> = [
   {
-    value: "critical-thinking-data-literacy",
-    label: "Critical Thinking and Data Literacy",
-    cc25Value: "33",
+    value: "4Y",
+    label: "Students Admitted Before 2022",
+    categories: [
+      { value: "ssc-humanities", label: "SSC-H", attributeValue: "09" },
+      {
+        value: "ssc-social-analysis",
+        label: "SSC-SA",
+        attributeValue: "10",
+      },
+      {
+        value: "ssc-science-technology",
+        label: "SSC-S&T",
+        attributeValue: "11",
+      },
+      { value: "humanities", label: "Humanities", attributeValue: "12" },
+      {
+        value: "social-analysis",
+        label: "Social Analysis",
+        attributeValue: "13",
+      },
+      {
+        value: "science-technology",
+        label: "Science & Technology",
+        attributeValue: "14",
+      },
+      {
+        value: "quantitative-reasoning",
+        label: "Quantitative Reasoning",
+        attributeValue: "15",
+      },
+      { value: "arts", label: "Arts", attributeValue: "16" },
+      {
+        value: "english-communication",
+        label: "English Communication",
+        attributeValue: "17",
+      },
+      {
+        value: "chinese-communication",
+        label: "Chinese Communication",
+        attributeValue: "18",
+      },
+      { value: "health", label: "Health", attributeValue: "19" },
+    ],
   },
   {
-    value: "healthy-lifestyle-mindfulness-well-being",
-    label: "Healthy Lifestyle, Mindfulness and Well-being",
-    cc25Value: "34",
+    value: "CC22",
+    label: "Students Admitted in 2022–2024",
+    categories: [
+      {
+        value: "critical-thinking-data-literacy",
+        label: "Critical Thinking & Data Literacy",
+        attributeValue: "20",
+      },
+      {
+        value: "healthy-lifestyle-mindfulness-well-being",
+        label: "Healthy Lifestyle, Mindfulness & Well-being",
+        attributeValue: "21",
+      },
+      {
+        value: "english-communication",
+        label: "English Communication",
+        attributeValue: "22",
+      },
+      {
+        value: "chinese-communication",
+        label: "Chinese Communication",
+        attributeValue: "23",
+      },
+      { value: "arts", label: "Arts", attributeValue: "24" },
+      { value: "humanities", label: "Humanities", attributeValue: "25" },
+      { value: "science", label: "Science", attributeValue: "26" },
+      { value: "technology", label: "Technology", attributeValue: "27" },
+      {
+        value: "social-analysis",
+        label: "Social Analysis",
+        attributeValue: "28",
+      },
+      ...opportunities.map((category, index) => ({
+        ...category,
+        attributeValue: String(29 + index),
+      })),
+    ],
   },
   {
-    value: "english-communication",
-    label: "English Communication",
-    cc25Value: "35",
+    value: "CC25",
+    label: "Students Admitted in 2025",
+    categories: [
+      {
+        value: "critical-thinking-data-literacy",
+        label: "Critical Thinking & Data Literacy",
+        attributeValue: "33",
+      },
+      {
+        value: "healthy-lifestyle-mindfulness-well-being",
+        label: "Healthy Lifestyle, Mindfulness & Well-being",
+        attributeValue: "34",
+      },
+      {
+        value: "english-communication",
+        label: "English Communication",
+        attributeValue: "35",
+      },
+      {
+        value: "chinese-communication",
+        label: "Chinese Communication",
+        attributeValue: "36",
+      },
+      { value: "arts", label: "Arts", attributeValue: "37" },
+      { value: "humanities", label: "Humanities", attributeValue: "38" },
+      { value: "science", label: "Science", attributeValue: "39" },
+      { value: "technology", label: "Technology", attributeValue: "40" },
+      {
+        value: "social-analysis",
+        label: "Social Analysis",
+        attributeValue: "41",
+      },
+      {
+        value: "sustainability",
+        label: "Sustainability",
+        attributeValue: "42",
+      },
+      ...opportunities.map((category, index) => ({
+        ...category,
+        attributeValue: String(43 + index),
+      })),
+    ],
   },
   {
-    value: "chinese-communication",
-    label: "Chinese Communication",
-    cc25Value: "36",
-  },
-  { value: "arts", label: "Arts", cc25Value: "37" },
-  { value: "humanities", label: "Humanities", cc25Value: "38" },
-  { value: "science", label: "Science", cc25Value: "39" },
-  { value: "technology", label: "Technology", cc25Value: "40" },
-  { value: "social-analysis", label: "Social Analysis", cc25Value: "41" },
-  { value: "sustainability", label: "Sustainability", cc25Value: "42" },
-  {
-    value: "undergraduate-research",
-    label: "Undergraduate Research Opportunity",
-    cc25Value: "43",
-  },
-  {
-    value: "undergraduate-teaching",
-    label: "Undergraduate Teaching Opportunity",
-    cc25Value: "44",
-  },
-  {
-    value: "undergraduate-participation",
-    label: "Undergraduate Participation Opportunity",
-    cc25Value: "45",
-  },
-  {
-    value: "undergraduate-community",
-    label: "Undergraduate Community Opportunity",
-    cc25Value: "46",
+    value: "CC26",
+    label: "Students Admitted From 2026",
+    categories: [
+      { value: "haic", label: "HAIC", attributeValue: "47" },
+      {
+        value: "healthy-lifestyle-mindfulness-well-being",
+        label: "Healthy Lifestyle, Mindfulness & Well-being",
+        attributeValue: "48",
+      },
+      {
+        value: "english-communication",
+        label: "English Communication",
+        attributeValue: "49",
+      },
+      {
+        value: "chinese-communication",
+        label: "Chinese Communication",
+        attributeValue: "50",
+      },
+      { value: "arts", label: "Arts", attributeValue: "51" },
+      { value: "humanities", label: "Humanities", attributeValue: "52" },
+      { value: "science", label: "Science", attributeValue: "53" },
+      { value: "technology", label: "Technology", attributeValue: "54" },
+      {
+        value: "social-analysis",
+        label: "Social Analysis",
+        attributeValue: "55",
+      },
+      {
+        value: "sustainability",
+        label: "Sustainability",
+        attributeValue: "56",
+      },
+      ...opportunities.map((category, index) => ({
+        ...category,
+        attributeValue: String(57 + index),
+      })),
+    ],
   },
 ];
 
-const commonCoreValues = new Map<CommonCoreCategory, string>(
-  COMMON_CORE_CATEGORIES.map(({ value, cc25Value }) => [value, cc25Value]),
+const commonCoreSchemes = new Map(
+  COMMON_CORE_SCHEMES.map((scheme) => [scheme.value, scheme]),
 );
 
 const PRESET_WEIGHTS: Record<
@@ -351,6 +498,7 @@ export type RankingsQuery = {
   activity?: "current" | "all";
   search?: string;
   coursePrefix?: string;
+  commonCoreScheme?: CommonCoreScheme;
   commonCore?: CommonCoreCategory[];
   course?: string;
   limit?: number;
@@ -1941,11 +2089,27 @@ async function queryRankingsWithGeneration(
   if (course && !/^[A-Z]{2,8} [0-9]{3,5}[A-Z]?$/.test(course))
     throw new InvalidRankingsQueryError("Invalid Course Code.");
   const commonCore = [...new Set(query.commonCore ?? [])].sort();
+  const commonCoreScheme =
+    query.entity === "course" ? (query.commonCoreScheme ?? "CC25") : undefined;
+  const commonCoreDefinition = commonCoreScheme
+    ? commonCoreSchemes.get(commonCoreScheme)
+    : undefined;
+  if (commonCoreScheme && !commonCoreDefinition)
+    throw new InvalidRankingsQueryError("Invalid Common Core cohort.");
+  const commonCoreValues = new Map(
+    commonCoreDefinition?.categories.map(({ value, attributeValue }) => [
+      value,
+      attributeValue,
+    ]),
+  );
   if (commonCore.some((category) => !commonCoreValues.has(category)))
-    throw new InvalidRankingsQueryError("Invalid Common Core category.");
+    throw new InvalidRankingsQueryError(
+      "Common Core category does not belong to this cohort.",
+    );
   if (
     (query.entity === "course" && course) ||
-    (query.entity === "instructor" && commonCore.length > 0)
+    (query.entity === "instructor" &&
+      (commonCore.length > 0 || query.commonCoreScheme))
   )
     throw new InvalidRankingsQueryError(
       "Filter does not apply to this entity.",
@@ -2096,14 +2260,16 @@ async function queryRankingsWithGeneration(
       const courseNumber = prefix ? key.slice(prefix.length) : "";
       if (!prefix || !courseNumber) continue;
       const metadata = catalog.get(key);
-      const categories = COMMON_CORE_CATEGORIES.filter(
-        ({ value }) =>
-          metadata?.courseAttributes?.some(
-            (attribute) =>
-              attribute.courseAttribute === "CC25" &&
-              attribute.courseAttributeValue === commonCoreValues.get(value),
-          ) ?? false,
-      ).map(({ value }) => value);
+      const categories = (commonCoreDefinition?.categories ?? [])
+        .filter(
+          ({ attributeValue }) =>
+            metadata?.courseAttributes?.some(
+              (attribute) =>
+                attribute.courseAttribute === commonCoreScheme &&
+                attribute.courseAttributeValue === attributeValue,
+            ) ?? false,
+        )
+        .map(({ value }) => value);
       const associated = identitiesByCourse.get(key) ?? [];
       candidates.push({
         key,
@@ -2216,6 +2382,7 @@ async function queryRankingsWithGeneration(
     activity,
     search,
     coursePrefix,
+    commonCoreScheme,
     commonCore,
     course,
     configuration,
@@ -2381,14 +2548,16 @@ export async function getRankings(
         });
         return instructor ? [{ termCode, instructor }] : [];
       });
-      const commonCore = COMMON_CORE_CATEGORIES.filter(
-        ({ value }) =>
-          metadata?.courseAttributes.some(
-            (attribute) =>
-              attribute.courseAttribute === "CC25" &&
-              attribute.courseAttributeValue === commonCoreValues.get(value),
-          ) ?? false,
-      ).map(({ value }) => value);
+      const commonCore = (commonCoreSchemes.get("CC25")?.categories ?? [])
+        .filter(
+          ({ attributeValue }) =>
+            metadata?.courseAttributes.some(
+              (attribute) =>
+                attribute.courseAttribute === "CC25" &&
+                attribute.courseAttributeValue === attributeValue,
+            ) ?? false,
+        )
+        .map(({ value }) => value);
       return {
         generation: accepted.sha,
         population: page.population,

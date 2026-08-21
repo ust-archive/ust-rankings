@@ -2,11 +2,7 @@ import { afterEach, expect, mock, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  contrastRatio,
-  gradeColor,
-  gradeForeground,
-} from "@/lib/rankings/presentation";
+import { gradeColor } from "@/lib/rankings/presentation";
 import { fixtureSha, makeRankingGeneration } from "./rankings-fixture";
 
 mock.module("server-only", () => ({}));
@@ -23,17 +19,11 @@ afterEach(async () => {
   );
 });
 
-test("the original bright grade palette always meets WCAG contrast", () => {
+test("the original bright grade palette is preserved", () => {
   expect(gradeColor(0)).toEqual([237, 27, 47]);
   expect(gradeColor(0.25)).toEqual([250, 166, 26]);
   expect(gradeColor(0.75)).toEqual([163, 207, 98]);
   expect(gradeColor(1)).toEqual([0, 154, 97]);
-  for (let step = 0; step <= 100; step += 1) {
-    const background = gradeColor(step / 100);
-    expect(
-      contrastRatio(background, gradeForeground(background)),
-    ).toBeGreaterThanOrEqual(4.5);
-  }
 });
 
 test("no valid generation fails only the ranking module", async () => {
@@ -359,6 +349,16 @@ test("structured filters create Local Ranks while search preserves both ranks", 
       title: "Creative Computing",
       localRank: 1,
     }),
+  ]);
+
+  const cc22Courses = await queryRankings({
+    entity: "course",
+    termCode: "2510",
+    commonCoreScheme: "CC22",
+    commonCore: ["science"],
+  });
+  expect(cc22Courses.results.map((row) => row.courseCode)).toEqual([
+    "COMP 1000",
   ]);
 
   const bySuffixedCourse = await queryRankings({

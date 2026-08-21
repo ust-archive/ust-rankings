@@ -9,8 +9,9 @@ import {
 } from "@/components/ui/empty";
 import { RANKING_CRITERIA } from "@/lib/rankings/configuration";
 import {
-  COMMON_CORE_CATEGORIES,
+  COMMON_CORE_SCHEMES,
   type CommonCoreCategory,
+  type CommonCoreScheme,
   InvalidRankingsQueryError,
   queryRankings,
   type RankingsPage,
@@ -131,7 +132,12 @@ function pageQuery(entity: Entity, searchParams: RankingSearchParams) {
     weights,
     activity: single(searchParams, "activity"),
     search: single(searchParams, "q"),
-    coursePrefix: single(searchParams, "prefix"),
+    commonCoreScheme:
+      entity === "course"
+        ? (single(searchParams, "commonCoreScheme") as
+            | CommonCoreScheme
+            | undefined)
+        : undefined,
     commonCore:
       entity === "course"
         ? ((Array.isArray(categories)
@@ -140,8 +146,6 @@ function pageQuery(entity: Entity, searchParams: RankingSearchParams) {
               ? [categories]
               : []) as CommonCoreCategory[])
         : undefined,
-    course:
-      entity === "instructor" ? single(searchParams, "course") : undefined,
     cursor: single(searchParams, "cursor"),
     limit: 100,
   } as RankingsQuery;
@@ -186,8 +190,7 @@ function RankingForm({
   const initial = {
     activity: query?.activity ?? "current",
     commonCore,
-    course: query?.course ?? first(searchParams, "course") ?? "",
-    prefix: query?.coursePrefix ?? first(searchParams, "prefix") ?? "",
+    commonCoreScheme: query?.commonCoreScheme ?? "CC25",
     preset,
     search: query?.search ?? first(searchParams, "q") ?? "",
     termCode,
@@ -198,10 +201,10 @@ function RankingForm({
   };
   return (
     <RankingControls
-      categories={COMMON_CORE_CATEGORIES}
       entity={entity}
       initial={initial}
       key={JSON.stringify({ ...initial, search: undefined })}
+      schemes={COMMON_CORE_SCHEMES}
       terms={terms}
     />
   );

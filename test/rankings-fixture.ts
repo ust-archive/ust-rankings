@@ -282,6 +282,7 @@ export async function makeRankingGeneration(
         courseCode: "COMP1000",
         courseName: "Creative Computing",
         courseAttributes: [
+          { courseAttribute: "CC22", courseAttributeValue: "26" },
           { courseAttribute: "CC25", courseAttributeValue: "37" },
         ],
       },

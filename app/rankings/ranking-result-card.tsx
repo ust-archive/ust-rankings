@@ -7,11 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  gradeColor,
-  gradeForeground,
-  letterGrade,
-} from "@/lib/rankings/presentation";
+import { gradeColor, letterGrade } from "@/lib/rankings/presentation";
 import type { CourseRanking, InstructorRanking } from "@/lib/rankings/server";
 import { coursePath, instructorPath } from "@/lib/routes";
 
@@ -58,7 +54,7 @@ export function RankingResultCard({ result }: { result: Ranking }) {
             </p>
             <p className="text-xs tabular-nums sm:hidden">Score {score}</p>
           </CardContent>
-          <CardHeader className="min-w-0 gap-0 p-0 text-left">
+          <CardHeader className="min-w-0 space-y-0 p-0 text-left">
             <CardTitle asChild>
               <h2 className="wrap-break-word text-xl leading-tight tracking-normal text-slate-950 sm:text-2xl">
                 {result.entity === "course"
@@ -71,7 +67,7 @@ export function RankingResultCard({ result }: { result: Ranking }) {
                 {result.title}
               </CardDescription>
             ) : null}
-            <CardDescription className="leading-snug text-slate-600 sm:text-sm">
+            <CardDescription className="text-xs leading-snug text-slate-600 sm:text-sm">
               {sampleCount(result.ustSpaceSamples, "ust.space")}.{" "}
               {sampleCount(result.sfqSamples, "SFQ")}.
             </CardDescription>
@@ -84,12 +80,9 @@ export function RankingResultCard({ result }: { result: Ranking }) {
           </CardHeader>
           <CardContent className="p-0">
             <Badge
-              className="w-12 justify-center rounded-lg border-0 py-2 text-xl shadow-sm sm:text-2xl"
+              className="w-12 justify-center rounded-lg border-0 py-2 text-xl text-white shadow-sm [text-shadow:0_1px_2px_rgb(0_0_0_/_0.8)] sm:text-2xl"
               data-grade={grade}
-              style={{
-                backgroundColor: `rgb(${background.join(", ")})`,
-                color: `rgb(${gradeForeground(background).join(", ")})`,
-              }}
+              style={{ backgroundColor: `rgb(${background.join(", ")})` }}
             >
               <span className="sr-only">Grade </span>
               {grade}

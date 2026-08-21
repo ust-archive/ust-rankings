@@ -1,35 +1,16 @@
 import { expect, type Page, test } from "@playwright/test";
 
-async function expectAccessibleGradeContrast(page: Page) {
-  const ratios = await page.locator("[data-grade]").evaluateAll((elements) =>
+async function expectWhiteGradeLabels(page: Page) {
+  const styles = await page.locator("[data-grade]").evaluateAll((elements) =>
     elements.map((element) => {
       const style = getComputedStyle(element);
-      const colors = [style.backgroundColor, style.color].map((value) =>
-        value
-          .match(/[\d.]+/g)
-          ?.slice(0, 3)
-          .map(Number),
-      );
-      const [background, foreground] = colors;
-      if (!background || !foreground) return 0;
-      const luminance = [background, foreground].map((channels) =>
-        channels
-          .map((channel) => channel / 255)
-          .map((channel) =>
-            channel <= 0.04045
-              ? channel / 12.92
-              : ((channel + 0.055) / 1.055) ** 2.4,
-          )
-          .reduce(
-            (sum, channel, index) =>
-              sum + channel * [0.2126, 0.7152, 0.0722][index],
-            0,
-          ),
-      );
-      return (Math.max(...luminance) + 0.05) / (Math.min(...luminance) + 0.05);
+      return { color: style.color, textShadow: style.textShadow };
     }),
   );
-  expect(Math.min(...ratios)).toBeGreaterThanOrEqual(4.5);
+  expect(styles.every(({ color }) => color === "rgb(255, 255, 255)")).toBe(
+    true,
+  );
+  expect(styles.every(({ textShadow }) => textShadow !== "none")).toBe(true);
 }
 
 test("Rankings search filters live and keeps URL state", async ({ page }) => {
@@ -134,7 +115,7 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   await expect(
     page.getByText(/samples? from ust\.space/).first(),
   ).toBeVisible();
-  await expectAccessibleGradeContrast(page);
+  await expectWhiteGradeLabels(page);
 
   const result = page.locator('a[href^="/instructors/"]').first();
   await expect(result).toBeVisible();
@@ -158,6 +139,7 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   await search.press("Enter");
   await expect(page).toHaveURL(/\/rankings\/instructors\?.*q=a/);
   await expect(search).toHaveValue("a");
+  await expect(search.locator("..")).toHaveAttribute("aria-busy", "false");
 
   await page.getByRole("button", { name: "Ranking Settings" }).click();
   await expect(page).toHaveURL(/settings=open/);
@@ -166,29 +148,23 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
   ).toBeChecked();
   await expect(page.getByText("Learning-Focus'd")).toHaveCount(0);
   await page.getByRole("radio", { name: "Grading-Focus'd" }).click();
-  await page.getByRole("button", { name: "Apply Settings" }).click();
   await expect(page).toHaveURL(/preset=grade/);
-  await expect(page).not.toHaveURL(/settings=open/);
+  await expect(page).toHaveURL(/settings=open/);
   await expect(page).toHaveURL(/q=a/);
 
-  await page.getByRole("button", { name: "Ranking Settings" }).click();
   await page.getByRole("radio", { name: "Custom" }).click();
-  await page.getByRole("combobox", { name: "Activity" }).click();
-  await page
-    .getByRole("option", { name: "Include historical or inactive" })
-    .click();
-  await page.getByLabel("Taught Course Prefix").fill("COMP");
-  await page.getByLabel("Course Code").fill("COMP 1000");
-  await page.getByLabel("Content", { exact: true }).fill("2");
-  await page.getByRole("button", { name: "Apply Settings" }).click();
   await expect(page).toHaveURL(/preset=custom/);
+  await page.getByRole("combobox", { name: "Instructors" }).click();
+  await page.getByRole("option", { name: "All" }).click();
+  await page.getByLabel("Content", { exact: true }).fill("2");
+  await expect(page).toHaveURL(/weight_content=2/);
   const settingsUrl = new URL(page.url());
   expect(settingsUrl.searchParams.get("q")).toBe("a");
   expect(settingsUrl.searchParams.get("preset")).toBe("custom");
   expect(settingsUrl.searchParams.get("weight_content")).toBe("2");
   expect(settingsUrl.searchParams.get("activity")).toBe("all");
-  expect(settingsUrl.searchParams.get("prefix")).toBe("COMP");
-  expect(settingsUrl.searchParams.get("course")).toBe("COMP 1000");
+  expect(settingsUrl.searchParams.has("prefix")).toBe(false);
+  expect(settingsUrl.searchParams.has("course")).toBe(false);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/rankings/instructors");
@@ -245,7 +221,7 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
     page.getByRole("button", { name: "Ranking Settings" }),
   ).toBeVisible();
   await expect(page.getByText(/samples? from SFQ/).first()).toBeVisible();
-  await expectAccessibleGradeContrast(page);
+  await expectWhiteGradeLabels(page);
 
   const result = page.locator('a[href^="/courses/"]').first();
   await expect(result).toBeVisible();
@@ -268,20 +244,19 @@ test("Course Rankings preserve the restored hierarchy at 390px without overflow"
 
   await page.goto("/rankings/courses");
   await page.getByRole("button", { name: "Ranking Settings" }).click();
-  await page.getByRole("combobox", { name: "Activity" }).click();
-  await page
-    .getByRole("option", { name: "Include historical or inactive" })
-    .click();
-  await page.getByLabel("Course Prefix").fill("CENG");
+  await page.getByRole("combobox", { name: "Courses" }).click();
+  await page.getByRole("option", { name: "All" }).click();
+  await page.getByRole("combobox", { name: "Common Core Cohort" }).click();
+  await page.getByRole("option", { name: "Students Admitted in 2025" }).click();
   await page.getByLabel("Arts", { exact: true }).check();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
-  await page.getByRole("button", { name: "Apply Settings" }).click();
   await expect(page).toHaveURL(/commonCore=arts/);
   const filterUrl = new URL(page.url());
   expect(filterUrl.searchParams.get("activity")).toBe("all");
-  expect(filterUrl.searchParams.get("prefix")).toBe("CENG");
+  expect(filterUrl.searchParams.get("commonCoreScheme")).toBe("CC25");
+  expect(filterUrl.searchParams.has("prefix")).toBe(false);
   expect(filterUrl.searchParams.getAll("commonCore")).toContain("arts");
   expect(filterUrl.searchParams.get("term")).toBeTruthy();
   expect(

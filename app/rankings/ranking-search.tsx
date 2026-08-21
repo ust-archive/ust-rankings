@@ -80,7 +80,7 @@ export function RankingSearch({
           if (event.key !== "Enter") return;
           event.preventDefault();
           window.clearTimeout(timeout.current);
-          navigate(value);
+          navigate(event.currentTarget.value);
         }}
         placeholder={
           entity === "course"

@@ -38,25 +38,3 @@ export function gradeColor(ratio: number): RankingColor {
   }
   return [0, 0, 0];
 }
-
-function luminance(color: RankingColor) {
-  return color
-    .map((channel) => channel / 255)
-    .map((channel) =>
-      channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
-    )
-    .reduce(
-      (sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index],
-      0,
-    );
-}
-
-export function contrastRatio(first: RankingColor, second: RankingColor) {
-  const values = [luminance(first), luminance(second)];
-  return (Math.max(...values) + 0.05) / (Math.min(...values) + 0.05);
-}
-
-export function gradeForeground(background: RankingColor): RankingColor {
-  const white: RankingColor = [255, 255, 255];
-  return contrastRatio(background, white) >= 4.5 ? white : [0, 0, 0];
-}

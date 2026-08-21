@@ -128,7 +128,7 @@ test("the public Course ranking route shares reproducible URL controls", async (
   expect(markup).toContain("COMP 1000");
   expect(markup).toContain("Creative Computing");
   expect(markup).toContain("Grading-Focus&#x27;d preset");
-  expect(markup).toContain("Settings…");
+  expect(markup).toContain("Ranking Settings");
   expect(markup).toContain("Local Rank");
   expect(markup).not.toContain("MATH 2000");
 });
@@ -156,7 +156,11 @@ test("ranking routes distinguish every empty, invalid, and stale URL state", asy
 
   const filterEmpty = renderToStaticMarkup(
     await CoursesPage({
-      searchParams: Promise.resolve({ term: "2510", prefix: "ZZZZ" }),
+      searchParams: Promise.resolve({
+        term: "2510",
+        commonCoreScheme: "CC25",
+        commonCore: "sustainability",
+      }),
     }),
   );
   expect(filterEmpty).toContain(
@@ -178,7 +182,7 @@ test("ranking routes distinguish every empty, invalid, and stale URL state", asy
     }),
   );
   expect(unranked).toContain("UST Rankings");
-  expect(unranked).toContain("Settings…");
+  expect(unranked).toContain("Ranking Settings");
   expect(unranked).toContain("matching Course is unranked");
 
   const { queryRankings } = await import("@/lib/rankings/server");
@@ -208,7 +212,7 @@ test("ranking routes distinguish every empty, invalid, and stale URL state", asy
     }),
   );
   expect(stale).toContain("UST Rankings");
-  expect(stale).toContain("Settings…");
+  expect(stale).toContain("Ranking Settings");
   expect(stale).toContain("Ranking page expired");
   expect(stale).toContain('role="alert"');
 });
@@ -261,7 +265,7 @@ test("Course and Instructor Rankings retain the title, search, Term, and setting
   );
   const instructors = renderToStaticMarkup(
     await InstructorsPage({
-      searchParams: Promise.resolve({ term: "2510" }),
+      searchParams: Promise.resolve({ term: "2510", settings: "open" }),
     }),
   );
   expect(instructors).toContain("UST Rankings");
@@ -269,13 +273,16 @@ test("Course and Instructor Rankings retain the title, search, Term, and setting
   expect(instructors).toContain('name="q"');
   expect(instructors).toContain('type="search"');
   expect(instructors).toContain('aria-label="Term"');
-  expect(instructors).toContain("Settings…");
+  expect(instructors).toContain("Ranking Settings");
+  expect(instructors).not.toContain("Taught Course Prefix");
+  expect(instructors).not.toContain("Course Code");
+  expect(instructors).not.toContain("Apply Settings");
   expect(instructors).not.toContain("Bug Fixes");
   expect(instructors.indexOf('name="q"')).toBeLessThan(
-    instructors.indexOf("Settings…"),
+    instructors.indexOf("Ranking Settings"),
   );
   expect(instructors.indexOf('aria-label="Term"')).toBeLessThan(
-    instructors.indexOf("Settings…"),
+    instructors.indexOf("Ranking Settings"),
   );
 
   const { default: CoursesPage } = await import("@/app/rankings/courses/page");
@@ -284,14 +291,16 @@ test("Course and Instructor Rankings retain the title, search, Term, and setting
       searchParams: Promise.resolve({
         term: "2510",
         preset: "grade",
-        prefix: "COMP",
         commonCore: "arts",
+        settings: "open",
       }),
     }),
   );
   expect(courses).toContain("UST Rankings");
   expect(courses).toContain("Course Rankings");
-  expect(courses).toContain("Settings…");
+  expect(courses).toContain("Ranking Settings");
+  expect(courses).not.toContain("Course Prefix");
+  expect(courses).not.toContain("Apply Settings");
   expect(courses).not.toContain("Bug Fixes");
 });
 
@@ -353,18 +362,22 @@ test("empty, invalid, and unavailable ranking states keep the restored structure
     }),
   );
   expect(invalid).toContain("UST Rankings");
-  expect(invalid).toContain("Settings…");
+  expect(invalid).toContain("Ranking Settings");
   expect(invalid).toContain('name="q"');
   expect(invalid).toContain("Invalid ranking query");
   expect(invalid).toContain('role="alert"');
 
   const empty = renderToStaticMarkup(
     await CoursesPage({
-      searchParams: Promise.resolve({ term: "2510", prefix: "ZZZZ" }),
+      searchParams: Promise.resolve({
+        term: "2510",
+        commonCoreScheme: "CC25",
+        commonCore: "sustainability",
+      }),
     }),
   );
   expect(empty).toContain("UST Rankings");
-  expect(empty).toContain("Settings…");
+  expect(empty).toContain("Ranking Settings");
   expect(empty).toContain(
     "No eligible Courses match these structured filters.",
   );
