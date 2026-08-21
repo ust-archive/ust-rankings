@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DuckDBConnection } from "@duckdb/node-api";
@@ -284,23 +283,22 @@ export async function assignInstructorIdentities(
   const identities = new Map(previousIdentities.map((row) => [row.uuid, row]));
   const aliases = [...previousAliases];
 
+  const currentNameByUuid = new Map<string, string>();
   for (const { canonical_name } of names) {
     const key = canonical_name.trim().toLocaleLowerCase();
-    let uuid = byName.get(key);
-    if (!uuid) {
-      uuid = randomUUID();
-      byName.set(key, uuid);
-    }
+    const uuid = byName.get(key);
+    if (!uuid)
+      throw new Error(`Unmatched Instructor identity: ${canonical_name}`);
     if (!identities.has(uuid))
-      identities.set(uuid, {
-        uuid,
-        canonical_name,
-        itsc: null,
-      });
-    else {
-      const current = identities.get(uuid);
-      if (current) identities.set(uuid, { ...current, canonical_name });
-    }
+      throw new Error(`Unknown Instructor UUID: ${uuid}`);
+    const claimedName = currentNameByUuid.get(uuid);
+    if (claimedName && claimedName !== canonical_name)
+      throw new Error(
+        `Ambiguous Instructor identity ${uuid}: ${claimedName}, ${canonical_name}`,
+      );
+    currentNameByUuid.set(uuid, canonical_name);
+    const current = identities.get(uuid);
+    if (current) identities.set(uuid, { ...current, canonical_name });
   }
 
   const aliasKeys = new Set(

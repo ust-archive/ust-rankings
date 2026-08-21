@@ -327,6 +327,7 @@ const schemas: Record<
     ],
   ],
   "course-instructors.parquet": [
+    ["uuid", "VARCHAR"],
     ["name", "VARCHAR"],
     ["term_num", "INTEGER"],
     ["term_code", "VARCHAR"],
@@ -350,6 +351,7 @@ const schemas: Record<
     ...ratingColumns.slice(2),
   ],
   "instructor-rankings.parquet": [
+    ["uuid", "VARCHAR"],
     ["name", "VARCHAR"],
     ["term_num", "INTEGER"],
     ["term_code", "VARCHAR"],
@@ -357,6 +359,7 @@ const schemas: Record<
     ...ratingColumns.slice(2),
   ],
   "instructor-ratings.parquet": [
+    ["uuid", "VARCHAR"],
     ["name", "VARCHAR"],
     ["term_num", "INTEGER"],
     ["term_code", "VARCHAR"],
@@ -824,16 +827,16 @@ async function validateRelations(
     `SELECT 1 FROM read_parquet('${courseDimension}') WHERE prefix IS NULL OR NOT regexp_full_match(prefix, '[A-Z]{2,8}') OR number IS NULL OR NOT regexp_full_match(number, '[0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?') OR title IS NULL OR trim(title) = '' OR attributes IS NULL OR list_has_any(list_transform(attributes, attribute -> attribute.label IS NULL OR trim(attribute.label) = '' OR attribute.value IS NULL OR trim(attribute.value) = ''), [true])`,
     `SELECT subject, code, term_num, criterion FROM read_parquet('${courses}') GROUP BY ALL HAVING count(*) > 1`,
     `SELECT subject, code, term_num, criterion FROM read_parquet('${courseRanks}') GROUP BY ALL HAVING count(*) > 1`,
-    `SELECT name, term_num, criterion FROM read_parquet('${instructors}') GROUP BY ALL HAVING count(*) > 1`,
-    `SELECT name, term_num, criterion FROM read_parquet('${instructorRanks}') GROUP BY ALL HAVING count(*) > 1`,
-    `SELECT name, term_num, subject, code FROM read_parquet('${links}') GROUP BY ALL HAVING count(*) > 1`,
+    `SELECT uuid, term_num, criterion FROM read_parquet('${instructors}') GROUP BY ALL HAVING count(*) > 1`,
+    `SELECT uuid, term_num, criterion FROM read_parquet('${instructorRanks}') GROUP BY ALL HAVING count(*) > 1`,
+    `SELECT uuid, term_num, subject, code FROM read_parquet('${links}') GROUP BY ALL HAVING count(*) > 1`,
     `SELECT term_num FROM read_parquet(['${courses}', '${courseRanks}', '${instructors}', '${instructorRanks}', '${links}'], union_by_name=true) GROUP BY term_num HAVING count(DISTINCT term_code) <> 1`,
     `SELECT term_code FROM read_parquet(['${courses}', '${courseRanks}', '${instructors}', '${instructorRanks}', '${links}'], union_by_name=true) GROUP BY term_code HAVING count(DISTINCT term_num) <> 1`,
     `SELECT 1 FROM read_parquet('${courseRanks}') rankings LEFT JOIN read_parquet('${courses}') ratings USING (subject, code, term_num, term_code, criterion) WHERE ratings.subject IS NULL`,
-    `SELECT 1 FROM read_parquet('${instructorRanks}') rankings LEFT JOIN read_parquet('${instructors}') ratings USING (name, term_num, term_code, criterion) WHERE ratings.name IS NULL`,
+    `SELECT 1 FROM read_parquet('${instructorRanks}') rankings LEFT JOIN read_parquet('${instructors}') ratings USING (uuid, term_num, term_code, criterion) WHERE ratings.uuid IS NULL`,
     `SELECT 1 FROM read_parquet(['${courses}', '${courseRanks}'], union_by_name=true) WHERE subject IS NULL OR code IS NULL OR term_num IS NULL OR term_code IS NULL OR is_offered IS NULL`,
-    `SELECT 1 FROM read_parquet(['${instructors}', '${instructorRanks}'], union_by_name=true) WHERE name IS NULL OR term_num IS NULL OR term_code IS NULL OR is_teaching IS NULL`,
-    `SELECT 1 FROM read_parquet('${links}') WHERE name IS NULL OR term_num IS NULL OR term_code IS NULL OR subject IS NULL OR code IS NULL`,
+    `SELECT 1 FROM read_parquet(['${instructors}', '${instructorRanks}'], union_by_name=true) WHERE uuid IS NULL OR NOT regexp_full_match(uuid, '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}') OR name IS NULL OR term_num IS NULL OR term_code IS NULL OR is_teaching IS NULL`,
+    `SELECT 1 FROM read_parquet('${links}') WHERE uuid IS NULL OR NOT regexp_full_match(uuid, '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}') OR name IS NULL OR term_num IS NULL OR term_code IS NULL OR subject IS NULL OR code IS NULL`,
     `SELECT 1 FROM read_parquet(['${courses}', '${courseRanks}', '${instructors}', '${instructorRanks}'], union_by_name=true) WHERE criterion IS NULL OR criterion NOT IN ('content', 'teaching', 'grading', 'workload', 'course', 'instructor') OR rating IS NULL OR bayesian IS NULL OR confidence IS NULL OR samples IS NULL OR cumulative_samples IS NULL OR effective_samples IS NULL OR reliability IS NULL OR posterior_stddev IS NULL OR NOT isfinite(rating) OR NOT isfinite(bayesian) OR NOT isfinite(confidence) OR NOT isfinite(effective_samples) OR NOT isfinite(reliability) OR NOT isfinite(posterior_stddev)`,
     `SELECT 1 FROM read_parquet('${instructorRanks}') WHERE name = 'TBA' OR lower(trim(name)) = 'tba'`,
     `SELECT 1 FROM read_parquet('${links}') WHERE name = 'TBA' OR lower(trim(name)) = 'tba'`,
@@ -849,7 +852,7 @@ async function validateRelations(
     `SELECT subject, code FROM read_parquet('${courseRanks}') LIMIT 1`,
     `SELECT name FROM read_parquet('${instructorRanks}') LIMIT 1`,
     `SELECT term_code FROM read_parquet('${instructors}') ORDER BY term_num LIMIT 1`,
-    `SELECT links.name FROM read_parquet('${links}') links JOIN read_parquet('${instructorRanks}') rankings USING (name, term_num) LIMIT 1`,
+    `SELECT links.uuid FROM read_parquet('${links}') links JOIN read_parquet('${instructorRanks}') rankings USING (uuid, term_num) LIMIT 1`,
   ];
   for (const smokeQuery of smokeQueries) {
     if ((await queryRows(connection, smokeQuery)).length !== 1)
@@ -882,7 +885,10 @@ function resolvedInstructorIdentity(
   return generation.identitiesByUuid.get(uuid) as InstructorIdentity;
 }
 
-function validateIdentities(manifest: Manifest, names: string[]) {
+function validateIdentities(
+  manifest: Manifest,
+  rankingIdentities: Array<{ uuid: string; name: string }>,
+) {
   const uuidPattern = INSTRUCTOR_UUID_PATTERN;
   const itscPattern = ITSC_PATTERN;
   const observedNames = new Map<string, InstructorIdentity[]>();
@@ -1084,14 +1090,17 @@ function validateIdentities(manifest: Manifest, names: string[]) {
   }
 
   const currentNameByUuid = new Map<string, string>();
-  for (const name of names) {
-    const identity = currentNames.get(normalizedInstructorName(name));
-    if (!identity)
+  for (const { uuid, name } of rankingIdentities) {
+    const identity = identitiesByUuid.get(uuid);
+    if (
+      !identity ||
+      currentNames.get(normalizedInstructorName(name))?.uuid !== uuid
+    )
       throw new Error("Instructor registry does not match the generation");
-    const existing = currentNameByUuid.get(identity.uuid);
+    const existing = currentNameByUuid.get(uuid);
     if (existing && existing !== name)
-      throw new Error("Instructor has several current ranking names");
-    currentNameByUuid.set(identity.uuid, name);
+      throw new Error("Instructor UUID has several current ranking names");
+    currentNameByUuid.set(uuid, name);
   }
   return {
     currentNames,
@@ -1183,18 +1192,15 @@ function associationNeedsResolution(
 function resolveInstructorAssociation(
   registry: Generation,
   association: {
+    uuid: string;
     sourceName: string;
     termCode: string;
     courseCode: string;
   },
 ) {
   if (associationNeedsResolution(registry, association)) return undefined;
-  const observed = registry.identitiesByObservedName.get(
-    normalizedInstructorName(association.sourceName),
-  );
-  return observed?.length === 1
-    ? resolvedInstructorIdentity(registry, observed[0])
-    : undefined;
+  const identity = registry.identitiesByUuid.get(association.uuid);
+  return identity ? resolvedInstructorIdentity(registry, identity) : undefined;
 }
 
 async function applyIdentityParquet(
@@ -1341,13 +1347,16 @@ async function loadGeneration(
     try {
       await validateRelations(connection, directory);
       await applyIdentityParquet(connection, directory, manifest);
-      const nameRows = await queryRows(
+      const identityRows = await queryRows(
         connection,
-        `SELECT DISTINCT name FROM read_parquet('${sqlPath(directory, "instructor-ratings.parquet")}') ORDER BY name`,
+        `SELECT DISTINCT uuid, name FROM read_parquet('${sqlPath(directory, "instructor-ratings.parquet")}') ORDER BY uuid`,
       );
       const identityNames = validateIdentities(
         manifest,
-        nameRows.map((row) => String(row.name)),
+        identityRows.map((row) => ({
+          uuid: String(row.uuid),
+          name: String(row.name),
+        })),
       );
       openGenerationCount += 1;
       return {
@@ -2129,7 +2138,7 @@ async function queryRankingsWithGeneration(
   const catalogDigest = accepted.courseDigest;
   const linkRows = await queryRows(
     accepted.connection,
-    `SELECT links.name, links.subject, links.code, courses.title FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') links LEFT JOIN read_parquet('${coursesPath}') courses ON courses.prefix = links.subject AND courses.number = links.code WHERE links.term_code = $termCode`,
+    `SELECT links.uuid, links.name, links.subject, links.code, courses.title FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') links LEFT JOIN read_parquet('${coursesPath}') courses ON courses.prefix = links.subject AND courses.number = links.code WHERE links.term_code = $termCode`,
     { termCode },
   );
   const identitiesByCourse = new Map<string, InstructorIdentity[]>();
@@ -2139,6 +2148,7 @@ async function queryRankingsWithGeneration(
     const courseKey = `${row.subject}${row.code}`;
     if (row.title) courseTitles.set(courseKey, String(row.title));
     const identity = resolveInstructorAssociation(accepted, {
+      uuid: String(row.uuid),
       sourceName: String(row.name),
       termCode,
       courseCode: `${row.subject} ${row.code}`,
@@ -2158,7 +2168,7 @@ async function queryRankingsWithGeneration(
     accepted.connection,
     query.entity === "course"
       ? `SELECT ratings.subject, ratings.code, ratings.criterion, ratings.bayesian, ratings.cumulative_samples, ratings.is_offered AS is_active, courses.title, courses.attributes FROM read_parquet('${source}') ratings LEFT JOIN read_parquet('${coursesPath}') courses ON courses.prefix = ratings.subject AND courses.number = ratings.code WHERE ratings.term_code = $termCode ORDER BY ratings.subject, ratings.code, ratings.criterion`
-      : `SELECT name, criterion, bayesian, cumulative_samples, is_teaching AS is_active FROM read_parquet('${source}') WHERE term_code = $termCode ORDER BY name, criterion`,
+      : `SELECT uuid, name, criterion, bayesian, cumulative_samples, is_teaching AS is_active FROM read_parquet('${source}') WHERE term_code = $termCode ORDER BY name, criterion`,
     { termCode },
   );
   const evidence = new Map<
@@ -2173,7 +2183,7 @@ async function queryRankingsWithGeneration(
     const key =
       query.entity === "course"
         ? `${row.subject}${row.code}`
-        : String(row.name);
+        : String(row.uuid);
     if (row.is_active) activeEntities.add(key);
     if (query.entity === "course")
       courseMetadata.set(key, {
@@ -2203,15 +2213,7 @@ async function queryRankingsWithGeneration(
     identitySearchValues.set(resolved.uuid, values);
   }
   const currentSurvivorEvidence = new Set(
-    [...evidence.keys()].flatMap((key) => {
-      if (query.entity !== "instructor") return [];
-      const observed = accepted.identitiesByCurrentName.get(
-        normalizedInstructorName(key),
-      );
-      if (!observed) return [];
-      const resolved = resolvedInstructorIdentity(accepted, observed);
-      return observed.uuid === resolved.uuid ? [resolved.uuid] : [];
-    }),
+    query.entity === "instructor" ? evidence.keys() : [],
   );
   const candidates: Candidate[] = [];
   for (const [key, values] of evidence) {
@@ -2280,12 +2282,10 @@ async function queryRankingsWithGeneration(
         },
       });
     } else {
-      const observedIdentity = accepted.identitiesByCurrentName.get(
-        normalizedInstructorName(key),
-      );
+      const observedIdentity = accepted.identitiesByUuid.get(key);
       if (!observedIdentity) continue;
       const identity = resolvedInstructorIdentity(accepted, observedIdentity);
-      const retired = identity.uuid !== observedIdentity.uuid;
+      const retired = identity.uuid !== key;
       if (retired && currentSurvivorEvidence.has(identity.uuid)) continue;
       const courseCodes = coursesByInstructor.get(identity.uuid) ?? new Set();
       candidates.push({
@@ -2543,12 +2543,13 @@ export async function getRankings(
       }
       const links = await queryRows(
         accepted.connection,
-        `SELECT term_code, name FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE subject = $coursePrefix AND code = $courseNumber ORDER BY term_num, name`,
+        `SELECT term_code, uuid, name FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE subject = $coursePrefix AND code = $courseNumber ORDER BY term_num, uuid`,
         { coursePrefix, courseNumber },
       );
       const instructors = links.flatMap((row) => {
         const termCode = String(row.term_code);
         const instructor = resolveInstructorAssociation(accepted, {
+          uuid: String(row.uuid),
           sourceName: String(row.name),
           termCode,
           courseCode,
@@ -2598,19 +2599,20 @@ export async function getRankings(
     )) as EntityRankingsQueryResult<"instructor">;
     const evidence = await Promise.all(
       identity.family.map(async (familyInstructor) => {
+        const uuid = familyInstructor.uuid;
         const name =
-          accepted.currentNameByUuid.get(familyInstructor.uuid) ??
+          accepted.currentNameByUuid.get(uuid) ??
           familyInstructor.canonicalName;
         const [ratings, courseRows] = await Promise.all([
           queryRows(
             accepted.connection,
-            `SELECT term_code, criterion, bayesian, confidence, samples, cumulative_samples FROM read_parquet('${sqlPath(accepted.directory, "instructor-ratings.parquet")}') WHERE name = $name ORDER BY term_num, criterion`,
-            { name },
+            `SELECT term_code, criterion, bayesian, confidence, samples, cumulative_samples FROM read_parquet('${sqlPath(accepted.directory, "instructor-ratings.parquet")}') WHERE uuid = $uuid ORDER BY term_num, criterion`,
+            { uuid },
           ),
           queryRows(
             accepted.connection,
-            `SELECT term_code, subject || ' ' || code AS course_code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE name = $name ORDER BY term_num, subject, code`,
-            { name },
+            `SELECT term_code, name, subject || ' ' || code AS course_code FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE uuid = $uuid ORDER BY term_num, subject, code`,
+            { uuid },
           ),
         ]);
         const terms = new Map<string, RankingTermEvidence>();
@@ -2627,7 +2629,7 @@ export async function getRankings(
         }
         const courses = courseRows.flatMap((row) => {
           const association = {
-            sourceName: name,
+            sourceName: String(row.name ?? name),
             termCode: String(row.term_code),
             courseCode: String(row.course_code),
           };

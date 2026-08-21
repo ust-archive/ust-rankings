@@ -20,7 +20,7 @@ depend on filesystem ordering.
 | `observation_instructors` | Many-to-many link from evidence to canonical instructor names |
 | `course_terms` / `instructor_terms` | Dense output grids from first coverage through the latest term |
 | `course_term_instructors` | Course-to-instructor associations by term |
-| `course_ratings` / `instructor_ratings` | Full historical rating marts |
+| `course_ratings` / `instructor_ratings` | Full historical rating marts; Instructor UUIDs attach at export |
 | `course_rankings` / `instructor_rankings` | Latest-term views of the rating marts |
 
 ## Runner variables

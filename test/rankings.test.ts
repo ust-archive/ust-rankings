@@ -46,7 +46,7 @@ test("no valid generation fails only the ranking module", async () => {
   );
 });
 
-test("a legacy generation without the Course dimension is rejected", async () => {
+test("a legacy name-keyed generation without Courses is rejected", async () => {
   process.env.RANKINGS_SEED_DIR = join(
     process.cwd(),
     "rankings",

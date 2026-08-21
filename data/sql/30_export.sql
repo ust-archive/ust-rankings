@@ -27,13 +27,16 @@ COPY (
 
 COPY (
   SELECT
+    identities.uuid,
     ratings.name,
     ratings.term_num,
     terms.term_code,
     ratings.* EXCLUDE (name, term_num)
   FROM instructor_ratings AS ratings
+  JOIN instructor_identities AS identities
+    ON identities.canonical_name = ratings.name
   JOIN terms USING (term_num)
-  ORDER BY name, term_num, criterion
+  ORDER BY uuid, term_num, criterion
 ) TO (getvariable('instructor_ratings_parquet')) (FORMAT parquet, COMPRESSION zstd);
 
 COPY (
@@ -50,27 +53,33 @@ COPY (
 
 COPY (
   SELECT
+    identities.uuid,
     rankings.name,
     rankings.term_num,
     terms.term_code,
     rankings.* EXCLUDE (name, term_num)
   FROM instructor_rankings AS rankings
+  JOIN instructor_identities AS identities
+    ON identities.canonical_name = rankings.name
   JOIN terms USING (term_num)
-  ORDER BY criterion, bayesian DESC, name
+  ORDER BY criterion, bayesian DESC, uuid
 ) TO (getvariable('instructor_rankings_parquet')) (FORMAT parquet, COMPRESSION zstd);
 
 -- Course-instructor evidence is a normalized bridge. It includes historical
 -- associations inferred from ratings as well as current schedule assignments.
 COPY (
   SELECT
+    identities.uuid,
     links.name,
     links.term_num,
     terms.term_code,
     links.subject,
     links.code
   FROM course_term_instructors AS links
+  JOIN instructor_identities AS identities
+    ON identities.canonical_name = links.name
   JOIN terms USING (term_num)
-  ORDER BY term_num, subject, code, name
+  ORDER BY term_num, subject, code, uuid
 ) TO (getvariable('course_instructors_parquet'))
   (FORMAT parquet, COMPRESSION zstd);
 
