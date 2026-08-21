@@ -100,6 +100,7 @@ test("Rankings append the next cursor page automatically", async ({ page }) => {
   await expect(results).toHaveCount(200);
   await expect(results.first()).toContainText(/^#1\s/);
   await expect(results.nth(100)).toContainText(/^#101\s/);
+  await expect(page.getByText(/200 rankings loaded/)).toBeAttached();
   await expect(page).toHaveURL(/cursor=/);
   const paginationUrl = new URL(page.url());
   expect(paginationUrl.searchParams.get("pages")).toBe("2");

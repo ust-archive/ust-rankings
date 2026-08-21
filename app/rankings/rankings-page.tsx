@@ -353,6 +353,7 @@ export async function RankingPage({
               }
               initialNextCursor={rankings.nextCursor}
               initialPages={restoredPages}
+              initialResultCount={rankings.results.length}
               key={JSON.stringify(query)}
               query={query}
             />

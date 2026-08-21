@@ -90,16 +90,16 @@ article p {
   @apply text-pretty;
 }
 
-article ol,
-article ul {
+ol,
+ul {
   @apply ms-2 list-inside;
 }
 
-article ol {
+ol {
   @apply list-decimal;
 }
 
-article ul {
+ul {
   @apply list-disc;
 }
 

@@ -2,7 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { RankingSearch } from "@/app/rankings/ranking-search";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,6 +85,10 @@ export function RankingControls({
       ]),
     ),
   );
+
+  useEffect(() => {
+    setIsOpen(searchParams.get("settings") === "open");
+  }, [searchParams]);
 
   function navigate(searchParams: URLSearchParams) {
     const next = withoutRankingPagination(searchParams);

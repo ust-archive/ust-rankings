@@ -17,16 +17,19 @@ export function RankingPagination({
   fallbackHref,
   initialNextCursor,
   initialPages,
+  initialResultCount,
   query,
 }: {
   fallbackHref?: string;
   initialNextCursor?: string;
   initialPages: number;
+  initialResultCount: number;
   query: RankingsQuery;
 }) {
   const [additionalResults, setAdditionalResults] = useState<Ranking[]>([]);
   const [nextCursor, setNextCursor] = useState(initialNextCursor);
   const [pageCount, setPageCount] = useState(initialPages);
+  const [resultCount, setResultCount] = useState(initialResultCount);
   const [error, setError] = useState(false);
   const [isPending, startTransition] = useTransition();
   const loadingCursor = useRef<string | undefined>(undefined);
@@ -47,6 +50,8 @@ export function RankingPagination({
               cursor: nextCursor,
             });
             setAdditionalResults((current) => [...current, ...page.results]);
+            setResultCount((current) => current + page.results.length);
+            setError(false);
             setNextCursor(page.nextCursor);
             const loadedPages = pageCount + 1;
             setPageCount(loadedPages);
@@ -98,8 +103,8 @@ export function RankingPagination({
           {isPending
             ? "Loading more rankings…"
             : nextCursor
-              ? "More rankings load automatically while scrolling."
-              : "All rankings loaded."}
+              ? `${resultCount} rankings loaded. More load automatically while scrolling.`
+              : `All ${resultCount} rankings loaded.`}
         </p>
         {fallbackHref ? (
           <noscript>
