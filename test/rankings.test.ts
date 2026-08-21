@@ -23,7 +23,11 @@ afterEach(async () => {
   );
 });
 
-test("every grade badge color meets WCAG contrast", () => {
+test("the original bright grade palette always meets WCAG contrast", () => {
+  expect(gradeColor(0)).toEqual([237, 27, 47]);
+  expect(gradeColor(0.25)).toEqual([250, 166, 26]);
+  expect(gradeColor(0.75)).toEqual([163, 207, 98]);
+  expect(gradeColor(1)).toEqual([0, 154, 97]);
   for (let step = 0; step <= 100; step += 1) {
     const background = gradeColor(step / 100);
     expect(

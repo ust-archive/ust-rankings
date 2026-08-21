@@ -57,25 +57,34 @@ test("Rankings search retains a GET fallback without JavaScript", async ({
 }) => {
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage();
-  await page.goto("/rankings/instructors?preset=grade");
+  await page.goto(
+    "/rankings/instructors?preset=grade&activity=all&prefix=COMP&course=COMP%201000",
+  );
 
   await page
     .getByRole("searchbox", { name: "Search Instructors" })
-    .fill("TSOI");
+    .fill("No Such Person");
   await page
     .getByRole("searchbox", { name: "Search Instructors" })
     .press("Enter");
 
-  await expect(page).toHaveURL(/q=TSOI/);
+  const fallbackUrl = new URL(page.url());
+  expect(fallbackUrl.searchParams.get("q")).toBe("No Such Person");
+  expect(fallbackUrl.searchParams.get("preset")).toBe("grade");
+  expect(fallbackUrl.searchParams.get("activity")).toBe("all");
+  expect(fallbackUrl.searchParams.get("prefix")).toBe("COMP");
+  expect(fallbackUrl.searchParams.get("course")).toBe("COMP 1000");
   await expect(
-    page.getByRole("heading", { name: "TSOI, Yau Chat" }),
+    page.getByRole("heading", { name: "No Rankings Found" }),
   ).toBeVisible();
   await context.close();
 });
 
 test("Rankings append the next cursor page automatically", async ({ page }) => {
   await page.goto("/rankings/instructors?preset=grade");
-  const results = page.locator('ol[aria-label="Instructor rankings"] > li');
+  const results = page.locator(
+    'ol[aria-label="Instructor rankings"] > li[data-ranking-result]',
+  );
   await expect(results).toHaveCount(100);
   await expect(
     page.getByRole("link", { name: "Next 100 Results" }),
@@ -144,6 +153,10 @@ test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation t
 
   await page.getByRole("button", { name: "Ranking Settings" }).click();
   await expect(page).toHaveURL(/settings=open/);
+  await expect(
+    page.getByRole("radio", { name: "Knowledge-Focus'd" }),
+  ).toBeChecked();
+  await expect(page.getByText("Learning-Focus'd")).toHaveCount(0);
   await page.getByRole("radio", { name: "Grading-Focus'd" }).click();
   await page.getByRole("button", { name: "Apply Settings" }).click();
   await expect(page).toHaveURL(/preset=grade/);

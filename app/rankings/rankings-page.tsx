@@ -21,7 +21,7 @@ import {
 } from "@/lib/rankings/server";
 import { RankingControls } from "./ranking-controls";
 import { RankingResultCard } from "./ranking-result-card";
-import { RankingResults } from "./ranking-results";
+import { RankingPagination } from "./ranking-results";
 
 type Entity = "course" | "instructor";
 export type RankingSearchParams = Record<string, string | string[] | undefined>;
@@ -52,33 +52,41 @@ function nextPageHref(
 function loadedPages(searchParams: RankingSearchParams) {
   const value = single(searchParams, "pages");
   if (value === undefined)
-    return single(searchParams, "cursor") === undefined ? 1 : 2;
-  // ponytail: 10,000 restored rows caps reload work; raise with measured population growth.
-  if (!/^[1-9][0-9]?$|^100$/.test(value))
-    throw new InvalidRankingsQueryError("pages must be between 1 and 100.");
+    return single(searchParams, "cursor") === undefined ? 1 : 0;
+  if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value)))
+    throw new InvalidRankingsQueryError("pages must be a positive integer.");
   return Number(value);
 }
 
 async function queryRankingPages(query: RankingsQuery, pages: number) {
   if (pages === 1) return queryRankings(query);
   const expectedCursor = query.cursor;
+  const discoverCursor = pages === 0;
   const first = await queryRankings({ ...query, cursor: undefined });
   let combined = first;
-  let cursorUsed: string | undefined;
-  for (let page = 2; page <= pages; page += 1) {
-    cursorUsed = combined.nextCursor;
-    if (!cursorUsed) throw new StaleRankingsCursorError();
-    if (page === pages && expectedCursor && expectedCursor !== cursorUsed)
-      throw new StaleRankingsCursorError();
-    const next = await queryRankings({ ...query, cursor: cursorUsed });
+  for (let page = 2; discoverCursor || page <= pages; page += 1) {
+    const cursor = combined.nextCursor;
+    if (!cursor) throw new StaleRankingsCursorError();
+    if (
+      expectedCursor &&
+      ((discoverCursor && cursor === expectedCursor) ||
+        (!discoverCursor && page === pages && cursor === expectedCursor))
+    ) {
+      const next = await queryRankings({ ...query, cursor });
+      return {
+        ...combined,
+        nextCursor: next.nextCursor,
+        results: [...combined.results, ...next.results],
+      };
+    }
+    if (!discoverCursor && page === pages) throw new StaleRankingsCursorError();
+    const next = await queryRankings({ ...query, cursor });
     combined = {
       ...combined,
       nextCursor: next.nextCursor,
       results: [...combined.results, ...next.results],
     };
   }
-  if (expectedCursor && expectedCursor !== cursorUsed)
-    throw new StaleRankingsCursorError();
   return combined;
 }
 
@@ -305,6 +313,7 @@ export async function RankingPage({
 
   try {
     const rankings = await queryRankingPages(query, pages);
+    const restoredPages = Math.max(1, Math.ceil(rankings.results.length / 100));
     return (
       <RankingChrome
         entity={entity}
@@ -313,23 +322,10 @@ export async function RankingPage({
         searchParams={searchParams}
       >
         {rankings.results.length > 0 ? (
-          <RankingResults
-            entity={entity}
-            fallbackHref={
-              rankings.nextCursor && pages < 100
-                ? nextPageHref(
-                    entity,
-                    searchParams,
-                    rankings.nextCursor,
-                    rankings.population.termCode,
-                    pages,
-                  )
-                : undefined
-            }
-            initialNextCursor={rankings.nextCursor}
-            initialPages={pages}
-            key={JSON.stringify(query)}
-            query={query}
+          <ol
+            aria-label={`${label} rankings`}
+            className="flex list-none flex-col gap-3 p-0"
+            style={{ listStyle: "none", marginInlineStart: 0 }}
           >
             {rankings.results.map((result) => (
               <RankingResultCard
@@ -339,7 +335,24 @@ export async function RankingPage({
                 result={result}
               />
             ))}
-          </RankingResults>
+            <RankingPagination
+              fallbackHref={
+                rankings.nextCursor
+                  ? nextPageHref(
+                      entity,
+                      searchParams,
+                      rankings.nextCursor,
+                      rankings.population.termCode,
+                      restoredPages,
+                    )
+                  : undefined
+              }
+              initialNextCursor={rankings.nextCursor}
+              initialPages={restoredPages}
+              key={JSON.stringify(query)}
+              query={query}
+            />
+          </ol>
         ) : rankings.unrankedMatchCount > 0 ? (
           <RankingEmpty>
             {rankings.unrankedMatchCount} matching {label}

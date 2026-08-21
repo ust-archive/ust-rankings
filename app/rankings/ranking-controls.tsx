@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import { RankingSearch } from "@/app/rankings/ranking-search";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Collapsible,
@@ -132,6 +132,31 @@ export function RankingControls({
   return (
     <form action={pathname} className="flex w-full flex-col gap-4" method="get">
       <input name="preset" type="hidden" value={preset} />
+      <input name="activity" type="hidden" value={activity} />
+      {prefix ? <input name="prefix" type="hidden" value={prefix} /> : null}
+      {entity === "instructor" && course ? (
+        <input name="course" type="hidden" value={course} />
+      ) : null}
+      {entity === "course"
+        ? commonCore.map((category) => (
+            <input
+              key={category}
+              name="commonCore"
+              type="hidden"
+              value={category}
+            />
+          ))
+        : null}
+      {preset === "custom"
+        ? criteria.map(([criterion]) => (
+            <input
+              key={criterion}
+              name={`weight_${criterion}`}
+              type="hidden"
+              value={weights[criterion] ?? "0"}
+            />
+          ))
+        : null}
       <div className="flex w-full items-center gap-4">
         <RankingSearch entity={entity} initialValue={initial.search} />
         <Field className="w-[10.75rem] shrink-0 gap-0">
@@ -166,24 +191,26 @@ export function RankingControls({
       <Card>
         <Collapsible onOpenChange={changeOpen} open={isOpen}>
           <CardHeader className="p-4">
-            <CollapsibleTrigger asChild>
-              <Button
-                aria-label="Ranking Settings"
-                className="h-auto w-full justify-between p-0 hover:bg-transparent"
-                type="button"
-                variant="ghost"
-              >
-                Settings…
-                <ChevronDown
-                  aria-hidden="true"
-                  className={cn(
-                    "transition-transform motion-reduce:transition-none",
-                    isOpen && "rotate-180",
-                  )}
-                  data-icon="inline-end"
-                />
-              </Button>
-            </CollapsibleTrigger>
+            <CardTitle asChild>
+              <CollapsibleTrigger asChild>
+                <Button
+                  aria-label="Ranking Settings"
+                  className="h-auto w-full justify-between p-0 hover:bg-transparent"
+                  type="button"
+                  variant="ghost"
+                >
+                  Settings…
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={cn(
+                      "transition-transform motion-reduce:transition-none",
+                      isOpen && "rotate-180",
+                    )}
+                    data-icon="inline-end"
+                  />
+                </Button>
+              </CollapsibleTrigger>
+            </CardTitle>
           </CardHeader>
           <CollapsibleContent>
             <Separator />
@@ -195,7 +222,6 @@ export function RankingControls({
                     <FieldLabel htmlFor="ranking-activity">Activity</FieldLabel>
                     <Select
                       defaultValue={activity}
-                      name="activity"
                       onValueChange={(value: "current" | "all") =>
                         setActivity(value)
                       }
@@ -225,7 +251,6 @@ export function RankingControls({
                       autoComplete="off"
                       id="course-prefix"
                       maxLength={8}
-                      name="prefix"
                       onChange={(event) => setPrefix(event.target.value)}
                       spellCheck={false}
                       value={prefix}
@@ -240,7 +265,6 @@ export function RankingControls({
                         autoComplete="off"
                         id="instructor-course"
                         maxLength={15}
-                        name="course"
                         onChange={(event) => setCourse(event.target.value)}
                         spellCheck={false}
                         value={course}
@@ -258,7 +282,6 @@ export function RankingControls({
                             <Checkbox
                               checked={commonCore.includes(category.value)}
                               id={`common-core-${category.value}`}
-                              name="commonCore"
                               onCheckedChange={(checked) =>
                                 setCommonCore((selected) =>
                                   checked
@@ -327,7 +350,6 @@ export function RankingControls({
                               id={`weight-${criterion}`}
                               inputMode="decimal"
                               min="0"
-                              name={`weight_${criterion}`}
                               onChange={(event) =>
                                 setWeights((current) => ({
                                   ...current,

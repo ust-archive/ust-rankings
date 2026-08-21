@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   gradeColor,
   gradeForeground,
@@ -36,6 +42,7 @@ export function RankingResultCard({ result }: { result: Ranking }) {
     result.localPopulation !== result.globalPopulation;
   return (
     <li
+      data-ranking-result=""
       style={{ containIntrinsicSize: "auto 7rem", contentVisibility: "auto" }}
     >
       <Link
@@ -43,37 +50,39 @@ export function RankingResultCard({ result }: { result: Ranking }) {
         href={detailsHref(result)}
         style={{ textDecoration: "none" }}
       >
-        <Card className="bg-white transition-shadow motion-reduce:transition-none hover:border-slate-300 hover:shadow-md group-focus-visible:border-slate-400">
-          <CardContent className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-4 sm:gap-5 sm:p-6">
-            <div className="w-20 shrink-0 text-slate-600 sm:w-32">
-              <p className="text-xl font-semibold tabular-nums sm:text-2xl">
-                #{result.localRank}{" "}
-                <span className="hidden font-medium sm:inline">({score})</span>
-              </p>
-              <p className="text-xs tabular-nums sm:hidden">Score {score}</p>
-            </div>
-            <CardHeader className="min-w-0 gap-0 p-0 text-left">
-              <h2 className="wrap-break-word text-xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-2xl">
+        <Card className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 bg-white p-4 transition-shadow motion-reduce:transition-none hover:border-slate-300 hover:shadow-md group-focus-visible:border-slate-400 sm:gap-5 sm:p-6">
+          <CardContent className="w-20 shrink-0 p-0 text-slate-600 sm:w-32">
+            <p className="text-xl font-semibold tabular-nums sm:text-2xl">
+              #{result.localRank}{" "}
+              <span className="hidden font-medium sm:inline">({score})</span>
+            </p>
+            <p className="text-xs tabular-nums sm:hidden">Score {score}</p>
+          </CardContent>
+          <CardHeader className="min-w-0 gap-0 p-0 text-left">
+            <CardTitle asChild>
+              <h2 className="wrap-break-word text-xl leading-tight tracking-normal text-slate-950 sm:text-2xl">
                 {result.entity === "course"
                   ? result.courseCode
                   : result.canonicalName}
               </h2>
-              {result.entity === "course" && result.title ? (
-                <p className="text-sm font-semibold text-slate-600">
-                  {result.title}
-                </p>
-              ) : null}
-              <p className="text-xs leading-snug text-slate-600 sm:text-sm">
-                {sampleCount(result.ustSpaceSamples, "ust.space")}.{" "}
-                {sampleCount(result.sfqSamples, "SFQ")}.
-              </p>
-              <p className="text-xs leading-snug text-slate-500 tabular-nums">
-                Global Rank {result.globalRank} of {result.globalPopulation}
-                {hasLocalContext
-                  ? ` · Local Rank ${result.localRank} of ${result.localPopulation}`
-                  : ""}
-              </p>
-            </CardHeader>
+            </CardTitle>
+            {result.entity === "course" && result.title ? (
+              <CardDescription className="font-semibold text-slate-600">
+                {result.title}
+              </CardDescription>
+            ) : null}
+            <CardDescription className="leading-snug text-slate-600 sm:text-sm">
+              {sampleCount(result.ustSpaceSamples, "ust.space")}.{" "}
+              {sampleCount(result.sfqSamples, "SFQ")}.
+            </CardDescription>
+            <CardDescription className="text-xs leading-snug text-slate-500 tabular-nums">
+              Global Rank {result.globalRank} of {result.globalPopulation}
+              {hasLocalContext
+                ? ` · Local Rank ${result.localRank} of ${result.localPopulation}`
+                : ""}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
             <Badge
               className="w-12 justify-center rounded-lg border-0 py-2 text-xl shadow-sm sm:text-2xl"
               data-grade={grade}
