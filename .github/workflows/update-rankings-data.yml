@@ -24,6 +24,27 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Load previous Instructor identities
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          sha="$(curl --fail --silent --show-error \
+            https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main \
+            | jq -r .sha)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          if curl --fail --silent --show-error \
+            "https://huggingface.co/api/datasets/ust-archive/ust-rankings/tree/$sha?recursive=true" \
+            | jq -e 'any(.[]; .path == "instructor-identities.parquet")' >/dev/null; then
+            uvx hf download ust-archive/ust-rankings \
+              --type dataset \
+              --revision "$sha" \
+              --local-dir "$RUNNER_TEMP/previous-rankings"
+            echo "RANKINGS_PREVIOUS_GENERATION_DIR=$RUNNER_TEMP/previous-rankings" >> "$GITHUB_ENV"
+          else
+            [[ "$sha" == "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d" ]]
+            echo "RANKINGS_IDENTITY_BOOTSTRAP=$GITHUB_WORKSPACE/rankings/seed/$sha/manifest.json" >> "$GITHUB_ENV"
+          fi
+
       - name: Build rankings data
         working-directory: data
         env:
