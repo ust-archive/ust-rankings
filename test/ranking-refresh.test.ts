@@ -192,6 +192,18 @@ test("a complete refresh activates one immutable generation atomically", async (
   const sourceManifest = JSON.parse(
     await readFile(join(sourceDirectory, "manifest.json"), "utf8"),
   );
+  for (const filename of [
+    "instructor-aliases.parquet",
+    "instructor-identities.parquet",
+    "instructor-identity-events.parquet",
+    "instructor-split-affected-associations.parquet",
+  ]) {
+    const bytes = await readFile(join(sourceDirectory, filename));
+    sourceManifest.artifacts[filename] = {
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      size: bytes.length,
+    };
+  }
   await rm(join(sourceDirectory, "manifest.json"));
   const { queryRankings, refreshRankings } = await import(
     "@/lib/rankings/server"

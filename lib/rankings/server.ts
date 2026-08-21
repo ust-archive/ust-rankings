@@ -18,6 +18,7 @@ import {
   type RankingCriterion as Criterion,
 } from "@/lib/rankings/configuration";
 import { rankingTermName } from "@/lib/rankings/presentation";
+
 const ARTIFACTS = [
   "course-instructors.parquet",
   "course-rankings.parquet",
@@ -735,7 +736,9 @@ async function validateFiles(directory: string, manifest: Manifest) {
     !process.env.RANKINGS_SEED_DIR &&
     IDENTITY_ARTIFACTS.some((name) => !parquetFiles.includes(name))
   )
-    throw new Error("Ranking generation is missing Instructor identity Parquet");
+    throw new Error(
+      "Ranking generation is missing Instructor identity Parquet",
+    );
   if (
     manifest.schemaMajor !== 0 ||
     !/^[0-9a-f]{40}$/.test(manifest.sourceCommit) ||
@@ -1190,7 +1193,9 @@ async function applyIdentityParquet(
     await stat(resolve(directory, "instructor-identities.parquet"));
   } catch {
     if (!process.env.RANKINGS_SEED_DIR)
-      throw new Error("Ranking generation is missing Instructor identity Parquet");
+      throw new Error(
+        "Ranking generation is missing Instructor identity Parquet",
+      );
     return;
   }
   const extraIdentities = [...manifest.identities];
@@ -1213,7 +1218,9 @@ async function applyIdentityParquet(
     const aliases = aliasesByUuid.get(uuid) ?? [];
     aliases.push({
       name: String(row.name),
-      source: String(row.source) as InstructorIdentity["aliases"][number]["source"],
+      source: String(
+        row.source,
+      ) as InstructorIdentity["aliases"][number]["source"],
       sourceCommit: String(row.source_commit),
       sourceFile:
         row.source_file === null || row.source_file === undefined
@@ -1258,41 +1265,42 @@ async function applyIdentityParquet(
   );
   const identityEvents: InstructorIdentityEvent[] = eventRows.flatMap(
     (row): InstructorIdentityEvent[] => {
-    const type = String(row.event_type);
-    const sourceCommit = String(row.source_commit);
-    if (type === "itsc-added")
-      return [
-        {
-          type: "itsc-added" as const,
-          uuid: String(row.uuid),
-          itsc: String(row.itsc),
-          sourceCommit,
-        },
-      ];
-    if (type === "merge")
-      return [
-        {
-          type: "merge" as const,
-          retiredUuid: String(row.retired_uuid),
-          survivorUuid: String(row.survivor_uuid),
-          sourceCommit,
-        },
-      ];
-    if (type === "split") {
-      const newIdentity = identitiesByUuid.get(String(row.new_uuid));
-      if (!newIdentity) return [];
-      return [
-        {
-          type: "split" as const,
-          sourceUuid: String(row.source_uuid),
-          newUuid: String(row.new_uuid),
-          newIdentity,
-          sourceCommit,
-          affectedAssociations: affectedByNewUuid.get(String(row.new_uuid)) ?? [],
-        },
-      ];
-    }
-    return [];
+      const type = String(row.event_type);
+      const sourceCommit = String(row.source_commit);
+      if (type === "itsc-added")
+        return [
+          {
+            type: "itsc-added" as const,
+            uuid: String(row.uuid),
+            itsc: String(row.itsc),
+            sourceCommit,
+          },
+        ];
+      if (type === "merge")
+        return [
+          {
+            type: "merge" as const,
+            retiredUuid: String(row.retired_uuid),
+            survivorUuid: String(row.survivor_uuid),
+            sourceCommit,
+          },
+        ];
+      if (type === "split") {
+        const newIdentity = identitiesByUuid.get(String(row.new_uuid));
+        if (!newIdentity) return [];
+        return [
+          {
+            type: "split" as const,
+            sourceUuid: String(row.source_uuid),
+            newUuid: String(row.new_uuid),
+            newIdentity,
+            sourceCommit,
+            affectedAssociations:
+              affectedByNewUuid.get(String(row.new_uuid)) ?? [],
+          },
+        ];
+      }
+      return [];
     },
   );
   const known = new Set(manifest.identities.map((identity) => identity.uuid));
@@ -1659,14 +1667,18 @@ async function prepareCandidateManifest(candidate: {
   }
   if (
     !candidate.artifacts ||
-    JSON.stringify(Object.keys(candidate.artifacts).sort()) !==
-      JSON.stringify(ARTIFACTS)
+    ARTIFACTS.some((filename) => !candidate.artifacts?.[filename])
   )
     throw new Error("Upstream tree declarations are incomplete");
+  const artifacts = Object.fromEntries(
+    ARTIFACTS.map((filename) => [filename, candidate.artifacts?.[filename]]),
+  );
   try {
     await stat(resolve(candidate.directory, "instructor-identities.parquet"));
   } catch {
-    throw new Error("Ranking generation is missing Instructor identity Parquet");
+    throw new Error(
+      "Ranking generation is missing Instructor identity Parquet",
+    );
   }
   await writeFile(
     resolve(candidate.directory, "manifest.json"),
@@ -1674,7 +1686,7 @@ async function prepareCandidateManifest(candidate: {
       {
         schemaMajor: 0,
         sourceCommit: candidate.sha,
-        artifacts: candidate.artifacts,
+        artifacts,
         identities: [],
         identityEvents: [],
       },
