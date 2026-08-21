@@ -44,7 +44,9 @@ export function RankingResultCard({ result }: { result: Ranking }) {
       <Link
         className="group block touch-manipulation rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950"
         href={detailsHref(result)}
+        rel="noopener noreferrer"
         style={{ textDecoration: "none" }}
+        target="_blank"
       >
         <Card className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 bg-white p-4 transition-shadow motion-reduce:transition-none hover:border-slate-300 hover:shadow-md group-focus-visible:border-slate-400 sm:gap-5 sm:p-6">
           <CardContent className="w-20 shrink-0 p-0 text-slate-600 sm:w-32">
@@ -88,6 +90,7 @@ export function RankingResultCard({ result }: { result: Ranking }) {
               {grade}
             </Badge>
           </CardContent>
+          <span className="sr-only">Opens in a new tab</span>
         </Card>
       </Link>
     </li>

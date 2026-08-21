@@ -8,7 +8,15 @@ export type DetailTrendTerm = {
   termCode: string;
   termName: string;
   criteria: Partial<
-    Record<RankingCriterion, { bayesian: number; samples: number }>
+    Record<
+      RankingCriterion,
+      {
+        bayesian: number;
+        confidence: number;
+        samples: number;
+        cumulativeSamples: number;
+      }
+    >
   >;
 };
 
@@ -21,11 +29,8 @@ const criteria: Array<[RankingCriterion, string, string]> = [
   ["instructor", "Instructor SFQ", "#0891b2"],
 ];
 
-function valueLabel(value?: { bayesian: number; samples: number }) {
-  return value
-    ? `${value.bayesian.toFixed(2)} · ${value.samples} samples`
-    : "Unavailable";
-}
+const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+const count = new Intl.NumberFormat("en-US");
 
 export function DetailsTrend({
   terms,
@@ -47,36 +52,62 @@ export function DetailsTrend({
       return value === undefined ? [] : [value];
     }),
   );
-  const minimum = values.length ? Math.min(...values) : 0;
-  const maximum = values.length ? Math.max(...values) : 1;
+  const minimum = values.length ? Math.min(0, ...values) : 0;
+  const maximum = values.length ? Math.max(0, ...values) : 1;
   const range = Math.max(maximum - minimum, 0.5);
   const width = 720;
-  const height = 220;
+  const height = 250;
   const left = 42;
   const right = 16;
   const top = 16;
-  const bottom = 32;
+  const bottom = 42;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
+  const averageY = top + (maximum / range) * plotHeight;
+  const labelInterval = Math.max(1, Math.ceil((activeTerms.length - 1) / 5));
+  const minimumLabelGap = labelInterval;
+  const selectedIndex = activeTerms.findIndex(
+    (term) => term.termCode === selectedTermCode,
+  );
+  const labelIndexes = new Set<number>();
+  for (const index of [selectedIndex, 0, activeTerms.length - 1])
+    if (
+      index >= 0 &&
+      [...labelIndexes].every(
+        (current) => Math.abs(current - index) >= minimumLabelGap,
+      )
+    )
+      labelIndexes.add(index);
+  for (
+    let index = labelInterval;
+    index < activeTerms.length;
+    index += labelInterval
+  )
+    if (
+      [...labelIndexes].every(
+        (current) => Math.abs(current - index) >= minimumLabelGap,
+      )
+    )
+      labelIndexes.add(index);
 
   return (
     <div className="flex flex-col gap-4">
       <ToggleGroup
-        aria-label="Trend criteria"
+        aria-label="History criteria"
         className="flex-wrap justify-start"
-        onValueChange={(value) =>
-          setSelectedCriteria(value as RankingCriterion[])
-        }
+        onValueChange={(value) => {
+          if (value.length) setSelectedCriteria(value as RankingCriterion[]);
+        }}
         type="multiple"
         value={selectedCriteria}
         variant="outline"
       >
         {criteria.map(([criterion, label, color]) => (
-          <ToggleGroupItem key={criterion} value={criterion}>
+          <ToggleGroupItem className="gap-2" key={criterion} value={criterion}>
             <span aria-hidden="true" style={{ color }}>
               ●
-            </span>{" "}
-            {label}
+            </span>
+            <span>{label}</span>
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
@@ -114,25 +145,44 @@ export function DetailsTrend({
                 </g>
               );
             })}
+            <line
+              data-average-line=""
+              stroke="#475569"
+              strokeWidth="1.5"
+              x1={left}
+              x2={width - right}
+              y1={averageY}
+              y2={averageY}
+            />
+            <text
+              fill="#475569"
+              fontSize="10"
+              textAnchor="end"
+              x={width - right - 4}
+              y={Math.max(top + 11, averageY - 5)}
+            >
+              Average (0)
+            </text>
             {activeTerms.map((term, index) => {
               const x =
                 left +
                 (activeTerms.length === 1
                   ? plotWidth / 2
                   : (plotWidth * index) / (activeTerms.length - 1));
-              const interval = Math.max(1, Math.ceil(activeTerms.length / 6));
-              return index === 0 ||
-                index === activeTerms.length - 1 ||
-                index % interval === 0 ||
-                term.termCode === selectedTermCode ? (
+              return labelIndexes.has(index) ? (
                 <text
                   fill="#64748b"
                   fontSize="10"
                   key={term.termCode}
-                  textAnchor="end"
-                  transform={`rotate(-35 ${x} ${height - 5})`}
+                  textAnchor={
+                    index === 0
+                      ? "start"
+                      : index === activeTerms.length - 1
+                        ? "end"
+                        : "middle"
+                  }
                   x={x}
-                  y={height - 5}
+                  y={height - 9}
                 >
                   {term.termName}
                 </text>
@@ -169,41 +219,46 @@ export function DetailsTrend({
             })}
           </svg>
           <figcaption className="sr-only">
-            Criterion values across available Terms. The table below contains
-            every value and sample count.
+            Criterion values by Term. Zero is the population average.
           </figcaption>
         </figure>
       ) : (
         <p className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
-          Trend history is unavailable because no criterion evidence was
-          returned.
+          History is unavailable because no criterion evidence was returned.
         </p>
       )}
       <section
-        aria-label="Trend history table"
+        aria-label="History table"
         className="overflow-x-auto rounded-xl border border-slate-200 bg-white"
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users need to scroll the wide evidence table.
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users need to scroll the evidence table.
         tabIndex={0}
       >
-        <table className="w-full min-w-[42rem] border-collapse text-sm">
-          <caption className="sr-only">Trend values by Term</caption>
+        <table className="w-full border-collapse text-sm">
+          <caption className="sr-only">Criterion values by Term</caption>
           <thead className="bg-slate-50 text-left">
             <tr>
               <th className="px-3 py-2" scope="col">
                 Term
               </th>
-              {criteria.map(([, label, color]) => (
-                <th className="px-3 py-2" key={label} scope="col">
-                  <span aria-hidden="true" style={{ color }}>
-                    ●
-                  </span>{" "}
-                  {label}
-                </th>
-              ))}
+              {selectedCriteria.map((criterion) => {
+                const [, label, color] = criteria.find(
+                  ([value]) => value === criterion,
+                ) as [RankingCriterion, string, string];
+                return (
+                  <th className="px-3 py-2" key={criterion} scope="col">
+                    <span className="inline-flex items-center gap-2">
+                      <span aria-hidden="true" style={{ color }}>
+                        ●
+                      </span>
+                      {label}
+                    </span>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            {terms.map((term) => (
+            {[...terms].reverse().map((term) => (
               <tr
                 className={
                   term.termCode === selectedTermCode
@@ -219,14 +274,30 @@ export function DetailsTrend({
                   {term.termName}
                   {term.termCode === selectedTermCode ? " · selected" : ""}
                 </th>
-                {criteria.map(([criterion]) => (
-                  <td
-                    className="whitespace-nowrap px-3 py-2 tabular-nums"
-                    key={criterion}
-                  >
-                    {valueLabel(term.criteria[criterion])}
-                  </td>
-                ))}
+                {selectedCriteria.map((criterion) => {
+                  const value = term.criteria[criterion];
+                  return (
+                    <td
+                      className="whitespace-nowrap px-3 py-2 tabular-nums"
+                      key={criterion}
+                    >
+                      {value ? (
+                        <>
+                          <span className="font-medium">
+                            {value.bayesian.toFixed(2)}
+                          </span>
+                          <span className="block text-xs text-slate-600">
+                            Confidence {number.format(value.confidence)} ·{" "}
+                            {count.format(value.samples)} new ·{" "}
+                            {count.format(value.cumulativeSamples)} cumulative
+                          </span>
+                        </>
+                      ) : (
+                        "Unavailable"
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogClose,
@@ -13,6 +16,26 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   authorizedInlineImage,
   contentTypeForFilename,
@@ -33,6 +56,21 @@ import {
   reportReview,
   withdrawReview,
 } from "./review-actions";
+
+const ReviewMarkdownEditor = dynamic(
+  () =>
+    import("./review-markdown-editor").then(
+      (module) => module.ReviewMarkdownEditor,
+    ),
+  {
+    loading: () => (
+      <div className="min-h-48 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+        Loading editor…
+      </div>
+    ),
+    ssr: false,
+  },
+);
 
 export type ReviewCourseOption = {
   coursePrefix: string;
@@ -99,11 +137,15 @@ export function ReviewComposer({
   contexts = [],
   initialCourse,
   initialInstructorUuid,
+  initialTermCode,
+  initialSection,
   review,
   displayTermNames = false,
 }: ReviewEditorOptions & {
   initialCourse?: ReviewCourseOption;
   initialInstructorUuid?: string;
+  initialTermCode?: string;
+  initialSection?: string;
   review?: PublicReview;
   displayTermNames?: boolean;
 }) {
@@ -125,8 +167,12 @@ export function ReviewComposer({
   const [instructorUuid, setInstructorUuid] = useState(
     selectedInitialInstructor ?? instructors[0]?.instructorUuid ?? "",
   );
-  const [termCode, setTermCode] = useState(review?.termCode ?? "");
-  const [section, setSection] = useState(review?.section ?? "");
+  const [termCode, setTermCode] = useState(
+    review?.termCode ?? initialTermCode ?? "",
+  );
+  const [section, setSection] = useState(
+    review?.section ?? initialSection ?? "",
+  );
   const [attachments, setAttachments] = useState<DraftAttachment[]>(() =>
     (review?.attachments ?? []).map((attachment) => ({
       id: crypto.randomUUID(),
@@ -137,6 +183,14 @@ export function ReviewComposer({
       kind: attachment.kind,
     })),
   );
+  const attachmentsRef = useRef(attachments);
+  const updateAttachments = (
+    update: (current: DraftAttachment[]) => DraftAttachment[],
+  ) => {
+    const next = update(attachmentsRef.current);
+    attachmentsRef.current = next;
+    setAttachments(next);
+  };
   const [markdown, setMarkdown] = useState(() => {
     let value = review?.markdown ?? "";
     for (const [index, attachment] of (review?.attachments ?? []).entries()) {
@@ -149,7 +203,6 @@ export function ReviewComposer({
     }
     return value;
   });
-  const [mode, setMode] = useState<"write" | "preview">("write");
   const [attribution, setAttribution] = useState<ReviewAttribution>(
     review?.attribution ?? "attributed",
   );
@@ -278,75 +331,86 @@ export function ReviewComposer({
   const readyAttachments = attachments.filter(
     (attachment) => attachment.status === "ready" && attachment.storedFileId,
   );
+  async function uploadFile(file: File) {
+    if (attachmentsRef.current.length >= 4)
+      throw new Error("A Revision has at most four Attachments.");
+    const id = crypto.randomUUID();
+    const pending: DraftAttachment = {
+      id,
+      storedFileId: "",
+      filename: file.name,
+      description: file.name.replace(/\.[^.]+$/u, "") || file.name,
+      status: "pending",
+    };
+    updateAttachments((current) => [...current, pending]);
+    try {
+      const reserved = await fetch("/api/attachments/uploads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          byteSize: file.size,
+          filename: file.name,
+          contentType:
+            file.type ||
+            contentTypeForFilename(file.name) ||
+            "application/octet-stream",
+        }),
+      });
+      if (!reserved.ok) throw new Error("reserve");
+      const body = (await reserved.json()) as {
+        intentId: string;
+        uploadUrl: string;
+        uploadHeaders: Record<string, string>;
+      };
+      const uploaded = await fetch(body.uploadUrl, {
+        method: "PUT",
+        headers: body.uploadHeaders,
+        body: file,
+      });
+      if (!uploaded.ok) throw new Error("put");
+      const completed = await fetch(
+        `/api/attachments/uploads/${body.intentId}/complete`,
+        { method: "POST" },
+      );
+      if (!completed.ok) throw new Error("complete");
+      const stored = (await completed.json()) as {
+        id: string;
+        kind?: "image" | "document";
+      };
+      const ready: DraftAttachment = {
+        ...pending,
+        storedFileId: stored.id,
+        status: "ready",
+        kind: stored.kind,
+      };
+      updateAttachments((current) =>
+        current.map((item) => (item.id === id ? ready : item)),
+      );
+      return ready;
+    } catch (error) {
+      updateAttachments((current) =>
+        current.map((item) =>
+          item.id === id ? { ...item, status: "failed" } : item,
+        ),
+      );
+      throw error;
+    }
+  }
   async function addFiles(fileList: FileList | null) {
     if (!fileList) return;
-    const room = 4 - attachments.length;
-    for (const file of [...fileList].slice(0, room)) {
-      const id = crypto.randomUUID();
-      setAttachments((current) => [
-        ...current,
-        {
-          id,
-          storedFileId: "",
-          filename: file.name,
-          description: file.name.replace(/\.[^.]+$/u, "") || file.name,
-          status: "pending",
-        },
-      ]);
+    for (const file of [...fileList]) {
       try {
-        const reserved = await fetch("/api/attachments/uploads", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            byteSize: file.size,
-            filename: file.name,
-            contentType:
-              file.type ||
-              contentTypeForFilename(file.name) ||
-              "application/octet-stream",
-          }),
-        });
-        if (!reserved.ok) throw new Error("reserve");
-        const body = (await reserved.json()) as {
-          intentId: string;
-          uploadUrl: string;
-          uploadHeaders: Record<string, string>;
-        };
-        const uploaded = await fetch(body.uploadUrl, {
-          method: "PUT",
-          headers: body.uploadHeaders,
-          body: file,
-        });
-        if (!uploaded.ok) throw new Error("put");
-        const completed = await fetch(
-          `/api/attachments/uploads/${body.intentId}/complete`,
-          { method: "POST" },
-        );
-        if (!completed.ok) throw new Error("complete");
-        const stored = (await completed.json()) as {
-          id: string;
-          kind?: "image" | "document";
-        };
-        setAttachments((current) =>
-          current.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  storedFileId: stored.id,
-                  status: "ready",
-                  kind: stored.kind,
-                }
-              : item,
-          ),
-        );
+        await uploadFile(file);
       } catch {
-        setAttachments((current) =>
-          current.map((item) =>
-            item.id === id ? { ...item, status: "failed" } : item,
-          ),
-        );
+        break;
       }
     }
+  }
+  async function uploadImage(file: File) {
+    const attachment = await uploadFile(file);
+    if (attachment.kind === "document")
+      throw new Error("Only Image Attachments can be embedded.");
+    return `/attachments/${attachment.id}`;
   }
   const inputId = review ? `review-markdown-${review.id}` : "review-markdown";
   return (
@@ -356,7 +420,7 @@ export function ReviewComposer({
           {edit ? "Edit Review" : "Create a Review"}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-2xl overflow-x-hidden overflow-y-auto p-0 text-left">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-4xl overflow-x-hidden overflow-y-auto p-0 text-left">
         <form
           action={edit ? editReview : publishReview}
           className="flex min-w-0 flex-col gap-5 p-6 sm:p-8"
@@ -383,172 +447,176 @@ export function ReviewComposer({
               Context.
             </DialogDescription>
           </DialogHeader>
-          <fieldset className="min-w-0 space-y-3 rounded-xl border border-slate-200 p-4">
-            <legend className="px-1 font-bold">Review Bases</legend>
-            <label className="flex min-h-11 min-w-0 items-center gap-3">
-              <input
-                aria-label="Include Course Basis"
-                checked={courseEnabled}
-                disabled={!courses.length && !courseEnabled}
-                onChange={(event) => setCourseEnabled(event.target.checked)}
-                type="checkbox"
-              />
-              <span className="w-24 font-semibold">Course</span>
-              <select
-                aria-label="Course Basis"
-                className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 px-3"
-                disabled={!courseEnabled}
-                name="course"
-                onChange={(event) => setCourse(event.target.value)}
-                value={course}
-              >
-                {displayedCourses.map((item) => (
-                  <option key={courseValue(item)} value={courseValue(item)}>
-                    {item.label ?? `${item.coursePrefix} ${item.courseNumber}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex min-h-11 min-w-0 items-center gap-3">
-              <input
-                aria-label="Include Instructor Basis"
-                checked={instructorEnabled}
-                disabled={!instructors.length && !instructorEnabled}
-                onChange={(event) => setInstructorEnabled(event.target.checked)}
-                type="checkbox"
-              />
-              <span className="w-24 font-semibold">Instructor</span>
-              <select
-                aria-label="Instructor Basis"
-                className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 px-3"
-                disabled={!instructorEnabled}
-                name="instructorUuid"
-                onChange={(event) => setInstructorUuid(event.target.value)}
-                value={instructorUuid}
-              >
-                {displayedInstructors.map((item) => (
-                  <option key={item.instructorUuid} value={item.instructorUuid}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
+            <FieldLegend>Review Bases</FieldLegend>
+            <FieldGroup className="gap-4">
+              <Field orientation="horizontal">
+                <Checkbox
+                  aria-label="Include Course Basis"
+                  checked={courseEnabled}
+                  disabled={!courses.length && !courseEnabled}
+                  id={`${inputId}-course-enabled`}
+                  onCheckedChange={(checked) =>
+                    setCourseEnabled(checked === true)
+                  }
+                />
+                <FieldContent>
+                  <FieldLabel htmlFor={`${inputId}-course-enabled`}>
+                    Course
+                  </FieldLabel>
+                  <Select
+                    disabled={!courseEnabled}
+                    name="course"
+                    onValueChange={setCourse}
+                    value={course}
+                  >
+                    <SelectTrigger aria-label="Course Basis">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {displayedCourses.map((item) => (
+                          <SelectItem
+                            key={courseValue(item)}
+                            value={courseValue(item)}
+                          >
+                            {item.label ??
+                              `${item.coursePrefix} ${item.courseNumber}`}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </FieldContent>
+              </Field>
+              <Field orientation="horizontal">
+                <Checkbox
+                  aria-label="Include Instructor Basis"
+                  checked={instructorEnabled}
+                  disabled={!instructors.length && !instructorEnabled}
+                  id={`${inputId}-instructor-enabled`}
+                  onCheckedChange={(checked) =>
+                    setInstructorEnabled(checked === true)
+                  }
+                />
+                <FieldContent>
+                  <FieldLabel htmlFor={`${inputId}-instructor-enabled`}>
+                    Instructor
+                  </FieldLabel>
+                  <Select
+                    disabled={!instructorEnabled}
+                    name="instructorUuid"
+                    onValueChange={setInstructorUuid}
+                    value={instructorUuid}
+                  >
+                    <SelectTrigger aria-label="Instructor Basis">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {displayedInstructors.map((item) => (
+                          <SelectItem
+                            key={item.instructorUuid}
+                            value={item.instructorUuid}
+                          >
+                            {item.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </FieldContent>
+              </Field>
+            </FieldGroup>
             {!hasBasis ? (
-              <p className="text-sm text-red-700" role="alert">
-                Select at least one Review Basis.
-              </p>
+              <FieldError>Select at least one Review Basis.</FieldError>
             ) : null}
-          </fieldset>
-          <fieldset className="grid min-w-0 gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-2">
-            <legend className="px-1 font-bold">
+          </FieldSet>
+          <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
+            <FieldLegend>
               Review Context{" "}
-              <span className="font-normal text-slate-500">(optional)</span>
-            </legend>
-            <label className="font-semibold">
-              Term
-              <select
-                className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3"
-                name="termCode"
-                onChange={(event) => {
-                  setTermCode(event.target.value);
-                  setSection("");
-                }}
-                value={termCode}
-              >
-                <option value="">General</option>
-                {displayedTerms.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="font-semibold">
-              Section
-              <select
-                className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3"
-                disabled={!courseEnabled || !termCode}
-                name="section"
-                onChange={(event) => setSection(event.target.value)}
-                value={section}
-              >
-                <option value="">All Sections</option>
-                {displayedSections.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="text-xs text-slate-600 sm:col-span-2">
+              <span className="font-normal text-gray-500">(optional)</span>
+            </FieldLegend>
+            <input name="termCode" type="hidden" value={termCode} />
+            <input name="section" type="hidden" value={section} />
+            <FieldGroup className="grid gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor={`${inputId}-term`}>Term</FieldLabel>
+                <Select
+                  onValueChange={(value) => {
+                    setTermCode(value === "general" ? "" : value);
+                    setSection("");
+                  }}
+                  value={termCode || "general"}
+                >
+                  <SelectTrigger id={`${inputId}-term`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="general">General</SelectItem>
+                      {displayedTerms.map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field data-disabled={!courseEnabled || !termCode}>
+                <FieldLabel htmlFor={`${inputId}-section`}>Section</FieldLabel>
+                <Select
+                  disabled={!courseEnabled || !termCode}
+                  onValueChange={(value) =>
+                    setSection(value === "all" ? "" : value)
+                  }
+                  value={section || "all"}
+                >
+                  <SelectTrigger id={`${inputId}-section`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="all">All Sections</SelectItem>
+                      {displayedSections.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {value}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </FieldGroup>
+            <FieldDescription>
               Term qualifies every selected Review Basis. Section requires a
               Course Basis and Term and identifies a Class.
-            </p>
+            </FieldDescription>
             {edit && !selectionSupported ? (
-              <p
-                className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 sm:col-span-2"
-                role="alert"
-              >
+              <FieldError>
                 This Review snapshot is no longer source-backed. Select
                 supported Review Bases and Review Context before publishing.
                 Persisted values are shown as the current snapshot and will not
                 be removed automatically.
-              </p>
+              </FieldError>
             ) : null}
-          </fieldset>
-          <div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <label className="font-bold" htmlFor={inputId}>
-                Review · Markdown
-              </label>
-              <fieldset className="flex">
-                <legend className="sr-only">Markdown mode</legend>
-                {(["write", "preview"] as const).map((value) => (
-                  <button
-                    aria-pressed={mode === value}
-                    className="min-h-11 rounded-lg px-3 text-sm font-semibold capitalize aria-pressed:bg-blue-100"
-                    key={value}
-                    onClick={() => setMode(value)}
-                    type="button"
-                  >
-                    {value === "write" ? "Write" : "Preview"}
-                  </button>
-                ))}
-              </fieldset>
-            </div>
-            <textarea
-              aria-describedby={`${inputId}-help`}
-              className={`mt-2 min-h-40 w-full rounded-xl border border-slate-300 p-3 ${mode === "preview" ? "sr-only" : ""}`}
-              id={inputId}
-              name="markdown"
-              onChange={(event) => setMarkdown(event.target.value)}
-              required
-              value={markdown}
+          </FieldSet>
+          <Field>
+            <FieldLabel>Review</FieldLabel>
+            <input name="markdown" type="hidden" value={markdown} />
+            <ReviewMarkdownEditor
+              markdown={markdown}
+              onChange={setMarkdown}
+              uploadImage={uploadImage}
             />
-            {mode === "preview" ? (
-              <div
-                aria-live="polite"
-                className="prose prose-slate mt-2 min-h-40 max-w-none rounded-xl border border-slate-300 p-3"
-              >
-                {markdown ? (
-                  <SafeMarkdown
-                    attachments={readyAttachments}
-                    markdown={markdown}
-                  />
-                ) : (
-                  <p className="text-slate-500">Nothing to preview.</p>
-                )}
-              </div>
-            ) : null}
-            <p className="mt-2 text-xs text-slate-600" id={`${inputId}-help`}>
-              Raw HTML is not rendered. Remote images are prohibited. Inline
-              images may reference only an Image Attachment on this Revision as
-              <code>{`/attachments/{id}`}</code>; the Attachment description is
-              used as alt text. Document Attachments are never embedded.
-            </p>
-          </div>
-          <fieldset className="min-w-0 space-y-3 rounded-xl border border-slate-200 p-4">
-            <legend className="px-1 font-bold">Attachments</legend>
+            <FieldDescription>
+              Write with the toolbar. Paste or drop images to upload and embed
+              them as Attachments.
+            </FieldDescription>
+          </Field>
+          <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
+            <FieldLegend>Attachments</FieldLegend>
             <input
               name="attachments"
               type="hidden"
@@ -563,7 +631,7 @@ export function ReviewComposer({
                 ),
               )}
             />
-            <p className="text-sm text-amber-950">
+            <FieldDescription className="text-amber-950">
               Embedded metadata is preserved and may expose names, device
               information, or location. UST Rankings does not resize, strip,
               transcode, or malware-scan files. Strict format validation is not
@@ -572,11 +640,12 @@ export function ReviewComposer({
               ODT/ODS/ODP files count toward a 32 MiB distinct Stored File
               quota, including pending uploads. A Revision has at most four
               Attachments. Review text can publish while an upload is pending.
-            </p>
-            <input
+            </FieldDescription>
+            <Input
               accept=".jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.pdf,.txt,.md,.csv,.docx,.xlsx,.pptx,.odt,.ods,.odp,image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,application/pdf,text/plain,text/markdown,text/csv"
               aria-label="Add Attachments"
               disabled={attachments.length >= 4}
+              multiple
               onChange={(event) => {
                 void addFiles(event.target.files);
                 event.target.value = "";
@@ -584,16 +653,20 @@ export function ReviewComposer({
               type="file"
             />
             {attachments.map((attachment) => (
-              <div className="grid gap-2 sm:grid-cols-2" key={attachment.id}>
+              <FieldGroup className="gap-2" key={attachment.id}>
                 <p className="text-sm">
                   {attachment.filename} · {attachment.status}
                 </p>
-                <label className="text-sm font-semibold">
-                  Description
-                  <input
-                    className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3"
+                <Field>
+                  <FieldLabel
+                    htmlFor={`${inputId}-${attachment.id}-description`}
+                  >
+                    Description
+                  </FieldLabel>
+                  <Input
+                    id={`${inputId}-${attachment.id}-description`}
                     onChange={(event) =>
-                      setAttachments((current) =>
+                      updateAttachments((current) =>
                         current.map((item) =>
                           item.id === attachment.id
                             ? { ...item, description: event.target.value }
@@ -603,77 +676,59 @@ export function ReviewComposer({
                     }
                     value={attachment.description}
                   />
-                </label>
-                {attachment.status === "ready" &&
-                attachment.kind !== "document" ? (
-                  <button
-                    className="justify-self-start text-sm font-semibold text-blue-800"
-                    onClick={() =>
-                      setMarkdown(
-                        `${markdown}${markdown.endsWith("\n") || !markdown ? "" : "\n"}![](/attachments/${attachment.id})\n`,
-                      )
-                    }
-                    type="button"
-                  >
-                    Insert inline
-                  </button>
-                ) : null}
-              </div>
+                </Field>
+              </FieldGroup>
             ))}
-            <p className="text-xs text-slate-600">
+            <FieldDescription>
               Attachments are not licensed under CC BY 4.0. You warrant you have
               the right to upload them and grant UST Rankings a non-exclusive
               license to store, deliver, display, and moderate them.
-            </p>
-          </fieldset>
-          <fieldset className="min-w-0 space-y-3 rounded-xl border border-slate-200 p-4">
-            <legend className="px-1 font-bold">Public identity</legend>
-            <label className="flex items-start gap-3">
-              <input
-                checked={attribution === "attributed"}
-                name="attribution"
-                onChange={() => setAttribution("attributed")}
-                type="radio"
-                value="attributed"
-              />
-              <span>
-                <strong>Attributed</strong> — capture and display your current
-                Public Display Name for this Revision.
-              </span>
-            </label>
-            <label className="flex items-start gap-3">
-              <input
-                checked={attribution === "identity-hidden"}
-                name="attribution"
-                onChange={() => setAttribution("identity-hidden")}
-                type="radio"
-                value="identity-hidden"
-              />
-              <span>
-                <strong>Identity hidden</strong> — display no author name.
-              </span>
-            </label>
-            <p className="text-sm text-slate-700">
-              Identity hidden is not anonymous to UST Rankings. An authorized
-              operator can link this Review to your account for moderation,
-              security, rights, and legal purposes.
-            </p>
-          </fieldset>
-          <div className="rounded-xl bg-blue-50 p-4 text-sm leading-6 text-blue-950">
-            {edit
-              ? "Publishing this edit creates a new immutable Review Revision. Earlier Revisions remain internal."
-              : "Publishing creates an immutable Review Revision."}{" "}
-            Attribution is selected independently for each Revision.
-          </div>
-          <div className="rounded-xl bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-            Review text is published under CC BY 4.0. Attributed credit uses
-            your captured Public Display Name plus the Review permalink;
-            Identity-hidden credit uses “UST Rankings contributor” plus the
-            permalink. You also grant UST Rankings a non-exclusive site license
-            to host, format, display, and moderate it. CC BY 4.0 rights already
-            granted to obtained copies cannot be recalled, even after
-            withdrawal.
-          </div>
+            </FieldDescription>
+          </FieldSet>
+          <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
+            <FieldLegend>Public identity</FieldLegend>
+            <input name="attribution" type="hidden" value={attribution} />
+            <ToggleGroup
+              aria-label="Public identity"
+              className="grid grid-cols-2"
+              onValueChange={(value) => {
+                if (value) setAttribution(value as ReviewAttribution);
+              }}
+              type="single"
+              value={attribution}
+              variant="outline"
+            >
+              <ToggleGroupItem value="attributed">Attributed</ToggleGroupItem>
+              <ToggleGroupItem value="identity-hidden">
+                Identity hidden
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <FieldDescription>
+              Attributed displays your current Public Display Name. Identity
+              hidden displays no author name, but an authorized operator can
+              still link the Review to your account for moderation, security,
+              rights, and legal purposes.
+            </FieldDescription>
+          </FieldSet>
+          <Alert className="bg-blue-50 text-blue-950">
+            <AlertDescription>
+              {edit
+                ? "Publishing this edit creates a new immutable Review Revision. Earlier Revisions remain internal."
+                : "Publishing creates an immutable Review Revision."}{" "}
+              Attribution is selected independently for each Revision.
+            </AlertDescription>
+          </Alert>
+          <Alert className="bg-amber-50 text-amber-950">
+            <AlertDescription>
+              Review text is published under CC BY 4.0. Attributed credit uses
+              your captured Public Display Name plus the Review permalink;
+              Identity-hidden credit uses “UST Rankings contributor” plus the
+              permalink. You also grant UST Rankings a non-exclusive site
+              license to host, format, display, and moderate it. CC BY 4.0
+              rights already granted to obtained copies cannot be recalled, even
+              after withdrawal.
+            </AlertDescription>
+          </Alert>
           <DialogFooter className="gap-2 border-t border-slate-200 pt-5">
             <DialogClose asChild>
               <Button type="button" variant="outline">
@@ -681,7 +736,9 @@ export function ReviewComposer({
               </Button>
             </DialogClose>
             <Button
-              disabled={!hasBasis || (edit && !selectionSupported)}
+              disabled={
+                !hasBasis || !markdown.trim() || (edit && !selectionSupported)
+              }
               type="submit"
             >
               Publish Revision

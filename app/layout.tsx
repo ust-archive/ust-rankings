@@ -1,5 +1,6 @@
 import "@typehaus/metropolis/500.css";
 import "@typehaus/metropolis/700.css";
+import "@mdxeditor/editor/style.css";
 import "./globals.css";
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import { GoogleAnalytics } from "@next/third-parties/google";

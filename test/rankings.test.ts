@@ -135,7 +135,13 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
     { termCode: "2510", courseCode: "COMP 1029C" },
     { termCode: "2510", courseCode: "MATH 2000" },
   ]);
-  expect(detail.terms[0]?.criteria.instructor?.bayesian).toBe(1);
+  expect(detail.terms[0]?.criteria.instructor).toEqual({
+    bayesian: 1,
+    confidence: 1,
+    samples: 1,
+    cumulativeSamples: 33,
+  });
+  expect(detail.scoreDistribution.count).toBe(detail.population.size);
 });
 
 test("getRankings exposes Course evidence and associated Instructors", async () => {
@@ -167,7 +173,9 @@ test("getRankings exposes Course evidence and associated Instructors", async () 
     details.terms.find((term) => term.termCode === "2510")?.criteria.content,
   ).toEqual({
     bayesian: 0.25,
+    confidence: 1,
     samples: 1,
+    cumulativeSamples: 11,
   });
   const population = await queryRankings({
     entity: "course",

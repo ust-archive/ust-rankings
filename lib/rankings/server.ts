@@ -562,7 +562,17 @@ export type RankingsPage<
 
 type RankingTermEvidence = {
   termCode: string;
-  criteria: Partial<Record<Criterion, { bayesian: number; samples: number }>>;
+  criteria: Partial<
+    Record<
+      Criterion,
+      {
+        bayesian: number;
+        confidence: number;
+        samples: number;
+        cumulativeSamples: number;
+      }
+    >
+  >;
 };
 
 export type InstructorIdentityLookup = {
@@ -589,6 +599,7 @@ export type InstructorHistoricalEvidence = {
 export type Rankings = InstructorIdentityLookup & {
   population: RankingsPage["population"];
   configuration: RankingsPage["configuration"];
+  scoreDistribution: ScoreDistribution;
   ranking?: InstructorRanking;
   terms: RankingTermEvidence[];
   courses: Array<{ termCode: string; courseCode: string }>;
@@ -2534,7 +2545,7 @@ export async function getRankings(
       const metadata = catalog.courses.get(`${coursePrefix}${courseNumber}`);
       const ratings = await queryRows(
         accepted.connection,
-        `SELECT term_code, criterion, bayesian, samples FROM read_parquet('${sqlPath(accepted.directory, "course-ratings.parquet")}') WHERE subject = $coursePrefix AND code = $courseNumber ORDER BY term_num, criterion`,
+        `SELECT term_code, criterion, bayesian, confidence, samples, cumulative_samples FROM read_parquet('${sqlPath(accepted.directory, "course-ratings.parquet")}') WHERE subject = $coursePrefix AND code = $courseNumber ORDER BY term_num, criterion`,
         { coursePrefix, courseNumber },
       );
       if (!metadata && ratings.length === 0)
@@ -2558,7 +2569,9 @@ export async function getRankings(
         const term = terms.get(termCode) ?? { termCode, criteria: {} };
         term.criteria[String(row.criterion) as Criterion] = {
           bayesian: number(row.bayesian),
+          confidence: number(row.confidence),
           samples: number(row.samples),
+          cumulativeSamples: number(row.cumulative_samples),
         };
         terms.set(termCode, term);
       }
@@ -2614,7 +2627,7 @@ export async function getRankings(
         search: identity.instructor.uuid,
       },
       accepted,
-    )) as RankingsPage<"instructor">;
+    )) as EntityRankingsQueryResult<"instructor">;
     const evidence = await Promise.all(
       identity.family.map(async (familyInstructor) => {
         const name =
@@ -2623,7 +2636,7 @@ export async function getRankings(
         const [ratings, courseRows] = await Promise.all([
           queryRows(
             accepted.connection,
-            `SELECT term_code, criterion, bayesian, samples FROM read_parquet('${sqlPath(accepted.directory, "instructor-ratings.parquet")}') WHERE name = $name ORDER BY term_num, criterion`,
+            `SELECT term_code, criterion, bayesian, confidence, samples, cumulative_samples FROM read_parquet('${sqlPath(accepted.directory, "instructor-ratings.parquet")}') WHERE name = $name ORDER BY term_num, criterion`,
             { name },
           ),
           queryRows(
@@ -2638,7 +2651,9 @@ export async function getRankings(
           const term = terms.get(termCode) ?? { termCode, criteria: {} };
           term.criteria[String(row.criterion) as Criterion] = {
             bayesian: number(row.bayesian),
+            confidence: number(row.confidence),
             samples: number(row.samples),
+            cumulativeSamples: number(row.cumulative_samples),
           };
           terms.set(termCode, term);
         }
@@ -2681,6 +2696,7 @@ export async function getRankings(
       ...identity,
       population: page.population,
       configuration: page.configuration,
+      scoreDistribution: page.scoreDistribution,
       ranking: page.results.find(
         (candidate) => candidate.uuid === identity.instructor.uuid,
       ),

@@ -150,8 +150,8 @@ test("Course Offering and Class routes validate nested relationships and preserv
     }),
   );
   expect(classDetails).toContain("Class");
-  expect(classDetails).toContain("COMP 2000 · L1");
-  expect(classDetails).toContain("Class Number 1001");
+  expect(classDetails).toContain("COMP 2000 L1 (1001)");
+  expect(classDetails).toContain("Class Details");
   expect(classDetails).toContain("30 / 80 enrolled");
   expect(classDetails).toContain("Course Basis");
   expect(classDetails).toContain("Instructor Basis");

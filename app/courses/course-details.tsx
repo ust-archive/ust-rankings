@@ -380,7 +380,8 @@ function ClassLinks({ offering }: { offering: CourseOffering }) {
               scheduleClass.section,
             )}
           >
-            {scheduleClass.section} · Class {scheduleClass.classNumber}
+            {offering.courseCode} {scheduleClass.section} (
+            {scheduleClass.classNumber})
           </Link>{" "}
           <span className="text-sm text-slate-600">
             · {scheduleClass.enrollment}/{scheduleClass.capacity} enrolled
@@ -495,16 +496,23 @@ export function CourseDetails({
   );
   const instructors = uniqueInstructors(offerings, rankings);
   const currentInstructors = evidenceTermCode
-    ? instructors.filter((instructor) =>
-        instructor.termCodes.has(evidenceTermCode),
-      )
+    ? instructors
+        .filter((instructor) => instructor.termCodes.has(evidenceTermCode))
+        .sort((left, right) => left.name.localeCompare(right.name))
     : [];
-  const earlierTeachings = instructors.flatMap((instructor) => {
-    const terms = [...instructor.termCodes].filter(
-      (termCode) => termCode !== evidenceTermCode,
+  const earlierTeachings = instructors
+    .flatMap((instructor) => {
+      const terms = [...instructor.termCodes].filter(
+        (termCode) => termCode !== evidenceTermCode,
+      );
+      return terms.length ? [{ instructor, terms }] : [];
+    })
+    .sort(
+      (left, right) =>
+        (right.terms.toSorted().at(-1) ?? "").localeCompare(
+          left.terms.toSorted().at(-1) ?? "",
+        ) || left.instructor.name.localeCompare(right.instructor.name),
     );
-    return terms.length ? [{ instructor, terms }] : [];
-  });
   const earlierOfferings = currentOffering
     ? offerings.filter(
         (offering) => offering.termCode !== currentOffering.termCode,
@@ -625,7 +633,8 @@ export function CourseDetails({
                     scheduleClass.section,
                   )}
                 >
-                  {scheduleClass.section} · Class {scheduleClass.classNumber}
+                  {offering.courseCode} {scheduleClass.section} (
+                  {scheduleClass.classNumber})
                 </Link>
               </h4>
               <p className="text-sm text-slate-600 tabular-nums">
@@ -872,106 +881,195 @@ export function ClassDetails({
         uuid: resolvedUuid,
       });
     }
+  const instructorOptions = [...instructors.values()].flatMap((instructor) =>
+    instructor.uuid
+      ? [{ instructorUuid: instructor.uuid, name: instructor.name }]
+      : [],
+  );
+  const course = {
+    coursePrefix: scheduleClass.coursePrefix,
+    courseNumber: scheduleClass.courseNumber,
+  };
+  const termName = rankingTermName(scheduleClass.termCode);
+  const contexts: ReviewEditorOptions["contexts"] = [
+    {
+      course,
+      termCode: scheduleClass.termCode,
+      termName,
+      section: scheduleClass.section,
+    },
+    ...instructorOptions.map((instructor) => ({
+      course,
+      instructorUuid: instructor.instructorUuid,
+      termCode: scheduleClass.termCode,
+      termName,
+      section: scheduleClass.section,
+    })),
+  ];
+  const reviewEditor: ReviewEditorOptions = {
+    courses: [course],
+    contexts,
+    instructors: instructorOptions,
+  };
   return (
-    <DetailShell
-      eyebrow="Class"
-      title={`${scheduleClass.courseCode} · ${scheduleClass.section}`}
-      subtitle={`${scheduleClass.courseTitle} · Term ${scheduleClass.termCode}`}
-      action={
-        <ActionArea
-          type="Class"
-          courseHref={coursePath(
-            scheduleClass.coursePrefix,
-            scheduleClass.courseNumber,
-          )}
-          instructors={[...instructors.values()]
-            .filter((instructor) => instructor.uuid)
-            .map((instructor) => ({
-              name: instructor.name,
-              href: instructorPath(instructor.uuid as string),
-            }))}
-        />
-      }
-      evidence={
-        <section className="order-2 min-w-0 space-y-6 lg:col-start-1 lg:row-start-1">
-          <div>
-            <h2 className="text-2xl font-bold">Class schedule and quota</h2>
-            <p className="mt-2 font-semibold">
-              Class Number {scheduleClass.classNumber}
-            </p>
-            <p className="mt-1 text-slate-700">
-              {scheduleClass.enrollment} / {scheduleClass.capacity} enrolled ·{" "}
-              {scheduleClass.waitlist} waiting ·{" "}
-              {scheduleClass.open ? "Open" : "Closed"}
-            </p>
-          </div>
-          <ul className="space-y-3">
-            {scheduleClass.meetings.length ? (
-              scheduleClass.meetings.map((meeting) => (
-                <li
-                  className="rounded-xl border bg-white p-4 shadow-sm"
-                  key={JSON.stringify(meeting)}
-                >
-                  <p className="font-semibold">{meetingLabel(meeting)}</p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    {meeting.dateFrom ?? "Dates TBA"}
-                    {meeting.dateTo ? `–${meeting.dateTo}` : ""}
-                  </p>
-                </li>
-              ))
-            ) : (
-              <li className="rounded-xl border bg-slate-50 p-4">Meeting TBA</li>
-            )}
-          </ul>
-          <RankingEvidence
+    <div className="flex w-full flex-col gap-8 text-left text-slate-900">
+      <DetailsHeader
+        eyebrow="Class"
+        subtitle={scheduleClass.courseTitle}
+        termName={termName}
+        title={`${scheduleClass.courseCode} ${scheduleClass.section} (${scheduleClass.classNumber})`}
+      />
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+        <section
+          aria-label="Rankings and Community"
+          className="flex min-w-0 flex-col gap-6"
+        >
+          <DetailsRankings
             rankings={rankings}
-            termCode={scheduleClass.termCode}
+            scoreDistribution={rankings?.scoreDistribution}
+            selectedTermCode={scheduleClass.termCode}
+            termNames={new Map([[scheduleClass.termCode, termName]])}
+          />
+          <DetailsCommunity
+            description="Published experiences for this Class context and its Review Bases."
+            editor={reviewEditor}
+            reviewComposer={
+              <ReviewComposer
+                {...reviewEditor}
+                displayTermNames
+                initialCourse={course}
+                initialSection={scheduleClass.section}
+                initialTermCode={scheduleClass.termCode}
+              />
+            }
+            reviews={reviews}
+            reviewsUnavailable={reviewsUnavailable}
+            signalControls={
+              <div className="flex flex-col gap-3 text-sm" id="signals">
+                <p className="text-slate-600">
+                  This Class is Review Context, not a signal target. Signals
+                  belong to its Review Bases.
+                </p>
+                <div className="flex flex-wrap gap-2 font-semibold">
+                  <Link
+                    className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5"
+                    href={`${coursePath(scheduleClass.coursePrefix, scheduleClass.courseNumber)}#signals`}
+                  >
+                    Course Basis signals
+                  </Link>
+                  {instructorOptions.map((instructor) => (
+                    <Link
+                      className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5"
+                      href={`${instructorPath(instructor.instructorUuid)}#signals`}
+                      key={instructor.instructorUuid}
+                    >
+                      Instructor Basis · {instructor.name}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            }
           />
         </section>
-      }
-      community={
-        <CommunityArea reviews={reviews} unavailable={reviewsUnavailable} />
-      }
-      associations={
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <h2 className="text-xl font-bold">Class associations</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Course Basis · {scheduleClass.courseCode}
-          </p>
-          <div className="mt-2 text-sm text-slate-600">
-            Instructor Basis ·{" "}
-            {[...instructors.values()].length ? (
-              [...instructors.values()].map((instructor, index) => (
-                <span key={instructor.uuid ?? instructor.name}>
-                  {index > 0 ? " · " : ""}
-                  {instructor.uuid ? (
-                    <Link
-                      className="font-semibold"
-                      href={instructorPath(instructor.uuid)}
-                    >
-                      {instructor.name}
-                    </Link>
-                  ) : (
-                    `${instructor.name} (unresolved source name)`
+        <aside className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-6">
+          <Card>
+            <CardHeader>
+              <CardTitle asChild className={styles.heading}>
+                <h2>Class Details</h2>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5">
+              <dl className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <dt className="font-semibold text-slate-600">Enrollment</dt>
+                  <dd className="tabular-nums">
+                    {scheduleClass.enrollment} / {scheduleClass.capacity}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-slate-600">Waitlist</dt>
+                  <dd className="tabular-nums">{scheduleClass.waitlist}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-slate-600">Status</dt>
+                  <dd>{scheduleClass.open ? "Open" : "Closed"}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-slate-600">Type</dt>
+                  <dd>{scheduleClass.classType}</dd>
+                </div>
+              </dl>
+              <section className="flex flex-col gap-3">
+                <h3 className="font-semibold">Meetings</h3>
+                {scheduleClass.meetings.length ? (
+                  scheduleClass.meetings.map((meeting) => (
+                    <div className="text-sm" key={JSON.stringify(meeting)}>
+                      <p className="font-medium">{meetingLabel(meeting)}</p>
+                      <p className="text-slate-600">
+                        {meeting.dateFrom ?? "Dates TBA"}
+                        {meeting.dateTo ? `–${meeting.dateTo}` : ""}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-600">Meeting TBA</p>
+                )}
+              </section>
+              {scheduleClass.reservations.length ? (
+                <section className="flex flex-col gap-2 text-sm">
+                  <h3 className="font-semibold">Reservations</h3>
+                  {scheduleClass.reservations.map((reservation) => (
+                    <p key={reservation.name}>
+                      {reservation.name}: {reservation.enrollment}/
+                      {reservation.quota}
+                    </p>
+                  ))}
+                </section>
+              ) : null}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle asChild className={styles.heading}>
+                <h2>Review Bases</h2>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 text-sm">
+              <p>
+                Course ·{" "}
+                <Link
+                  className="font-semibold"
+                  href={coursePath(
+                    scheduleClass.coursePrefix,
+                    scheduleClass.courseNumber,
                   )}
-                </span>
-              ))
-            ) : (
-              <span>No Instructor association</span>
-            )}
-          </div>
-          {scheduleClass.reservations.length ? (
-            <ul className="mt-4 space-y-2">
-              {scheduleClass.reservations.map((reservation) => (
-                <li key={reservation.name}>
-                  {reservation.name}: {reservation.enrollment}/
-                  {reservation.quota}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      }
-    />
+                >
+                  {scheduleClass.courseCode}
+                </Link>
+              </p>
+              {instructors.size ? (
+                [...instructors.values()].map((instructor) => (
+                  <p key={instructor.uuid ?? instructor.name}>
+                    Instructor ·{" "}
+                    {instructor.uuid ? (
+                      <Link
+                        className="font-semibold"
+                        href={instructorPath(instructor.uuid)}
+                      >
+                        {instructor.name}
+                      </Link>
+                    ) : (
+                      `${instructor.name} (unresolved source name)`
+                    )}
+                  </p>
+                ))
+              ) : (
+                <p>No Instructor association</p>
+              )}
+            </CardContent>
+          </Card>
+        </aside>
+      </div>
+    </div>
   );
 }

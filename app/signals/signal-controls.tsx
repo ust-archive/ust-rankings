@@ -57,7 +57,7 @@ export function SignalControls({
   if (unavailable || !summary)
     return (
       <div
-        className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+        className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
         id="signals"
         role="status"
       >

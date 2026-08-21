@@ -66,8 +66,8 @@ function ClassEntry({ scheduleClass }: { scheduleClass: ScheduleClass }) {
             scheduleClass.section,
           )}
         >
-          {scheduleClass.courseCode} · {scheduleClass.section} · Class{" "}
-          {scheduleClass.classNumber}
+          {scheduleClass.courseCode} {scheduleClass.section} (
+          {scheduleClass.classNumber})
         </Link>
       </h3>
       <p className="text-sm text-slate-600">
@@ -101,25 +101,33 @@ function TeachingCards({
     terms.add(association.termCode);
     courseTerms.set(association.courseCode, terms);
   }
-  const currentCourses = [...courseTerms].flatMap(([courseCode, terms]) =>
-    selectedTermCode && terms.has(selectedTermCode)
-      ? [{ courseCode, termCodes: [selectedTermCode] }]
-      : [],
-  );
-  const earlierCourses = [...courseTerms].flatMap(([courseCode, terms]) => {
-    const termCodes = [...terms].filter(
-      (termCode) => termCode !== selectedTermCode,
+  const courses = [...courseTerms]
+    .map(([courseCode, terms]) => ({ courseCode, termCodes: [...terms] }))
+    .sort(
+      (left, right) =>
+        (right.termCodes.toSorted().at(-1) ?? "").localeCompare(
+          left.termCodes.toSorted().at(-1) ?? "",
+        ) || left.courseCode.localeCompare(right.courseCode),
     );
-    return termCodes.length ? [{ courseCode, termCodes }] : [];
-  });
-  const currentClasses = selectedTermCode
-    ? classes.filter(
-        (scheduleClass) => scheduleClass.termCode === selectedTermCode,
-      )
-    : [];
-  const earlierClasses = classes.filter(
-    (scheduleClass) => scheduleClass.termCode !== selectedTermCode,
+  const currentCourses = courses.filter(
+    ({ termCodes }) => selectedTermCode && termCodes.includes(selectedTermCode),
   );
+  const earlierCourses = courses.filter(
+    ({ termCodes }) =>
+      !selectedTermCode || !termCodes.includes(selectedTermCode),
+  );
+  const byLatestClass = (left: ScheduleClass, right: ScheduleClass) =>
+    right.termCode.localeCompare(left.termCode) ||
+    left.courseCode.localeCompare(right.courseCode) ||
+    left.section.localeCompare(right.section);
+  const currentClasses = selectedTermCode
+    ? classes
+        .filter((scheduleClass) => scheduleClass.termCode === selectedTermCode)
+        .sort(byLatestClass)
+    : [];
+  const earlierClasses = classes
+    .filter((scheduleClass) => scheduleClass.termCode !== selectedTermCode)
+    .sort(byLatestClass);
 
   return (
     <>
@@ -388,6 +396,7 @@ export function InstructorDetails({
         >
           <DetailsRankings
             rankings={rankings}
+            scoreDistribution={rankings?.scoreDistribution}
             selectedTermCode={selectedTermCode}
           />
           <DetailsCommunity

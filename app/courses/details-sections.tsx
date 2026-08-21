@@ -5,11 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
 import type { PublicReview } from "@/lib/contributions/reviews";
-import {
-  gradeColor,
-  letterGrade,
-  rankingTermName,
-} from "@/lib/rankings/presentation";
+import { letterGrade, rankingTermName } from "@/lib/rankings/presentation";
 import type {
   CourseRankings,
   Rankings,
@@ -38,6 +34,9 @@ const percentile = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
   minimumFractionDigits: 1,
   style: "percent",
+});
+const confidence = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
 });
 
 type DetailRankings = Pick<
@@ -79,24 +78,13 @@ export function DetailsHeader({
   );
 }
 
-function GradeBadge({ grade, value }: { grade: string; value: number }) {
-  const color = gradeColor(value);
-  return (
-    <span
-      className="inline-flex size-12 shrink-0 items-center justify-center rounded-lg text-lg font-bold text-slate-950"
-      style={{ backgroundColor: `rgb(${color.join(", ")})` }}
-    >
-      <span className="sr-only">Grade </span>
-      {grade}
-    </span>
-  );
-}
-
 function ScoreHistogram({
   distribution,
+  entity,
   value,
 }: {
   distribution: ScoreDistribution;
+  entity: "Course" | "Instructor";
   value: number;
 }) {
   const width = 240;
@@ -109,14 +97,14 @@ function ScoreHistogram({
       (distribution.maximum - distribution.minimum || 1)) *
     width;
   return (
-    <span className="block min-w-0 flex-1">
+    <span className="mt-2 block min-w-0 flex-1">
       <svg
-        aria-label={`Score distribution for ${integer.format(distribution.count)} Courses`}
+        aria-label={`Score distribution for ${integer.format(distribution.count)} ${entity}s`}
         className="h-12 w-full overflow-visible"
         role="img"
         viewBox={`0 0 ${width} ${height}`}
       >
-        <title>Course score distribution</title>
+        <title>{`${entity} score distribution`}</title>
         {distribution.bins.map((count, index) => {
           const barHeight = Math.max(2, (count / maximumBin) * (height - 6));
           return (
@@ -169,8 +157,7 @@ function RankMetric({
         #{integer.format(rank)} of {integer.format(population)}
       </span>
       <span className="mt-1 block text-sm text-slate-700 tabular-nums">
-        {percentile.format(percentileValue)}{" "}
-        {label.replace("Rank", "Percentile")}
+        {percentile.format(percentileValue)} Percentile
       </span>
     </span>
   );
@@ -209,8 +196,7 @@ export function DetailsRankings({
               ? "Custom"
               : rankings.configuration.preset === "grade"
                 ? "Grade-focused"
-                : "Learning-focused"}{" "}
-            · {integer.format(rankings.population.size)} eligible
+                : "Learning-focused"}
           </span>
         ) : null}
         {selectedRanking && grade ? (
@@ -224,19 +210,23 @@ export function DetailsRankings({
                   <span className="mt-1 block text-xl font-bold tabular-nums">
                     {score.format(selectedRanking.score)}
                   </span>
+                  <span className="mt-1 block text-sm text-slate-700">
+                    Grade {grade}
+                  </span>
                 </span>
                 {scoreDistribution ? (
                   <ScoreHistogram
                     distribution={scoreDistribution}
+                    entity={
+                      rankings?.population.entity === "course"
+                        ? "Course"
+                        : "Instructor"
+                    }
                     value={selectedRanking.score}
                   />
                 ) : (
                   <span className="min-w-0 flex-1" />
                 )}
-                <GradeBadge
-                  grade={grade}
-                  value={selectedRanking.globalPercentile}
-                />
               </span>
             </span>
             <RankMetric
@@ -290,6 +280,8 @@ export function DetailsRankings({
                 Selected Term{" "}
                 {termNames.get(selectedTermCode ?? "") ??
                   rankingTermName(selectedTermCode)}
+                . Samples are new observations in this Term; cumulative samples
+                explain carried-forward estimates.
               </caption>
               <thead className="bg-slate-50 text-left">
                 <tr>
@@ -300,7 +292,10 @@ export function DetailsRankings({
                     Ranking value
                   </th>
                   <th className="px-3 py-3" scope="col">
-                    Sample evidence
+                    Confidence
+                  </th>
+                  <th className="px-3 py-3" scope="col">
+                    Samples
                   </th>
                 </tr>
               </thead>
@@ -317,7 +312,12 @@ export function DetailsRankings({
                       </td>
                       <td className="px-3 py-3 tabular-nums">
                         {value
-                          ? `${value.samples} sample${value.samples === 1 ? "" : "s"}`
+                          ? confidence.format(value.confidence)
+                          : "Unavailable"}
+                      </td>
+                      <td className="px-3 py-3 tabular-nums">
+                        {value
+                          ? `${integer.format(value.samples)} new · ${integer.format(value.cumulativeSamples)} cumulative`
                           : "Unavailable"}
                       </td>
                     </tr>
@@ -332,7 +332,7 @@ export function DetailsRankings({
           className="flex flex-col gap-4"
         >
           <h3 className="text-xl font-bold" id="trend-history">
-            Trend Figure and Term History
+            History
           </h3>
           <DetailsTrend
             selectedTermCode={selectedTermCode}
@@ -445,7 +445,7 @@ export function DetailsCommunity({
           </div>
           {reviewsUnavailable ? (
             <p
-              className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950"
+              className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
               role="status"
             >
               Reviews are unavailable. This does not represent zero Reviews.
