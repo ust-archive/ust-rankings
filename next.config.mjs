@@ -5,7 +5,6 @@ const nextConfig = {
   outputFileTracingIncludes: {
     "/rankings/instructors": ["./data/data-course-catalog.json"],
     "/rankings/courses": ["./data/data-course-catalog.json"],
-    "/schedule": ["./schedule/seed/**/*"],
   },
 };
 

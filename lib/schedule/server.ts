@@ -13,7 +13,6 @@ import {
   normalizeInstructorUuid,
 } from "@/lib/instructor-identity";
 
-const SEED_SHA = "0ddb2e493caeeb8aa9c56728496c866c358a2431";
 const ARTIFACTS = ["classes.parquet", "courses.parquet"] as const;
 const schemas = {
   "courses.parquet": [
@@ -270,10 +269,9 @@ const queryQueues = new WeakMap<DuckDBConnection, Promise<void>>();
 const queuedQueryCounts = new WeakMap<DuckDBConnection, number>();
 
 function seedDirectory() {
-  return (
-    process.env.SCHEDULE_SEED_DIR ??
-    resolve(process.cwd(), "schedule", "seed", SEED_SHA)
-  );
+  const directory = process.env.SCHEDULE_SEED_DIR;
+  if (!directory) throw new ScheduleUnavailableError();
+  return directory;
 }
 
 function sqlPath(directory: string, filename: string) {
@@ -505,14 +503,13 @@ async function discoverGeneration() {
         }
       }
     }
+    await refreshSchedule({}, runtimeDependencies);
+    if (runtimeActive) return runtimeActive;
   } catch {
     if (existing) return existing;
   }
   if (existing) return existing;
-  if (!seedLoading) seedLoading = loadGeneration(seedDirectory());
-  const seed = seedLoading;
-  runtimeActiveSha = (await seed).sha;
-  return seed;
+  throw new ScheduleUnavailableError();
 }
 
 function generation() {
@@ -531,18 +528,6 @@ function generation() {
     Date.now() - runtimeCheckedAt < 60_000
   )
     return runtimeActive;
-  const storageConfigured =
-    Boolean(runtimeDependencies) ||
-    [
-      "SCHEDULE_SPACE_ENDPOINT",
-      "SCHEDULE_SPACE_BUCKET",
-      "SCHEDULE_SPACE_ACCESS_KEY_ID",
-      "SCHEDULE_SPACE_SECRET_ACCESS_KEY",
-    ].every((name) => process.env[name]?.trim());
-  if (!storageConfigured) {
-    if (!seedLoading) seedLoading = loadGeneration(seedDirectory());
-    return runtimeActive ?? seedLoading;
-  }
   if (!runtimeDiscovery) {
     runtimeCheckedAt = Date.now();
     runtimeDiscovery = discoverGeneration().finally(() => {
@@ -629,20 +614,27 @@ async function prepareCandidateManifest(
       JSON.stringify(ARTIFACTS)
   )
     throw new Error("Upstream tree declarations are incomplete");
-  let retainedManifest: Manifest;
+  let retainedInstructors: Manifest["instructors"];
   if (current) {
     const directory = await dependencies.store.downloadGeneration(
       current.activeSha,
     );
     if (!directory)
       throw new Error("The current Schedule generation is unavailable");
-    retainedManifest = JSON.parse(
-      await readFile(resolve(directory, "manifest.json"), "utf8"),
-    ) as Manifest;
+    retainedInstructors = (
+      JSON.parse(
+        await readFile(resolve(directory, "manifest.json"), "utf8"),
+      ) as Manifest
+    ).instructors;
+  } else if (process.env.SCHEDULE_SEED_DIR) {
+    retainedInstructors = (
+      JSON.parse(
+        await readFile(resolve(seedDirectory(), "manifest.json"), "utf8"),
+      ) as Manifest
+    ).instructors;
   } else {
-    retainedManifest = JSON.parse(
-      await readFile(resolve(seedDirectory(), "manifest.json"), "utf8"),
-    ) as Manifest;
+    // ponytail: empty Instructor mappings, durable registry if names must survive deploys
+    retainedInstructors = [];
   }
   await writeFile(
     resolve(candidate.directory, "manifest.json"),
@@ -651,7 +643,7 @@ async function prepareCandidateManifest(
         schemaMajor: 0,
         sourceCommit: candidate.sha,
         artifacts: candidate.artifacts,
-        instructors: retainedManifest.instructors,
+        instructors: retainedInstructors,
       },
       null,
       2,
@@ -782,28 +774,10 @@ export async function refreshSchedule(
   return result ?? { status: "busy" };
 }
 
-function scheduleSpaceConfigured() {
-  return [
-    "SCHEDULE_SPACE_ENDPOINT",
-    "SCHEDULE_SPACE_BUCKET",
-    "SCHEDULE_SPACE_ACCESS_KEY_ID",
-    "SCHEDULE_SPACE_SECRET_ACCESS_KEY",
-  ].every((name) => process.env[name]?.trim());
-}
-
 export async function getScheduleHealth(
   dependencies?: ScheduleRefreshDependencies,
 ) {
   try {
-    if (!dependencies && !runtimeDependencies && !scheduleSpaceConfigured())
-      return {
-        status: "healthy" as const,
-        activeGeneration: SEED_SHA,
-        acceptedAt: undefined,
-        sourceUpdatedAt: undefined,
-        failureClass: undefined,
-        failureAt: undefined,
-      };
     const selected =
       dependencies ??
       runtimeDependencies ??

@@ -5,9 +5,13 @@ mock.module("server-only", () => ({}));
 const secret = "correct-secret-with-enough-entropy";
 const cronSecret = "distinct-cron-secret-with-enough-entropy";
 
-afterEach(() => {
+afterEach(async () => {
   delete process.env.SCHEDULE_REFRESH_SECRET;
   delete process.env.CRON_SECRET;
+  const { resetScheduleRuntimeForTests } = await import(
+    "@/lib/schedule/server"
+  );
+  await resetScheduleRuntimeForTests();
 });
 
 test("distinct daily and manual secrets invoke the intended Schedule refresh", async () => {
@@ -96,11 +100,38 @@ test("Schedule refresh rejects unauthenticated requests and maps busy state", as
   expect(busy.status).toBe(409);
 });
 
-test("seed-only Schedule health is healthy without Spaces", async () => {
-  const { getScheduleHealth } = await import("@/lib/schedule/server");
+test("Schedule health stays unavailable until a generation is accepted", async () => {
+  const { getScheduleHealth, resetScheduleRuntimeForTests } = await import(
+    "@/lib/schedule/server"
+  );
+  await resetScheduleRuntimeForTests({
+    upstream: {
+      async download() {
+        throw new Error("upstream unavailable");
+      },
+    },
+    store: {
+      async readPointer() {
+        return undefined;
+      },
+      async downloadGeneration() {
+        return undefined;
+      },
+      async putGeneration() {},
+      async writePointer() {},
+      async readFailure() {
+        return undefined;
+      },
+      async writeFailure() {},
+    },
+    async withLock(operation) {
+      return operation();
+    },
+    async sleep() {},
+  });
   expect(await getScheduleHealth()).toMatchObject({
-    status: "healthy",
-    activeGeneration: "0ddb2e493caeeb8aa9c56728496c866c358a2431",
+    status: "unavailable",
+    activeGeneration: undefined,
   });
 });
 

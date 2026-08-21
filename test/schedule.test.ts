@@ -32,13 +32,56 @@ afterEach(async () => {
   );
 });
 
-test("the shipped immutable Schedule seed is validated before serving", async () => {
+test("an explicit SCHEDULE_SEED_DIR generation is accepted before it is served", async () => {
+  process.env.SCHEDULE_SEED_DIR = join(
+    process.cwd(),
+    "schedule",
+    "seed",
+    "0ddb2e493caeeb8aa9c56728496c866c358a2431",
+  );
   const { querySchedule } = await import("@/lib/schedule/server");
   const page = await querySchedule({ limit: 1 });
 
   expect(page.generation).toBe("0ddb2e493caeeb8aa9c56728496c866c358a2431");
   expect(page.terms.length).toBeGreaterThan(0);
   expect(page.results).toHaveLength(1);
+});
+
+test("production Schedule stays unavailable until a Hugging Face generation is accepted", async () => {
+  const {
+    querySchedule,
+    ScheduleUnavailableError,
+    resetScheduleRuntimeForTests,
+  } = await import("@/lib/schedule/server");
+  await resetScheduleRuntimeForTests({
+    upstream: {
+      async download() {
+        throw new Error("upstream unavailable");
+      },
+    },
+    store: {
+      async readPointer() {
+        return undefined;
+      },
+      async downloadGeneration() {
+        return undefined;
+      },
+      async putGeneration() {},
+      async writePointer() {},
+      async readFailure() {
+        return undefined;
+      },
+      async writeFailure() {},
+    },
+    async withLock(operation) {
+      return operation();
+    },
+    async sleep() {},
+  });
+
+  await expect(querySchedule({ limit: 1 })).rejects.toBeInstanceOf(
+    ScheduleUnavailableError,
+  );
 });
 
 test("querySchedule reconstructs latest events before ACTIVE filtering", async () => {

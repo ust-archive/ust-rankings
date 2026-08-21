@@ -22,6 +22,7 @@ const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   delete process.env.SCHEDULE_SEED_DIR;
+  delete process.env.RANKINGS_SEED_DIR;
   const { resetScheduleRuntimeForTests } = await import(
     "@/lib/schedule/server"
   );
@@ -568,6 +569,12 @@ test("a failed Schedule refresh keeps last-known-good active and reports stale h
     activeGeneration: scheduleFixtureSha,
     failureClass: "integrity",
   });
+  process.env.RANKINGS_SEED_DIR = join(
+    process.cwd(),
+    "rankings",
+    "seed",
+    "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d",
+  );
   const { queryRankings } = await import("@/lib/rankings/server");
   expect(
     (await queryRankings({ entity: "instructor", limit: 1 })).results,
