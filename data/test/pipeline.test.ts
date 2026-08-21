@@ -23,7 +23,10 @@ async function copyQuery(
   );
 }
 
-async function makeFixtures(dataDir: string): Promise<void> {
+async function makeFixtures(
+  dataDir: string,
+  { conflictingCatalog = false } = {},
+): Promise<void> {
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
 
@@ -37,6 +40,34 @@ async function makeFixtures(dataDir: string): Promise<void> {
         (100, 'low',  TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '2000', '2510'),
         (100, 'prior', TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '3000', '2510')
       ) AS courses(term_num, id, "timestamp", status, prefix, number, term_code)
+    `,
+    );
+
+    await copyQuery(
+      connection,
+      join(dataDir, "catalog", "courses.parquet"),
+      `
+      SELECT * FROM (VALUES
+        ('catalog-main', 100, '2510', 'MAIN', 'COMP', '1000', 'Old title',
+          [{'label': 'CC25', 'value': 'S&T', 'description': 'Science and Technology'}],
+          TIMESTAMPTZ '2025-01-01 00:00:00+00', 'ACTIVE'),
+        ('catalog-main', 100, '2510', 'MAIN', 'COMP', '1000', 'Foundations of Computing',
+          [{'label': 'CC25', 'value': 'S&T', 'description': 'Science and Technology'}],
+          TIMESTAMPTZ '2025-02-01 00:00:00+00', 'ACTIVE'),
+        ('catalog-gz', 100, '2510', 'GZ', 'COMP', '1000',
+          '${conflictingCatalog ? "Conflicting title" : "Foundations of Computing"}',
+          [{'label': 'CC25', 'value': 'S&T', 'description': 'Science and Technology'}],
+          TIMESTAMPTZ '2025-02-01 00:00:00+00', 'ACTIVE'),
+        ('catalog-removed', 100, '2510', 'MAIN', 'GONE', '9999', 'Removed course', [],
+          TIMESTAMPTZ '2025-01-01 00:00:00+00', 'ACTIVE'),
+        ('catalog-removed', 100, '2510', 'MAIN', 'GONE', '9999', 'Removed course', [],
+          TIMESTAMPTZ '2025-02-01 00:00:00+00', 'INACTIVE'),
+        ('catalog-prior', 99, '2440', 'MAIN', 'HIST', '1000', 'Historical course', [],
+          TIMESTAMPTZ '2024-01-01 00:00:00+00', 'ACTIVE')
+      ) AS catalog(
+        id, term_num, term_code, campus_code, prefix, number, title, attributes,
+        "timestamp", status
+      )
     `,
     );
 
@@ -239,6 +270,7 @@ const outputColumns = {
     "posterior_stddev",
   ],
   "course-instructors": ["name", "term_num", "term_code", "subject", "code"],
+  courses: ["prefix", "number", "title", "attributes"],
 } as const;
 
 async function snapshot(outputDir: string, name: keyof typeof outputColumns) {
@@ -270,6 +302,7 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
     const courseRankings = parquet(first, "course-rankings");
     const instructorRankings = parquet(first, "instructor-rankings");
     const courseInstructors = parquet(first, "course-instructors");
+    const courses = parquet(first, "courses");
 
     for (const [name, columns] of Object.entries(outputColumns)) {
       const artifact = await snapshot(
@@ -283,6 +316,28 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
       );
       assert.ok(artifact.data.length > 0, `${name}.parquet is empty`);
     }
+
+    assert.deepEqual(
+      await rows(`
+      SELECT prefix, number, title, attributes
+      FROM read_parquet('${courses}')
+      ORDER BY prefix, number
+    `),
+      [
+        {
+          prefix: "COMP",
+          number: "1000",
+          title: "Foundations of Computing",
+          attributes: [
+            {
+              label: "CC25",
+              value: "S&T",
+              description: "Science and Technology",
+            },
+          ],
+        },
+      ],
+    );
 
     assert.deepEqual(
       await rows(`
@@ -542,6 +597,33 @@ test("zero-sample teaching Instructors and offered Courses receive the evidence-
     `),
       [{ count: 0 }],
     );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("the pipeline rejects conflicting cross-campus Course metadata", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-catalog-conflict-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { conflictingCatalog: true });
+    const bootstrap = join(temp, "empty-identities.json");
+    await writeFile(
+      bootstrap,
+      JSON.stringify({ schemaMajor: 0, identities: [], events: [] }),
+    );
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        RANKINGS_DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "out"),
+        RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stderr}${result.stdout}`, /conflicting Course/i);
   } finally {
     await rm(temp, { recursive: true, force: true });
   }

@@ -7,10 +7,10 @@ depend on filesystem ordering.
 
 | Stage | Reads | Produces |
 | --- | --- | --- |
-| `00_sources.sql` | Source Parquet files | Current-state `source_*` tables |
+| `00_sources.sql` | Source Parquet files | Current-state `source_*` tables and the current Course dimension |
 | `10_observations.sql` | `source_*` tables | Observations, identity bridges, entity coverage, and term grids |
 | `20_ratings.sql` | Normalized tables | Historical rating marts and latest-term views |
-| `30_export.sql` | Marts, views, and course-instructor bridge | Five public Parquet files |
+| `30_export.sql` | Marts, views, Course dimension, and Course-Instructor bridge | Public Parquet files |
 
 ## Main relations
 
@@ -28,13 +28,13 @@ depend on filesystem ordering.
 `src/run.ts` supplies the input variables used by `00_sources.sql`:
 
 ```text
-schedule_classes, schedule_courses, reviews, sfq_instructors, sfq_sections
+catalog_courses, schedule_classes, schedule_courses, reviews, sfq_instructors, sfq_sections
 ```
 
 It also supplies the output variables used by `30_export.sql`:
 
 ```text
-course_ratings_parquet, instructor_ratings_parquet,
+courses_parquet, course_ratings_parquet, instructor_ratings_parquet,
 course_rankings_parquet, instructor_rankings_parquet,
 course_instructors_parquet
 ```

@@ -9,6 +9,31 @@
 -- first, keep rank 1, and only then require ACTIVE. Filtering ACTIVE first
 -- would incorrectly bring an older version of a deleted record back to life.
 
+-- Catalog: fold each Course event stream, select the latest Term that still has
+-- active Courses, and collapse equivalent cross-campus rows. The runner rejects
+-- missing values or multiple metadata rows for one Course Code before export.
+CREATE OR REPLACE TABLE source_catalog_courses AS
+SELECT * EXCLUDE (event_rank)
+FROM (
+  SELECT
+    *,
+    row_number() OVER (
+      PARTITION BY term_num, id
+      ORDER BY "timestamp" DESC, status ASC
+    ) AS event_rank
+  FROM read_parquet(getvariable('catalog_courses'))
+)
+WHERE event_rank = 1 AND status = 'ACTIVE';
+
+CREATE OR REPLACE TABLE course_dimension AS
+SELECT DISTINCT
+  upper(trim(prefix)) AS prefix,
+  upper(trim(number)) AS number,
+  trim(title) AS title,
+  attributes
+FROM source_catalog_courses
+WHERE term_num = (SELECT max(term_num) FROM source_catalog_courses);
+
 -- Schedule classes: one current class state per term and class number.
 CREATE OR REPLACE TABLE source_schedule_classes AS
 SELECT * EXCLUDE (event_rank)
