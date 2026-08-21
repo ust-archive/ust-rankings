@@ -96,6 +96,14 @@ test("Schedule refresh rejects unauthenticated requests and maps busy state", as
   expect(busy.status).toBe(409);
 });
 
+test("seed-only Schedule health is healthy without Spaces", async () => {
+  const { getScheduleHealth } = await import("@/lib/schedule/server");
+  expect(await getScheduleHealth()).toMatchObject({
+    status: "healthy",
+    activeGeneration: "0ddb2e493caeeb8aa9c56728496c866c358a2431",
+  });
+});
+
 test("public Schedule health is bounded and independent", async () => {
   const { createScheduleHealthHandler } = await import(
     "@/app/api/health/schedule/route"

@@ -782,10 +782,28 @@ export async function refreshSchedule(
   return result ?? { status: "busy" };
 }
 
+function scheduleSpaceConfigured() {
+  return [
+    "SCHEDULE_SPACE_ENDPOINT",
+    "SCHEDULE_SPACE_BUCKET",
+    "SCHEDULE_SPACE_ACCESS_KEY_ID",
+    "SCHEDULE_SPACE_SECRET_ACCESS_KEY",
+  ].every((name) => process.env[name]?.trim());
+}
+
 export async function getScheduleHealth(
   dependencies?: ScheduleRefreshDependencies,
 ) {
   try {
+    if (!dependencies && !runtimeDependencies && !scheduleSpaceConfigured())
+      return {
+        status: "healthy" as const,
+        activeGeneration: SEED_SHA,
+        acceptedAt: undefined,
+        sourceUpdatedAt: undefined,
+        failureClass: undefined,
+        failureAt: undefined,
+      };
     const selected =
       dependencies ??
       runtimeDependencies ??
