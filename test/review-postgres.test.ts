@@ -15,7 +15,7 @@ const INSTRUCTOR_UUID = "00000000-0000-4000-8000-000000000045";
 if (!connection) {
   test.skip("Review PostgreSQL contract (TEST_CONTRIBUTIONS_POSTGRES_URL is not configured)", () => {});
 } else {
-  test("Review PostgreSQL contract enforces complete tuples and aggregates durable associations", async () => {
+  test("Review PostgreSQL contract enforces one active Review per Basis set and aggregates durable associations", async () => {
     const schema = `review_test_${crypto.randomUUID().replaceAll("-", "")}`;
     const admin = postgres(connection, { max: 1, onnotice: () => {} });
     await admin.unsafe(`CREATE SCHEMA ${schema}`);
@@ -85,12 +85,7 @@ if (!connection) {
       const course = { coursePrefix: "COMP", courseNumber: "2000" };
       const shapes: ReviewAssociations[] = [
         { course },
-        { instructorUuid: INSTRUCTOR_UUID },
-        { course, instructorUuid: INSTRUCTOR_UUID },
-        { course, termCode: "2510" },
         { instructorUuid: INSTRUCTOR_UUID, termCode: "2510" },
-        { course, instructorUuid: INSTRUCTOR_UUID, termCode: "2510" },
-        { course, termCode: "2510", section: "L1" },
         {
           course,
           instructorUuid: INSTRUCTOR_UUID,
@@ -102,19 +97,24 @@ if (!connection) {
       for (const shape of shapes)
         published.push(await publish(activeId, shape));
 
-      await expect(publish(activeId, { course })).rejects.toMatchObject({
-        code: "duplicate-review",
-      });
+      for (const duplicate of [
+        { course, termCode: "2510" },
+        { instructorUuid: INSTRUCTOR_UUID },
+        { course, instructorUuid: INSTRUCTOR_UUID },
+      ])
+        await expect(publish(activeId, duplicate)).rejects.toMatchObject({
+          code: "duplicate-review",
+        });
       expect(
         await reviews.listReviews({ type: "course", ...course }),
-      ).toHaveLength(6);
+      ).toHaveLength(2);
       expect(
         await reviews.listReviews({
           type: "course",
           ...course,
           termCode: "2510",
         }),
-      ).toHaveLength(4);
+      ).toHaveLength(1);
       expect(
         await reviews.listReviews({
           type: "course",
@@ -122,13 +122,13 @@ if (!connection) {
           termCode: "2510",
           section: "L1",
         }),
-      ).toHaveLength(2);
+      ).toHaveLength(1);
       expect(
         await reviews.listReviews({
           type: "instructor",
           instructorUuids: [INSTRUCTOR_UUID],
         }),
-      ).toHaveLength(5);
+      ).toHaveLength(2);
       const retiredInstructorUuid = "00000000-0000-4000-8000-000000000046";
       const retiredReview = await publish(activeId, {
         instructorUuid: retiredInstructorUuid,
@@ -137,13 +137,13 @@ if (!connection) {
         type: "instructor",
         instructorUuids: [INSTRUCTOR_UUID, retiredInstructorUuid],
       });
-      expect(familyReviews).toHaveLength(6);
+      expect(familyReviews).toHaveLength(3);
       expect(
         familyReviews.some((review) => review.id === retiredReview.id),
       ).toBe(true);
 
       const dual = published[2];
-      const complete = published[7];
+      const complete = published[2];
       if (!dual || !complete) throw new Error("Expected published Reviews");
       await sql`
         UPDATE reviews SET instructor_association_status = 'needs-resolution'
@@ -217,7 +217,7 @@ if (!connection) {
       );
       expect(identityHidden).toMatchObject({
         attribution: "identity-hidden",
-        attributionCredit: "UST Rankings contributor",
+        attributionCredit: "Anonymous Reviewer",
       });
       expect(await reviews.getReview(lifecycleOriginal.id)).toMatchObject({
         id: lifecycleOriginal.id,
@@ -248,7 +248,7 @@ if (!connection) {
         id: lifecycleOriginal.id,
         revisionId: identityHidden.revisionId,
         attribution: "identity-hidden",
-        attributionCredit: "UST Rankings contributor",
+        attributionCredit: "Anonymous Reviewer",
       });
       expect("capturedDisplayName" in (publicIdentityHidden ?? {})).toBe(false);
       expect("viewerCanEdit" in (publicIdentityHidden ?? {})).toBe(false);

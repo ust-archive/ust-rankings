@@ -147,7 +147,6 @@ export async function renderInstructorPage(
       signals={signalResult.summary}
       signalsUnavailable={signalResult.unavailable}
       signedIn={Boolean(signalResult.summary?.mine)}
-      signalUpdated={query.signal === "updated"}
       signalError={
         typeof query.signalError === "string" ? query.signalError : undefined
       }

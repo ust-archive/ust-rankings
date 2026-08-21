@@ -161,7 +161,7 @@ if (!connection) {
       expect(suppressed.action).toBe("suppress-attribution");
       expect(await reviews.getReview(review.id)).toMatchObject({
         attribution: "identity-hidden",
-        attributionCredit: "UST Rankings contributor",
+        attributionCredit: "Anonymous Reviewer",
       });
       expect(
         "capturedDisplayName" in ((await reviews.getReview(review.id)) ?? {}),

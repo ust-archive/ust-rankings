@@ -116,22 +116,11 @@ try {
     await executeFile(connection, file);
   }
 
-  const defaultBootstrap = resolve(
-    root,
-    "..",
-    "rankings",
-    "seed",
-    "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d",
-    "manifest.json",
-  );
+  const bootstrapPath = process.env.RANKINGS_IDENTITY_BOOTSTRAP;
   await assignInstructorIdentities(connection, {
     previousGenerationDir: process.env.RANKINGS_PREVIOUS_GENERATION_DIR,
-    bootstrapPath:
-      process.env.RANKINGS_IDENTITY_BOOTSTRAP ??
-      (process.env.RANKINGS_REQUIRE_PREVIOUS_IDENTITIES === "1"
-        ? undefined
-        : defaultBootstrap),
-    requirePrevious: process.env.RANKINGS_REQUIRE_PREVIOUS_IDENTITIES === "1",
+    bootstrapPath,
+    requirePrevious: !bootstrapPath,
     sourceCommit: process.env.RANKINGS_IDENTITY_COMMIT ?? "local",
     correctionsPath: process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE,
   });

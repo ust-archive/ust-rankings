@@ -1,8 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import {
+  type ReactElement,
+  useActionState,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +21,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import {
   Field,
   FieldDescription,
@@ -33,27 +45,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import {
-  authorizedInlineImage,
-  contentTypeForFilename,
-} from "@/lib/attachments/attachments";
-import {
-  REPORT_REASON_CATEGORIES,
-  REPORT_REASON_LABELS,
-} from "@/lib/contributions/moderation";
+import { contentTypeForFilename } from "@/lib/attachments/attachments";
 import type {
   PublicReview,
   ReviewAssociations,
   ReviewAttribution,
 } from "@/lib/contributions/reviews";
 import { rankingTermName } from "@/lib/rankings/presentation";
-import {
-  editReview,
-  publishReview,
-  reportReview,
-  withdrawReview,
-} from "./review-actions";
+import { editReview, publishReview, withdrawReview } from "./review-actions";
+import { associationFields, ReviewCard } from "./review-card";
 
 const ReviewMarkdownEditor = dynamic(
   () =>
@@ -99,39 +101,6 @@ type DraftAttachment = {
   kind?: "image" | "document";
 };
 
-function SafeMarkdown({
-  markdown,
-  attachments = [],
-}: {
-  markdown: string;
-  attachments?: Array<{ id: string; description: string }>;
-}) {
-  return (
-    <ReactMarkdown
-      components={{
-        img: ({ src }) => {
-          const attachment = authorizedInlineImage(
-            typeof src === "string" ? src : undefined,
-            attachments,
-          );
-          if (!attachment) return null;
-          return (
-            // Exact Attachment bytes must not pass through next/image.
-            // biome-ignore lint/performance/noImgElement: preserve unmodified raster bytes
-            <img
-              alt={attachment.description}
-              src={`/attachments/${attachment.id}`}
-            />
-          );
-        },
-      }}
-      skipHtml
-    >
-      {markdown}
-    </ReactMarkdown>
-  );
-}
-
 export function ReviewComposer({
   courses,
   instructors,
@@ -142,6 +111,7 @@ export function ReviewComposer({
   initialSection,
   review,
   displayTermNames = false,
+  trigger,
 }: ReviewEditorOptions & {
   initialCourse?: ReviewCourseOption;
   initialInstructorUuid?: string;
@@ -149,6 +119,7 @@ export function ReviewComposer({
   initialSection?: string;
   review?: PublicReview;
   displayTermNames?: boolean;
+  trigger?: ReactElement;
 }) {
   const edit = Boolean(review);
   const selectedInitialCourse = review?.course ?? initialCourse;
@@ -409,16 +380,26 @@ export function ReviewComposer({
     return `/attachments/${attachment.id}`;
   }
   const inputId = review ? `review-markdown-${review.id}` : "review-markdown";
+  const [publishState, publishAction, publishPending] = useActionState(
+    publishReview,
+    null,
+  );
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button type="button">
-          {edit ? "Edit Review" : "Create a Review"}
-        </Button>
+        {trigger ?? (
+          <Button
+            className="h-auto p-0 text-xs font-bold uppercase tracking-[0.16em] text-slate-600 underline underline-offset-4 hover:text-slate-900"
+            type="button"
+            variant="link"
+          >
+            {edit ? "Edit Review" : "Create a Review"}
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-4xl overflow-hidden p-0 text-left">
         <form
-          action={edit ? editReview : publishReview}
+          action={edit ? editReview : publishAction}
           className="flex max-h-[calc(100dvh-2rem)] min-w-0 flex-col gap-5 overflow-x-hidden overflow-y-auto p-6 sm:p-8"
         >
           {review ? (
@@ -442,8 +423,8 @@ export function ReviewComposer({
               Choose at least one Review Basis, then optional Review Context.
             </DialogDescription>
           </DialogHeader>
-          <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
-            <FieldLegend>Review Bases</FieldLegend>
+          <FieldSet className="min-w-0 gap-3 rounded-xl border border-gray-200 p-4">
+            <FieldLegend className="mb-0">Review Basis</FieldLegend>
             <FieldGroup className="grid gap-4 sm:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor={`${inputId}-course`}>Course</FieldLabel>
@@ -564,10 +545,6 @@ export function ReviewComposer({
                     </Select>
                   </Field>
                 </FieldGroup>
-                <FieldDescription>
-                  Term qualifies every selected Review Basis. Section requires a
-                  Course Basis and Term and identifies a Class.
-                </FieldDescription>
                 {edit && !selectionSupported ? (
                   <FieldError>
                     This Review snapshot is no longer source-backed. Select
@@ -586,8 +563,9 @@ export function ReviewComposer({
                   uploadImage={uploadImage}
                 />
                 <FieldDescription>
-                  Write with the toolbar. Paste or drop images to upload and
-                  embed them as Attachments.
+                  Write with the toolbar, or switch to Markdown to edit the
+                  source. Paste or drop images to upload and embed them as
+                  Attachments.
                 </FieldDescription>
               </Field>
               <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
@@ -645,15 +623,15 @@ export function ReviewComposer({
                     </ToggleGroupItem>
                   </ToggleGroup>
                   <FieldDescription>
-                    Attributed displays your current Public Display Name.
+                    Attributed displays your current public display name.
                     Identity Hidden displays no author name, but an authorized
                     operator can still link the Review to your account for
                     moderation, security, rights, and legal purposes.
                   </FieldDescription>
                 </FieldSet>
                 <Alert className="rounded-t-none border-t-0 bg-amber-50 text-amber-950">
-                  <AlertDescription>
-                    Review text is licensed under{" "}
+                  <AlertDescription className="mt-0">
+                    Your review text is licensed under{" "}
                     <a
                       className="font-semibold underline"
                       href="https://creativecommons.org/licenses/by/4.0/"
@@ -662,17 +640,21 @@ export function ReviewComposer({
                     >
                       CC BY 4.0
                     </a>
-                    . Attributed Reviews credit your captured Public Display
-                    Name and Review permalink; Identity Hidden Reviews credit
-                    “UST Rankings contributor” and the permalink. You also grant
-                    UST Rankings a non-exclusive license to host, format,
-                    display, and moderate the Review. Publishing permissions
-                    already granted under CC BY 4.0 cannot be withdrawn from
-                    copies already obtained.
+                    . For attributed reviews, it credits your captured public
+                    display name and review permalink. For identity-hidden
+                    reviews, it credits &quot;Anonymous Reviewer&quot; and the
+                    review permalink.
                   </AlertDescription>
                 </Alert>
               </div>
             </>
+          ) : null}
+          {publishState?.error === "duplicate-review" ? (
+            <Alert variant="destructive">
+              <AlertDescription className="mt-0">
+                You already have an active Review for the selected Review Basis.
+              </AlertDescription>
+            </Alert>
           ) : null}
           <DialogFooter className="gap-2 border-t border-slate-200 pt-5">
             <DialogClose asChild>
@@ -682,11 +664,14 @@ export function ReviewComposer({
             </DialogClose>
             <Button
               disabled={
-                !hasBasis || !markdown.trim() || (edit && !selectionSupported)
+                !hasBasis ||
+                !markdown.trim() ||
+                (edit && !selectionSupported) ||
+                publishPending
               }
               type="submit"
             >
-              Publish Revision
+              Publish
             </Button>
           </DialogFooter>
         </form>
@@ -695,20 +680,52 @@ export function ReviewComposer({
   );
 }
 
-function associationFields(review: PublicReview) {
+function WithdrawReviewDialog({ review }: { review: PublicReview }) {
   return (
-    <>
-      {review.course ? (
-        <input name="course" type="hidden" value={courseValue(review.course)} />
-      ) : null}
-      {review.instructorUuid ? (
-        <input
-          name="instructorUuid"
-          type="hidden"
-          value={review.instructorUuid}
-        />
-      ) : null}
-    </>
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button
+          className="h-auto p-0 text-xs text-gray-500 underline underline-offset-4 hover:text-gray-900"
+          type="button"
+          variant="link"
+        >
+          Withdraw
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md overflow-hidden overscroll-contain p-0">
+        <form action={withdrawReview} className="flex flex-col">
+          <input name="reviewId" type="hidden" value={review.id} />
+          <input
+            name="expectedRevisionId"
+            type="hidden"
+            value={review.revisionId}
+          />
+          {associationFields(review)}
+          <DialogHeader className="gap-3 space-y-0 px-6 pt-6 pr-12 pb-3">
+            <DialogTitle>Withdraw this Review?</DialogTitle>
+            <DialogDescription className="leading-6">
+              It will disappear from public display. Justified immutable
+              revisions remain internal, and existing CC BY 4.0 copies cannot be
+              recalled.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 border-t border-gray-200 bg-gray-50 p-4 sm:px-6 [&_button]:w-full sm:[&_button]:w-auto">
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Keep Review
+              </Button>
+            </DialogClose>
+            <Button
+              className="bg-red-700 hover:bg-red-800"
+              type="submit"
+              variant="destructive"
+            >
+              Withdraw Review
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -723,179 +740,57 @@ export function Reviews({
 }) {
   if (reviews.length === 0)
     return (
-      <p className="mt-2 text-slate-600">No Reviews have been published yet.</p>
+      <Empty className="border border-dashed">
+        <EmptyHeader>
+          <EmptyTitle>No reviews yet</EmptyTitle>
+          <EmptyDescription>
+            No Reviews have been published yet.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
+  const names = new Map(
+    (editor?.instructors ?? []).map((instructor) => [
+      instructor.instructorUuid,
+      instructor.name,
+    ]),
+  );
   return (
-    <ol className="mt-5 space-y-5">
-      {reviews.map((review) => {
-        const permalink = `/reviews/${review.id}`;
-        const identityHidden = review.attribution === "identity-hidden";
-        const credit = review.capturedDisplayName ?? review.attributionCredit;
-        return (
-          <li
-            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-            id={`review-${review.id}`}
-            key={review.id}
+    <ul className="!m-0 flex !list-none flex-col gap-5">
+      {reviews.map((review, index) => (
+        <li className="flex flex-col gap-5" key={review.id}>
+          {index ? <Separator /> : null}
+          <ReviewCard
+            displayTermNames={displayTermNames}
+            instructorName={
+              review.instructorUuid
+                ? names.get(review.instructorUuid)
+                : undefined
+            }
+            review={review}
           >
-            <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 pb-3">
-              <p className="font-bold">
-                {identityHidden ? <i>Anonymous Reviewer</i> : credit}
-              </p>
-              <time
-                className="text-xs text-slate-500"
-                dateTime={review.publishedAt.toISOString()}
-              >
-                {review.publishedAt.toISOString().slice(0, 10)}
-              </time>
-            </header>
-            <fieldset className="mt-3 flex flex-wrap gap-2">
-              <legend className="sr-only">Review Bases</legend>
-              {review.course ? (
-                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold">
-                  Course Basis · {review.course.coursePrefix}{" "}
-                  {review.course.courseNumber}
-                </span>
-              ) : null}
-              {review.instructorUuid ? (
-                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold">
-                  Instructor Basis · {review.instructorUuid}
-                </span>
-              ) : null}
-            </fieldset>
-            {review.termCode ? (
-              <p className="mt-2 text-sm text-slate-600">
-                Review Context · Term{" "}
-                {displayTermNames
-                  ? rankingTermName(review.termCode)
-                  : review.termCode}
-                {review.section ? ` · Section ${review.section}` : ""}
-              </p>
-            ) : null}
-            {review.instructorAssociationStatus === "needs-resolution" ? (
-              <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-950">
-                Instructor association needs resolution after an identity
-                correction; it has not been guessed or reassigned.
-              </p>
-            ) : review.instructorAssociationStatus === "historical" ? (
-              <p className="mt-2 text-sm text-slate-600">
-                Historical Instructor association retained after an identity
-                merge.
-              </p>
-            ) : null}
-            <div className="prose prose-slate mt-4 max-w-none leading-7">
-              <SafeMarkdown
-                attachments={review.attachments}
-                markdown={review.markdown}
-              />
-            </div>
-            {review.attachments?.length ? (
-              <ul className="mt-4 space-y-2 text-sm">
-                {review.attachments.map((attachment) => (
-                  <li key={attachment.id}>
-                    {attachment.available === false ? (
-                      <p>
-                        This Attachment is no longer available —{" "}
-                        {attachment.filename} — {attachment.description}
-                      </p>
-                    ) : attachment.kind === "document" ? (
-                      <>
-                        <a
-                          href={`/attachments/${attachment.id}`}
-                          rel="noopener noreferrer"
-                          target="_blank"
-                        >
-                          Open {attachment.filename}
-                        </a>
-                        {" · "}
-                        <a href={`/attachments/${attachment.id}?download=1`}>
-                          Download
-                        </a>
-                        {" — "}
-                        {attachment.description}
-                        <p className="text-xs text-amber-950">
-                          This file has not been malware-scanned. Open it only
-                          if you trust the author. Strict format validation is
-                          not antivirus assurance.
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <a href={`/attachments/${attachment.id}`}>
-                          {attachment.filename}
-                        </a>
-                        {" — "}
-                        {attachment.description}
-                      </>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <p className="mt-4 text-xs text-slate-500">
-              Review text licensed {review.license ?? "CC BY 4.0"} ·{" "}
-              <a href={permalink}>Review permalink</a>
-            </p>
-            <form action={reportReview} className="mt-3">
-              <input name="reviewId" type="hidden" value={review.id} />
-              {associationFields(review)}
-              <label className="block text-sm">
-                Report this Review
-                <select
-                  className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3"
-                  name="reasonCategory"
-                  required
-                >
-                  <option value="">Select a reason</option>
-                  {REPORT_REASON_CATEGORIES.map((reason) => (
-                    <option key={reason} value={reason}>
-                      {REPORT_REASON_LABELS[reason]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="mt-1 text-xs text-slate-600">
-                Reporter identity stays private and is never shown to the author
-                or the public. There is no public moderation log.
-              </p>
-              <button
-                className="mt-2 min-h-11 rounded-xl border border-slate-300 px-4 py-2 font-bold"
-                type="submit"
-              >
-                Report Review
-              </button>
-            </form>
             {review.viewerCanEdit && editor ? (
-              <div className="mt-4 border-t border-slate-200 pt-4">
+              <>
                 <ReviewComposer
                   {...editor}
                   displayTermNames={displayTermNames}
                   review={review}
+                  trigger={
+                    <Button
+                      className="h-auto p-0 text-xs text-gray-500 underline underline-offset-4 hover:text-gray-900"
+                      type="button"
+                      variant="link"
+                    >
+                      Edit
+                    </Button>
+                  }
                 />
-                <form action={withdrawReview} className="mt-3">
-                  <input name="reviewId" type="hidden" value={review.id} />
-                  <input
-                    name="expectedRevisionId"
-                    type="hidden"
-                    value={review.revisionId}
-                  />
-                  {associationFields(review)}
-                  <p className="text-xs text-slate-600">
-                    Withdrawal removes the current Review from public display;
-                    justified immutable Revisions remain internal, and obtained
-                    CC BY 4.0 copies cannot be recalled.
-                  </p>
-                  <button
-                    className="mt-2 min-h-11 rounded-xl border border-red-300 px-4 py-2 font-bold text-red-800"
-                    type="submit"
-                  >
-                    Withdraw Review
-                  </button>
-                </form>
-              </div>
+                <WithdrawReviewDialog review={review} />
+              </>
             ) : null}
-          </li>
-        );
-      })}
-    </ol>
+          </ReviewCard>
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -167,7 +167,6 @@ export function CourseDetails({
   signals,
   signalsUnavailable = true,
   signedIn = false,
-  signalUpdated,
   signalError,
 }: {
   coursePrefix: string;
@@ -183,7 +182,6 @@ export function CourseDetails({
   signals?: SignalSummary;
   signalsUnavailable?: boolean;
   signedIn?: boolean;
-  signalUpdated?: boolean;
   signalError?: string;
 }) {
   const offerings = schedule?.offerings ?? [];
@@ -416,7 +414,6 @@ export function CourseDetails({
                 summary={signals}
                 target={{ type: "course", coursePrefix, courseNumber }}
                 unavailable={signalsUnavailable}
-                updated={signalUpdated}
               />
             }
             withdrawn={reviewWithdrawn}

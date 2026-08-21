@@ -100,7 +100,12 @@ function redirectReviewError(error: unknown, path: string): never {
   redirect(`${path}?reviewError=${error.code}#reviews`);
 }
 
-export async function publishReview(formData: FormData) {
+type ReviewPublishState = { error?: string } | null;
+
+export async function publishReview(
+  _prevState: ReviewPublishState,
+  formData: FormData,
+): Promise<ReviewPublishState> {
   const parsed = parseReviewForm(formData);
   const userId = await authorizeWrite(parsed.path);
   const markdown = stringEntry(formData, "markdown");
@@ -124,6 +129,8 @@ export async function publishReview(formData: FormData) {
       attachments,
     });
   } catch (error) {
+    if (error instanceof ReviewWriteError && error.code === "duplicate-review")
+      return { error: error.code };
     redirectReviewError(error, parsed.path);
   }
   redirect(`${parsed.path}?review=published#reviews`);

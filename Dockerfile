@@ -4,7 +4,7 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl unzip \
   && rm -rf /var/lib/apt/lists/* \
-  && curl -fsSL https://bun.sh/install | bash
+  && curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.14"
 ENV PATH="/root/.bun/bin:${PATH}"
 
 COPY package.json bun.lock ./

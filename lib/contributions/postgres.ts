@@ -228,7 +228,7 @@ function publicReview(row: ReviewDatabaseRow): PublicReview {
     attributionCredit:
       row.attribution === "attributed"
         ? (row.capturedDisplayName as string)
-        : "UST Rankings contributor",
+        : "Anonymous Reviewer",
     ...(row.capturedDisplayName
       ? { capturedDisplayName: row.capturedDisplayName }
       : {}),
@@ -248,11 +248,12 @@ function mapReviewWriteError(error: unknown): never {
       "code" in error &&
       error.code === "23505" &&
       "constraint_name" in error &&
-      error.constraint_name === "reviews_active_association_tuple_idx"
+      (error.constraint_name === "reviews_active_association_tuple_idx" ||
+        error.constraint_name === "reviews_active_basis_set_idx")
     )
       throw new ReviewWriteError(
         "duplicate-review",
-        "This User already has an active Review for this exact Review Basis and Review Context tuple",
+        "This User already has an active Review for this Review Basis set",
       );
     if (error instanceof AttachmentWriteError)
       throw new ReviewWriteError("invalid-review", error.message);

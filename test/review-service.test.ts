@@ -23,7 +23,7 @@ function fakeRepository() {
         attributionCredit:
           input.attribution === "attributed"
             ? "Public Student"
-            : "UST Rankings contributor",
+            : "Anonymous Reviewer",
         capturedDisplayName:
           input.attribution === "attributed" ? "Public Student" : undefined,
         license: "CC BY 4.0",
@@ -322,7 +322,7 @@ test("a Review author publishes optimistic attributed and Identity-hidden Revisi
         ...input.associations,
         markdown: input.markdown,
         attribution: "identity-hidden",
-        attributionCredit: "UST Rankings contributor",
+        attributionCredit: "Anonymous Reviewer",
         capturedDisplayName: undefined,
       };
     },
@@ -352,7 +352,7 @@ test("a Review author publishes optimistic attributed and Identity-hidden Revisi
   expect(edited).toMatchObject({
     markdown: "Edited.",
     attribution: "identity-hidden",
-    attributionCredit: "UST Rankings contributor",
+    attributionCredit: "Anonymous Reviewer",
   });
   expect(edits).toEqual([
     {
@@ -383,7 +383,7 @@ test("a stable Review identity resolves only its current public Revision", async
     instructorUuid: INSTRUCTOR_UUID,
     markdown: "Current Revision.",
     attribution: "identity-hidden" as const,
-    attributionCredit: "UST Rankings contributor",
+    attributionCredit: "Anonymous Reviewer",
     license: "CC BY 4.0" as const,
     publishedAt: new Date("2026-08-20T13:00:00.000Z"),
   };

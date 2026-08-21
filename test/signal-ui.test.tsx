@@ -31,8 +31,10 @@ test("signal controls expose separate accessible aggregates and only current des
     />,
   );
 
-  expect(markup).toContain("Community pulse");
-  expect(markup).toContain("Separate from ranking scores");
+  expect(markup).toContain("Reactions");
+  expect(markup).toContain("The identities of reactors are always hidden.");
+  expect(markup).not.toContain("Signal updated.");
+  expect(markup).not.toContain("Separate from ranking scores");
   expect(markup).toContain('aria-label="Thumbs up · 12"');
   expect(markup).toContain('aria-label="Thumbs down · 3"');
   expect(markup).toContain('aria-pressed="true"');

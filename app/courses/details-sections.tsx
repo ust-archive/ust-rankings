@@ -19,6 +19,7 @@ import type { ReviewEditorOptions } from "./course-reviews";
 import { Reviews } from "./course-reviews";
 import styles from "./details.module.css";
 import { DetailsTrend } from "./details-trend";
+import { ReviewNotice } from "./review-notice";
 
 const criteria = [
   ["content", "Content"],
@@ -312,13 +313,6 @@ export function DetailsRankings({
             tabIndex={0}
           >
             <table className="w-full min-w-[34rem] border-collapse text-sm">
-              <caption className="border-b border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-600">
-                Selected Term{" "}
-                {termNames.get(selectedTermCode ?? "") ??
-                  rankingTermName(selectedTermCode)}
-                . Samples are new observations in this Term; cumulative samples
-                explain carried-forward estimates.
-              </caption>
               <thead className="bg-slate-50 text-left">
                 <tr>
                   <th className="px-3 py-3" scope="col">
@@ -424,7 +418,7 @@ export function DetailsCommunity({
   withdrawn,
   error,
 }: {
-  description: string;
+  description?: string;
   signalControls: ReactNode;
   reviewComposer: ReactNode;
   reviews: PublicReview[];
@@ -436,45 +430,34 @@ export function DetailsCommunity({
 }) {
   return (
     <Card id="reviews">
-      <CardHeader>
+      <CardHeader className={description ? undefined : "pb-3"}>
         <CardTitle
           asChild
           className={`text-2xl text-balance ${styles.heading}`}
         >
           <h2>Community</h2>
         </CardTitle>
-        <p className="text-sm text-slate-600">{description}</p>
+        {description ? (
+          <p className="text-sm text-slate-600">{description}</p>
+        ) : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <section aria-label="Signals">{signalControls}</section>
         <Separator />
-        {published ? (
-          <p
-            className="rounded-lg bg-green-50 p-3 text-green-900"
-            role="status"
-          >
-            Review Revision published.
-          </p>
-        ) : null}
-        {withdrawn ? (
-          <p
-            className="rounded-lg bg-green-50 p-3 text-green-900"
-            role="status"
-          >
-            Review withdrawn from public display.
-          </p>
-        ) : null}
-        {error ? (
-          <p className="rounded-lg bg-red-50 p-3 text-red-900" role="alert">
-            Review could not be published ({error}).
-          </p>
-        ) : null}
+        <ReviewNotice
+          error={error}
+          published={published}
+          withdrawn={withdrawn}
+        />
         <section
           aria-labelledby="community-reviews"
           className="flex flex-col gap-5"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold" id="community-reviews">
+            <h3
+              className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600"
+              id="community-reviews"
+            >
               Reviews
             </h3>
             {reviewComposer}

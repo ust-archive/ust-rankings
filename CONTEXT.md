@@ -106,7 +106,7 @@ A normalized, user-selected name of at most 16 user-perceived characters. It may
 ## Community Contributions
 
 **Review**:
-A user-authored evaluation with at least one Review Basis and optional Review Context.
+A user-authored evaluation with at least one Review Basis and optional Review Context. A User may have at most one active Review for each exact set of Review Bases; Review Context does not distinguish Reviews for this limit.
 
 **Review Basis**:
 A Course or Instructor evaluated by a Review. A Review has at most one Course Basis and at most one Instructor Basis, and may have both as co-equal Bases.

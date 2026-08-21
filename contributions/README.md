@@ -15,12 +15,10 @@ objects remain in the adapters and forward migrations under
 
 1. Create an empty disposable PostgreSQL database.
 2. Set `CONTRIBUTIONS_POSTGRES_URL` and run `bun run contributions:migrate`.
-3. Generate `AUTH_SECRET` with Auth.js tooling and configure separate Entra Web
-   client IDs/secrets for the Connect and staff providers listed in
-   `.env.example`.
-4. Register exact callbacks for the deployment origin:
-   - `/api/auth/callback/hkust-connect`
-   - `/api/auth/callback/hkust-staff`
+3. Generate `AUTH_SECRET` with Auth.js tooling and configure the confidential
+   Entra Web client listed in `.env.example`.
+4. Register the exact callback for the deployment origin:
+   - `/api/auth/callback/hkust`
 5. After approved policy copy and Privacy Contact details are published at
    `/privacy`, set `PRIVACY_POLICY_VERSION`, `COMMUNITY_RULES_VERSION`, and
    `REVIEW_POLICY_VERSION` to the matching human-approved versions. Onboarding
@@ -33,8 +31,9 @@ objects remain in the adapters and forward migrations under
    then `withdraw-review` or `close-account` as appropriate. There is no
    self-service closure UI.
 
-The issuers are pinned in source to the public tenant metadata for
-`connect.ust.hk` and `ust.hk`. The providers request only `openid profile email`.
+Login uses one multi-tenant Entra client. The ID token issuer must still be
+the public tenant metadata for `connect.ust.hk` or `ust.hk`. The provider
+requests only `openid profile email`.
 Provider access, refresh, and ID tokens are discarded at the Auth.js callback;
 the encrypted HttpOnly JWT retains only internal User lookup and minimal UI
 state. No Auth.js database adapter or custom session lifetime is configured.
@@ -54,8 +53,10 @@ indexes, and an explicit needs-resolution state for uncertain Instructor
 identity corrections. `0005_review_lifecycle.sql` adds Attributed and
 Identity-hidden Revision snapshots, expected-current optimistic editing,
 transactional reassociation, active-tuple collision protection, and author-only
-withdrawal. Apply every migration in order; historical Revision associations
-are never revalidated or guessed when current source data changes.
+withdrawal. `0010_active_review_basis_set.sql` limits each User to one active
+Review for an exact Review Basis set regardless of Review Context. Apply every
+migration in order; historical Revision associations are never revalidated or
+guessed when current source data changes.
 
 `0006_raster_attachments.sql` adds Upload Intents, Stored Files, and immutable
 Attachments. `0007_document_attachments.sql` expands accepted document MIME
@@ -95,8 +96,8 @@ quota is released. Notify affected Users through the published contact when
 practical; reconsideration uses the same contact. There is no public
 moderation log.
 
-Identity-hidden public reads emit no captured Public Display Name and use `UST
-Rankings contributor` plus the stable `/reviews/{review-id}` permalink for CC BY
+Identity-hidden public reads emit no captured Public Display Name and use
+`Anonymous Reviewer` plus the stable `/reviews/{review-id}` permalink for CC BY
 4.0 credit. The permalink is based only on immutable Review identity, resolves
 only the active current Review Revision across reassociation, and returns no
 Review after withdrawal. The internal Review-to-User link remains available only

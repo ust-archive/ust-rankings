@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { Reviews } from "@/app/courses/course-reviews";
 import { loadReview } from "@/app/reviews/review-data";
+import { Separator } from "@/components/ui/separator";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +37,28 @@ export async function renderReviewPage(
       </section>
     );
   if (!result.review) notFound();
+  const review = result.review;
+  const editor = review.viewerCanEdit
+    ? {
+        courses: review.course ? [review.course] : [],
+        instructors: review.instructorUuid
+          ? [{ instructorUuid: review.instructorUuid, name: "Instructor" }]
+          : [],
+        contexts: review.termCode
+          ? [
+              {
+                course: review.course,
+                instructorUuid: review.instructorUuid,
+                termCode: review.termCode,
+                section: review.section,
+              },
+            ]
+          : [],
+      }
+    : undefined;
   return (
     <article className="w-full max-w-3xl text-left text-slate-900">
-      <header className="border-b border-slate-200 pb-5">
+      <header>
         <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-700">
           Community contribution
         </p>
@@ -48,7 +68,8 @@ export async function renderReviewPage(
           Revision.
         </p>
       </header>
-      <Reviews reviews={[result.review]} />
+      <Separator className="my-5" />
+      <Reviews editor={editor} reviews={[review]} />
     </article>
   );
 }

@@ -11,7 +11,7 @@ const current = (associations: Partial<PublicReview> = {}): PublicReview => ({
   course: { coursePrefix: "COMP", courseNumber: "2000" },
   markdown: "Current public Review Revision.",
   attribution: "identity-hidden",
-  attributionCredit: "UST Rankings contributor",
+  attributionCredit: "Anonymous Reviewer",
   license: "CC BY 4.0",
   publishedAt: new Date("2026-08-20T13:00:00.000Z"),
   ...associations,

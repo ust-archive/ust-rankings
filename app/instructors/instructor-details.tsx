@@ -309,7 +309,6 @@ export function InstructorDetails({
   signals,
   signalsUnavailable = true,
   signedIn = false,
-  signalUpdated,
   signalError,
   reviews = [],
   reviewsUnavailable = true,
@@ -326,7 +325,6 @@ export function InstructorDetails({
   signals?: SignalSummary;
   signalsUnavailable?: boolean;
   signedIn?: boolean;
-  signalUpdated?: boolean;
   signalError?: string;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
@@ -415,7 +413,6 @@ export function InstructorDetails({
             selectedTermCode={selectedTermCode}
           />
           <DetailsCommunity
-            description="Published experiences and signals for this Instructor."
             editor={reviewEditor}
             error={reviewError}
             published={reviewPublished}
@@ -439,7 +436,6 @@ export function InstructorDetails({
                   instructorUuid: identity.instructor.uuid,
                 }}
                 unavailable={signalsUnavailable}
-                updated={signalUpdated}
               />
             }
             withdrawn={reviewWithdrawn}

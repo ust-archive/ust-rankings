@@ -1,9 +1,18 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 @config "../tailwind.config.ts";
 
 .review-markdown-editor {
   --baseBorderHover: #475569;
   z-index: 60;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.review-markdown-editor .mdxeditor,
+.review-markdown-editor [contenteditable="true"],
+.review-markdown-editor * {
+  font-family: inherit;
 }
 
 :root {
@@ -51,6 +60,10 @@ body {
 
 a {
   @apply cursor-pointer underline;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
 }
 
 a,

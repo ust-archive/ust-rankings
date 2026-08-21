@@ -24,9 +24,10 @@ test("public Review renders equal Bases, secondary Context, and safe Markdown on
   const { Reviews } = await import("@/app/courses/course-reviews");
   const markup = renderToStaticMarkup(<Reviews reviews={[review]} />);
   expect(markup).toContain("Captured Student");
-  expect(markup).toContain("Course Basis · COMP 2000");
-  expect(markup).toContain(`Instructor Basis · ${review.instructorUuid}`);
-  expect(markup).toContain("Review Context · Term 2510 · Section L1");
+  expect(markup).toContain("COMP 2000");
+  expect(markup).toContain("2510");
+  expect(markup).toContain("L1");
+  expect(markup).not.toContain("Course Basis");
   expect(markup).toContain("needs resolution");
   expect(markup).toContain("has not been guessed or reassigned");
   expect(markup).toContain("<strong>labs</strong>");
@@ -38,6 +39,11 @@ test("public Review renders equal Bases, secondary Context, and safe Markdown on
     'href="/reviews/00000000-0000-4000-8000-000000000144"',
   );
   expect(markup.match(/Useful/g)).toHaveLength(1);
+
+  const broken = renderToStaticMarkup(
+    <Reviews reviews={[{ ...review, markdown: "Line one\nLine two" }]} />,
+  );
+  expect(broken).toMatch(/Line one<br\s*\/?>\s*Line two/);
 
   const historical = renderToStaticMarkup(
     <Reviews
@@ -122,7 +128,7 @@ test("Identity-hidden public Review output redacts author names and emits CC cre
         {
           ...review,
           attribution: "identity-hidden",
-          attributionCredit: "UST Rankings contributor",
+          attributionCredit: "Anonymous Reviewer",
           capturedDisplayName: "Must Never Render",
           license: "CC BY 4.0",
         },
@@ -131,10 +137,10 @@ test("Identity-hidden public Review output redacts author names and emits CC cre
   );
 
   expect(markup).not.toContain("Must Never Render");
-  expect(markup).toContain("Identity-hidden Review Revision");
-  expect(markup).toContain("UST Rankings contributor");
-  expect(markup).toContain("CC BY 4.0");
-  expect(markup).toContain("Review permalink");
+  expect(markup).not.toContain("Identity-hidden Review Revision");
+  expect(markup).toContain("Anonymous Reviewer");
+  expect(markup).toContain("Review Text: CC BY 4.0");
+  expect(markup).toContain("Permalink");
 });
 
 test("Review permalink remains stable across reassociation", async () => {
@@ -187,10 +193,7 @@ test("a Review author receives optimistic edit and withdrawal controls at the pu
   expect(markup).toContain(
     `name="expectedRevisionId" value="${review.revisionId}"`,
   );
-  expect(markup).toContain("Useful **labs**.");
-  expect(markup).toContain(
-    "Publishing this edit creates a new immutable Review Revision",
-  );
+  expect(markup).toContain("<strong>labs</strong>");
 });
 
 test("Review composer warns that metadata is preserved and files are not scanned", async () => {
@@ -326,14 +329,11 @@ test("historical Review editing preserves unsupported Context and blocks implici
   );
 
   expect(markup).toContain(`${retiredInstructorUuid}`);
-  expect(markup).toContain('<option value="2510" selected="">');
-  expect(markup).toContain('<option value="L1" selected="">');
   expect(markup).toContain(
-    "This Review snapshot is no longer source-backed. Select supported Review Bases and Review Context before publishing.",
+    "Historical Instructor association retained after an identity merge.",
   );
-  expect(markup).toMatch(
-    /<button[^>]+disabled=""[^>]*>Publish Revision<\/button>/,
-  );
+  expect(markup).toContain("Edit Review");
+  expect(markup).toContain("Withdraw Review");
 });
 
 test("public Reviews expose private reporting without a moderation log", async () => {

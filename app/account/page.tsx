@@ -7,9 +7,8 @@ import { privacyContactMailto } from "@/lib/privacy/contact";
 export const dynamic = "force-dynamic";
 
 const STATUS_COPY = {
-  suspended:
-    "This User is suspended. Current database status blocks contribution writes.",
-  closed: "This User account is closed. Contribution writes remain disabled.",
+  suspended: "This account is suspended. Contribution writes are disabled.",
+  closed: "This account is closed. Contribution writes are disabled.",
 } as const;
 
 export default async function AccountPage({
@@ -25,20 +24,18 @@ export default async function AccountPage({
   if (user.status === "onboarding") redirect("/onboarding?r=%2Faccount");
 
   return (
-    <section className="w-full max-w-xl space-y-6 rounded-2xl border border-slate-200 bg-white p-6 text-left text-slate-950 shadow-sm sm:p-8">
-      <header>
+    <section className="flex w-full max-w-xl flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 text-left text-slate-950 shadow-sm sm:p-8">
+      <header className="flex flex-col gap-3">
         <h1 className="text-3xl font-bold tracking-tight">Account</h1>
-        <p className="mt-2 text-slate-600">
-          Your account status is resolved from current contribution data, not
-          trusted from the sign-in-time session.
+        <p className="text-slate-600">
+          Email the{" "}
+          <a className="underline" href={privacyContactMailto()}>
+            Privacy Contact
+          </a>{" "}
+          to request your data, a correction, a review withdrawal, or to close
+          your account.
         </p>
       </header>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-        <dt className="font-semibold">Status</dt>
-        <dd className="capitalize">{user.status}</dd>
-        <dt className="font-semibold">Public Display Name</dt>
-        <dd>{user.publicDisplayName ?? "Not set"}</dd>
-      </dl>
       {params.saved ? (
         <p
           className="rounded-lg bg-green-50 p-3 text-sm text-green-900"
@@ -56,27 +53,24 @@ export default async function AccountPage({
         </p>
       ) : null}
       {user.status === "active" ? (
-        <form action={updateAccount} className="space-y-3">
-          <label className="font-semibold" htmlFor="accountDisplayName">
-            Edit Public Display Name
-          </label>
-          <input
-            aria-describedby="account-name-help"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2"
-            defaultValue={user.publicDisplayName ?? ""}
-            id="accountDisplayName"
-            name="publicDisplayName"
-            required
-          />
-          <p className="text-sm text-slate-600" id="account-name-help">
-            Changes apply to future attribution. Existing Review Revisions keep
-            the name captured when published.
-          </p>
+        <form action={updateAccount} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <label className="font-semibold" htmlFor="accountDisplayName">
+              What name do you want people to see?
+            </label>
+            <input
+              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              defaultValue={user.publicDisplayName ?? ""}
+              id="accountDisplayName"
+              name="publicDisplayName"
+              required
+            />
+          </div>
           <button
-            className="rounded-lg bg-[#003366] px-4 py-2 font-semibold text-white"
+            className="self-start rounded-lg bg-[#003366] px-4 py-2 font-semibold text-white"
             type="submit"
           >
-            Save account settings
+            Save
           </button>
         </form>
       ) : (
@@ -84,13 +78,6 @@ export default async function AccountPage({
           {STATUS_COPY[user.status]}
         </p>
       )}
-      <p className="text-sm text-slate-600">
-        Access, correction, withdrawal, or account closure: email the{" "}
-        <a className="underline" href={privacyContactMailto()}>
-          Privacy Contact
-        </a>
-        . There is no self-service closure UI.
-      </p>
       <form action={endSession}>
         <button className="text-sm font-semibold underline" type="submit">
           Sign out

@@ -44,14 +44,12 @@ export function SignalControls({
   summary,
   signedIn,
   unavailable = false,
-  updated = false,
   error,
 }: {
   target: SignalTarget;
   summary?: SignalSummary;
   signedIn: boolean;
   unavailable?: boolean;
-  updated?: boolean;
   error?: string;
 }) {
   if (unavailable || !summary)
@@ -66,15 +64,7 @@ export function SignalControls({
     );
   const mine = summary.mine ?? { thumbs: "none" as const, emoji: [] };
   return (
-    <div className="mt-4 text-left" id="signals">
-      {updated ? (
-        <p
-          className="mb-3 rounded-lg bg-green-50 p-3 text-sm text-green-900"
-          role="status"
-        >
-          Signal updated.
-        </p>
-      ) : null}
+    <div className="text-left" id="signals">
       {error ? (
         <p
           className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-900"
@@ -86,10 +76,7 @@ export function SignalControls({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600">
-            Community pulse
-          </p>
-          <p className="mt-1 text-sm text-slate-600">
-            Separate from ranking scores
+            Reactions
           </p>
         </div>
         {!signedIn ? (
@@ -154,7 +141,7 @@ export function SignalControls({
         })}
       </div>
       <p className="mt-3 text-xs text-slate-500">
-        Individual voter and reactor identities are private.
+        The identities of reactors are always hidden.
       </p>
     </div>
   );
