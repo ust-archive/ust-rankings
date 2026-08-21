@@ -14,6 +14,7 @@ import type {
   ScheduleGenerationPointer,
   ScheduleRefreshDependencies,
 } from "@/lib/schedule/server";
+import { makeRankingGeneration } from "./rankings-fixture";
 import { makeScheduleGeneration, scheduleFixtureSha } from "./schedule-fixture";
 
 vi.mock("server-only", () => ({}));
@@ -569,12 +570,9 @@ test("a failed Schedule refresh keeps last-known-good active and reports stale h
     activeGeneration: scheduleFixtureSha,
     failureClass: "integrity",
   });
-  process.env.RANKINGS_SEED_DIR = join(
-    process.cwd(),
-    "rankings",
-    "seed",
-    "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d",
-  );
+  const rankingsRoot = await mkdtemp(join(tmpdir(), "rankings-boundary-"));
+  temporaryDirectories.push(rankingsRoot);
+  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(rankingsRoot);
   const { queryRankings } = await import("@/lib/rankings/server");
   expect(
     (await queryRankings({ entity: "instructor", limit: 1 })).results,

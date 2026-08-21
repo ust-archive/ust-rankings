@@ -29,7 +29,7 @@ The notable cohort changes are: `CC22` adds the 30-credit taxonomy but has no SU
 - [Rankings server][server] — current Common Core types, mappings, catalog classification, validation, and filter behavior.
 
 [wcq]: https://w5.ab.ust.hk/wcq/cgi-bin/2610/
-[catalog]: ../../data/data-course-catalog.json
+[catalog]: https://huggingface.co/datasets/ust-archive/catalog
 [server]: ../../lib/rankings/server.ts
 [mapping]: ../../lib/rankings/server.ts#L41-L112
 [lookup]: ../../lib/rankings/server.ts#L2098-L2106

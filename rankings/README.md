@@ -1,7 +1,7 @@
 # Ranking generations
 
-A generation contains exactly the five v0 Parquet relations plus its
-application-owned `manifest.json`. Tests and local `RANKINGS_SEED_DIR` may
+A generation contains the required ranking, Course, association, and Instructor
+identity Parquet relations plus its application-owned `manifest.json`. Tests and local `RANKINGS_SEED_DIR` may
 point at `seed/<Hugging Face commit SHA>/`. Production does not ship or serve
 that seed.
 
@@ -20,9 +20,10 @@ Instructor registry, and representative queries before opening the generation
 to `queryRankings` or `getRankings`. A validation failure stays inside the
 rankings module and renders the ranking-specific unavailable state.
 
-The fixture seed is Hugging Face dataset commit
-`0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d`. Its declarations come from the
-expanded dataset tree, and the committed bytes match that commit's LFS objects.
+The legacy seed at `seed/0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d`
+is retained only as the pipeline's initial Instructor identity bootstrap. It is
+not a valid runtime generation because it predates the required Course
+dimension.
 
 ## Public explorer
 
@@ -31,15 +32,14 @@ never read Parquet directly. Term, activity, search, entity-specific filters,
 preset or custom criterion weights, and continuation cursor are represented in
 the query string. Cursors bind the accepted generation, normalized query, and
 last result, so a replaced generation cannot be mixed into an existing page.
-Course and association-title queries additionally bind the SHA-256 digest of
-the exact generated course-catalog bytes, preventing a catalog refresh from
+Course and association-title queries additionally bind the declared SHA-256 of
+the accepted `courses.parquet`, preventing different Course metadata from
 mixing result membership across cursor pages.
 
-Course titles and current Common Core category labels come from the generated
-course catalog refreshed by `npm run update-data` (and by `prebuild`). The
-ranking module validates required catalog fields before serving dependent
-queries. Ranking scores and Course–Instructor associations continue to come
-only from the validated immutable ranking generation.
+Course titles and current Common Core category labels come from the accepted
+Course dimension. The ranking module validates its declaration, framing,
+checksum, schema, required values, non-empty contents, and Course Code grain,
+then joins it to ranking evidence and Course–Instructor associations in DuckDB.
 
 ## Instructor identity corrections
 
@@ -65,7 +65,7 @@ the DigitalOcean app endpoint and set `RANKINGS_REFRESH_SECRET` to the same
 high-entropy value as the deployment's `CRON_SECRET`.
 
 The operation verifies the immutable Hugging Face revision and expanded tree,
-streams the rating LFS objects plus identity Parquet within configured resource bounds, checks
+streams the Course, rating, association, and identity Parquet objects within configured resource bounds, checks
 each declared SHA-256 and size, builds the provenance-bearing Instructor
 registry, and runs the same schema, grain, finite-value, latest-Term, and smoke
 validation used for a local seed. It retries three times with bounded backoff.

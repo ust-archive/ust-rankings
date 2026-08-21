@@ -38,7 +38,6 @@ async function updateManifest(
 
 afterEach(async () => {
   delete process.env.RANKINGS_SEED_DIR;
-  delete process.env.RANKINGS_COURSE_CATALOG_FILE;
   delete process.env.SCHEDULE_SEED_DIR;
   const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
     await Promise.all([

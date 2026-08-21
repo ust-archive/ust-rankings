@@ -22,6 +22,7 @@ const ARTIFACTS = [
   "course-instructors.parquet",
   "course-rankings.parquet",
   "course-ratings.parquet",
+  "courses.parquet",
   "instructor-aliases.parquet",
   "instructor-identities.parquet",
   "instructor-identity-events.parquet",
@@ -134,7 +135,7 @@ export class HuggingFaceRankingSource {
       JSON.stringify(ARTIFACTS)
     ) {
       throw new RankingSourceIntegrityError(
-        "Upstream tree is not a complete five-file generation",
+        "Upstream tree is not a complete ranking generation",
       );
     }
     const artifacts: Record<string, { sha256: string; size: number }> = {};

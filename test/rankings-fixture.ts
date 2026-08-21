@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
 
@@ -79,7 +79,11 @@ type Malformation =
   | "null-samples"
   | "wrong-latest-term"
   | "failed-smoke-query"
-  | "tba-alias";
+  | "tba-alias"
+  | "missing-course-dimension"
+  | "malformed-course-dimension"
+  | "invalid-course-dimension"
+  | "duplicate-course-dimension";
 
 export type FixtureIdentityEvent =
   | {
@@ -104,6 +108,7 @@ export async function makeRankingGeneration(
     includeScheduleCourse?: boolean;
     includePriorOnly?: boolean;
     identityEvents?: FixtureIdentityEvent[];
+    firstCourseTitle?: string;
   } = {},
 ) {
   const directory = join(root, fixtureSha);
@@ -288,6 +293,35 @@ export async function makeRankingGeneration(
         ${options.includeScheduleCourse ? ", ('Alpha Instructor', 100, '2510', 'COMP', '2000'), ('Alpha Instructor', 99, '2430', 'COMP', '2000')" : ""}
       ) AS t(name, term_num, term_code, subject, code)`,
     );
+    const courseDimension = `SELECT * FROM (VALUES
+      ('COMP', '1000', '${options.firstCourseTitle ?? "Creative Computing"}', [
+        {'label': 'CC22', 'value': '26', 'description': 'Science'},
+        {'label': 'CC25', 'value': '37', 'description': 'Arts'}
+      ]),
+      ('COMP', '1029C', 'Special Topics in Computing', [
+        {'label': 'CC25', 'value': '40', 'description': 'Technology'}
+      ]),
+      ('MATH', '2000', 'Mathematical Thinking', [
+        {'label': 'CC25', 'value': '39', 'description': 'Science'}
+      ]),
+      ('HIST', '3000', 'History and Society', [
+        {'label': 'CC25', 'value': '38', 'description': 'Humanities'}
+      ])
+      ${options.includeScheduleCourse ? ", ('COMP', '2000', 'Updated Course title', [])" : ""}
+      ${options.includePriorOnly ? ", ('OFFR', '5000', 'Offered Without Samples', [])" : ""}
+      ${Array.from({ length: options.extraCourses ?? 0 }, (_, index) => `, ('BULK', '${1000 + index}', 'Bulk Course ${1000 + index}', [])`).join("")}
+    ) AS t(prefix, number, title, attributes)`;
+    await copy(
+      "courses.parquet",
+      malformation === "malformed-course-dimension"
+        ? `SELECT * EXCLUDE (attributes) FROM (${courseDimension})`
+        : malformation === "invalid-course-dimension"
+          ? `SELECT * REPLACE ('' AS title) FROM (${courseDimension})`
+          : malformation === "duplicate-course-dimension"
+            ? `WITH courses AS (${courseDimension}) SELECT * FROM courses UNION ALL (SELECT * FROM courses LIMIT 1)`
+            : courseDimension,
+    );
+
     if (malformation === "tba-alias") {
       fixtureIdentities[0].aliases[0].name = " TBA ";
     }
@@ -350,6 +384,7 @@ export async function makeRankingGeneration(
   }
 
   const filenames = [
+    "courses.parquet",
     "course-instructors.parquet",
     "course-rankings.parquet",
     "course-ratings.parquet",
@@ -371,77 +406,8 @@ export async function makeRankingGeneration(
     join(directory, "manifest.json"),
     `${JSON.stringify({ schemaMajor: 0, sourceCommit: fixtureSha, artifacts, identities: fixtureIdentities }, null, 2)}\n`,
   );
-  await writeFile(
-    join(root, "course-catalog.json"),
-    JSON.stringify([
-      {
-        coursePrefix: "COMP",
-        courseNumber: "1000",
-        courseCode: "COMP1000",
-        courseName: "Creative Computing",
-        courseAttributes: [
-          { courseAttribute: "CC22", courseAttributeValue: "26" },
-          { courseAttribute: "CC25", courseAttributeValue: "37" },
-        ],
-      },
-      {
-        coursePrefix: "COMP",
-        courseNumber: "1029C",
-        courseCode: "COMP1029C",
-        courseName: "Special Topics in Computing",
-        courseAttributes: [
-          { courseAttribute: "CC25", courseAttributeValue: "40" },
-        ],
-      },
-      {
-        coursePrefix: "MATH",
-        courseNumber: "2000",
-        courseCode: "MATH2000",
-        courseName: "Mathematical Thinking",
-        courseAttributes: [
-          { courseAttribute: "CC25", courseAttributeValue: "39" },
-        ],
-      },
-      ...(options.includeScheduleCourse
-        ? [
-            {
-              coursePrefix: "COMP",
-              courseNumber: "2000",
-              courseCode: "COMP2000",
-              courseName: "Updated Course title",
-              courseAttributes: [],
-            },
-          ]
-        : []),
-      ...(options.includePriorOnly
-        ? [
-            {
-              coursePrefix: "OFFR",
-              courseNumber: "5000",
-              courseCode: "OFFR5000",
-              courseName: "Offered Without Samples",
-              courseAttributes: [],
-            },
-          ]
-        : []),
-      ...Array.from({ length: options.extraCourses ?? 0 }, (_, index) => ({
-        coursePrefix: "BULK",
-        courseNumber: String(1000 + index),
-        courseCode: `BULK${1000 + index}`,
-        courseName: `Bulk Course ${1000 + index}`,
-        courseAttributes: [],
-      })),
-      {
-        coursePrefix: "HIST",
-        courseNumber: "3000",
-        courseCode: "HIST3000",
-        courseName: "History and Society",
-        courseAttributes: [
-          { courseAttribute: "CC25", courseAttributeValue: "38" },
-        ],
-      },
-    ]),
-  );
+  if (malformation === "missing-course-dimension")
+    await rm(join(directory, "courses.parquet"));
   return directory;
 }
 

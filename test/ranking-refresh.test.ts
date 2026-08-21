@@ -51,6 +51,7 @@ test("the upstream adapter pins all ranking LFS objects to one full commit", asy
     "course-instructors.parquet",
     "course-rankings.parquet",
     "course-ratings.parquet",
+    "courses.parquet",
     "instructor-aliases.parquet",
     "instructor-identities.parquet",
     "instructor-identity-events.parquet",
@@ -88,7 +89,7 @@ test("the upstream adapter pins all ranking LFS objects to one full commit", asy
   expect(Object.keys(candidate.artifacts)).toEqual(filenames);
   expect(
     requests.filter((url) => url.includes(`/resolve/${sha}/`)),
-  ).toHaveLength(9);
+  ).toHaveLength(10);
 });
 
 test("the upstream adapter aborts a response beyond its declared LFS size", async () => {
@@ -99,6 +100,7 @@ test("the upstream adapter aborts a response beyond its declared LFS size", asyn
     "course-instructors.parquet",
     "course-rankings.parquet",
     "course-ratings.parquet",
+    "courses.parquet",
     "instructor-aliases.parquet",
     "instructor-identities.parquet",
     "instructor-identity-events.parquet",
@@ -426,6 +428,61 @@ test("refresh rejects a generation missing Instructor identity Parquet", async (
   expect(pointer).toBeUndefined();
 });
 
+test.each([
+  "missing-course-dimension",
+  "malformed-course-dimension",
+  "invalid-course-dimension",
+  "duplicate-course-dimension",
+] as const)("refresh rejects %s", async (malformation) => {
+  const root = await mkdtemp(join(tmpdir(), "ranking-course-dimension-"));
+  temporaryDirectories.push(root);
+  const directory = await makeRankingGeneration(root, malformation);
+  const { refreshRankings, RankingsRefreshError } = await import(
+    "@/lib/rankings/server"
+  );
+  let writes = 0;
+
+  await expect(
+    refreshRankings(
+      {},
+      {
+        upstream: {
+          async download() {
+            return {
+              sha: "0123456789abcdef0123456789abcdef01234567",
+              sourceUpdatedAt: "2026-08-20T06:00:00.000Z",
+              directory,
+            };
+          },
+        },
+        store: {
+          async readPointer() {
+            return undefined;
+          },
+          async downloadGeneration() {
+            return undefined;
+          },
+          async putGeneration() {
+            writes += 1;
+          },
+          async writePointer() {
+            writes += 1;
+          },
+          async readFailure() {
+            return undefined;
+          },
+          async writeFailure() {},
+        },
+        async withLock<T>(operation: () => Promise<T>) {
+          return operation();
+        },
+        async sleep() {},
+      },
+    ),
+  ).rejects.toBeInstanceOf(RankingsRefreshError);
+  expect(writes).toBe(0);
+});
+
 test("a mixed-commit candidate is rejected before persistence", async () => {
   const root = await mkdtemp(join(tmpdir(), "ranking-mixed-commit-"));
   temporaryDirectories.push(root);
@@ -490,7 +547,7 @@ test("a failed refresh records a bounded class and keeps last-known-good active"
     await makeRankingGeneration(secondRoot),
     secondSha,
   );
-  const corrupted = join(second, "instructor-rankings.parquet");
+  const corrupted = join(second, "courses.parquet");
   const bytes = await readFile(corrupted);
   bytes[Math.floor(bytes.length / 2)] ^= 1;
   await writeFile(corrupted, bytes);
