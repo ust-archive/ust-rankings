@@ -83,7 +83,7 @@ test("Review permalink distinguishes contribution failure from withdrawal", asyn
 
   expect(markup).toContain("Review unavailable");
   expect(markup).toContain(
-    "Rankings and Schedule remain independently available",
+    "Rankings and Details remain independently available",
   );
   expect(markup).not.toContain("Current public Review Revision");
 });

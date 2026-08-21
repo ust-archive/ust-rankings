@@ -27,8 +27,7 @@ export default async function SignInPage({
           Sign in to contribute
         </h1>
         <p className="mt-2 text-slate-600">
-          Public rankings and Schedule pages remain available without signing
-          in.
+          Public Rankings and Details remain available without signing in.
         </p>
       </header>
       {error ? (

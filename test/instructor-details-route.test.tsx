@@ -90,23 +90,18 @@ test("Instructor details combine ranking evidence, Courses, Classes, aliases, an
 
   expect(markup).toContain("Instructor");
   expect(markup).toContain("Alpha Instructor");
-  expect(markup).toContain("Ranking evidence and trends");
+  expect(markup).toContain("Rankings");
   expect(markup).toContain("Global Rank");
-  expect(markup).toContain("Learning-focused Ranking Preset");
-  expect(markup).toContain("Ranking Population");
-  expect(markup).toContain("Grade A+");
-  expect(markup).toContain("Associated Courses and Classes");
+  expect(markup).toContain("Learning-focused");
+  expect(markup).toContain("Courses");
   expect(markup).toContain("COMP 2000");
   expect(markup).toContain("L1 · Class 1001");
-  expect(markup).toContain("Instructor aliases and identity history");
-  expect(markup).toContain("schedule");
-  expect(markup).toContain("Community Reviews");
-  expect(markup).toContain("Community Reviews are unavailable");
-  expect(markup).toContain("Write a Review");
-  expect(markup).toContain("/schedule?term=2510&amp;class=1001&amp;view=cart");
-  expect(markup.indexOf("Instructor actions")).toBeLessThan(
-    markup.indexOf("Ranking evidence and trends"),
-  );
+  expect(markup).toContain("Identity History");
+  expect(markup).toContain("Community");
+  expect(markup).toContain("Reviews are unavailable");
+  expect(markup).toContain("Create a Review");
+  expect(markup).not.toContain("/schedule?");
+  expect(markup.indexOf("Rankings")).toBeLessThan(markup.indexOf("Community"));
 });
 
 test("Instructor routes normalize UUID and ITSC keys while retaining query state", async () => {
@@ -294,16 +289,6 @@ test("Instructor registry preserves ITSC additions, merge redirects, split resol
       instructor: expect.objectContaining({ uuid: added.instructor.uuid }),
     }),
   );
-  const { default: SchedulePage } = await import("@/app/schedule/page");
-  const scheduleMarkup = renderToStaticMarkup(
-    await SchedulePage({ searchParams: Promise.resolve({ term: "2510" }) }),
-  );
-  expect(scheduleMarkup).toContain("Alpha Instructor");
-  expect(scheduleMarkup).not.toContain('href="/instructors/alpha"');
-  expect(scheduleMarkup).not.toContain(
-    'href="/instructors/00000000-0000-4000-8000-000000000001"',
-  );
-
   const historical = await getRankings({
     type: "instructor",
     key: "00000000-0000-4000-8000-000000000005",
@@ -354,17 +339,12 @@ test("merge details retain retired aliases, evidence, Courses, and Classes", asy
 
 test("resolved Instructor cross-links use details while unresolved source spellings remain plain text", async () => {
   await configureDetails();
-  const [
-    { default: CoursePage },
-    { default: ClassPage },
-    { default: SchedulePage },
-    { RankingPage },
-  ] = await Promise.all([
-    import("@/app/courses/[prefix]/[number]/page"),
-    import("@/app/courses/[prefix]/[number]/[termCode]/[section]/page"),
-    import("@/app/schedule/page"),
-    import("@/app/rankings/rankings-page"),
-  ]);
+  const [{ default: CoursePage }, { default: ClassPage }, { RankingPage }] =
+    await Promise.all([
+      import("@/app/courses/[prefix]/[number]/page"),
+      import("@/app/courses/[prefix]/[number]/[termCode]/[section]/page"),
+      import("@/app/rankings/rankings-page"),
+    ]);
 
   const course = renderToStaticMarkup(
     await CoursePage({
@@ -389,15 +369,6 @@ test("resolved Instructor cross-links use details while unresolved source spelli
   expect(scheduleClass).toContain(
     'href="/instructors/00000000-0000-4000-8000-000000000001"',
   );
-
-  const schedule = renderToStaticMarkup(
-    await SchedulePage({ searchParams: Promise.resolve({ term: "2510" }) }),
-  );
-  expect(schedule).toContain(
-    'href="/instructors/00000000-0000-4000-8000-000000000001"',
-  );
-  expect(schedule).toContain("Unresolved Teacher");
-  expect(schedule).not.toContain('href="/instructors/Unresolved');
 
   const rankings = renderToStaticMarkup(
     await RankingPage({
@@ -425,8 +396,8 @@ test("unknown selected Term falls back to latest evidence with an accessible not
     }),
   );
 
-  expect(markup).toContain("Term 9999 has no ranking evidence");
-  expect(markup).toContain("Selected-Term evidence for 2510");
+  expect(markup).toContain("requested Term has no ranking evidence");
+  expect(markup).toContain("Selected Term 2025-26 Fall");
 });
 
 test("Instructor identity, Classes, and community remain visible when rankings fail", async () => {
@@ -450,9 +421,9 @@ test("Instructor identity, Classes, and community remain visible when rankings f
   );
 
   expect(markup).toContain("Alpha Instructor");
-  expect(markup).toContain("Ranking evidence is unavailable");
+  expect(markup).toContain("Rankings are unavailable");
   expect(markup).toContain("L1 · Class 1001");
-  expect(markup).toContain("Community Reviews");
+  expect(markup).toContain("Community");
 });
 
 test("unknown Instructor route keys return 404", async () => {

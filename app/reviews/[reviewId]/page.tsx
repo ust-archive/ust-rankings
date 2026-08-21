@@ -30,8 +30,8 @@ export async function renderReviewPage(
       >
         <h1 className="text-2xl font-bold">Review unavailable</h1>
         <p className="mt-2">
-          Community contributions cannot be read right now. Rankings and
-          Schedule remain independently available.
+          Community contributions cannot be read right now. Rankings and Details
+          remain independently available.
         </p>
       </section>
     );

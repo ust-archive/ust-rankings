@@ -6,7 +6,7 @@ export default function PrivacyPage() {
           Privacy and Community Policy
         </h1>
         <p className="mt-3 text-slate-600">
-          Public rankings and Schedule pages do not require an account.
+          Public Rankings and Details do not require an account.
         </p>
       </header>
       <section>

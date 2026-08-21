@@ -70,19 +70,18 @@ test.describe("authenticated Review lifecycle", () => {
     page,
   }) => {
     await addSignedSession(context);
-    await page.goto("/schedule");
-    const offeringPath = await page
-      .locator('h3 a[href^="/courses/"]')
+    await page.goto("/rankings/courses");
+    const coursePath = await page
+      .locator('a[href^="/courses/"]')
       .first()
       .getAttribute("href");
-    const coursePath = offeringPath?.split("/").slice(0, 4).join("/");
     if (!coursePath || !sql) throw new Error("Course fixture is unavailable");
     const [, , coursePrefix, courseNumber] = coursePath.split("/");
 
     await page.goto(coursePath);
-    await page.getByRole("button", { name: "Write a Review" }).click();
+    await page.getByRole("button", { name: "Create a Review" }).click();
     const createDialog = page.getByRole("dialog", {
-      name: "Write your Review",
+      name: "Create a Review",
     });
     const includeInstructor = createDialog.getByLabel(
       "Include Instructor Basis",

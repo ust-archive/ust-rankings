@@ -8,10 +8,8 @@ import type { PublicReview } from "@/lib/contributions/reviews";
 import type { SignalSummary } from "@/lib/contributions/signals";
 import { rankingTermName } from "@/lib/rankings/presentation";
 import type { CourseRankings } from "@/lib/rankings/server";
-import { buildScheduleUrl } from "@/lib/schedule/planner";
 import type {
   CourseOffering,
-  ScheduleClass,
   ScheduleDetails,
   ScheduleMeeting,
 } from "@/lib/schedule/server";
@@ -37,14 +35,6 @@ const criterionLabels = {
   course: "Course SFQ",
   instructor: "Instructor SFQ",
 } as const;
-
-function scheduleUrl(termCode: string, classes: ScheduleClass[]) {
-  return buildScheduleUrl({
-    termCode,
-    classNumbers: classes.map((item) => item.classNumber),
-    view: "cart",
-  });
-}
 
 function uniqueInstructors(
   offerings: CourseOffering[],
@@ -90,14 +80,12 @@ function uniqueInstructors(
 
 function ActionArea({
   type,
-  scheduleHref,
   instructors,
   reviewComposer,
   signalControls,
   courseHref,
 }: {
   type: "Course" | "Course Offering" | "Class";
-  scheduleHref?: string;
   instructors: Array<{ name: string; href: string }>;
   reviewComposer?: ReactNode;
   signalControls?: ReactNode;
@@ -107,19 +95,7 @@ function ActionArea({
     <aside className="order-1 space-y-4 lg:col-start-2 lg:row-start-1 lg:self-start">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-6">
         <h2 className="text-lg font-bold">{type} actions</h2>
-        {scheduleHref ? (
-          <Link
-            className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#003366] px-4 py-3 font-bold text-white no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003366]"
-            href={scheduleHref}
-          >
-            Open in Schedule
-          </Link>
-        ) : (
-          <p className="mt-3 text-sm text-slate-600">
-            Schedule actions are unavailable while Schedule data cannot be read.
-          </p>
-        )}
-        <div className="mt-5 border-t border-slate-200 pt-4">
+        <div className="mt-4 border-t border-slate-200 pt-4">
           <p className="font-semibold">Contribution controls</p>
           {type === "Class" ? (
             <>
@@ -799,7 +775,6 @@ export function CourseOfferingDetails({
       action={
         <ActionArea
           type="Course Offering"
-          scheduleHref={scheduleUrl(offering.termCode, offering.classes)}
           instructors={instructors
             .filter((item) => item.uuid)
             .map((item) => ({
@@ -905,7 +880,6 @@ export function ClassDetails({
       action={
         <ActionArea
           type="Class"
-          scheduleHref={scheduleUrl(scheduleClass.termCode, [scheduleClass])}
           courseHref={coursePath(
             scheduleClass.coursePrefix,
             scheduleClass.courseNumber,

@@ -102,12 +102,6 @@ export default function RootLayout({
                 Courses
               </Link>
               <Link
-                className="no-underline underline-offset-4 hover:underline"
-                href="/schedule"
-              >
-                Schedule
-              </Link>
-              <Link
                 className="rounded-full border border-white/60 px-3 py-1.5 no-underline hover:bg-white/10"
                 href="/account"
               >
@@ -142,7 +136,6 @@ export default function RootLayout({
               links={[
                 ["Instructor Rankings", "/rankings/instructors"],
                 ["Course Rankings", "/rankings/courses"],
-                ["Schedule", "/schedule"],
               ]}
             />
             <FooterLinks

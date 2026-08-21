@@ -59,18 +59,16 @@ test("Course details compose evidence, Offerings, Classes, Instructors, and isol
   expect(markup).toContain("Course");
   expect(markup).toContain("COMP 2000");
   expect(markup).toContain("Updated Course title");
-  expect(markup).toContain("Ranking evidence and trends");
+  expect(markup).toContain("Rankings");
   expect(markup).toContain("Global Rank");
-  expect(markup).toContain("Course Offerings and Classes");
+  expect(markup).toContain("Offerings");
   expect(markup).toContain("2025-26 Fall");
   expect(markup).toContain("Alpha Instructor");
-  expect(markup).toContain("Community Reviews");
-  expect(markup).toContain("Community Reviews are unavailable");
-  expect(markup).toContain("Write a Review");
-  expect(markup).toContain("/schedule?term=2510&amp;class=1001&amp;view=cart");
-  expect(markup.indexOf("Course actions")).toBeLessThan(
-    markup.indexOf("Ranking evidence and trends"),
-  );
+  expect(markup).toContain("Community");
+  expect(markup).toContain("Reviews are unavailable");
+  expect(markup).toContain("Create a Review");
+  expect(markup).not.toContain("/schedule?");
+  expect(markup.indexOf("Rankings")).toBeLessThan(markup.indexOf("Community"));
 });
 
 test("Course page renders a successful public Review read exactly once", async () => {
@@ -109,7 +107,7 @@ test("Course page renders a successful public Review read exactly once", async (
   expect(markup.match(/Captured Route Student/g)).toHaveLength(1);
   expect(markup.match(/The route renders/g)).toHaveLength(1);
   expect(markup).toContain("<strong>one public Review</strong>");
-  expect(markup).not.toContain("Community Reviews are unavailable");
+  expect(markup).not.toContain("Reviews are unavailable");
 });
 
 test("Course Offering and Class routes validate nested relationships and preserve domain distinctions", async () => {
@@ -164,6 +162,7 @@ test("Course Offering and Class routes validate nested relationships and preserv
   expect(classDetails).toContain(
     'href="/instructors/00000000-0000-4000-8000-000000000001#signals"',
   );
+  expect(classDetails).not.toContain("/schedule?");
 });
 
 test("Course evidence remains visible when the independent Schedule provider is unavailable", async () => {
@@ -188,12 +187,9 @@ test("Course evidence remains visible when the independent Schedule provider is 
     }),
   );
 
-  expect(markup).toContain("Selected-Term evidence for 2510");
+  expect(markup).toContain("Selected Term 2025-26 Fall");
   expect(markup).toContain("Global Rank");
-  expect(markup).toContain("Course Offerings are unavailable");
-  expect(markup).not.toContain(
-    "Select a Course Offering to inspect Term evidence",
-  );
+  expect(markup).toContain("Offerings are unavailable");
 });
 
 test("ranking detail loading propagates unexpected programming errors", async () => {

@@ -12,14 +12,12 @@ import {
 } from "@/app/courses/details-sections";
 import { coursePath } from "@/app/courses/routes";
 import { SignalControls } from "@/app/signals/signal-controls";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import type { PublicReview } from "@/lib/contributions/reviews";
 import type { SignalSummary } from "@/lib/contributions/signals";
 import { rankingTermName } from "@/lib/rankings/presentation";
 import type { InstructorIdentityLookup, Rankings } from "@/lib/rankings/server";
-import { buildScheduleUrl } from "@/lib/schedule/planner";
 import type { ScheduleClass } from "@/lib/schedule/server";
 
 function splitCourseCode(courseCode: string) {
@@ -161,27 +159,12 @@ function TeachingCards({
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             {currentClasses.length ? (
-              <>
-                <Button asChild variant="outline">
-                  <Link
-                    href={buildScheduleUrl({
-                      termCode: selectedTermCode as string,
-                      classNumbers: currentClasses.map(
-                        (scheduleClass) => scheduleClass.classNumber,
-                      ),
-                      view: "cart",
-                    })}
-                  >
-                    Open selected Classes in Schedule
-                  </Link>
-                </Button>
-                {currentClasses.map((scheduleClass) => (
-                  <ClassEntry
-                    key={classKey(scheduleClass)}
-                    scheduleClass={scheduleClass}
-                  />
-                ))}
-              </>
+              currentClasses.map((scheduleClass) => (
+                <ClassEntry
+                  key={classKey(scheduleClass)}
+                  scheduleClass={scheduleClass}
+                />
+              ))
             ) : (
               <p className="text-sm text-slate-600">
                 {scheduleUnavailable
