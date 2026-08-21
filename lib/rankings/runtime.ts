@@ -531,6 +531,7 @@ export function productionRankingRefreshDependencies(): RankingRefreshDependenci
     upstream: new HuggingFaceRankingSource(),
     store: new SpacesRankingStore(),
     withLock: withPostgresLock,
-    sleep: (milliseconds) => Bun.sleep(milliseconds),
+    sleep: (milliseconds) =>
+      new Promise((resolve) => setTimeout(resolve, milliseconds)),
   };
 }

@@ -520,6 +520,7 @@ export function productionScheduleRefreshDependencies(): ScheduleRefreshDependen
     upstream: new HuggingFaceScheduleSource(),
     store: new SpacesScheduleStore(),
     withLock: withPostgresLock,
-    sleep: (milliseconds) => Bun.sleep(milliseconds),
+    sleep: (milliseconds) =>
+      new Promise((resolve) => setTimeout(resolve, milliseconds)),
   };
 }
