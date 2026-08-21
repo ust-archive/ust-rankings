@@ -59,8 +59,8 @@ test("safe returns accept only relative application paths and avoid callback loo
     "/%73ign-in?r=/account",
     "/onboarding?r=/account",
     "/onboard%69ng?r=/account",
-    "/api/auth/callback/hkust-connect",
-    "/api/%61uth/callback/hkust-connect",
+    "/api/auth/callback/microsoft-entra-id",
+    "/api/%61uth/callback/microsoft-entra-id",
     "/auth/continue?r=/account",
     "/auth/%63ontinue?r=/account",
   ]) {

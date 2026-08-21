@@ -1,36 +1,27 @@
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import type { AccountService } from "@/lib/contributions/accounts";
-import { HKUST_CONNECT_ISSUER, HKUST_STAFF_ISSUER } from "./policy";
+import { HKUST_AUTHORIZE_ISSUER, validateInstitutionalClaims } from "./policy";
 
 const OIDC_SCOPE = "openid profile email";
 
 export function createInstitutionalProviders(credentials: {
-  connectClientId?: string;
-  connectClientSecret?: string;
-  staffClientId?: string;
-  staffClientSecret?: string;
+  clientId?: string;
+  clientSecret?: string;
 }) {
-  function provider(
-    id: "hkust-connect" | "hkust-staff",
-    name: string,
-    issuer: string,
-    clientId: string | undefined,
-    clientSecret: string | undefined,
-  ) {
-    const configured = MicrosoftEntraID({
-      clientId,
-      clientSecret,
-      issuer,
-      authorization: { params: { scope: OIDC_SCOPE } },
-    });
-    const { options: _, ...base } = configured;
-    return {
+  const configured = MicrosoftEntraID({
+    clientId: credentials.clientId,
+    clientSecret: credentials.clientSecret,
+    issuer: HKUST_AUTHORIZE_ISSUER,
+    authorization: { params: { scope: OIDC_SCOPE } },
+  });
+  const { options: _, ...base } = configured;
+  return [
+    {
       ...base,
-      id,
-      name,
-      issuer,
-      clientId,
-      clientSecret,
+      name: "HKUST",
+      issuer: HKUST_AUTHORIZE_ISSUER,
+      clientId: credentials.clientId,
+      clientSecret: credentials.clientSecret,
       authorization: { params: { scope: OIDC_SCOPE } },
       profile(profile: { sub: string; name?: string; email?: string }) {
         return {
@@ -40,24 +31,7 @@ export function createInstitutionalProviders(credentials: {
           image: null,
         };
       },
-    };
-  }
-
-  return [
-    provider(
-      "hkust-connect",
-      "HKUST student / Connect",
-      HKUST_CONNECT_ISSUER,
-      credentials.connectClientId,
-      credentials.connectClientSecret,
-    ),
-    provider(
-      "hkust-staff",
-      "HKUST staff",
-      HKUST_STAFF_ISSUER,
-      credentials.staffClientId,
-      credentials.staffClientSecret,
-    ),
+    },
   ];
 }
 
@@ -94,17 +68,10 @@ export function createAuthCallbacks(
     }) {
       if (account) {
         if (!profile) throw new Error("Verified OIDC profile is missing");
-        const expectedIssuer =
-          account.provider === "hkust-connect"
-            ? HKUST_CONNECT_ISSUER
-            : account.provider === "hkust-staff"
-              ? HKUST_STAFF_ISSUER
-              : undefined;
-        if (!expectedIssuer || profile.iss !== expectedIssuer)
-          throw new Error("OIDC provider and issuer do not match");
+        const identity = validateInstitutionalClaims(profile);
         const user = await accounts.establishUser({
-          iss: profile.iss,
-          sub: profile.sub,
+          iss: identity.issuer,
+          sub: identity.subject,
           name: profile.name,
           email: profile.email,
         });

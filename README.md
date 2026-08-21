@@ -55,10 +55,9 @@ Required configuration is listed in `.env.example`. Health:
 - `GET /api/health/rankings`
 - `GET /api/health/schedule`
 
-Auth callbacks:
+Auth callback:
 
-- `/api/auth/callback/hkust-connect`
-- `/api/auth/callback/hkust-staff`
+- `/api/auth/callback/microsoft-entra-id`
 
 Privacy Contact is `PRIVACY_CONTACT_EMAIL` (default `ust-rankings@flandia.dev`).
 Rotate Entra and Space credentials after first production use if they were

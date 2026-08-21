@@ -1,16 +1,12 @@
-import Link from "next/link";
 import { signIn } from "@/auth";
-import { safeReturnPath } from "@/lib/auth/policy";
+import { HKUST_PROVIDER_ID, safeReturnPath } from "@/lib/auth/policy";
 
 export const dynamic = "force-dynamic";
 
-async function startSignIn(
-  provider: "hkust-connect" | "hkust-staff",
-  r: string,
-) {
+async function startSignIn(r: string) {
   "use server";
   const returnPath = safeReturnPath(r);
-  await signIn(provider, {
+  await signIn(HKUST_PROVIDER_ID, {
     redirectTo: `/auth/continue?r=${encodeURIComponent(returnPath)}`,
   });
 }
@@ -28,44 +24,23 @@ export default async function SignInPage({
         <h1 className="text-3xl font-bold tracking-tight">
           Sign in to contribute
         </h1>
-        <p className="mt-2 text-slate-600">
-          Public Rankings and Details remain available without signing in.
-        </p>
       </header>
       {error ? (
         <p
-          role="alert"
           className="rounded-lg bg-red-50 p-3 text-sm text-red-800"
+          role="alert"
         >
           Sign-in could not be completed. No contribution was saved.
         </p>
       ) : null}
-      <div className="grid gap-3">
-        <form action={startSignIn.bind(null, "hkust-connect", returnPath)}>
-          <button
-            className="w-full rounded-lg bg-[#003366] px-4 py-3 font-semibold text-white"
-            type="submit"
-          >
-            Student / Connect account
-          </button>
-        </form>
-        <form action={startSignIn.bind(null, "hkust-staff", returnPath)}>
-          <button
-            className="w-full rounded-lg border border-slate-300 px-4 py-3 font-semibold"
-            type="submit"
-          >
-            Staff / HKUST account
-          </button>
-        </form>
-      </div>
-      <p className="text-sm text-slate-600">
-        Only the verified institutional issuer and subject identify your
-        account. Provider names and email addresses are mutable contact/profile
-        data.
-      </p>
-      <Link className="inline-block text-sm font-semibold" href={returnPath}>
-        Continue without signing in
-      </Link>
+      <form action={startSignIn.bind(null, returnPath)}>
+        <button
+          className="w-full rounded-lg bg-[#003366] px-4 py-3 font-semibold text-white"
+          type="submit"
+        >
+          Login
+        </button>
+      </form>
     </section>
   );
 }

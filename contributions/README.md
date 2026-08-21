@@ -18,7 +18,7 @@ objects remain in the adapters and forward migrations under
 3. Generate `AUTH_SECRET` with Auth.js tooling and configure the confidential
    Entra Web client listed in `.env.example`.
 4. Register the exact callback for the deployment origin:
-   - `/api/auth/callback/hkust`
+   - `/api/auth/callback/microsoft-entra-id`
 5. After approved policy copy and Privacy Contact details are published at
    `/privacy`, set `PRIVACY_POLICY_VERSION`, `COMMUNITY_RULES_VERSION`, and
    `REVIEW_POLICY_VERSION` to the matching human-approved versions. Onboarding

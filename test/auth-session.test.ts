@@ -12,7 +12,12 @@ import {
   createAuthCallbacks,
   createInstitutionalProviders,
 } from "@/lib/auth/config";
-import { HKUST_CONNECT_ISSUER, HKUST_STAFF_ISSUER } from "@/lib/auth/policy";
+import {
+  HKUST_AUTHORIZE_ISSUER,
+  HKUST_CONNECT_ISSUER,
+  HKUST_PROVIDER_ID,
+  HKUST_STAFF_ISSUER,
+} from "@/lib/auth/policy";
 import type { AccountService } from "@/lib/contributions/accounts";
 
 const account = {
@@ -35,12 +40,10 @@ function fakeAccounts() {
   return { established, accounts };
 }
 
-test("Auth.js providers pin both institutional issuers and minimal scopes", () => {
+test("Auth.js uses one organizational Entra login and minimal scopes", () => {
   const providers = createInstitutionalProviders({
-    connectClientId: "connect-id",
-    connectClientSecret: "connect-secret",
-    staffClientId: "staff-id",
-    staffClientSecret: "staff-secret",
+    clientId: "shared-id",
+    clientSecret: "shared-secret",
   });
   expect(
     providers.map((provider) => ({
@@ -50,13 +53,8 @@ test("Auth.js providers pin both institutional issuers and minimal scopes", () =
     })),
   ).toEqual([
     {
-      id: "hkust-connect",
-      issuer: HKUST_CONNECT_ISSUER,
-      scope: "openid profile email",
-    },
-    {
-      id: "hkust-staff",
-      issuer: HKUST_STAFF_ISSUER,
+      id: HKUST_PROVIDER_ID,
+      issuer: HKUST_AUTHORIZE_ISSUER,
       scope: "openid profile email",
     },
   ]);
@@ -76,7 +74,7 @@ test("Auth.js establishes the verified identity but serializes no provider token
       id_token: "must-not-leak",
     },
     account: {
-      provider: "hkust-connect",
+      provider: HKUST_PROVIDER_ID,
       access_token: "must-not-leak",
       refresh_token: "must-not-leak",
       id_token: "must-not-leak",
@@ -122,6 +120,30 @@ test("Auth.js establishes the verified identity but serializes no provider token
     expires: "2030-01-01T00:00:00.000Z",
   });
   expect(JSON.stringify(session)).not.toMatch(/token|email|subject|issuer/i);
+});
+
+test("Auth.js accepts either HKUST issuer and rejects other tenants", async () => {
+  const { accounts, established } = fakeAccounts();
+  const callbacks = createAuthCallbacks(accounts);
+  await callbacks.jwt({
+    token: {},
+    account: { provider: HKUST_PROVIDER_ID },
+    profile: { iss: HKUST_STAFF_ISSUER, sub: "staff-subject" },
+  });
+  expect(established[0]).toMatchObject({
+    iss: HKUST_STAFF_ISSUER,
+    sub: "staff-subject",
+  });
+  await expect(
+    callbacks.jwt({
+      token: {},
+      account: { provider: HKUST_PROVIDER_ID },
+      profile: {
+        iss: "https://login.microsoftonline.com/common/v2.0",
+        sub: "outsider",
+      },
+    }),
+  ).rejects.toThrow("Institutional issuer is not allowed");
 });
 
 test("server writes accept only an encrypted Auth.js JWT with an internal User UUID", async () => {

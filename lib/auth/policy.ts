@@ -2,6 +2,9 @@ export const HKUST_CONNECT_ISSUER =
   "https://login.microsoftonline.com/6c1d4152-39d0-44ca-88d9-b8d6ddca0708/v2.0";
 export const HKUST_STAFF_ISSUER =
   "https://login.microsoftonline.com/c917f3e2-9322-4926-9bb3-daca730413ca/v2.0";
+export const HKUST_PROVIDER_ID = "microsoft-entra-id";
+export const HKUST_AUTHORIZE_ISSUER =
+  "https://login.microsoftonline.com/organizations/v2.0";
 
 const ALLOWED_ISSUERS = new Set([HKUST_CONNECT_ISSUER, HKUST_STAFF_ISSUER]);
 const LINE_BREAK = /[\n\r\v\f\u0085\u2028\u2029]/u;

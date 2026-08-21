@@ -11,8 +11,9 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import Link from "next/link";
 import type React from "react";
-import { Separator } from "@/components/ui/separator";
 import { Toaster } from "@/components/ui/sonner";
+import { authenticatedUserId } from "@/lib/auth/user";
+import { getAccountService } from "@/lib/contributions/postgres";
 import { privacyContactMailto } from "@/lib/privacy/contact";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +58,39 @@ function FooterLinks({
   );
 }
 
+async function HeaderAuth() {
+  const pill =
+    "max-w-40 truncate rounded-full border border-white/60 px-3 py-1.5 no-underline hover:bg-white/10";
+  if (!process.env.AUTH_SECRET) {
+    return (
+      <Link className={pill} href="/sign-in?r=%2Faccount">
+        Login
+      </Link>
+    );
+  }
+  const userId = await authenticatedUserId();
+  if (!userId) {
+    return (
+      <Link className={pill} href="/sign-in?r=%2Faccount">
+        Login
+      </Link>
+    );
+  }
+  let label = "Account";
+  if (process.env.CONTRIBUTIONS_POSTGRES_URL)
+    try {
+      const user = await getAccountService().getUser(userId);
+      if (user?.publicDisplayName) label = user.publicDisplayName;
+    } catch {
+      // Keep public pages independent from contribution storage.
+    }
+  return (
+    <Link className={pill} href="/account">
+      {label}
+    </Link>
+  );
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -69,7 +103,11 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={cn(inter.className, roboto_mono.variable, "min-h-screen")}
+        className={cn(
+          inter.className,
+          roboto_mono.variable,
+          "flex min-h-dvh flex-col",
+        )}
       >
         <a
           className="sr-only z-50 rounded-md bg-white px-4 py-2 font-semibold text-slate-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:outline-none focus:ring-2 focus:ring-[#003366] focus:ring-offset-2"
@@ -103,17 +141,12 @@ export default function RootLayout({
               >
                 Courses
               </Link>
-              <Link
-                className="rounded-full border border-white/60 px-3 py-1.5 no-underline hover:bg-white/10"
-                href="/account"
-              >
-                Account
-              </Link>
+              <HeaderAuth />
             </nav>
           </div>
         </header>
         <main
-          className="mx-auto flex w-full max-w-7xl flex-col items-center space-y-8 px-4 py-12 text-center sm:px-6 lg:py-16"
+          className="mx-auto flex w-full max-w-7xl flex-1 flex-col items-center space-y-8 px-4 py-12 text-center sm:px-6 lg:py-16"
           id="main-content"
         >
           {children}
@@ -129,9 +162,16 @@ export default function RootLayout({
                 UST Rankings
               </Link>
               <p className="text-pretty text-sm leading-relaxed text-slate-600">
-                Community-built Course and Instructor rankings for informed
-                study choices at HKUST.
+                Independent project for the HKUST community.
               </p>
+              <a
+                className="inline-flex w-fit items-center gap-2 text-sm underline-offset-4 hover:text-slate-950"
+                href="https://github.com/ust-archive/ust-rankings"
+                rel="noopener noreferrer"
+              >
+                <SiGithub aria-hidden="true" className="size-4" />
+                Source on GitHub
+              </a>
             </div>
             <FooterLinks
               heading="Explore"
@@ -169,18 +209,6 @@ export default function RootLayout({
                 Review Text: CC BY 4.0
               </a>
             </nav>
-          </div>
-          <Separator />
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm sm:px-6">
-            <p>Independent community project for HKUST students.</p>
-            <a
-              className="inline-flex items-center gap-2 underline-offset-4 hover:text-slate-950"
-              href="https://github.com/ust-archive/ust-rankings"
-              rel="noopener noreferrer"
-            >
-              <SiGithub aria-hidden="true" className="size-4" />
-              Source on GitHub
-            </a>
           </div>
         </footer>
         <Toaster />

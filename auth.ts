@@ -6,10 +6,8 @@ import {
 import { getAccountService } from "@/lib/contributions/postgres";
 
 const providers = createInstitutionalProviders({
-  connectClientId: process.env.AUTH_HKUST_CONNECT_ID,
-  connectClientSecret: process.env.AUTH_HKUST_CONNECT_SECRET,
-  staffClientId: process.env.AUTH_HKUST_STAFF_ID,
-  staffClientSecret: process.env.AUTH_HKUST_STAFF_SECRET,
+  clientId: process.env.AUTH_HKUST_ID,
+  clientSecret: process.env.AUTH_HKUST_SECRET,
 });
 
 const callbacks = createAuthCallbacks({
