@@ -7,14 +7,19 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  gradeColor,
+  gradeForeground,
+  letterGrade,
+} from "@/lib/rankings/presentation";
 import type {
   CourseRanking,
   InstructorRanking,
   RankingsPage,
   RankingsQuery,
 } from "@/lib/rankings/server";
+import { coursePath, instructorPath } from "@/lib/routes";
 
-type Color = [number, number, number];
 type Ranking = CourseRanking | InstructorRanking;
 
 const scoreFormat = new Intl.NumberFormat("en", {
@@ -23,67 +28,10 @@ const scoreFormat = new Intl.NumberFormat("en", {
 });
 const countFormat = new Intl.NumberFormat("en");
 
-function letterGrade(percentile: number) {
-  for (const [threshold, grade] of [
-    [0.9, "A+"],
-    [0.8, "A"],
-    [0.75, "A-"],
-    [0.6, "B+"],
-    [0.45, "B"],
-    [0.35, "B-"],
-    [0.3, "C+"],
-    [0.25, "C"],
-    [0.2, "C-"],
-    [0.1, "D"],
-    [0, "F"],
-  ] as Array<[number, string]>)
-    if (percentile >= threshold) return grade;
-  return "F";
-}
-
-function gradeColor(ratio: number): Color {
-  const stops = [
-    { ratio: 0, color: [237, 27, 47] as Color },
-    { ratio: 0.25, color: [250, 166, 26] as Color },
-    { ratio: 0.75, color: [163, 207, 98] as Color },
-    { ratio: 1, color: [0, 154, 97] as Color },
-  ];
-  for (let index = 0; index < stops.length - 1; index += 1) {
-    const current = stops[index];
-    const next = stops[index + 1];
-    if (ratio < current.ratio || ratio > next.ratio) continue;
-    const progress = (ratio - current.ratio) / (next.ratio - current.ratio);
-    return current.color.map((channel, channelIndex) =>
-      Math.round(
-        channel * (1 - progress) + next.color[channelIndex] * progress,
-      ),
-    ) as Color;
-  }
-  return [0, 0, 0];
-}
-
-function luminance(color: Color) {
-  return color
-    .map((channel) => channel / 255)
-    .map((channel) =>
-      channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
-    )
-    .reduce(
-      (sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index],
-      0,
-    );
-}
-
-function gradeForeground(background: Color) {
-  return 1.05 / (luminance(background) + 0.05) >= 4.5
-    ? "rgb(255, 255, 255)"
-    : "rgb(15, 23, 42)";
-}
-
 function detailsHref(result: Ranking) {
   return result.entity === "course"
-    ? `/courses/${result.coursePrefix}/${result.courseNumber}`
-    : `/instructors/${result.itsc ?? result.uuid}`;
+    ? coursePath(result.coursePrefix, result.courseNumber)
+    : instructorPath(result);
 }
 
 function sampleCount(value: number, source: string) {
@@ -106,7 +54,7 @@ function RankingResultCard({ result }: { result: Ranking }) {
         href={detailsHref(result)}
         style={{ textDecoration: "none" }}
       >
-        <Card className="bg-white transition-shadow hover:border-slate-300 hover:shadow-md group-focus-visible:border-slate-400">
+        <Card className="bg-white transition-shadow motion-reduce:transition-none hover:border-slate-300 hover:shadow-md group-focus-visible:border-slate-400">
           <CardContent className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-4 sm:gap-5 sm:p-6">
             <div className="w-20 shrink-0 text-slate-600 sm:w-32">
               <p className="text-xl font-semibold tabular-nums sm:text-2xl">
@@ -142,7 +90,7 @@ function RankingResultCard({ result }: { result: Ranking }) {
               data-grade={grade}
               style={{
                 backgroundColor: `rgb(${background.join(", ")})`,
-                color: gradeForeground(background),
+                color: `rgb(${gradeForeground(background).join(", ")})`,
               }}
             >
               <span className="sr-only">Grade </span>
@@ -157,13 +105,16 @@ function RankingResultCard({ result }: { result: Ranking }) {
 
 export function RankingResults({
   initialPage,
+  initialPages,
   query,
 }: {
   initialPage: RankingsPage;
+  initialPages: number;
   query: RankingsQuery;
 }) {
   const [results, setResults] = useState(initialPage.results);
   const [nextCursor, setNextCursor] = useState(initialPage.nextCursor);
+  const [pageCount, setPageCount] = useState(initialPages);
   const [error, setError] = useState(false);
   const [isPending, startTransition] = useTransition();
   const loadingCursor = useRef<string | undefined>(undefined);
@@ -185,8 +136,11 @@ export function RankingResults({
             });
             setResults((current) => [...current, ...page.results]);
             setNextCursor(page.nextCursor);
+            const loadedPages = pageCount + 1;
+            setPageCount(loadedPages);
             const url = new URL(window.location.href);
             url.searchParams.set("term", page.population.termCode);
+            url.searchParams.set("pages", String(loadedPages));
             url.searchParams.set("cursor", nextCursor);
             window.history.replaceState(null, "", url);
           } catch {
@@ -200,7 +154,7 @@ export function RankingResults({
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [nextCursor, query]);
+  }, [nextCursor, pageCount, query]);
 
   return (
     <>

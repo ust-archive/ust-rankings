@@ -1,16 +1,13 @@
 import { notFound, permanentRedirect } from "next/navigation";
 import { normalizeInstructorKey } from "@/lib/instructor-identity";
+import { instructorPath } from "@/lib/routes";
+
+export { instructorPath } from "@/lib/routes";
 
 export type InstructorRouteSearchParams = Record<
   string,
   string | string[] | undefined
 >;
-
-export function instructorPath(
-  value: { uuid: string; itsc?: string } | string,
-) {
-  return `/instructors/${typeof value === "string" ? value : (value.itsc ?? value.uuid)}`;
-}
 
 function queryString(searchParams: InstructorRouteSearchParams) {
   const query = new URLSearchParams();

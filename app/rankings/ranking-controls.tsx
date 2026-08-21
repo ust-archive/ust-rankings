@@ -32,6 +32,10 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  RANKING_CRITERIA,
+  RANKING_CRITERION_LABELS,
+} from "@/lib/rankings/configuration";
 
 type Entity = "course" | "instructor";
 type Preset = "learning" | "grade" | "custom";
@@ -46,14 +50,9 @@ type InitialControls = {
   weights: Record<string, number>;
 };
 
-const criteria = [
-  ["content", "Content"],
-  ["teaching", "Teaching"],
-  ["grading", "Grading"],
-  ["workload", "Workload"],
-  ["course", "Course SFQ"],
-  ["instructor", "Instructor SFQ"],
-] as const;
+const criteria = RANKING_CRITERIA.map(
+  (criterion) => [criterion, RANKING_CRITERION_LABELS[criterion]] as const,
+);
 
 export function RankingControls({
   categories,
@@ -87,6 +86,7 @@ export function RankingControls({
 
   function navigate(next: URLSearchParams) {
     next.delete("cursor");
+    next.delete("pages");
     startTransition(() => {
       router.replace(`${pathname}?${next}`, { scroll: false });
     });
@@ -280,8 +280,8 @@ export function RankingControls({
               <FieldSet>
                 <FieldLegend>Score Formula</FieldLegend>
                 <FieldGroup className="gap-4">
-                  <Field>
-                    <FieldLabel>Ranking Preset</FieldLabel>
+                  <FieldSet className="gap-3">
+                    <FieldLegend variant="label">Ranking Preset</FieldLegend>
                     <ToggleGroup
                       aria-label="Ranking Preset"
                       className="grid grid-cols-1 sm:grid-cols-3"
@@ -300,7 +300,7 @@ export function RankingControls({
                       </ToggleGroupItem>
                       <ToggleGroupItem value="custom">Custom</ToggleGroupItem>
                     </ToggleGroup>
-                  </Field>
+                  </FieldSet>
                   {preset === "custom" ? (
                     <FieldSet>
                       <FieldLegend variant="label">

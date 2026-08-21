@@ -2,6 +2,11 @@ import { afterEach, expect, mock, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  contrastRatio,
+  gradeColor,
+  gradeForeground,
+} from "@/lib/rankings/presentation";
 import { fixtureSha, makeRankingGeneration } from "./rankings-fixture";
 
 mock.module("server-only", () => ({}));
@@ -16,6 +21,15 @@ afterEach(async () => {
       .splice(0)
       .map((path) => rm(path, { recursive: true, force: true })),
   );
+});
+
+test("every grade badge color meets WCAG contrast", () => {
+  for (let step = 0; step <= 100; step += 1) {
+    const background = gradeColor(step / 100);
+    expect(
+      contrastRatio(background, gradeForeground(background)),
+    ).toBeGreaterThanOrEqual(4.5);
+  }
 });
 
 test("no valid generation fails only the ranking module", async () => {

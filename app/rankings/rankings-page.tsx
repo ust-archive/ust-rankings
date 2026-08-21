@@ -7,6 +7,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { RANKING_CRITERIA } from "@/lib/rankings/configuration";
 import {
   COMMON_CORE_CATEGORIES,
   type CommonCoreCategory,
@@ -24,16 +25,39 @@ import { RankingResults } from "./ranking-results";
 type Entity = "course" | "instructor";
 export type RankingSearchParams = Record<string, string | string[] | undefined>;
 
-const criteria = [
-  ["content", "Content"],
-  ["teaching", "Teaching"],
-  ["grading", "Grading"],
-  ["workload", "Workload"],
-  ["course", "Course SFQ"],
-  ["instructor", "Instructor SFQ"],
-] as const;
 function rankingPath(entity: Entity) {
   return `/rankings/${entity === "course" ? "courses" : "instructors"}`;
+}
+
+function loadedPages(searchParams: RankingSearchParams) {
+  const value = single(searchParams, "pages");
+  if (value === undefined) return 1;
+  if (!/^(?:[1-9]|10)$/.test(value))
+    throw new InvalidRankingsQueryError("pages must be between 1 and 10.");
+  return Number(value);
+}
+
+async function queryRankingPages(query: RankingsQuery, pages: number) {
+  if (pages === 1) return queryRankings(query);
+  const expectedCursor = query.cursor;
+  const first = await queryRankings({ ...query, cursor: undefined });
+  let combined = first;
+  let cursorUsed: string | undefined;
+  for (let page = 2; page <= pages; page += 1) {
+    cursorUsed = combined.nextCursor;
+    if (!cursorUsed) throw new StaleRankingsCursorError();
+    if (page === pages && expectedCursor && expectedCursor !== cursorUsed)
+      throw new StaleRankingsCursorError();
+    const next = await queryRankings({ ...query, cursor: cursorUsed });
+    combined = {
+      ...combined,
+      nextCursor: next.nextCursor,
+      results: [...combined.results, ...next.results],
+    };
+  }
+  if (expectedCursor && expectedCursor !== cursorUsed)
+    throw new StaleRankingsCursorError();
+  return combined;
 }
 
 function single(
@@ -59,12 +83,10 @@ function pageQuery(entity: Entity, searchParams: RankingSearchParams) {
   const weights =
     preset === "custom"
       ? Object.fromEntries(
-          criteria
-            .map(([criterion]) => [
-              criterion,
-              Number(single(searchParams, `weight_${criterion}`) ?? 0),
-            ])
-            .filter(([, value]) => value !== 0),
+          RANKING_CRITERIA.map((criterion) => [
+            criterion,
+            Number(single(searchParams, `weight_${criterion}`) ?? 0),
+          ]).filter(([, value]) => value !== 0),
         )
       : undefined;
   const categories = searchParams.commonCore;
@@ -145,7 +167,7 @@ function RankingForm({
       categories={COMMON_CORE_CATEGORIES}
       entity={entity}
       initial={initial}
-      key={JSON.stringify(initial)}
+      key={JSON.stringify({ ...initial, search: undefined })}
       terms={terms}
     />
   );
@@ -239,8 +261,10 @@ export async function RankingPage({
 }) {
   const label = entity === "course" ? "Course" : "Instructor";
   let query: RankingsQuery | undefined;
+  let pages = 1;
   try {
     query = pageQuery(entity, searchParams);
+    pages = loadedPages(searchParams);
   } catch (error) {
     if (!(error instanceof InvalidRankingsQueryError)) throw error;
     return (
@@ -260,7 +284,7 @@ export async function RankingPage({
   }
 
   try {
-    const rankings = await queryRankings(query);
+    const rankings = await queryRankingPages(query, pages);
     return (
       <RankingChrome
         entity={entity}
@@ -271,6 +295,7 @@ export async function RankingPage({
         {rankings.results.length > 0 ? (
           <RankingResults
             initialPage={rankings}
+            initialPages={pages}
             key={JSON.stringify(query)}
             query={query}
           />

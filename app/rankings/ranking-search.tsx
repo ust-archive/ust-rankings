@@ -2,7 +2,7 @@
 
 import { Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -22,10 +22,11 @@ export function RankingSearch({
   const queryString = searchParams.toString();
   const currentValue = searchParams.get("q") ?? "";
   const [value, setValue] = useState(initialValue);
+  const submittedValue = useRef(initialValue);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    setValue(currentValue);
+    if (currentValue !== submittedValue.current) setValue(currentValue);
   }, [currentValue]);
 
   useEffect(() => {
@@ -35,6 +36,8 @@ export function RankingSearch({
       if (value) next.set("q", value);
       else next.delete("q");
       next.delete("cursor");
+      next.delete("pages");
+      submittedValue.current = value;
       startTransition(() => {
         router.replace(`${pathname}${next.size ? `?${next}` : ""}`, {
           scroll: false,

@@ -13,6 +13,10 @@ import {
   ITSC_PATTERN,
   normalizeInstructorKey,
 } from "@/lib/instructor-identity";
+import {
+  RANKING_CRITERIA as CRITERIA,
+  type RankingCriterion as Criterion,
+} from "@/lib/rankings/configuration";
 import defaultInstructorRegistry from "../../rankings/instructor-registry.json";
 
 const SEED_SHA = "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d";
@@ -23,16 +27,6 @@ const ARTIFACTS = [
   "instructor-rankings.parquet",
   "instructor-ratings.parquet",
 ] as const;
-const CRITERIA = [
-  "content",
-  "teaching",
-  "grading",
-  "workload",
-  "course",
-  "instructor",
-] as const;
-type Criterion = (typeof CRITERIA)[number];
-
 export function rankingTermName(termCode: string) {
   if (!/^[0-9]{4}$/.test(termCode)) return termCode;
   const year = 2000 + Number(termCode.slice(0, 2));

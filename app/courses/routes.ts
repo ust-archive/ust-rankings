@@ -1,17 +1,9 @@
 import { notFound, permanentRedirect } from "next/navigation";
+import { coursePath } from "@/lib/routes";
+
+export { coursePath } from "@/lib/routes";
 
 export type RouteSearchParams = Record<string, string | string[] | undefined>;
-
-export function coursePath(
-  coursePrefix: string,
-  courseNumber: string,
-  termCode?: string,
-  section?: string,
-) {
-  return ["/courses", coursePrefix, courseNumber, termCode, section]
-    .filter((part): part is string => Boolean(part))
-    .join("/");
-}
 
 export function normalizeCourseRoute(
   values: {

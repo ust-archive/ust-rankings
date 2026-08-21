@@ -33,15 +33,23 @@ async function expectAccessibleGradeContrast(page: Page) {
 }
 
 test("Rankings search filters live and keeps URL state", async ({ page }) => {
-  await page.goto("/rankings/instructors");
+  await page.goto("/rankings/instructors?preset=grade");
   const search = page.getByRole("searchbox", { name: "Search Instructors" });
 
+  await search.fill("T");
+  await page.waitForTimeout(320);
   await search.fill("TSOI");
 
+  await expect(search).toHaveValue("TSOI");
   await expect(page).toHaveURL(/q=TSOI/);
+  expect(new URL(page.url()).searchParams.get("preset")).toBe("grade");
   await expect(
     page.getByRole("heading", { name: "TSOI, Yau Chat" }),
   ).toBeVisible();
+
+  await search.clear();
+  await expect(page).not.toHaveURL(/q=/);
+  expect(new URL(page.url()).searchParams.get("preset")).toBe("grade");
 });
 
 test("Rankings append the next cursor page automatically", async ({ page }) => {
@@ -55,9 +63,14 @@ test("Rankings append the next cursor page automatically", async ({ page }) => {
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 
   await expect(results).toHaveCount(200);
-  await expect(results.first()).toContainText("#1");
-  await expect(results.nth(100)).toContainText("#101");
+  await expect(results.first()).toContainText(/^#1\s/);
+  await expect(results.nth(100)).toContainText(/^#101\s/);
   await expect(page).toHaveURL(/cursor=/);
+  expect(new URL(page.url()).searchParams.get("pages")).toBe("2");
+
+  await page.reload();
+  await expect(results.first()).toContainText(/^#1\s/);
+  await expect(results.nth(100)).toContainText(/^#101\s/);
 });
 
 test("Instructor Rankings retain hierarchy, URL state, and keyboard navigation to Details", async ({
