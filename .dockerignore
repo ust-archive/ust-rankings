@@ -13,3 +13,4 @@ playwright.config.ts
 test
 data/test
 data/out
+rankings/seed

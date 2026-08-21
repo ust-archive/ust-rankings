@@ -12,6 +12,10 @@ const temporaryDirectories: string[] = [];
 afterEach(async () => {
   delete process.env.RANKINGS_SEED_DIR;
   delete process.env.RANKINGS_COURSE_CATALOG_FILE;
+  const { resetRankingsRuntimeForTests } = await import(
+    "@/lib/rankings/server"
+  );
+  await resetRankingsRuntimeForTests();
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -39,7 +43,13 @@ test("no valid generation fails only the ranking module", async () => {
   );
 });
 
-test("the shipped runtime seed is accepted before it is served", async () => {
+test("an explicit RANKINGS_SEED_DIR generation is accepted before it is served", async () => {
+  process.env.RANKINGS_SEED_DIR = join(
+    process.cwd(),
+    "rankings",
+    "seed",
+    "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d",
+  );
   const { queryRankings } = await import("@/lib/rankings/server");
   const page = await queryRankings({
     entity: "instructor",
@@ -51,6 +61,43 @@ test("the shipped runtime seed is accepted before it is served", async () => {
   expect(page.population.termCode).toBe("2610");
   expect(page.population.size).toBeGreaterThan(0);
   expect(page.results).toHaveLength(1);
+});
+
+test("production rankings stay unavailable until a Hugging Face generation is accepted", async () => {
+  const {
+    queryRankings,
+    RankingsUnavailableError,
+    resetRankingsRuntimeForTests,
+  } = await import("@/lib/rankings/server");
+  await resetRankingsRuntimeForTests({
+    upstream: {
+      async download() {
+        throw new Error("upstream unavailable");
+      },
+    },
+    store: {
+      async readPointer() {
+        return undefined;
+      },
+      async downloadGeneration() {
+        return undefined;
+      },
+      async putGeneration() {},
+      async writePointer() {},
+      async readFailure() {
+        return undefined;
+      },
+      async writeFailure() {},
+    },
+    async withLock(operation) {
+      return operation();
+    },
+    async sleep() {},
+  });
+
+  await expect(queryRankings({ entity: "instructor" })).rejects.toBeInstanceOf(
+    RankingsUnavailableError,
+  );
 });
 
 test("queryRankings serves the Learning-focused Instructor Ranking Population", async () => {
@@ -449,7 +496,12 @@ test("historical mode and generation-bound cursors remain reproducible", async (
     "Historical Instructor",
   ]);
 
-  delete process.env.RANKINGS_SEED_DIR;
+  process.env.RANKINGS_SEED_DIR = join(
+    process.cwd(),
+    "rankings",
+    "seed",
+    "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d",
+  );
   await expect(
     queryRankings({
       entity: "instructor",

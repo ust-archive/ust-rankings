@@ -338,7 +338,7 @@ test("getRankings retains one generation snapshot across activation", async () =
   const details = await detailsPromise;
 
   expect(details.generation).toBe(firstSha);
-  expect(details.population.size).toBe(3);
+  expect(details.population.size).toBe(4);
   expect(getRankingsRuntimeStatsForTests().openGenerations).toBe(2);
 });
 

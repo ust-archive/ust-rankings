@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import {
+  copyFile,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rename,
   rm,
@@ -13,11 +15,6 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { Readable, Transform, type TransformCallback } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import {
-  GetObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from "@aws-sdk/client-s3";
 import postgres from "postgres";
 import type { RankingRefreshDependencies } from "./server";
 
@@ -33,7 +30,6 @@ const LFS_SHA = /^[0-9a-f]{64}$/;
 const MAX_ARTIFACT_BYTES = 128 * 1024 * 1024;
 const MAX_GENERATION_BYTES = 256 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
-const MAX_METADATA_BYTES = 64 * 1024;
 
 type TreeFile = {
   type?: unknown;
@@ -42,14 +38,8 @@ type TreeFile = {
   lfs?: { oid?: unknown; size?: unknown };
 };
 
-type StoredBody = {
-  transformToWebStream(): ReadableStream;
-};
-
-function requireEnvironment(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`Missing required ${name} configuration`);
-  return value;
+function optionalEnvironment(name: string) {
+  return process.env[name]?.trim() || undefined;
 }
 
 async function responseJson(response: Response) {
@@ -215,42 +205,6 @@ export class HuggingFaceRankingSource {
   }
 }
 
-function parseStoredManifest(value: unknown, sha: string) {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("sourceCommit" in value) ||
-    value.sourceCommit !== sha ||
-    !("artifacts" in value) ||
-    typeof value.artifacts !== "object" ||
-    value.artifacts === null ||
-    JSON.stringify(Object.keys(value.artifacts).sort()) !==
-      JSON.stringify(ARTIFACTS)
-  )
-    throw new Error("Invalid stored ranking manifest");
-  const artifacts = value.artifacts as Record<
-    string,
-    { sha256?: unknown; size?: unknown }
-  >;
-  let total = 0;
-  for (const filename of ARTIFACTS) {
-    const declaration = artifacts[filename];
-    if (
-      typeof declaration?.sha256 !== "string" ||
-      !LFS_SHA.test(declaration.sha256) ||
-      typeof declaration.size !== "number" ||
-      !Number.isSafeInteger(declaration.size) ||
-      declaration.size <= 0 ||
-      declaration.size > MAX_ARTIFACT_BYTES
-    )
-      throw new Error("Invalid stored ranking artifact declaration");
-    total += declaration.size;
-  }
-  if (total > MAX_GENERATION_BYTES)
-    throw new Error("Stored ranking generation exceeds its size bound");
-  return artifacts as Record<string, { sha256: string; size: number }>;
-}
-
 function parsePointer(value: unknown) {
   if (
     typeof value !== "object" ||
@@ -279,76 +233,34 @@ function parsePointer(value: unknown) {
   };
 }
 
-class SpacesRankingStore {
-  private readonly client: S3Client;
-  private readonly bucket: string;
-  private readonly prefix: string;
+export class LocalRankingStore {
+  constructor(private readonly root = resolve(tmpdir(), "ust-rankings")) {}
 
-  constructor() {
-    const endpoint = new URL(requireEnvironment("RANKINGS_SPACE_ENDPOINT"));
-    if (endpoint.protocol !== "https:")
-      throw new Error("RANKINGS_SPACE_ENDPOINT must use HTTPS");
-    this.bucket = requireEnvironment("RANKINGS_SPACE_BUCKET");
-    this.prefix = (process.env.RANKINGS_SPACE_PREFIX ?? "rankings").replace(
-      /^\/+|\/+$/g,
-      "",
-    );
-    this.client = new S3Client({
-      endpoint: endpoint.toString(),
-      region: process.env.RANKINGS_SPACE_REGION ?? "sgp1",
-      forcePathStyle: false,
-      credentials: {
-        accessKeyId: requireEnvironment("RANKINGS_SPACE_ACCESS_KEY_ID"),
-        secretAccessKey: requireEnvironment("RANKINGS_SPACE_SECRET_ACCESS_KEY"),
-      },
-    });
+  private generationDirectory(sha: string) {
+    return resolve(this.root, sha);
   }
 
-  private key(suffix: string) {
-    return `${this.prefix}/${suffix}`;
-  }
-
-  private async bytes(key: string, maximum = MAX_METADATA_BYTES) {
+  private async readJson(name: string) {
     try {
-      const result = await this.client.send(
-        new GetObjectCommand({ Bucket: this.bucket, Key: this.key(key) }),
-      );
-      if (!result.Body) throw new Error("Stored ranking object is empty");
-      if (result.ContentLength !== undefined && result.ContentLength > maximum)
-        throw new Error("Stored ranking object exceeds its size bound");
-      const limit = new ByteLimit(maximum);
-      const chunks: Buffer[] = [];
-      for await (const chunk of Readable.fromWeb(
-        (result.Body as StoredBody).transformToWebStream() as never,
-      ).pipe(limit))
-        chunks.push(Buffer.from(chunk));
-      return Buffer.concat(chunks);
+      return JSON.parse(
+        await readFile(join(this.root, name), "utf8"),
+      ) as unknown;
     } catch (error) {
-      if (
-        ["NoSuchKey", "NotFound"].includes(
-          (error as { name?: string }).name ?? "",
-        )
-      )
-        return undefined;
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
     }
   }
 
   async readPointer() {
-    const bytes = await this.bytes("active.json");
-    return bytes
-      ? parsePointer(JSON.parse(Buffer.from(bytes).toString("utf8")))
-      : undefined;
+    const value = await this.readJson("active.json");
+    return value === undefined ? undefined : parsePointer(value);
   }
 
   async readFailure() {
-    const bytes = await this.bytes("failure.json");
-    if (!bytes) return undefined;
-    const value = JSON.parse(Buffer.from(bytes).toString("utf8")) as unknown;
-    if (value === null) return undefined;
+    const value = await this.readJson("failure.json");
+    if (value === undefined || value === null) return undefined;
     if (
       typeof value !== "object" ||
-      value === null ||
       !("class" in value) ||
       ![
         "configuration",
@@ -375,25 +287,30 @@ class SpacesRankingStore {
     };
   }
 
+  private async writeJson(name: string, value: unknown) {
+    await mkdir(this.root, { recursive: true });
+    const path = join(this.root, name);
+    const staging = `${path}.${process.pid}.tmp`;
+    await writeFile(staging, `${JSON.stringify(value)}\n`);
+    await rename(staging, path);
+  }
+
   async writeFailure(failure: { class: string; at: string } | undefined) {
-    await this.put(
-      "failure.json",
-      Buffer.from(`${JSON.stringify(failure ?? null)}\n`),
-      false,
-    );
+    await this.writeJson("failure.json", failure ?? null);
   }
 
   async writePointer(pointer: ReturnType<typeof parsePointer>) {
-    await this.put(
-      "active.json",
-      Buffer.from(`${JSON.stringify(pointer)}\n`),
-      false,
-    );
+    await this.writeJson("active.json", pointer);
+    const keep = new Set([pointer.activeSha, pointer.previousSha]);
+    for (const name of await readdir(this.root).catch(() => [])) {
+      if (FULL_SHA.test(name) && !keep.has(name))
+        await rm(join(this.root, name), { recursive: true, force: true });
+    }
   }
 
   async downloadGeneration(sha: string) {
     if (!FULL_SHA.test(sha)) throw new Error("Invalid stored generation SHA");
-    const base = resolve(tmpdir(), "ust-rankings", sha);
+    const base = this.generationDirectory(sha);
     try {
       const files = await Promise.all(
         ["manifest.json", ...ARTIFACTS].map((filename) =>
@@ -402,113 +319,64 @@ class SpacesRankingStore {
       );
       if (files.every((file) => file.isFile())) return base;
     } catch {
-      await rm(base, { recursive: true, force: true });
+      return undefined;
     }
-    const staging = await mkdtemp(join(tmpdir(), `stored-rankings-${sha}-`));
-    try {
-      const manifestBytes = await this.bytes(
-        `generations/${sha}/manifest.json`,
-        MAX_MANIFEST_BYTES,
-      );
-      if (!manifestBytes)
-        throw new Error("Stored ranking generation is incomplete");
-      const artifacts = parseStoredManifest(
-        JSON.parse(manifestBytes.toString("utf8")),
-        sha,
-      );
-      await writeFile(join(staging, "manifest.json"), manifestBytes, {
-        flag: "wx",
-      });
-      await Promise.all(
-        ARTIFACTS.map(async (filename) => {
-          const declaration = artifacts[filename];
-          const result = await this.client.send(
-            new GetObjectCommand({
-              Bucket: this.bucket,
-              Key: this.key(`generations/${sha}/${filename}`),
-            }),
-          );
-          if (!result.Body)
-            throw new Error("Stored ranking generation is incomplete");
-          if (
-            result.ContentLength !== undefined &&
-            result.ContentLength > declaration.size
-          )
-            throw new Error(
-              "Stored ranking artifact exceeds its declared size",
-            );
-          const limit = new ByteLimit(declaration.size);
-          await pipeline(
-            Readable.fromWeb(
-              (result.Body as StoredBody).transformToWebStream() as never,
-            ),
-            limit,
-            createWriteStream(
-              join(/* turbopackIgnore: true */ staging, filename),
-              { flags: "wx" },
-            ),
-          );
-          if (limit.bytes !== declaration.size)
-            throw new Error("Stored ranking artifact size mismatch");
-        }),
-      );
-      await mkdir(resolve(base, ".."), { recursive: true });
-      try {
-        await rename(staging, base);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
-      return base;
-    } finally {
-      await rm(staging, { recursive: true, force: true });
-    }
+    return undefined;
   }
 
   async removeCachedGeneration(sha: string) {
     if (!FULL_SHA.test(sha)) return;
-    await rm(resolve(tmpdir(), "ust-rankings", sha), {
-      recursive: true,
-      force: true,
-    });
+    await rm(this.generationDirectory(sha), { recursive: true, force: true });
   }
 
   async putGeneration(sha: string, directory: string) {
     if (basename(resolve(directory)) !== sha)
       throw new Error("Generation directory is not commit-pinned");
-    for (const filename of ["manifest.json", ...ARTIFACTS]) {
-      const body = await readFile(join(directory, filename));
-      const maximum =
-        filename === "manifest.json" ? MAX_MANIFEST_BYTES : MAX_ARTIFACT_BYTES;
-      if (body.length > maximum)
-        throw new Error("Ranking generation object exceeds its size bound");
-      await this.put(`generations/${sha}/${filename}`, body, true);
+    const destination = this.generationDirectory(sha);
+    if (resolve(directory) === destination) return;
+    const staging = await mkdtemp(join(tmpdir(), `stored-rankings-${sha}-`));
+    let installed = false;
+    try {
+      for (const filename of ["manifest.json", ...ARTIFACTS]) {
+        const body = await readFile(join(directory, filename));
+        const maximum =
+          filename === "manifest.json"
+            ? MAX_MANIFEST_BYTES
+            : MAX_ARTIFACT_BYTES;
+        if (body.length > maximum)
+          throw new Error("Ranking generation object exceeds its size bound");
+        await copyFile(join(directory, filename), join(staging, filename));
+      }
+      await mkdir(this.root, { recursive: true });
+      await rm(destination, { recursive: true, force: true });
+      await rename(staging, destination);
+      installed = true;
+    } finally {
+      if (!installed) await rm(staging, { recursive: true, force: true });
     }
   }
+}
 
-  private async put(key: string, body: Uint8Array, immutable: boolean) {
-    if (immutable) {
-      const existing = await this.bytes(key, body.length);
-      if (existing) {
-        if (!Buffer.from(existing).equals(Buffer.from(body)))
-          throw new Error(
-            "Immutable ranking object already exists with different bytes",
-          );
-        return;
-      }
-    }
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: this.key(key),
-        Body: body,
-        ContentType: "application/octet-stream",
-      }),
-    );
+let localLock = Promise.resolve();
+
+async function withLocalLock<T>(operation: () => Promise<T>) {
+  const previous = localLock;
+  let release = () => {};
+  localLock = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
   }
 }
 
 async function withPostgresLock<T>(operation: () => Promise<T>) {
-  const sql = postgres(requireEnvironment("POSTGRES_URL"), { max: 1 });
+  const url = optionalEnvironment("POSTGRES_URL");
+  if (!url) return withLocalLock(operation);
+  const sql = postgres(url, { max: 1 });
   const connection = await sql.reserve();
   try {
     const [row] = await connection<{ acquired: boolean }[]>`
@@ -529,7 +397,7 @@ async function withPostgresLock<T>(operation: () => Promise<T>) {
 export function productionRankingRefreshDependencies(): RankingRefreshDependencies {
   return {
     upstream: new HuggingFaceRankingSource(),
-    store: new SpacesRankingStore(),
+    store: new LocalRankingStore(),
     withLock: withPostgresLock,
     sleep: (milliseconds) =>
       new Promise((resolve) => setTimeout(resolve, milliseconds)),

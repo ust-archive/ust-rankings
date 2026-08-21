@@ -20,7 +20,6 @@ import {
 import { rankingTermName } from "@/lib/rankings/presentation";
 import defaultInstructorRegistry from "../../rankings/instructor-registry.json";
 
-const SEED_SHA = "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d";
 const ARTIFACTS = [
   "course-instructors.parquet",
   "course-rankings.parquet",
@@ -669,10 +668,9 @@ let openGenerationCount = 0;
 let afterAcquireForTests: ((generation: string) => Promise<void>) | undefined;
 
 function seedDirectory() {
-  return (
-    process.env.RANKINGS_SEED_DIR ??
-    resolve(process.cwd(), "rankings", "seed", SEED_SHA)
-  );
+  const directory = process.env.RANKINGS_SEED_DIR;
+  if (!directory) throw new RankingsUnavailableError();
+  return directory;
 }
 
 async function configuredInstructorRegistry() {
@@ -1303,13 +1301,13 @@ async function instructorRegistry(): Promise<InstructorRegistry> {
         try {
           return await loadInstructorRegistry(directory);
         } catch {
-          // Try the retained previous registry before the seed.
+          // Try the retained previous registry.
         }
       }
   } catch {
-    // The validated seed remains an independent identity fallback.
+    // Rankings stay unavailable until a Hugging Face generation is accepted.
   }
-  return loadInstructorRegistry(seedDirectory());
+  throw new RankingsUnavailableError();
 }
 
 export async function getInstructorIdentity(key: string) {
@@ -1450,17 +1448,17 @@ async function discoverGeneration() {
           );
           return loading;
         } catch {
-          // Try the retained previous generation before the validated seed.
+          // Try the retained previous generation.
         }
       }
     }
+    await refreshRankings({}, runtimeDependencies);
+    if (runtimeActive) return runtimeActive;
   } catch {
     if (existing) return existing;
   }
   if (existing) return existing;
-  const seed = seedGeneration();
-  runtimeActiveSha = (await seed).sha;
-  return seed;
+  throw new RankingsUnavailableError();
 }
 
 function generation() {
@@ -1475,17 +1473,6 @@ function generation() {
     runtimeDependencies &&
     Date.now() - runtimeCheckedAt < 60_000
   )
-    return runtimeActive;
-  const storageConfigured =
-    Boolean(runtimeDependencies) ||
-    [
-      "RANKINGS_SPACE_ENDPOINT",
-      "RANKINGS_SPACE_BUCKET",
-      "RANKINGS_SPACE_ACCESS_KEY_ID",
-      "RANKINGS_SPACE_SECRET_ACCESS_KEY",
-    ].every((name) => process.env[name]?.trim());
-  if (!storageConfigured) return seedGeneration();
-  if (runtimeActive && Date.now() - runtimeCheckedAt < 60_000)
     return runtimeActive;
   if (!runtimeDiscovery) {
     runtimeCheckedAt = Date.now();
@@ -1517,8 +1504,8 @@ async function prepareCandidateManifest(
       JSON.stringify(ARTIFACTS)
   )
     throw new Error("Upstream tree declarations are incomplete");
-  let previous: Generation;
-  let closePrevious = false;
+  let previous: Pick<Generation, "sha" | "identitiesByUuid" | "identityEvents">;
+  let closePrevious: Generation | undefined;
   if (current) {
     const directory = await dependencies.store.downloadGeneration(
       current.activeSha,
@@ -1544,22 +1531,29 @@ async function prepareCandidateManifest(
     else {
       const removeCachedGeneration =
         dependencies.store.removeCachedGeneration?.bind(dependencies.store);
-      previous = await loadGeneration(
+      closePrevious = await loadGeneration(
         directory,
         removeCachedGeneration
           ? () => removeCachedGeneration(current.activeSha)
           : undefined,
       );
-      closePrevious = true;
+      previous = closePrevious;
     }
     if (previous.sha !== current.activeSha) {
-      if (closePrevious) await retireGeneration(Promise.resolve(previous));
+      if (closePrevious) await retireGeneration(Promise.resolve(closePrevious));
       throw new Error(
         "The current Instructor registry does not match its pointer",
       );
     }
-  } else {
+  } else if (process.env.RANKINGS_SEED_DIR) {
     previous = await seedGeneration();
+  } else {
+    // ponytail: empty identity history, durable registry if Instructor URLs must survive deploys
+    previous = {
+      sha: "",
+      identitiesByUuid: new Map(),
+      identityEvents: [],
+    };
   }
   const retained = structuredClone([...previous.identitiesByUuid.values()]);
   const previousUuids = new Set(previous.identitiesByUuid.keys());
@@ -1667,7 +1661,7 @@ async function prepareCandidateManifest(
       { flag: "wx" },
     );
   } finally {
-    if (closePrevious) await retireGeneration(Promise.resolve(previous));
+    if (closePrevious) await retireGeneration(Promise.resolve(closePrevious));
   }
 }
 

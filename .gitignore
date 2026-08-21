@@ -27,6 +27,7 @@ data/ratings-instructor.json
 *.pem
 
 # local env files
+.env
 .env*.local
 
 # vercel

@@ -1,8 +1,9 @@
-# Runtime ranking seed
+# Ranking generations
 
-The application ships one complete, validated ranking generation under
-`seed/<Hugging Face commit SHA>/`. A generation contains exactly the five v0
-Parquet relations plus its application-owned `manifest.json`.
+A generation contains exactly the five v0 Parquet relations plus its
+application-owned `manifest.json`. Tests and local `RANKINGS_SEED_DIR` may
+point at `seed/<Hugging Face commit SHA>/`. Production does not ship or serve
+that seed.
 
 The manifest pins the immutable source commit and declares every Parquet file's
 SHA-256 and byte size. It also assigns permanent application UUIDs to the
@@ -19,7 +20,7 @@ Instructor registry, and representative queries before opening the generation
 to `queryRankings` or `getRankings`. A validation failure stays inside the
 rankings module and renders the ranking-specific unavailable state.
 
-The included seed is Hugging Face dataset commit
+The fixture seed is Hugging Face dataset commit
 `0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d`. Its declarations come from the
 expanded dataset tree, and the committed bytes match that commit's LFS objects.
 
@@ -73,33 +74,27 @@ The operation verifies the immutable Hugging Face revision and expanded tree,
 streams exactly the five LFS objects within configured resource bounds, checks
 each declared SHA-256 and size, builds the provenance-bearing Instructor
 registry, and runs the same schema, grain, finite-value, latest-Term, and smoke
-validation used for the seed. It retries three times with bounded backoff.
+validation used for a local seed. It retries three times with bounded backoff.
 
-Complete generations are written under immutable private Space keys before a
-single active pointer is replaced. A PostgreSQL advisory lock excludes jobs
-across instances, and the source publication time prevents an older immutable
-commit from regressing that pointer. The pointer retains the previous accepted
-SHA. Readers acquire one generation snapshot for an entire public operation; a
-failed refresh leaves the pointer untouched and serves the in-memory
-generation, active/previous Space generation, or validated seed in that order.
-Only active and previous native snapshots are retained. Retired DuckDB
-instances/connections close after their in-flight readers finish, and their
-owned `/tmp` directories are removed. `/tmp` and process memory are caches only.
+Complete generations are written under `/tmp/ust-rankings` on the running
+instance before a single active pointer is replaced. A PostgreSQL advisory lock
+excludes overlapping refreshes, and the source publication time prevents an
+older immutable commit from regressing that pointer. The pointer retains the
+previous accepted SHA. Readers acquire one generation snapshot for an entire
+public operation; a failed refresh leaves the pointer untouched and keeps the
+in-memory generation if one is already accepted. There is no image seed and no
+shared last-known-good across instances: Hugging Face is the source of truth.
+The process warms from Hugging Face on `next start` and again daily. Rankings
+stay unavailable until a generation is accepted. Only active and previous native
+snapshots are retained. Retired DuckDB instances/connections close after their
+in-flight readers finish, and their owned `/tmp` directories are removed.
 
 Course–Instructor association keys are validated for completeness, uniqueness,
 and consistent Term Code/Term Number mapping. They are intentionally not
 foreign keys to Course or Instructor rating evidence: the source relation also
 contains valid teaching associations for entities without SFQ/rating rows.
 
-Required deployment variables are listed in `.env.example`. The Space must be
-private and use restricted credentials; do not reuse attachment-publication
-credentials. `GET /api/health/rankings` reports only status, active SHA,
-freshness timestamps, and the bounded failure class. It never returns Space
-keys, endpoints, database details, or credentials.
-
-The owner must create the private SGP1 Space, restricted key, PostgreSQL URL,
-and deployment/GitHub secrets before production activation. Release readiness
-must still verify Vercel Bun native DuckDB loading, memory high-water, query and
-refresh duration, cold/warm Space downloads, daily cron authentication, and
-concurrent refresh behavior in a preview deployment; no local test invents
-those credentials or deployment results.
+Required deployment variables are listed in `.env.example`. `GET
+/api/health/rankings` reports only status, active SHA, freshness timestamps, and
+the bounded failure class. It never returns storage paths, database details, or
+credentials.

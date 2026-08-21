@@ -1,6 +1,13 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GenerationPointer, RankingFailure } from "@/lib/rankings/server";
@@ -146,6 +153,28 @@ test("the refresh operation rejects unauthenticated requests", async () => {
   } finally {
     delete process.env.RANKINGS_REFRESH_SECRET;
   }
+});
+
+test("the local ranking store retains a complete generation under tmp", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ranking-local-store-"));
+  temporaryDirectories.push(root);
+  const directory = await makeRankingGeneration(root);
+  const { LocalRankingStore } = await import("@/lib/rankings/runtime");
+  const store = new LocalRankingStore(join(root, "store"));
+  const pointer = {
+    activeSha: "0123456789abcdef0123456789abcdef01234567",
+    acceptedAt: "2026-08-21T00:00:00.000Z",
+    sourceUpdatedAt: "2026-08-20T06:00:00.000Z",
+  };
+  const retired = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+  await store.putGeneration(pointer.activeSha, directory);
+  await mkdir(join(root, "store", retired));
+  await store.writePointer(pointer);
+
+  expect(await store.downloadGeneration(pointer.activeSha)).toBeString();
+  expect(await store.downloadGeneration(retired)).toBeUndefined();
+  expect(await store.readPointer()).toEqual(pointer);
 });
 
 test("a complete refresh activates one immutable generation atomically", async () => {
