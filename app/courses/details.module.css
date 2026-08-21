@@ -3,3 +3,7 @@
   font-style: normal;
   font-weight: 500;
 }
+
+.sidebarLink {
+  text-decoration: none;
+}

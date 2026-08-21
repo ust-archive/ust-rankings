@@ -3,6 +3,7 @@
 
 .review-markdown-editor {
   --baseBorderHover: #475569;
+  z-index: 60;
 }
 
 :root {

@@ -258,48 +258,55 @@ export function DetailsTrend({
             </tr>
           </thead>
           <tbody>
-            {[...terms].reverse().map((term) => (
-              <tr
-                className={
-                  term.termCode === selectedTermCode
-                    ? "border-t border-slate-200 bg-blue-50/60"
-                    : "border-t border-slate-200"
-                }
-                key={term.termCode}
-              >
-                <th
-                  className="whitespace-nowrap px-3 py-2 text-left font-semibold"
-                  scope="row"
+            {terms
+              .filter((term) =>
+                selectedCriteria.some(
+                  (criterion) => term.criteria[criterion] !== undefined,
+                ),
+              )
+              .reverse()
+              .map((term) => (
+                <tr
+                  className={
+                    term.termCode === selectedTermCode
+                      ? "border-t border-slate-200 bg-blue-50/60"
+                      : "border-t border-slate-200"
+                  }
+                  key={term.termCode}
                 >
-                  {term.termName}
-                  {term.termCode === selectedTermCode ? " · selected" : ""}
-                </th>
-                {selectedCriteria.map((criterion) => {
-                  const value = term.criteria[criterion];
-                  return (
-                    <td
-                      className="whitespace-nowrap px-3 py-2 tabular-nums"
-                      key={criterion}
-                    >
-                      {value ? (
-                        <>
-                          <span className="font-medium">
-                            {value.bayesian.toFixed(2)}
-                          </span>
-                          <span className="block text-xs text-slate-600">
-                            Confidence {number.format(value.confidence)} ·{" "}
-                            {count.format(value.samples)} new ·{" "}
-                            {count.format(value.cumulativeSamples)} cumulative
-                          </span>
-                        </>
-                      ) : (
-                        "Unavailable"
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+                  <th
+                    className="whitespace-nowrap px-3 py-2 text-left font-semibold"
+                    scope="row"
+                  >
+                    {term.termName}
+                    {term.termCode === selectedTermCode ? " · selected" : ""}
+                  </th>
+                  {selectedCriteria.map((criterion) => {
+                    const value = term.criteria[criterion];
+                    return (
+                      <td
+                        className="whitespace-nowrap px-3 py-2 tabular-nums"
+                        key={criterion}
+                      >
+                        {value ? (
+                          <>
+                            <span className="font-medium">
+                              {value.bayesian.toFixed(2)}
+                            </span>
+                            <span className="block text-xs text-slate-600">
+                              Confidence {number.format(value.confidence)} ·{" "}
+                              {count.format(value.samples)} new ·{" "}
+                              {count.format(value.cumulativeSamples)} cumulative
+                            </span>
+                          </>
+                        ) : (
+                          "Unavailable"
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
           </tbody>
         </table>
       </section>

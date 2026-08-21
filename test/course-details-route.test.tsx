@@ -132,11 +132,11 @@ test("Course Offering and Class routes validate nested relationships and preserv
   expect(offering).toContain("Course Offering");
   expect(offering).toContain("2024-25 Spring");
   expect(offering).toContain("Earlier Offering");
-  expect(offering).toContain("Class 3001");
-  expect(offering).toContain("Selected-Term evidence for 2430");
+  expect(offering).toContain("COMP 2000 L1 (3001)");
+  expect(offering).toContain("Selected Term 2024-25 Spring");
   expect(offering).toContain("Global Rank");
-  expect(offering).toContain("Historical criterion evidence by Term");
-  expect(offering).toMatch(/2430[\s\S]*0\.10/);
+  expect(offering).toContain("History");
+  expect(offering).toContain("0.10");
 
   const classDetails = renderToStaticMarkup(
     await ClassPage({
@@ -152,7 +152,7 @@ test("Course Offering and Class routes validate nested relationships and preserv
   expect(classDetails).toContain("Class");
   expect(classDetails).toContain("COMP 2000 L1 (1001)");
   expect(classDetails).toContain("Class Details");
-  expect(classDetails).toContain("30 / 80 enrolled");
+  expect(classDetails).toContain("30 / 80");
   expect(classDetails).toContain("Course Basis");
   expect(classDetails).toContain("Instructor Basis");
   expect(classDetails).toContain(

@@ -95,7 +95,7 @@ test("Instructor details combine ranking evidence, Courses, Classes, aliases, an
   expect(markup).toContain("Learning-focused");
   expect(markup).toContain("Courses");
   expect(markup).toContain("COMP 2000");
-  expect(markup).toContain("L1 · Class 1001");
+  expect(markup).toContain("COMP 2000 L1 (1001)");
   expect(markup).toContain("Identity History");
   expect(markup).toContain("Community");
   expect(markup).toContain("Reviews are unavailable");
@@ -331,10 +331,10 @@ test("merge details retain retired aliases, evidence, Courses, and Classes", asy
   );
 
   expect(markup).toContain("Second Teacher");
-  expect(markup).toContain("retired · sfq");
+  expect(markup).toContain("Retired identity · sfq");
   expect(markup).toContain("Retired identity evidence");
   expect(markup).toContain("MATH 2000");
-  expect(markup).toContain("L1 · Class 1001");
+  expect(markup).toContain("COMP 2000 L1 (1001)");
 });
 
 test("resolved Instructor cross-links use details while unresolved source spellings remain plain text", async () => {
@@ -422,7 +422,7 @@ test("Instructor identity, Classes, and community remain visible when rankings f
 
   expect(markup).toContain("Alpha Instructor");
   expect(markup).toContain("Rankings are unavailable");
-  expect(markup).toContain("L1 · Class 1001");
+  expect(markup).toContain("COMP 2000 L1 (1001)");
   expect(markup).toContain("Community");
 });
 

@@ -409,6 +409,7 @@ export function InstructorDetails({
                 {...reviewEditor}
                 displayTermNames
                 initialInstructorUuid={identity.instructor.uuid}
+                initialTermCode={selectedTermCode}
               />
             }
             reviews={reviews}

@@ -5,7 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
 import type { PublicReview } from "@/lib/contributions/reviews";
-import { letterGrade, rankingTermName } from "@/lib/rankings/presentation";
+import {
+  gradeColor,
+  letterGrade,
+  rankingTermName,
+} from "@/lib/rankings/presentation";
 import type {
   CourseRankings,
   Rankings,
@@ -107,9 +111,14 @@ function ScoreHistogram({
         <title>{`${entity} score distribution`}</title>
         {distribution.bins.map((count, index) => {
           const barHeight = Math.max(2, (count / maximumBin) * (height - 6));
+          const color = gradeColor(
+            distribution.bins.length === 1
+              ? 1
+              : index / (distribution.bins.length - 1),
+          );
           return (
             <rect
-              fill="#94a3b8"
+              fill={`rgb(${color.join(", ")})`}
               height={barHeight}
               // biome-ignore lint/suspicious/noArrayIndexKey: Histogram bins have fixed positional identity.
               key={index}
@@ -448,7 +457,7 @@ export function DetailsCommunity({
               className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
               role="status"
             >
-              Reviews are unavailable. This does not represent zero Reviews.
+              Reviews are unavailable. This does not represent zero reviews.
             </p>
           ) : (
             <Reviews displayTermNames editor={editor} reviews={reviews} />

@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogClose,
@@ -18,7 +17,6 @@ import {
 } from "@/components/ui/dialog";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldError,
   FieldGroup,
@@ -89,6 +87,9 @@ function courseValue(course: ReviewCourseOption) {
   return `${course.coursePrefix}|${course.courseNumber}`;
 }
 
+const allCourses = "all-courses";
+const allInstructors = "all-instructors";
+
 type DraftAttachment = {
   id: string;
   storedFileId: string;
@@ -153,20 +154,14 @@ export function ReviewComposer({
   const selectedInitialCourse = review?.course ?? initialCourse;
   const selectedInitialInstructor =
     review?.instructorUuid ?? initialInstructorUuid;
-  const [courseEnabled, setCourseEnabled] = useState(
-    Boolean(selectedInitialCourse),
-  );
-  const [instructorEnabled, setInstructorEnabled] = useState(
-    Boolean(selectedInitialInstructor),
-  );
   const [course, setCourse] = useState(
-    selectedInitialCourse
-      ? courseValue(selectedInitialCourse)
-      : courseValue(courses[0] ?? { coursePrefix: "", courseNumber: "" }),
+    selectedInitialCourse ? courseValue(selectedInitialCourse) : allCourses,
   );
   const [instructorUuid, setInstructorUuid] = useState(
-    selectedInitialInstructor ?? instructors[0]?.instructorUuid ?? "",
+    selectedInitialInstructor ?? allInstructors,
   );
+  const courseEnabled = course !== allCourses;
+  const instructorEnabled = instructorUuid !== allInstructors;
   const [termCode, setTermCode] = useState(
     review?.termCode ?? initialTermCode ?? "",
   );
@@ -420,10 +415,10 @@ export function ReviewComposer({
           {edit ? "Edit Review" : "Create a Review"}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-4xl overflow-x-hidden overflow-y-auto p-0 text-left">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-4xl overflow-hidden p-0 text-left">
         <form
           action={edit ? editReview : publishReview}
-          className="flex min-w-0 flex-col gap-5 p-6 sm:p-8"
+          className="flex max-h-[calc(100dvh-2rem)] min-w-0 flex-col gap-5 overflow-x-hidden overflow-y-auto p-6 sm:p-8"
         >
           {review ? (
             <>
@@ -443,89 +438,66 @@ export function ReviewComposer({
               {edit ? "Edit Review" : "Create a Review"}
             </DialogTitle>
             <DialogDescription>
-              Choose one or two co-equal Review Bases, then optional Review
-              Context.
+              Choose at least one Review Basis, then optional Review Context.
             </DialogDescription>
           </DialogHeader>
           <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
             <FieldLegend>Review Bases</FieldLegend>
-            <FieldGroup className="gap-4">
-              <Field orientation="horizontal">
-                <Checkbox
-                  aria-label="Include Course Basis"
-                  checked={courseEnabled}
-                  disabled={!courses.length && !courseEnabled}
-                  id={`${inputId}-course-enabled`}
-                  onCheckedChange={(checked) =>
-                    setCourseEnabled(checked === true)
-                  }
-                />
-                <FieldContent>
-                  <FieldLabel htmlFor={`${inputId}-course-enabled`}>
-                    Course
-                  </FieldLabel>
-                  <Select
-                    disabled={!courseEnabled}
-                    name="course"
-                    onValueChange={setCourse}
-                    value={course}
-                  >
-                    <SelectTrigger aria-label="Course Basis">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {displayedCourses.map((item) => (
-                          <SelectItem
-                            key={courseValue(item)}
-                            value={courseValue(item)}
-                          >
-                            {item.label ??
-                              `${item.coursePrefix} ${item.courseNumber}`}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </FieldContent>
+            <FieldGroup className="grid gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor={`${inputId}-course`}>Course</FieldLabel>
+                <Select
+                  name={courseEnabled ? "course" : undefined}
+                  onValueChange={setCourse}
+                  value={course}
+                >
+                  <SelectTrigger id={`${inputId}-course`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={allCourses}>(All courses)</SelectItem>
+                      {displayedCourses.map((item) => (
+                        <SelectItem
+                          key={courseValue(item)}
+                          value={courseValue(item)}
+                        >
+                          {item.label ??
+                            `${item.coursePrefix} ${item.courseNumber}`}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </Field>
-              <Field orientation="horizontal">
-                <Checkbox
-                  aria-label="Include Instructor Basis"
-                  checked={instructorEnabled}
-                  disabled={!instructors.length && !instructorEnabled}
-                  id={`${inputId}-instructor-enabled`}
-                  onCheckedChange={(checked) =>
-                    setInstructorEnabled(checked === true)
-                  }
-                />
-                <FieldContent>
-                  <FieldLabel htmlFor={`${inputId}-instructor-enabled`}>
-                    Instructor
-                  </FieldLabel>
-                  <Select
-                    disabled={!instructorEnabled}
-                    name="instructorUuid"
-                    onValueChange={setInstructorUuid}
-                    value={instructorUuid}
-                  >
-                    <SelectTrigger aria-label="Instructor Basis">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {displayedInstructors.map((item) => (
-                          <SelectItem
-                            key={item.instructorUuid}
-                            value={item.instructorUuid}
-                          >
-                            {item.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </FieldContent>
+              <Field>
+                <FieldLabel htmlFor={`${inputId}-instructor`}>
+                  Instructor
+                </FieldLabel>
+                <Select
+                  name={instructorEnabled ? "instructorUuid" : undefined}
+                  onValueChange={setInstructorUuid}
+                  value={instructorUuid}
+                >
+                  <SelectTrigger id={`${inputId}-instructor`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={allInstructors}>
+                        (All instructors)
+                      </SelectItem>
+                      {displayedInstructors.map((item) => (
+                        <SelectItem
+                          key={item.instructorUuid}
+                          value={item.instructorUuid}
+                        >
+                          {item.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </Field>
             </FieldGroup>
             {!hasBasis ? (
@@ -554,7 +526,7 @@ export function ReviewComposer({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="general">General</SelectItem>
+                      <SelectItem value="general">All terms</SelectItem>
                       {displayedTerms.map(([value, label]) => (
                         <SelectItem key={value} value={value}>
                           {label}
@@ -578,7 +550,7 @@ export function ReviewComposer({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="all">All Sections</SelectItem>
+                      <SelectItem value="all">All sections</SelectItem>
                       {displayedSections.map((value) => (
                         <SelectItem key={value} value={value}>
                           {value}
@@ -653,37 +625,10 @@ export function ReviewComposer({
               type="file"
             />
             {attachments.map((attachment) => (
-              <FieldGroup className="gap-2" key={attachment.id}>
-                <p className="text-sm">
-                  {attachment.filename} · {attachment.status}
-                </p>
-                <Field>
-                  <FieldLabel
-                    htmlFor={`${inputId}-${attachment.id}-description`}
-                  >
-                    Description
-                  </FieldLabel>
-                  <Input
-                    id={`${inputId}-${attachment.id}-description`}
-                    onChange={(event) =>
-                      updateAttachments((current) =>
-                        current.map((item) =>
-                          item.id === attachment.id
-                            ? { ...item, description: event.target.value }
-                            : item,
-                        ),
-                      )
-                    }
-                    value={attachment.description}
-                  />
-                </Field>
-              </FieldGroup>
+              <p className="text-sm" key={attachment.id}>
+                {attachment.filename} · {attachment.status}
+              </p>
             ))}
-            <FieldDescription>
-              Attachments are not licensed under CC BY 4.0. You warrant you have
-              the right to upload them and grant UST Rankings a non-exclusive
-              license to store, deliver, display, and moderate them.
-            </FieldDescription>
           </FieldSet>
           <FieldSet className="min-w-0 gap-4 rounded-xl border border-gray-200 p-4">
             <FieldLegend>Public identity</FieldLegend>
@@ -700,33 +645,31 @@ export function ReviewComposer({
             >
               <ToggleGroupItem value="attributed">Attributed</ToggleGroupItem>
               <ToggleGroupItem value="identity-hidden">
-                Identity hidden
+                Identity Hidden
               </ToggleGroupItem>
             </ToggleGroup>
             <FieldDescription>
               Attributed displays your current Public Display Name. Identity
-              hidden displays no author name, but an authorized operator can
+              Hidden displays no author name, but an authorized operator can
               still link the Review to your account for moderation, security,
               rights, and legal purposes.
             </FieldDescription>
           </FieldSet>
-          <Alert className="bg-blue-50 text-blue-950">
-            <AlertDescription>
-              {edit
-                ? "Publishing this edit creates a new immutable Review Revision. Earlier Revisions remain internal."
-                : "Publishing creates an immutable Review Revision."}{" "}
-              Attribution is selected independently for each Revision.
-            </AlertDescription>
-          </Alert>
           <Alert className="bg-amber-50 text-amber-950">
             <AlertDescription>
-              Review text is published under CC BY 4.0. Attributed credit uses
-              your captured Public Display Name plus the Review permalink;
-              Identity-hidden credit uses “UST Rankings contributor” plus the
-              permalink. You also grant UST Rankings a non-exclusive site
-              license to host, format, display, and moderate it. CC BY 4.0
-              rights already granted to obtained copies cannot be recalled, even
-              after withdrawal.
+              Review text is licensed under{" "}
+              <a
+                className="font-semibold underline"
+                href="https://creativecommons.org/licenses/by/4.0/"
+              >
+                CC BY 4.0
+              </a>
+              . Attributed Reviews credit your captured Public Display Name and
+              Review permalink; Identity Hidden Reviews credit “UST Rankings
+              contributor” and the permalink. You also grant UST Rankings a
+              non-exclusive license to host, format, display, and moderate the
+              Review. Publishing permissions already granted under CC BY 4.0
+              cannot be withdrawn from copies already obtained.
             </AlertDescription>
           </Alert>
           <DialogFooter className="gap-2 border-t border-slate-200 pt-5">
