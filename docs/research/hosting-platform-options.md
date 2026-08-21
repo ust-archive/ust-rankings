@@ -1,5 +1,7 @@
 # Hosting platform options for the UST Rankings refactor
 
+> Decision adopted: DigitalOcean is the sole deployment target. See [ADR-0002](../adr/0002-digitalocean-sole-deployment-target.md). The comparison below is retained as the decision's research record.
+
 ## Scope and conclusion
 
 This report compares Vercel, Cloudflare, and DigitalOcean for a planned Next.js 16 application with dynamic server-side reads, application-level OIDC login, relational users/votes/reactions/reviews, Markdown rendering, and direct user uploads. It uses only vendor and framework documentation.

@@ -24,9 +24,6 @@ data/data-course-catalog.json
 .env
 .env*.local
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts

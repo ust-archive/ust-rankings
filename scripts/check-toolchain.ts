@@ -17,6 +17,7 @@ const forbiddenFiles = [
   "prettier.config.js",
   "prettier.config.mjs",
   "data/bun.lock",
+  "vercel.json",
 ];
 
 const tracked = spawnSync("git", ["ls-files", "-z"], { encoding: "utf8" });
@@ -43,7 +44,6 @@ const activeRootFiles = new Set([
   "postcss.config.cjs",
   "tailwind.config.ts",
   "tsconfig.json",
-  "vercel.json",
   "README.md",
   "vitest.config.ts",
 ]);
@@ -65,6 +65,8 @@ const staleReferences = [
   ["setup-" + "bun", "removed CI action"],
   ["t" + "sx ", "removed TypeScript runtime"],
   ["--import=" + "tsx", "removed TypeScript runtime hook"],
+  ["@" + "vercel/", "retired deployment integration"],
+  ["VERCEL_", "retired deployment configuration"],
 ] as const;
 
 for (const file of trackedFiles) {

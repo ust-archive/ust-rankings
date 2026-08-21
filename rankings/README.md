@@ -60,9 +60,9 @@ presentation.
 operation. Both require a Bearer token matching `CRON_SECRET` (or the local
 `RANKINGS_REFRESH_SECRET` alias). `POST` accepts `{ "sha": "<40 hex>" }` from
 the upstream publication workflow; `GET` resolves the current full SHA for the
-daily Vercel fallback. Configure the GitHub `RANKINGS_REFRESH_URL` secret and
-set its `RANKINGS_REFRESH_SECRET` secret to the same high-entropy value as the
-deployment's `CRON_SECRET`.
+daily runtime fallback. Configure the GitHub `RANKINGS_REFRESH_URL` secret to
+the DigitalOcean app endpoint and set `RANKINGS_REFRESH_SECRET` to the same
+high-entropy value as the deployment's `CRON_SECRET`.
 
 The operation verifies the immutable Hugging Face revision and expanded tree,
 streams the rating LFS objects plus identity Parquet within configured resource bounds, checks

@@ -42,7 +42,9 @@ Production is DigitalOcean App Platform in Singapore with a Node 26 Docker
 image. Rankings and Schedule download from
 Hugging Face into `/tmp` at runtime; do not bake seed data into the image.
 Neon `POSTGRES_URL` is the advisory lock database. Contributions use
-`CONTRIBUTIONS_POSTGRES_URL`. Attachments use a private SGP1 Space.
+`CONTRIBUTIONS_POSTGRES_URL`. Attachments use a private SGP1 Space. The
+production scheduler must call the authenticated ranking refresh, Schedule
+refresh, and Attachment cleanup endpoints at 20:00, 20:30, and 21:00 UTC daily.
 
 Required configuration is listed in `.env.example`. Health:
 

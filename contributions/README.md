@@ -134,7 +134,7 @@ connection, human-approved privacy/community/Review and CC BY 4.0 licensing
 text, approved Privacy Contact role/title, correspondence address, and email,
 and preview/production OIDC/PostgreSQL Review lifecycle evidence. Local copy
 and tests are implementation prerequisites only and do not claim legal approval.
-Never commit those values. Preview evidence must also verify Vercel Node Server Actions preserve same-origin
+Never commit those values. Preview evidence must also verify production Node Server Actions preserve same-origin
 checks; complete Review Basis/Context association validation uses accepted
 Rankings and Schedule generations; dual-Basis Reviews appear once on each
 applicable detail page; public Course and Instructor pages remain dynamic across

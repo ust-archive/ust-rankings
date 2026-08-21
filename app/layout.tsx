@@ -4,8 +4,6 @@ import "@mdxeditor/editor/style.css";
 import "./globals.css";
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import { GoogleAnalytics } from "@next/third-parties/google";
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/next";
 import { GraduationCapIcon } from "lucide-react";
 import type { Metadata, Viewport } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
@@ -212,12 +210,6 @@ export default function RootLayout({
           </div>
         </footer>
         <Toaster />
-        {process.env.VERCEL ? (
-          <>
-            <Analytics />
-            <SpeedInsights />
-          </>
-        ) : null}
       </body>
       <GoogleAnalytics gaId="G-C8B9VFGTRH" />
     </html>
