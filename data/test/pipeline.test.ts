@@ -171,6 +171,7 @@ async function makeFixtures(
 async function writeIdentityBootstrap(
   path: string,
   omittedName?: string,
+  sharedIdentityNames?: readonly [string, string],
 ): Promise<void> {
   const names = [
     "ALPHA, Alice Beatrice",
@@ -189,7 +190,11 @@ async function writeIdentityBootstrap(
       identities: names
         .filter((canonicalName) => canonicalName !== omittedName)
         .map((canonicalName, index) => ({
-          uuid: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          uuid: `00000000-0000-4000-8000-${String(
+            sharedIdentityNames?.[1] === canonicalName
+              ? names.indexOf(sharedIdentityNames[0]) + 1
+              : index + 1,
+          ).padStart(12, "0")}`,
           canonicalName,
         })),
       events: [],
@@ -681,6 +686,38 @@ test("the pipeline rejects unmatched Instructor names", async () => {
     assert.match(
       `${result.stderr}${result.stdout}`,
       /Unmatched Instructor identity/,
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("the pipeline rejects ambiguous Instructor identities", async () => {
+  const temp = await mkdtemp(
+    join(tmpdir(), "ust-rankings-identity-ambiguous-"),
+  );
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const bootstrap = join(temp, "identities.json");
+    await writeIdentityBootstrap(bootstrap, undefined, [
+      "Cara Gamma",
+      "Dora Delta",
+    ]);
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        RANKINGS_DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "out"),
+        RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(
+      `${result.stderr}${result.stdout}`,
+      /Ambiguous Instructor identity/,
     );
   } finally {
     await rm(temp, { recursive: true, force: true });

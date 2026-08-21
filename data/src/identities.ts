@@ -283,6 +283,7 @@ export async function assignInstructorIdentities(
   const identities = new Map(previousIdentities.map((row) => [row.uuid, row]));
   const aliases = [...previousAliases];
 
+  const currentNameByUuid = new Map<string, string>();
   for (const { canonical_name } of names) {
     const key = canonical_name.trim().toLocaleLowerCase();
     const uuid = byName.get(key);
@@ -290,10 +291,14 @@ export async function assignInstructorIdentities(
       throw new Error(`Unmatched Instructor identity: ${canonical_name}`);
     if (!identities.has(uuid))
       throw new Error(`Unknown Instructor UUID: ${uuid}`);
-    else {
-      const current = identities.get(uuid);
-      if (current) identities.set(uuid, { ...current, canonical_name });
-    }
+    const claimedName = currentNameByUuid.get(uuid);
+    if (claimedName && claimedName !== canonical_name)
+      throw new Error(
+        `Ambiguous Instructor identity ${uuid}: ${claimedName}, ${canonical_name}`,
+      );
+    currentNameByUuid.set(uuid, canonical_name);
+    const current = identities.get(uuid);
+    if (current) identities.set(uuid, { ...current, canonical_name });
   }
 
   const aliasKeys = new Set(
