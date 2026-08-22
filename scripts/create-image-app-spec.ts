@@ -1,24 +1,31 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 type JsonObject = Record<string, unknown>;
+declare const imageDigestBrand: unique symbol;
+type ImageDigest = string & { readonly [imageDigestBrand]: true };
 
-function object(value: unknown, name: string): JsonObject {
+function requireJsonObject(value: unknown, name: string): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error(`${name} is missing`);
   return value as JsonObject;
 }
 
-export function appSpecForImage(appDocument: unknown, digest: string) {
-  if (!/^sha256:[a-f0-9]{64}$/.test(digest))
+function requireImageDigest(value: string): ImageDigest {
+  if (!/^sha256:[a-f0-9]{64}$/.test(value))
     throw new Error("Image digest must be a sha256 digest");
+  return value as ImageDigest;
+}
 
+function appSpecForImage(appDocument: unknown, digest: ImageDigest) {
   const app = Array.isArray(appDocument) ? appDocument[0] : appDocument;
-  const spec = structuredClone(object(object(app, "App").spec, "App spec"));
+  const spec = structuredClone(
+    requireJsonObject(requireJsonObject(app, "App").spec, "App spec"),
+  );
   if (!Array.isArray(spec.services))
     throw new Error("App services are missing");
 
   const web = spec.services
-    .map((service) => object(service, "App service"))
+    .map((service) => requireJsonObject(service, "App service"))
     .find((service) => service.name === "web");
   if (!web) throw new Error('App service "web" is missing');
 
@@ -47,6 +54,10 @@ if (import.meta.main) {
     throw new Error(
       "Usage: node scripts/create-image-app-spec.ts <app.json> <digest> <spec.json>",
     );
+  const verifiedDigest = requireImageDigest(digest);
   const app = JSON.parse(await readFile(input, "utf8"));
-  await writeFile(output, `${JSON.stringify(appSpecForImage(app, digest))}\n`);
+  await writeFile(
+    output,
+    `${JSON.stringify(appSpecForImage(app, verifiedDigest))}\n`,
+  );
 }

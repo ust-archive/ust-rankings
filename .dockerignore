@@ -12,7 +12,6 @@ test-results
 .agents
 scripts/provision-rankings-refresh.sh
 *.md
-data/test
 data/out
 rankings/seed
 schedule/seed
