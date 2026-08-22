@@ -5,6 +5,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { gradeColor } from "@/lib/rankings/presentation";
 import {
   fixtureSha,
+  installRankingGeneration,
   makeRankingGeneration,
   makeRankingGenerationWithSha,
 } from "./rankings-fixture";
@@ -12,13 +13,6 @@ import {
 vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
-
-async function installRankingGeneration(directory: string) {
-  const { resetRankingsRuntimeForTests } = await import(
-    "@/lib/rankings/server"
-  );
-  await resetRankingsRuntimeForTests(directory);
-}
 
 afterEach(async () => {
   const { resetRankingsRuntimeForTests } = await import(
@@ -70,11 +64,11 @@ test("no valid generation fails only the ranking module", async () => {
   );
 });
 
-test("a generated legacy generation without Courses is rejected", async () => {
+test("a generated legacy name-keyed generation without Courses is rejected", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "legacy-rankings-"));
   temporaryDirectories.push(temporaryDirectory);
   await installRankingGeneration(
-    await makeRankingGeneration(temporaryDirectory, "missing-course-dimension"),
+    await makeRankingGeneration(temporaryDirectory, "legacy-name-keyed"),
   );
   const { queryRankings, RankingsUnavailableError } = await import(
     "@/lib/rankings/server"

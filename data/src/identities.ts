@@ -95,10 +95,13 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function loadPreviousParquet(directory: string) {
-  const identitiesPath = join(directory, "instructor-identities.parquet");
-  if (!(await exists(identitiesPath)))
-    throw new Error(`Previous identities are missing: ${identitiesPath}`);
+async function loadPreviousParquet(directory: string, initialize: boolean) {
+  const required = initialize ? IDENTITY_FILES.slice(0, 2) : IDENTITY_FILES;
+  for (const filename of required) {
+    const path = join(directory, filename);
+    if (!(await exists(path)))
+      throw new Error(`Previous identity artifact is missing: ${path}`);
+  }
   return {
     identities: join(directory, IDENTITY_FILES[0]).replaceAll("\\", "/"),
     aliases: join(directory, IDENTITY_FILES[1]).replaceAll("\\", "/"),
@@ -176,6 +179,7 @@ export async function assignInstructorIdentities(
   connection: DuckDBConnection,
   options: {
     previousGenerationDir?: string;
+    initialize: boolean;
     sourceCommit: string;
     correctionsPath?: string;
   },
@@ -210,7 +214,10 @@ export async function assignInstructorIdentities(
     throw new Error("Previous Instructor identities are required");
 
   {
-    const paths = await loadPreviousParquet(options.previousGenerationDir);
+    const paths = await loadPreviousParquet(
+      options.previousGenerationDir,
+      options.initialize,
+    );
     previousIdentities = (
       await connection.runAndReadAll(
         `SELECT uuid, canonical_name, itsc FROM read_parquet('${paths.identities}')`,

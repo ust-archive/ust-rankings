@@ -1899,9 +1899,7 @@ export function setRankingsAfterAcquireForTests(
   afterAcquireForTests = hook;
 }
 
-export async function resetRankingsRuntimeForTests(
-  source?: RankingRefreshDependencies | string,
-) {
+async function clearRankingsRuntimeForTests() {
   const retained = [
     runtimeActive,
     runtimePrevious,
@@ -1912,12 +1910,23 @@ export async function resetRankingsRuntimeForTests(
   explicitGeneration = undefined;
   runtimeActiveSha = undefined;
   runtimeCheckedAt = 0;
-  runtimeDependencies = typeof source === "string" ? undefined : source;
+  runtimeDependencies = undefined;
   runtimeDiscovery = undefined;
   afterAcquireForTests = undefined;
   serializedQueries.clear();
   await Promise.all(retained.map((loading) => retireGeneration(loading)));
-  if (typeof source === "string") explicitGeneration = { directory: source };
+}
+
+export async function resetRankingsRuntimeForTests(
+  dependencies?: RankingRefreshDependencies,
+) {
+  await clearRankingsRuntimeForTests();
+  runtimeDependencies = dependencies;
+}
+
+export async function installRankingGenerationForTests(directory: string) {
+  await clearRankingsRuntimeForTests();
+  explicitGeneration = { directory };
 }
 
 function number(value: unknown) {

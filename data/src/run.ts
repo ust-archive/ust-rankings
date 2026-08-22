@@ -5,6 +5,10 @@ import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { assignInstructorIdentities } from "./identities.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const cliArguments = process.argv.slice(2);
+const unknownArgument = cliArguments.find((argument) => argument !== "--init");
+if (unknownArgument) throw new Error(`Unknown argument: ${unknownArgument}`);
+const initializeIdentityHistory = cliArguments.includes("--init");
 const outputDir = resolve(root, process.env.RANKINGS_OUTPUT_DIR ?? "out");
 const localDataDir = process.env.RANKINGS_DATA_DIR;
 
@@ -148,6 +152,7 @@ try {
 
   await assignInstructorIdentities(connection, {
     previousGenerationDir: process.env.RANKINGS_PREVIOUS_GENERATION_DIR,
+    initialize: initializeIdentityHistory,
     sourceCommit: process.env.RANKINGS_IDENTITY_COMMIT ?? "local",
     correctionsPath: process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE,
   });

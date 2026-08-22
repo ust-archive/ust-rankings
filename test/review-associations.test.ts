@@ -3,8 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import type { PublicReview } from "@/lib/contributions/reviews";
-import { fixtureSha, makeRankingGeneration } from "./rankings-fixture";
-import { makeScheduleGeneration } from "./schedule-fixture";
+import {
+  fixtureSha,
+  installRankingGeneration,
+  makeRankingGeneration,
+} from "./rankings-fixture";
+import {
+  installScheduleGeneration,
+  makeScheduleGeneration,
+} from "./schedule-fixture";
 
 vi.mock("server-only", () => ({}));
 
@@ -20,14 +27,9 @@ async function configureAssociations() {
   rankingDirectory = await makeRankingGeneration(rankingRoot, undefined, {
     includeScheduleCourse: true,
   });
-  const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
-    await Promise.all([
-      import("@/lib/rankings/server"),
-      import("@/lib/schedule/server"),
-    ]);
   await Promise.all([
-    resetRankingsRuntimeForTests(rankingDirectory),
-    resetScheduleRuntimeForTests(await makeScheduleGeneration(scheduleRoot)),
+    installRankingGeneration(rankingDirectory),
+    installScheduleGeneration(await makeScheduleGeneration(scheduleRoot)),
   ]);
 }
 

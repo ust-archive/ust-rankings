@@ -64,7 +64,6 @@ type Manifest = {
   schemaMajor: number;
   sourceCommit: string;
   artifacts: Record<string, { sha256: string; size: number }>;
-  instructors: Array<{ sourceName: string; uuid: string }>;
 };
 
 type Generation = {
@@ -72,7 +71,6 @@ type Generation = {
   directory: string;
   instance: DuckDBInstance;
   connection: DuckDBConnection;
-  instructors: Map<string, string>;
   readers: number;
   retired: boolean;
   closed: boolean;
@@ -355,13 +353,6 @@ async function validateFiles(directory: string, manifest: Manifest) {
   );
 }
 
-function validateInstructorMappings(manifest: Manifest) {
-  if (manifest.instructors === undefined) return new Map<string, string>();
-  if (!Array.isArray(manifest.instructors))
-    throw new Error("Invalid Schedule Instructor mappings");
-  return new Map<string, string>();
-}
-
 async function validateRelations(
   connection: DuckDBConnection,
   directory: string,
@@ -423,7 +414,6 @@ async function loadGeneration(
       await readFile(resolve(directory, "manifest.json"), "utf8"),
     ) as Manifest;
     await validateFiles(directory, manifest);
-    const instructors = validateInstructorMappings(manifest);
     const instance = await DuckDBInstance.create(":memory:");
     const connection = await instance.connect();
     await connection.run("SET threads = 1");
@@ -435,7 +425,6 @@ async function loadGeneration(
         directory,
         instance,
         connection,
-        instructors,
         readers: 0,
         retired: false,
         closed: false,
@@ -593,7 +582,6 @@ async function prepareCandidateManifest(
         schemaMajor: 0,
         sourceCommit: candidate.sha,
         artifacts: candidate.artifacts,
-        instructors: [],
       },
       null,
       2,
@@ -768,9 +756,7 @@ export async function getScheduleHealth(
   }
 }
 
-export async function resetScheduleRuntimeForTests(
-  source?: ScheduleRefreshDependencies | string,
-) {
+async function clearScheduleRuntimeForTests() {
   const retained = [
     explicitGeneration?.generation,
     runtimeActive,
@@ -780,12 +766,23 @@ export async function resetScheduleRuntimeForTests(
   runtimeActive = undefined;
   runtimePrevious = undefined;
   runtimeActiveSha = undefined;
-  runtimeDependencies = typeof source === "string" ? undefined : source;
+  runtimeDependencies = undefined;
   runtimeCheckedAt = 0;
   runtimeDiscovery = undefined;
   afterAcquireForTests = undefined;
   for (const loading of new Set(retained)) await retireGeneration(loading);
-  if (typeof source === "string") explicitGeneration = { directory: source };
+}
+
+export async function resetScheduleRuntimeForTests(
+  dependencies?: ScheduleRefreshDependencies,
+) {
+  await clearScheduleRuntimeForTests();
+  runtimeDependencies = dependencies;
+}
+
+export async function installScheduleGenerationForTests(directory: string) {
+  await clearScheduleRuntimeForTests();
+  explicitGeneration = { directory };
 }
 
 function text(value: unknown) {

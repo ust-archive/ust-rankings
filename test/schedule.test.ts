@@ -2,19 +2,19 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
-import { makeRankingGeneration } from "./rankings-fixture";
-import { makeScheduleGeneration, scheduleFixtureSha } from "./schedule-fixture";
+import {
+  installRankingGeneration,
+  makeRankingGeneration,
+} from "./rankings-fixture";
+import {
+  installScheduleGeneration,
+  makeScheduleGeneration,
+  scheduleFixtureSha,
+} from "./schedule-fixture";
 
 vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
-
-async function installRankingGeneration(directory: string) {
-  const { resetRankingsRuntimeForTests } = await import(
-    "@/lib/rankings/server"
-  );
-  await resetRankingsRuntimeForTests(directory);
-}
 
 async function configureFixture(
   malformation?: "duplicate-event" | "orphan-class",
@@ -23,12 +23,9 @@ async function configureFixture(
   const rankingRoot = await mkdtemp(join(tmpdir(), "ranking-for-schedule-"));
   temporaryDirectories.push(root, rankingRoot);
   const directory = await makeScheduleGeneration(root, malformation);
-  const { resetScheduleRuntimeForTests } = await import(
-    "@/lib/schedule/server"
-  );
   await Promise.all([
     installRankingGeneration(await makeRankingGeneration(rankingRoot)),
-    resetScheduleRuntimeForTests(directory),
+    installScheduleGeneration(directory),
   ]);
   return directory;
 }
@@ -159,10 +156,8 @@ test("unmatched Class source names stay unresolved and TBA is omitted", async ()
 test("Schedule still serves when Rankings are unavailable", async () => {
   const root = await mkdtemp(join(tmpdir(), "schedule-without-rankings-"));
   temporaryDirectories.push(root);
-  const { querySchedule, resetScheduleRuntimeForTests } = await import(
-    "@/lib/schedule/server"
-  );
-  await resetScheduleRuntimeForTests(await makeScheduleGeneration(root));
+  const { querySchedule } = await import("@/lib/schedule/server");
+  await installScheduleGeneration(await makeScheduleGeneration(root));
   const page = await querySchedule({ termCode: "2510", search: "COMP 2000" });
   expect(page.results[0]?.courseCode).toBe("COMP 2000");
   expect(page.results[0]?.classes[0]?.meetings[0]?.instructors).toContainEqual({
@@ -275,12 +270,10 @@ test("missing or corrupted fixture data fails only the Schedule module", async (
   manifest.artifacts["courses.parquet"].sha256 = "0".repeat(64);
   await writeFile(manifestPath, JSON.stringify(manifest));
 
-  const {
-    querySchedule,
-    resetScheduleRuntimeForTests,
-    ScheduleUnavailableError,
-  } = await import("@/lib/schedule/server");
-  await resetScheduleRuntimeForTests(directory);
+  const { querySchedule, ScheduleUnavailableError } = await import(
+    "@/lib/schedule/server"
+  );
+  await installScheduleGeneration(directory);
   await expect(querySchedule({})).rejects.toBeInstanceOf(
     ScheduleUnavailableError,
   );

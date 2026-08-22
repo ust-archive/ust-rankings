@@ -6,9 +6,9 @@ temporary directory. Tests install generated fixture generations through the
 Schedule runtime reset helper and remain offline.
 
 The manifest records the two required Parquet files' LFS SHA-256 digests and
-sizes. It also carries only exact, unambiguous source-name associations to the
-durable Instructor UUID registry in the Ranking Generation; all other
-source names remain unresolved plain text. The server-only Schedule module
+sizes. Schedule data keeps Instructor source names only; the server resolves
+exact matches against the accepted Ranking Generation at read time and leaves
+all other source names unresolved plain text. The server-only Schedule module
 revalidates framing, hashes, schemas, source event grains, Term relationships,
 and representative queries before serving the generation.
 

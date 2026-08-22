@@ -5,6 +5,13 @@ import { DuckDBInstance } from "@duckdb/node-api";
 
 export const scheduleFixtureSha = "1234567890abcdef1234567890abcdef12345678";
 
+export async function installScheduleGeneration(directory: string) {
+  const { installScheduleGenerationForTests } = await import(
+    "@/lib/schedule/server"
+  );
+  await installScheduleGenerationForTests(directory);
+}
+
 export type ScheduleFixtureVariant =
   | "calendar-base"
   | "calendar-inserted"
@@ -131,21 +138,7 @@ export async function makeScheduleGeneration(
   );
   await writeFile(
     join(directory, "manifest.json"),
-    `${JSON.stringify(
-      {
-        schemaMajor: 0,
-        sourceCommit,
-        artifacts,
-        instructors: [
-          {
-            sourceName: "Alpha Instructor",
-            uuid: "00000000-0000-4000-8000-000000000001",
-          },
-        ],
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify({ schemaMajor: 0, sourceCommit, artifacts }, null, 2)}\n`,
   );
   return directory;
 }

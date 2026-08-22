@@ -216,6 +216,16 @@ async function makePreviousGeneration(
       join(directory, "instructor-aliases.parquet"),
       `SELECT uuid, canonical_name AS name, 'fixture' AS source, 'fixture' AS source_commit, NULL::VARCHAR AS source_file FROM read_parquet('${parquet(directory, "instructor-identities")}')`,
     );
+    await copyQuery(
+      connection,
+      join(directory, "instructor-identity-events.parquet"),
+      "SELECT NULL::VARCHAR AS event_type, NULL::VARCHAR AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, NULL::VARCHAR AS retired_uuid, NULL::VARCHAR AS survivor_uuid, NULL::VARCHAR AS source_uuid, NULL::VARCHAR AS new_uuid WHERE false",
+    );
+    await copyQuery(
+      connection,
+      join(directory, "instructor-split-affected-associations.parquet"),
+      "SELECT NULL::VARCHAR AS source_commit, NULL::VARCHAR AS new_uuid, NULL::VARCHAR AS source_name, NULL::VARCHAR AS term_code, NULL::VARCHAR AS course_code WHERE false",
+    );
   } finally {
     connection.closeSync();
     instance.closeSync();
@@ -734,6 +744,45 @@ test("the pipeline rejects ambiguous Instructor identities", async () => {
     assert.match(
       `${result.stderr}${result.stdout}`,
       /Ambiguous Instructor identity/,
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("--init explicitly starts empty identity history", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-identity-init-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    await Promise.all([
+      rm(join(previous, "instructor-identity-events.parquet")),
+      rm(join(previous, "instructor-split-affected-associations.parquet")),
+    ]);
+    const env = {
+      ...process.env,
+      RANKINGS_DATA_DIR: dataDir,
+      RANKINGS_OUTPUT_DIR: join(temp, "out"),
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    };
+    const rejected = spawnSync(
+      process.execPath,
+      [join(root, "src", "run.ts")],
+      { cwd: root, encoding: "utf8", env },
+    );
+    assert.notEqual(rejected.status, 0);
+    assert.match(`${rejected.stderr}${rejected.stdout}`, /identity artifact/i);
+
+    const initialized = spawnSync(
+      process.execPath,
+      [join(root, "src", "run.ts"), "--init"],
+      { cwd: root, encoding: "utf8", env },
+    );
+    assert.equal(
+      initialized.status,
+      0,
+      initialized.stderr || initialized.stdout,
     );
   } finally {
     await rm(temp, { recursive: true, force: true });

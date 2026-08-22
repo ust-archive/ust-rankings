@@ -5,7 +5,10 @@ import { join } from "node:path";
 import postgres from "postgres";
 import { expect, test, vi } from "vitest";
 import { createSignalService, EMOJI_CODES } from "@/lib/contributions/signals";
-import { makeRankingGeneration } from "./rankings-fixture";
+import {
+  installRankingGeneration,
+  makeRankingGeneration,
+} from "./rankings-fixture";
 
 vi.mock("server-only", () => ({}));
 
@@ -57,12 +60,7 @@ if (!connection) {
       onnotice: () => {},
     });
     const rankingRoot = await mkdtemp(join(tmpdir(), "signal-rankings-"));
-    const { resetRankingsRuntimeForTests } = await import(
-      "@/lib/rankings/server"
-    );
-    await resetRankingsRuntimeForTests(
-      await makeRankingGeneration(rankingRoot),
-    );
+    await installRankingGeneration(await makeRankingGeneration(rankingRoot));
     try {
       for (const name of (
         await readdir(join(process.cwd(), "contributions", "migrations"))
@@ -450,6 +448,9 @@ if (!connection) {
       const cleanup = postgres(connection, { max: 1, onnotice: () => {} });
       await cleanup.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       await cleanup.end();
+      const { resetRankingsRuntimeForTests } = await import(
+        "@/lib/rankings/server"
+      );
       await resetRankingsRuntimeForTests();
       await rm(rankingRoot, { recursive: true, force: true });
     }

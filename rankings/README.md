@@ -13,8 +13,10 @@ Canonical Instructor Names in that generation. Each source-observed spelling is
 retained as an Instructor Alias with its source commit and file provenance. The
 registry is append-only: each publication preserves UUIDs from the previous
 identity-aware Ranking Generation. If those identity artifacts are unavailable,
-publication fails rather than minting a parallel registry. TBA is never an
-identity.
+publication fails rather than minting a parallel registry. An intentional first
+identity-history publication may use `npm run run -- --init` to start with empty
+event and split-association relations; Instructor identities and aliases remain
+required. TBA is never an identity.
 
 `lib/rankings/server.ts` validates filenames, declarations, Parquet framing, v0
 schemas, relation grains, finite measures, latest-Term relationships,

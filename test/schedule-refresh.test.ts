@@ -14,19 +14,15 @@ import type {
   ScheduleGenerationPointer,
   ScheduleRefreshDependencies,
 } from "@/lib/schedule/server";
-import { makeRankingGeneration } from "./rankings-fixture";
+import {
+  installRankingGeneration,
+  makeRankingGeneration,
+} from "./rankings-fixture";
 import { makeScheduleGeneration, scheduleFixtureSha } from "./schedule-fixture";
 
 vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
-
-async function installRankingGeneration(directory: string) {
-  const { resetRankingsRuntimeForTests } = await import(
-    "@/lib/rankings/server"
-  );
-  await resetRankingsRuntimeForTests(directory);
-}
 
 afterEach(async () => {
   const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =

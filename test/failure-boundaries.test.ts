@@ -3,21 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import {
+  installRankingGeneration,
   makeRankingGeneration,
   makeRankingGenerationWithSha,
 } from "./rankings-fixture";
-import { makeScheduleGeneration } from "./schedule-fixture";
+import {
+  installScheduleGeneration,
+  makeScheduleGeneration,
+} from "./schedule-fixture";
 
 vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
-
-async function installRankingGeneration(directory: string) {
-  const { resetRankingsRuntimeForTests } = await import(
-    "@/lib/rankings/server"
-  );
-  await resetRankingsRuntimeForTests(directory);
-}
 
 afterEach(async () => {
   const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
@@ -66,13 +63,10 @@ test("calendar ETags are bound to the accepted Schedule generation", async () =>
   const firstRoot = await mkdtemp(join(tmpdir(), "cache-cal-first-"));
   const secondRoot = await mkdtemp(join(tmpdir(), "cache-cal-second-"));
   temporaryDirectories.push(firstRoot, secondRoot);
-  const { resetScheduleRuntimeForTests } = await import(
-    "@/lib/schedule/server"
-  );
-  await resetScheduleRuntimeForTests(await makeScheduleGeneration(firstRoot));
+  await installScheduleGeneration(await makeScheduleGeneration(firstRoot));
   const { generateScheduleCalendar } = await import("@/lib/schedule/calendar");
   const first = await generateScheduleCalendar("2510", [1001]);
-  await resetScheduleRuntimeForTests(
+  await installScheduleGeneration(
     await makeScheduleGeneration(
       secondRoot,
       undefined,
@@ -88,12 +82,8 @@ test("ranking failure leaves Schedule and public identity routes usable", async 
   const scheduleRoot = await mkdtemp(join(tmpdir(), "fail-rank-schedule-"));
   temporaryDirectories.push(rankingRoot, scheduleRoot);
   await installRankingGeneration(join(rankingRoot, "missing"));
-  const { querySchedule, resetScheduleRuntimeForTests } = await import(
-    "@/lib/schedule/server"
-  );
-  await resetScheduleRuntimeForTests(
-    await makeScheduleGeneration(scheduleRoot),
-  );
+  const { querySchedule } = await import("@/lib/schedule/server");
+  await installScheduleGeneration(await makeScheduleGeneration(scheduleRoot));
   const { queryRankings, RankingsUnavailableError } = await import(
     "@/lib/rankings/server"
   );
@@ -109,12 +99,10 @@ test("Schedule failure leaves Rankings usable", async () => {
   temporaryDirectories.push(rankingRoot);
   await installRankingGeneration(await makeRankingGeneration(rankingRoot));
   const { queryRankings } = await import("@/lib/rankings/server");
-  const {
-    querySchedule,
-    resetScheduleRuntimeForTests,
-    ScheduleUnavailableError,
-  } = await import("@/lib/schedule/server");
-  await resetScheduleRuntimeForTests(join(rankingRoot, "missing-schedule"));
+  const { querySchedule, ScheduleUnavailableError } = await import(
+    "@/lib/schedule/server"
+  );
+  await installScheduleGeneration(join(rankingRoot, "missing-schedule"));
   const page = await queryRankings({ entity: "instructor", termCode: "2510" });
   expect(page.results.length).toBeGreaterThan(0);
   await expect(querySchedule({ termCode: "2510" })).rejects.toBeInstanceOf(
