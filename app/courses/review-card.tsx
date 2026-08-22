@@ -176,6 +176,7 @@ function ReviewCardHeader({
             ·{" "}
             {detail.href ? (
               <Link
+                className="!no-underline hover:!underline"
                 href={detail.href}
                 rel="noopener noreferrer"
                 target="_blank"
