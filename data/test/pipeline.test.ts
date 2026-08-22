@@ -244,7 +244,7 @@ function runPipeline(
     encoding: "utf8",
     env: {
       ...process.env,
-      RANKINGS_DATA_DIR: dataDir,
+      DATA_DIR: dataDir,
       RANKINGS_OUTPUT_DIR: outputDir,
       ...extraEnv,
     },
@@ -355,7 +355,7 @@ async function snapshot(outputDir: string, name: keyof typeof outputColumns) {
 }
 
 test("DuckDB pipeline writes reproducible relational marts", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-"));
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
@@ -572,7 +572,7 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
 });
 
 test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-identity-"));
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
@@ -611,7 +611,7 @@ test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () =
 });
 
 test("zero-sample teaching Instructors and offered Courses receive the evidence-only prior", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-prior-"));
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-prior-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
@@ -665,7 +665,7 @@ test("zero-sample teaching Instructors and offered Courses receive the evidence-
 });
 
 test("the pipeline rejects conflicting cross-campus Course metadata", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-catalog-conflict-"));
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-catalog-conflict-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir, { conflictingCatalog: true });
@@ -675,7 +675,7 @@ test("the pipeline rejects conflicting cross-campus Course metadata", async () =
       encoding: "utf8",
       env: {
         ...process.env,
-        RANKINGS_DATA_DIR: dataDir,
+        DATA_DIR: dataDir,
         RANKINGS_OUTPUT_DIR: join(temp, "out"),
         RANKINGS_PREVIOUS_GENERATION_DIR: previous,
       },
@@ -688,9 +688,7 @@ test("the pipeline rejects conflicting cross-campus Course metadata", async () =
 });
 
 test("the pipeline rejects unmatched Instructor names", async () => {
-  const temp = await mkdtemp(
-    join(tmpdir(), "ust-rankings-identity-unmatched-"),
-  );
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-unmatched-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
@@ -703,7 +701,7 @@ test("the pipeline rejects unmatched Instructor names", async () => {
       encoding: "utf8",
       env: {
         ...process.env,
-        RANKINGS_DATA_DIR: dataDir,
+        DATA_DIR: dataDir,
         RANKINGS_OUTPUT_DIR: join(temp, "out"),
         RANKINGS_PREVIOUS_GENERATION_DIR: previous,
       },
@@ -719,9 +717,7 @@ test("the pipeline rejects unmatched Instructor names", async () => {
 });
 
 test("the pipeline rejects ambiguous Instructor identities", async () => {
-  const temp = await mkdtemp(
-    join(tmpdir(), "ust-rankings-identity-ambiguous-"),
-  );
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-ambiguous-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
@@ -735,7 +731,7 @@ test("the pipeline rejects ambiguous Instructor identities", async () => {
       encoding: "utf8",
       env: {
         ...process.env,
-        RANKINGS_DATA_DIR: dataDir,
+        DATA_DIR: dataDir,
         RANKINGS_OUTPUT_DIR: join(temp, "out"),
         RANKINGS_PREVIOUS_GENERATION_DIR: previous,
       },
@@ -751,7 +747,7 @@ test("the pipeline rejects ambiguous Instructor identities", async () => {
 });
 
 test("--init explicitly starts empty identity history", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-identity-init-"));
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-init-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
@@ -762,7 +758,7 @@ test("--init explicitly starts empty identity history", async () => {
     ]);
     const env = {
       ...process.env,
-      RANKINGS_DATA_DIR: dataDir,
+      DATA_DIR: dataDir,
       RANKINGS_OUTPUT_DIR: join(temp, "out"),
       RANKINGS_PREVIOUS_GENERATION_DIR: previous,
     };
@@ -790,7 +786,7 @@ test("--init explicitly starts empty identity history", async () => {
 });
 
 test("the pipeline fails when previous identities are required but missing", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "ust-rankings-identity-fail-"));
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-fail-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
@@ -800,7 +796,7 @@ test("the pipeline fails when previous identities are required but missing", asy
       encoding: "utf8",
       env: {
         ...process.env,
-        RANKINGS_DATA_DIR: dataDir,
+        DATA_DIR: dataDir,
         RANKINGS_OUTPUT_DIR: outputDir,
       },
     });

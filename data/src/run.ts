@@ -10,7 +10,7 @@ const unknownArgument = cliArguments.find((argument) => argument !== "--init");
 if (unknownArgument) throw new Error(`Unknown argument: ${unknownArgument}`);
 const initializeIdentityHistory = cliArguments.includes("--init");
 const outputDir = resolve(root, process.env.RANKINGS_OUTPUT_DIR ?? "out");
-const localDataDir = process.env.RANKINGS_DATA_DIR;
+const localDataDir = process.env.DATA_DIR;
 
 const revisions = {
   catalog: process.env.CATALOG_REVISION ?? "main",

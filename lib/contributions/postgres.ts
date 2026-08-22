@@ -1402,7 +1402,7 @@ function initializeRuntime() {
           if (error instanceof RankingsUnavailableError)
             throw new SignalWriteError(
               "rankings-unavailable",
-              "Signal target cannot be validated while Rankings Data is unavailable",
+              "Signal target cannot be validated while the Ranking Generation is unavailable",
             );
           throw error;
         }

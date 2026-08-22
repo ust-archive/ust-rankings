@@ -95,7 +95,7 @@ export async function validateReviewAssociations(
     if (error instanceof RankingsUnavailableError)
       throw new ReviewWriteError(
         "rankings-unavailable",
-        "Review Bases cannot be validated while Rankings Data is unavailable",
+        "Review Bases cannot be validated while the Ranking Generation is unavailable",
       );
     if (error instanceof ScheduleUnavailableError)
       throw new ReviewWriteError(

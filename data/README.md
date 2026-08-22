@@ -1,4 +1,4 @@
-# UST Rankings data
+# UST data
 
 DuckDB builds course and instructor ratings directly from the
 [`ust-archive`](https://huggingface.co/ust-archive) Parquet datasets. SQL owns
@@ -28,7 +28,7 @@ npm ci
 npm run data:run
 ```
 
-For an offline/local run, set `RANKINGS_DATA_DIR` to a directory with this
+For an offline/local run, set `DATA_DIR` to a directory with this
 layout; authentication is then unnecessary:
 
 ```text
