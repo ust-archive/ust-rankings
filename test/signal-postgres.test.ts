@@ -57,7 +57,12 @@ if (!connection) {
       onnotice: () => {},
     });
     const rankingRoot = await mkdtemp(join(tmpdir(), "signal-rankings-"));
-    process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(rankingRoot);
+    const { resetRankingsRuntimeForTests } = await import(
+      "@/lib/rankings/server"
+    );
+    await resetRankingsRuntimeForTests(
+      await makeRankingGeneration(rankingRoot),
+    );
     try {
       for (const name of (
         await readdir(join(process.cwd(), "contributions", "migrations"))
@@ -445,10 +450,6 @@ if (!connection) {
       const cleanup = postgres(connection, { max: 1, onnotice: () => {} });
       await cleanup.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       await cleanup.end();
-      delete process.env.RANKINGS_SEED_DIR;
-      const { resetRankingsRuntimeForTests } = await import(
-        "@/lib/rankings/server"
-      );
       await resetRankingsRuntimeForTests();
       await rm(rankingRoot, { recursive: true, force: true });
     }

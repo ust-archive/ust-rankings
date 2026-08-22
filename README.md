@@ -39,8 +39,9 @@ see [`test/README.md`](test/README.md). Frontend verification is visual with
 ## Production
 
 Production is DigitalOcean App Platform in Singapore with a Node 26 Docker
-image. Rankings and Schedule download from
-Hugging Face into `/tmp` at runtime; do not bake seed data into the image.
+image. Rankings and Schedule download from Hugging Face into the operating
+system's temporary directory at runtime; do not bake generation data into the
+image.
 Neon `POSTGRES_URL` is the advisory lock database. Contributions use
 `CONTRIBUTIONS_POSTGRES_URL`. Attachments use a private SGP1 Space. The
 production scheduler must call the authenticated ranking refresh, Schedule

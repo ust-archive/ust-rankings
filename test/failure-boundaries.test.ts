@@ -12,8 +12,14 @@ vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
 
+async function installRankingGeneration(directory: string) {
+  const { resetRankingsRuntimeForTests } = await import(
+    "@/lib/rankings/server"
+  );
+  await resetRankingsRuntimeForTests(directory);
+}
+
 afterEach(async () => {
-  delete process.env.RANKINGS_SEED_DIR;
   delete process.env.SCHEDULE_SEED_DIR;
   const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
     await Promise.all([
@@ -33,7 +39,7 @@ test("public ranking queries cache by accepted generation and omit session field
   const firstRoot = await mkdtemp(join(tmpdir(), "cache-rank-first-"));
   const secondRoot = await mkdtemp(join(tmpdir(), "cache-rank-second-"));
   temporaryDirectories.push(firstRoot, secondRoot);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(firstRoot);
+  await installRankingGeneration(await makeRankingGeneration(firstRoot));
   const { queryRankings, resetRankingsRuntimeForTests } = await import(
     "@/lib/rankings/server"
   );
@@ -43,9 +49,11 @@ test("public ranking queries cache by accepted generation and omit session field
   expect(JSON.stringify(first)).not.toContain("@");
 
   await resetRankingsRuntimeForTests();
-  process.env.RANKINGS_SEED_DIR = await makeRankingGenerationWithSha(
-    secondRoot,
-    "aaaabbbbccccddddeeeeffff0000111122223333",
+  await installRankingGeneration(
+    await makeRankingGenerationWithSha(
+      secondRoot,
+      "aaaabbbbccccddddeeeeffff0000111122223333",
+    ),
   );
   const second = await queryRankings({
     entity: "instructor",
@@ -79,7 +87,7 @@ test("ranking failure leaves Schedule and public identity routes usable", async 
   const rankingRoot = await mkdtemp(join(tmpdir(), "fail-rank-"));
   const scheduleRoot = await mkdtemp(join(tmpdir(), "fail-rank-schedule-"));
   temporaryDirectories.push(rankingRoot, scheduleRoot);
-  process.env.RANKINGS_SEED_DIR = join(rankingRoot, "missing");
+  await installRankingGeneration(join(rankingRoot, "missing"));
   process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(scheduleRoot);
   const { querySchedule } = await import("@/lib/schedule/server");
   const { queryRankings, RankingsUnavailableError } = await import(
@@ -95,7 +103,7 @@ test("ranking failure leaves Schedule and public identity routes usable", async 
 test("Schedule failure leaves Rankings usable", async () => {
   const rankingRoot = await mkdtemp(join(tmpdir(), "fail-sched-rank-"));
   temporaryDirectories.push(rankingRoot);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(rankingRoot);
+  await installRankingGeneration(await makeRankingGeneration(rankingRoot));
   process.env.SCHEDULE_SEED_DIR = join(rankingRoot, "missing-schedule");
   const { queryRankings } = await import("@/lib/rankings/server");
   const { querySchedule, ScheduleUnavailableError } = await import(

@@ -679,17 +679,10 @@ let runtimeCheckedAt = 0;
 let runtimeDependencies: RankingRefreshDependencies | undefined;
 let runtimeDiscovery: Promise<Generation> | undefined;
 let explicitGeneration:
-  | { directory: string; loading: Promise<Generation> }
+  | { directory: string; loading?: Promise<Generation> }
   | undefined;
-let seedLoading: Promise<Generation> | undefined;
 let openGenerationCount = 0;
 let afterAcquireForTests: ((generation: string) => Promise<void>) | undefined;
-
-function seedDirectory() {
-  const directory = process.env.RANKINGS_SEED_DIR;
-  if (!directory) throw new RankingsUnavailableError();
-  return directory;
-}
 
 function sqlPath(directory: string, filename: string) {
   return resolve(directory, filename)
@@ -745,10 +738,7 @@ async function validateFiles(directory: string, manifest: Manifest) {
     .sort();
   if (ARTIFACTS.some((name) => !parquetFiles.includes(name)))
     throw new Error("Unexpected ranking artifacts");
-  if (
-    !process.env.RANKINGS_SEED_DIR &&
-    IDENTITY_ARTIFACTS.some((name) => !parquetFiles.includes(name))
-  )
+  if (IDENTITY_ARTIFACTS.some((name) => !parquetFiles.includes(name)))
     throw new Error(
       "Ranking generation is missing Instructor identity Parquet",
     );
@@ -1211,11 +1201,9 @@ async function applyIdentityParquet(
   try {
     await stat(resolve(directory, "instructor-identities.parquet"));
   } catch {
-    if (!process.env.RANKINGS_SEED_DIR)
-      throw new Error(
-        "Ranking generation is missing Instructor identity Parquet",
-      );
-    return;
+    throw new Error(
+      "Ranking generation is missing Instructor identity Parquet",
+    );
   }
   const extraIdentities = [...manifest.identities];
   const extraEvents = [...(manifest.identityEvents ?? [])];
@@ -1430,8 +1418,8 @@ async function instructorRegistry(): Promise<InstructorRegistry> {
     const accepted = await runtimeActive.catch(() => undefined);
     if (accepted && !accepted.closed) return accepted;
   }
-  if (process.env.RANKINGS_SEED_DIR)
-    return loadInstructorRegistry(seedDirectory());
+  if (explicitGeneration)
+    return loadInstructorRegistry(explicitGeneration.directory);
   try {
     runtimeDependencies ??= (
       await import("./runtime")
@@ -1482,9 +1470,7 @@ export async function instructorNamesForUuids(uuids: string[]) {
 }
 
 function rankingGenerationIsReady() {
-  return Boolean(
-    process.env.RANKINGS_SEED_DIR || runtimeActive || explicitGeneration,
-  );
+  return Boolean(runtimeActive || explicitGeneration);
 }
 
 export async function resolveObservedInstructorNames(names: string[]) {
@@ -1600,12 +1586,9 @@ async function acquireGeneration(loading = generation()) {
   };
 }
 
-function explicitSeedGeneration(directory: string) {
-  if (explicitGeneration?.directory !== directory) {
-    void retireGeneration(explicitGeneration?.loading);
-    explicitGeneration = { directory, loading: loadGeneration(directory) };
-    serializedQueries.clear();
-  }
+function explicitTestGeneration() {
+  if (!explicitGeneration) throw new RankingsUnavailableError();
+  explicitGeneration.loading ??= loadGeneration(explicitGeneration.directory);
   return explicitGeneration.loading;
 }
 
@@ -1621,7 +1604,7 @@ async function installRuntimeGeneration(
   runtimeActive = loading;
   runtimeActiveSha = sha;
   runtimePrevious = undefined;
-  if (oldActive && oldActive !== seedLoading) {
+  if (oldActive) {
     try {
       if ((await oldActive).sha === previousSha) runtimePrevious = oldActive;
       else await retireGeneration(oldActive);
@@ -1677,12 +1660,7 @@ async function discoverGeneration() {
 }
 
 function generation() {
-  if (process.env.RANKINGS_SEED_DIR)
-    return explicitSeedGeneration(seedDirectory());
-  if (explicitGeneration) {
-    void retireGeneration(explicitGeneration.loading);
-    explicitGeneration = undefined;
-  }
+  if (explicitGeneration) return explicitTestGeneration();
   if (
     runtimeActive &&
     runtimeDependencies &&
@@ -1922,25 +1900,24 @@ export function setRankingsAfterAcquireForTests(
 }
 
 export async function resetRankingsRuntimeForTests(
-  dependencies?: RankingRefreshDependencies,
+  source?: RankingRefreshDependencies | string,
 ) {
   const retained = [
     runtimeActive,
     runtimePrevious,
     explicitGeneration?.loading,
-    seedLoading,
   ];
   runtimeActive = undefined;
   runtimePrevious = undefined;
   explicitGeneration = undefined;
-  seedLoading = undefined;
   runtimeActiveSha = undefined;
   runtimeCheckedAt = 0;
-  runtimeDependencies = dependencies;
+  runtimeDependencies = typeof source === "string" ? undefined : source;
   runtimeDiscovery = undefined;
   afterAcquireForTests = undefined;
   serializedQueries.clear();
   await Promise.all(retained.map((loading) => retireGeneration(loading)));
+  if (typeof source === "string") explicitGeneration = { directory: source };
 }
 
 function number(value: unknown) {

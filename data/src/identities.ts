@@ -176,8 +176,6 @@ export async function assignInstructorIdentities(
   connection: DuckDBConnection,
   options: {
     previousGenerationDir?: string;
-    bootstrapPath?: string;
-    requirePrevious: boolean;
     sourceCommit: string;
     correctionsPath?: string;
   },
@@ -208,7 +206,10 @@ export async function assignInstructorIdentities(
   let previousEvents: EventRow[] = [];
   let previousAffected: AffectedRow[] = [];
 
-  if (options.previousGenerationDir) {
+  if (!options.previousGenerationDir)
+    throw new Error("Previous Instructor identities are required");
+
+  {
     const paths = await loadPreviousParquet(options.previousGenerationDir);
     previousIdentities = (
       await connection.runAndReadAll(
@@ -234,32 +235,6 @@ export async function assignInstructorIdentities(
         )
       ).getRowObjectsJson() as AffectedRow[];
     }
-  } else if (options.bootstrapPath) {
-    const seed = await loadBootstrapJson(options.bootstrapPath);
-    previousIdentities = seed.identities.map((identity) => ({
-      uuid: identity.uuid,
-      canonical_name: identity.canonicalName,
-      itsc: identity.itsc ?? null,
-    }));
-    previousAliases = seed.identities.flatMap((identity) =>
-      (identity.aliases ?? []).map((alias) => ({
-        uuid: identity.uuid,
-        name: alias.name,
-        source: alias.source,
-        source_commit: alias.sourceCommit,
-        source_file: alias.sourceFile ?? null,
-      })),
-    );
-    previousEvents = eventRows(seed.events);
-    previousAffected = affectedRows(seed.events);
-  } else if (options.requirePrevious) {
-    throw new Error(
-      "Previous identities are required after bootstrap and were not provided",
-    );
-  } else {
-    throw new Error(
-      "Previous identities or an identity bootstrap file is required",
-    );
   }
 
   const byName = new Map<string, string>();
