@@ -58,6 +58,7 @@ export default async function CourseOfferingPage({
         rankings={rankings}
         reviews={community.reviews}
         reviewsUnavailable={community.unavailable}
+        signedIn={community.signedIn}
       />
     );
   } catch (error) {

@@ -6,6 +6,7 @@ import {
   createReviewService,
   type ReviewAssociations,
 } from "@/lib/contributions/reviews";
+import { createSignalService } from "@/lib/contributions/signals";
 
 vi.mock("server-only", () => ({}));
 
@@ -35,9 +36,8 @@ if (!connection) {
             "utf8",
           ),
         );
-      const { PostgresReviewRepository } = await import(
-        "@/lib/contributions/postgres"
-      );
+      const { PostgresReviewRepository, PostgresSignalRepository } =
+        await import("@/lib/contributions/postgres");
       const service = (client: ReturnType<typeof postgres>) =>
         createReviewService(new PostgresReviewRepository(client), {
           reviewPolicyVersion: "review-test-v1",
@@ -46,6 +46,16 @@ if (!connection) {
           },
         });
       const reviews = service(sql);
+      const signals = createSignalService(new PostgresSignalRepository(sql), {
+        async resolveTarget(target) {
+          if (target.type !== "review") return target;
+          const [active] = await sql<{ id: string }[]>`
+            SELECT id FROM reviews
+            WHERE id = ${target.reviewId} AND publication_state = 'active'
+          `;
+          return active ? target : undefined;
+        },
+      });
       const publish = async (
         userId: string,
         associations: ReviewAssociations,
@@ -195,10 +205,42 @@ if (!connection) {
           (${wrongOwnerId}, 'active', 'Wrong Owner')
       `;
       const lifecycleOriginal = await publish(lifecycleUserId, { course });
+      const reviewTarget = {
+        type: "review" as const,
+        reviewId: lifecycleOriginal.id,
+      };
+      await signals.setThumbs(lifecycleUserId, {
+        target: reviewTarget,
+        state: "up",
+      });
+      await signals.setEmoji(lifecycleUserId, {
+        target: reviewTarget,
+        code: "love",
+        selected: true,
+      });
+      await signals.setEmoji(lifecycleUserId, {
+        target: reviewTarget,
+        code: "fire",
+        selected: true,
+      });
+      await signals.setEmoji(wrongOwnerId, {
+        target: reviewTarget,
+        code: "love",
+        selected: true,
+      });
       expect(await reviews.getReview(lifecycleOriginal.id)).toMatchObject({
         id: lifecycleOriginal.id,
         revisionId: lifecycleOriginal.revisionId,
         course,
+        signals: {
+          thumbs: { up: 1, down: 0 },
+          emoji: { love: 2, fire: 1 },
+        },
+      });
+      expect(
+        await reviews.getReview(lifecycleOriginal.id, lifecycleUserId),
+      ).toMatchObject({
+        signals: { mine: { thumbs: "up", emoji: ["love", "fire"] } },
       });
       await sql`
         UPDATE contribution_users
@@ -224,6 +266,10 @@ if (!connection) {
         revisionId: identityHidden.revisionId,
         course,
         termCode: "2510",
+        signals: {
+          thumbs: { up: 1, down: 0 },
+          emoji: { love: 2, fire: 1 },
+        },
       });
       expect("capturedDisplayName" in identityHidden).toBe(false);
       const [historyAfterHidden] = await sql<
@@ -327,6 +373,20 @@ if (!connection) {
         ),
       ).toBe(false);
       expect(await reviews.getReview(lifecycleOriginal.id)).toBeUndefined();
+      await expect(
+        signals.setThumbs(lifecycleUserId, {
+          target: reviewTarget,
+          state: "down",
+        }),
+      ).rejects.toMatchObject({ code: "invalid-target" });
+      const [retainedSignals] = await sql<{ thumbs: number; emoji: number }[]>`
+        SELECT
+          (SELECT count(*)::int FROM review_thumbs_votes
+           WHERE review_id = ${lifecycleOriginal.id}) AS thumbs,
+          (SELECT count(*)::int FROM review_emoji_reactions
+           WHERE review_id = ${lifecycleOriginal.id}) AS emoji
+      `;
+      expect(retainedSignals).toEqual({ thumbs: 1, emoji: 3 });
       const [withdrawnHistory] = await sql<
         { publicationState: string; revisions: number }[]
       >`

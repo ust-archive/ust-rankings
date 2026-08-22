@@ -426,6 +426,7 @@ export function InstructorDetails({
             }
             reviews={reviews}
             reviewsUnavailable={reviewsUnavailable}
+            signedIn={signedIn}
             signalControls={
               <SignalControls
                 error={signalError}

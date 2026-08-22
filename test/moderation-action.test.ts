@@ -60,7 +60,7 @@ test("Review reporting denies cross-origin and signed-out writes", async () => {
   origin = "https://rankings.example";
   userId = undefined;
   expect(await redirectOf(() => reportReview(form()))).toContain(
-    "/sign-in?r=%2Fcourses%2FCOMP%2F2000",
+    "/auth/login?r=%2Fcourses%2FCOMP%2F2000",
   );
   expect(reported).toHaveLength(0);
 });

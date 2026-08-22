@@ -9,6 +9,7 @@ import {
 
 const USER_ID = "00000000-0000-4000-8000-000000000047";
 const INSTRUCTOR_UUID = "00000000-0000-4000-8000-000000000001";
+const REVIEW_ID = "00000000-0000-4000-8000-000000000010";
 
 function fakeRepository() {
   const writes: unknown[] = [];
@@ -50,12 +51,14 @@ function service(repository: SignalRepository) {
         return target.coursePrefix === "COMP" && target.courseNumber === "2000"
           ? target
           : undefined;
-      return target.instructorUuid === INSTRUCTOR_UUID ? target : undefined;
+      if (target.type === "instructor")
+        return target.instructorUuid === INSTRUCTOR_UUID ? target : undefined;
+      return target.reviewId === REVIEW_ID ? target : undefined;
     },
   });
 }
 
-test("signal mutations normalize eligible Course and Instructor targets and use desired states", async () => {
+test("signal mutations normalize eligible Course, Instructor, and Review targets and use desired states", async () => {
   const { repository, writes } = fakeRepository();
   const signals = service(repository);
 
@@ -69,6 +72,10 @@ test("signal mutations normalize eligible Course and Instructor targets and use 
       instructorUuid: INSTRUCTOR_UUID.toUpperCase(),
     },
     state: "none",
+  });
+  await signals.setThumbs(USER_ID, {
+    target: { type: "review", reviewId: REVIEW_ID.toUpperCase() },
+    state: "down",
   });
   for (const code of EMOJI_CODES)
     await signals.setEmoji(USER_ID, {
@@ -89,8 +96,14 @@ test("signal mutations normalize eligible Course and Instructor targets and use 
     target: { type: "instructor", instructorUuid: INSTRUCTOR_UUID },
     state: "none",
   });
+  expect(writes[2]).toEqual({
+    type: "thumbs",
+    userId: USER_ID,
+    target: { type: "review", reviewId: REVIEW_ID },
+    state: "down",
+  });
   expect(
-    writes.slice(2).map((write) => (write as { code: string }).code),
+    writes.slice(3).map((write) => (write as { code: string }).code),
   ).toEqual([...EMOJI_CODES]);
 });
 
@@ -124,7 +137,12 @@ test("signals reject malformed Users, ineligible entity kinds, unknown targets, 
         target: { type: "course", coursePrefix: "MATH", courseNumber: "1012" },
         state: "up",
       }),
-    ...(["course-offering", "class", "review"] as const).map(
+    () =>
+      signals.setThumbs(USER_ID, {
+        target: { type: "review", reviewId: "not-a-review" },
+        state: "up",
+      }),
+    ...(["course-offering", "class"] as const).map(
       (type) => () =>
         signals.setThumbs(USER_ID, {
           target: { type } as unknown as SignalTarget,

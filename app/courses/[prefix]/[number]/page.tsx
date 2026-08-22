@@ -84,7 +84,7 @@ export async function renderCoursePage(
       }
       signals={signalResult.summary}
       signalsUnavailable={signalResult.unavailable}
-      signedIn={Boolean(signalResult.summary?.mine)}
+      signedIn={community.signedIn}
       signalError={
         typeof query.signalError === "string" ? query.signalError : undefined
       }

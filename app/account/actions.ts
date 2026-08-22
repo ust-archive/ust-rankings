@@ -21,7 +21,7 @@ function errorRedirect(
 export async function completeOnboarding(formData: FormData) {
   const returnPath = safeReturnPath(String(formData.get("r") ?? "/"));
   const userId = await authenticatedUserId();
-  if (!userId) redirect(`/sign-in?r=${encodeURIComponent(returnPath)}`);
+  if (!userId) redirect(`/auth/login?r=${encodeURIComponent(returnPath)}`);
   try {
     await getAccountService().completeOnboarding(userId, {
       publicDisplayName: String(formData.get("publicDisplayName") ?? ""),
@@ -36,7 +36,7 @@ export async function completeOnboarding(formData: FormData) {
 
 export async function updateAccount(formData: FormData) {
   const userId = await authenticatedUserId();
-  if (!userId) redirect("/sign-in?r=%2Faccount");
+  if (!userId) redirect("/auth/login?r=%2Faccount");
   try {
     await getAccountService().updateAccount(userId, {
       publicDisplayName: String(formData.get("publicDisplayName") ?? ""),

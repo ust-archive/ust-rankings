@@ -1,6 +1,9 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { loadCourseReviews, loadReviews } from "@/app/courses/review-data";
+import { loadReview } from "@/app/reviews/review-data";
 import { ContributionsUnavailableError } from "@/lib/contributions/reviews";
+
+vi.mock("server-only", () => ({}));
 
 const review = {
   id: "00000000-0000-4000-8000-000000000144",
@@ -19,7 +22,7 @@ const review = {
 
 test("Review reads cross one contribution seam and distinguish provider unavailability from zero Reviews", async () => {
   expect(await loadCourseReviews("COMP", "2000", async () => [review])).toEqual(
-    { reviews: [review], unavailable: false },
+    { reviews: [review], signedIn: false, unavailable: false },
   );
   expect(
     await loadReviews(
@@ -31,7 +34,7 @@ test("Review reads cross one contribution seam and distinguish provider unavaila
         throw new ContributionsUnavailableError();
       },
     ),
-  ).toEqual({ reviews: [], unavailable: true });
+  ).toEqual({ reviews: [], signedIn: false, unavailable: true });
 
   const programmingError = new TypeError("unexpected defect");
   await expect(
@@ -64,4 +67,22 @@ test("Review reads reveal edit capability only to the authenticated author query
     },
   ]);
   expect(result.reviews[0]?.viewerCanEdit).toBe(true);
+  expect(result.signedIn).toBe(true);
+});
+
+test("Review permalinks remain public without Auth configuration", async () => {
+  const previousSecret = process.env.AUTH_SECRET;
+  delete process.env.AUTH_SECRET;
+  try {
+    const calls: unknown[] = [];
+    expect(
+      await loadReview(review.id, async (reviewId, viewerUserId) => {
+        calls.push({ reviewId, viewerUserId });
+        return review;
+      }),
+    ).toEqual({ review, unavailable: false });
+    expect(calls).toEqual([{ reviewId: review.id, viewerUserId: undefined }]);
+  } finally {
+    if (previousSecret) process.env.AUTH_SECRET = previousSecret;
+  }
 });

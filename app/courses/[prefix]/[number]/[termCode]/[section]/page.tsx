@@ -60,6 +60,7 @@ export default async function ClassPage({
         rankings={rankings}
         reviews={community.reviews}
         reviewsUnavailable={community.unavailable}
+        signedIn={community.signedIn}
       />
     );
   } catch (error) {

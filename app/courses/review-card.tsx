@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { toast } from "sonner";
+import { SignalControls } from "@/app/signals/signal-controls";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -371,6 +372,16 @@ export function ReviewCard({
               ))}
             </ul>
           ) : null}
+        </div>
+        <div className="mt-3">
+          <SignalControls
+            id={`review-${review.id}-signals`}
+            signedIn={Boolean(review.signals?.mine)}
+            size="sm"
+            summary={review.signals}
+            target={{ type: "review", reviewId: review.id }}
+            unavailable={!review.signals}
+          />
         </div>
         <footer className="mt-4">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">

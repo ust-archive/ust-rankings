@@ -21,7 +21,6 @@ const callbacks = createAuthCallbacks({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
-  pages: { signIn: "/sign-in" },
   session: { strategy: "jwt" },
   callbacks: callbacks as NextAuthConfig["callbacks"],
 });

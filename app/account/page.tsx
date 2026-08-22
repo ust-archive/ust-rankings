@@ -317,13 +317,13 @@ export default async function AccountPage({
 }) {
   const params = await searchParams;
   const userId = await authenticatedUserId();
-  if (!userId) redirect("/sign-in?r=%2Faccount");
+  if (!userId) redirect("/auth/login?r=%2Faccount");
   const account = getAccountService();
   const [user, contributions] = await Promise.all([
     account.getUser(userId),
     account.getContributions(userId),
   ]);
-  if (!user) redirect("/sign-in?r=%2Faccount");
+  if (!user) redirect("/auth/login?r=%2Faccount");
   if (user.status === "onboarding") redirect("/onboarding?r=%2Faccount");
 
   const instructorNames = await instructorNamesForUuids(

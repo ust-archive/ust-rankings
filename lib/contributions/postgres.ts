@@ -224,6 +224,8 @@ export class PostgresAccountRepository implements AccountRepository {
       await transaction`DELETE FROM instructor_thumbs_votes WHERE user_id = ${userId}`;
       await transaction`DELETE FROM course_emoji_reactions WHERE user_id = ${userId}`;
       await transaction`DELETE FROM instructor_emoji_reactions WHERE user_id = ${userId}`;
+      await transaction`DELETE FROM review_thumbs_votes WHERE user_id = ${userId}`;
+      await transaction`DELETE FROM review_emoji_reactions WHERE user_id = ${userId}`;
       const [closed] = await transaction<AccountDatabaseRow[]>`
         UPDATE contribution_users
         SET status = 'closed', updated_at = now()
@@ -252,6 +254,12 @@ type ReviewDatabaseRow = {
     | PublicReview["instructorAssociationStatus"]
     | null;
   attachments?: ImageAttachment[] | null;
+  thumbsUp?: number;
+  thumbsDown?: number;
+  emoji?: Partial<Record<EmojiCode, number>>;
+  mineThumbs?: "up" | "down" | null;
+  mineEmoji?: EmojiCode[];
+  signalsAuthenticated?: boolean;
 };
 
 function publicReview(row: ReviewDatabaseRow): PublicReview {
@@ -285,6 +293,20 @@ function publicReview(row: ReviewDatabaseRow): PublicReview {
       ? { instructorAssociationStatus: row.instructorAssociationStatus }
       : {}),
     ...(row.attachments?.length ? { attachments: row.attachments } : {}),
+    ...(row.thumbsUp === undefined
+      ? {}
+      : {
+          signals: signalSummary(
+            {
+              thumbsUp: row.thumbsUp,
+              thumbsDown: row.thumbsDown ?? 0,
+              emoji: row.emoji ?? {},
+              mineThumbs: row.mineThumbs ?? null,
+              mineEmoji: row.mineEmoji ?? [],
+            },
+            row.signalsAuthenticated ?? false,
+          ),
+        }),
   };
 }
 
@@ -458,6 +480,23 @@ export class PostgresReviewRepository implements ReviewRepository {
                r.instructor_association_status AS "instructorAssociationStatus",
                (${viewerUserId ?? null}::uuid IS NOT NULL
                  AND r.author_user_id = ${viewerUserId ?? null}::uuid) AS "viewerCanEdit",
+               (SELECT count(*)::int FROM review_thumbs_votes
+                 WHERE review_id = r.id AND state = 'up') AS "thumbsUp",
+               (SELECT count(*)::int FROM review_thumbs_votes
+                 WHERE review_id = r.id AND state = 'down') AS "thumbsDown",
+               COALESCE((SELECT jsonb_object_agg(code, total)
+                 FROM (SELECT code, count(*)::int AS total
+                       FROM review_emoji_reactions
+                       WHERE review_id = r.id GROUP BY code) counts), '{}'::jsonb) AS emoji,
+               (SELECT state FROM review_thumbs_votes
+                 WHERE user_id = ${viewerUserId ?? null}::uuid
+                   AND review_id = r.id) AS "mineThumbs",
+               COALESCE((SELECT array_agg(code ORDER BY array_position(
+                   ARRAY['love','laugh','surprised','confused','sad','angry','fire']::text[], code))
+                 FROM review_emoji_reactions
+                 WHERE user_id = ${viewerUserId ?? null}::uuid
+                   AND review_id = r.id), ARRAY[]::text[]) AS "mineEmoji",
+               (${viewerUserId ?? null}::uuid IS NOT NULL) AS "signalsAuthenticated",
                COALESCE((SELECT jsonb_agg(jsonb_build_object(
                  'id', a.id,
                  'storedFileId', a.stored_file_id,
@@ -500,6 +539,23 @@ export class PostgresReviewRepository implements ReviewRepository {
                r.instructor_association_status AS "instructorAssociationStatus",
                (${viewerUserId ?? null}::uuid IS NOT NULL
                  AND r.author_user_id = ${viewerUserId ?? null}::uuid) AS "viewerCanEdit",
+               (SELECT count(*)::int FROM review_thumbs_votes
+                 WHERE review_id = r.id AND state = 'up') AS "thumbsUp",
+               (SELECT count(*)::int FROM review_thumbs_votes
+                 WHERE review_id = r.id AND state = 'down') AS "thumbsDown",
+               COALESCE((SELECT jsonb_object_agg(code, total)
+                 FROM (SELECT code, count(*)::int AS total
+                       FROM review_emoji_reactions
+                       WHERE review_id = r.id GROUP BY code) counts), '{}'::jsonb) AS emoji,
+               (SELECT state FROM review_thumbs_votes
+                 WHERE user_id = ${viewerUserId ?? null}::uuid
+                   AND review_id = r.id) AS "mineThumbs",
+               COALESCE((SELECT array_agg(code ORDER BY array_position(
+                   ARRAY['love','laugh','surprised','confused','sad','angry','fire']::text[], code))
+                 FROM review_emoji_reactions
+                 WHERE user_id = ${viewerUserId ?? null}::uuid
+                   AND review_id = r.id), ARRAY[]::text[]) AS "mineEmoji",
+               (${viewerUserId ?? null}::uuid IS NOT NULL) AS "signalsAuthenticated",
                COALESCE((SELECT jsonb_agg(jsonb_build_object(
                  'id', a.id,
                  'storedFileId', a.stored_file_id,
@@ -929,7 +985,8 @@ export class PostgresSignalRepository implements SignalRepository {
                     AND course_prefix = ${target.coursePrefix}
                     AND course_number = ${target.courseNumber}), ARRAY[]::text[]) AS "mineEmoji"
             `
-          : await this.sql<SignalDatabaseRow[]>`
+          : target.type === "instructor"
+            ? await this.sql<SignalDatabaseRow[]>`
               SELECT
                 (SELECT count(*)::int FROM instructor_thumbs_votes
                  WHERE instructor_uuid = ${target.instructorUuid}
@@ -950,6 +1007,28 @@ export class PostgresSignalRepository implements SignalRepository {
                   FROM instructor_emoji_reactions
                   WHERE user_id = ${currentUser}::uuid
                     AND instructor_uuid = ${target.instructorUuid}), ARRAY[]::text[]) AS "mineEmoji"
+            `
+            : await this.sql<SignalDatabaseRow[]>`
+              SELECT
+                (SELECT count(*)::int FROM review_thumbs_votes
+                 WHERE review_id = ${target.reviewId}
+                   AND state = 'up') AS "thumbsUp",
+                (SELECT count(*)::int FROM review_thumbs_votes
+                 WHERE review_id = ${target.reviewId}
+                   AND state = 'down') AS "thumbsDown",
+                COALESCE((SELECT jsonb_object_agg(code, total)
+                  FROM (SELECT code, count(*)::int AS total
+                        FROM review_emoji_reactions
+                        WHERE review_id = ${target.reviewId}
+                        GROUP BY code) counts), '{}'::jsonb) AS emoji,
+                (SELECT state FROM review_thumbs_votes
+                 WHERE user_id = ${currentUser}::uuid
+                   AND review_id = ${target.reviewId}) AS "mineThumbs",
+                COALESCE((SELECT array_agg(code ORDER BY array_position(
+                    ARRAY['love','laugh','surprised','confused','sad','angry','fire']::text[], code))
+                  FROM review_emoji_reactions
+                  WHERE user_id = ${currentUser}::uuid
+                    AND review_id = ${target.reviewId}), ARRAY[]::text[]) AS "mineEmoji"
             `;
       return signalSummary(row, Boolean(userId));
     } catch (error) {
@@ -958,7 +1037,7 @@ export class PostgresSignalRepository implements SignalRepository {
   }
 
   async setThumbs(userId: string, target: SignalTarget, state: ThumbsState) {
-    let result: { status: string | null } | undefined;
+    let result: { status: string | null; targetActive?: boolean } | undefined;
     if (target.type === "course") {
       [result] =
         state === "none"
@@ -989,7 +1068,7 @@ export class PostgresSignalRepository implements SignalRepository {
               )
               SELECT (SELECT status FROM account) AS status
             `;
-    } else {
+    } else if (target.type === "instructor") {
       [result] =
         state === "none"
           ? await this.sql<{ status: string | null }[]>`
@@ -1050,9 +1129,47 @@ export class PostgresSignalRepository implements SignalRepository {
               )
               SELECT (SELECT status FROM account) AS status
             `;
+    } else {
+      [result] =
+        state === "none"
+          ? await this.sql<{ status: string | null; targetActive: boolean }[]>`
+              WITH account AS MATERIALIZED (
+                SELECT status FROM contribution_users
+                WHERE id = ${userId} FOR UPDATE
+              ), target AS MATERIALIZED (
+                SELECT id FROM reviews
+                WHERE id = ${target.reviewId} AND publication_state = 'active'
+              ), changed AS (
+                DELETE FROM review_thumbs_votes
+                WHERE user_id = ${userId}
+                  AND review_id = (SELECT id FROM target)
+                  AND EXISTS (SELECT 1 FROM account WHERE status = 'active')
+              )
+              SELECT (SELECT status FROM account) AS status,
+                     EXISTS (SELECT 1 FROM target) AS "targetActive"
+            `
+          : await this.sql<{ status: string | null; targetActive: boolean }[]>`
+              WITH account AS MATERIALIZED (
+                SELECT status FROM contribution_users
+                WHERE id = ${userId} FOR UPDATE
+              ), target AS MATERIALIZED (
+                SELECT id FROM reviews
+                WHERE id = ${target.reviewId} AND publication_state = 'active'
+              ), changed AS (
+                INSERT INTO review_thumbs_votes (user_id, review_id, state)
+                SELECT ${userId}, target.id, ${state}
+                FROM account CROSS JOIN target WHERE account.status = 'active'
+                ON CONFLICT (user_id, review_id)
+                DO UPDATE SET state = EXCLUDED.state, updated_at = now()
+              )
+              SELECT (SELECT status FROM account) AS status,
+                     EXISTS (SELECT 1 FROM target) AS "targetActive"
+            `;
     }
     if (result?.status !== "active")
       rejectSignalUser(result?.status ?? undefined);
+    if (target.type === "review" && !result.targetActive)
+      throw new SignalWriteError("invalid-target", "Review is not active");
   }
 
   async setEmoji(
@@ -1061,7 +1178,7 @@ export class PostgresSignalRepository implements SignalRepository {
     code: EmojiCode,
     selected: boolean,
   ) {
-    let result: { status: string | null } | undefined;
+    let result: { status: string | null; targetActive?: boolean } | undefined;
     if (target.type === "course") {
       [result] = selected
         ? await this.sql<{ status: string | null }[]>`
@@ -1091,7 +1208,7 @@ export class PostgresSignalRepository implements SignalRepository {
             )
             SELECT (SELECT status FROM account) AS status
           `;
-    } else {
+    } else if (target.type === "instructor") {
       [result] = selected
         ? await this.sql<{ status: string | null }[]>`
             WITH RECURSIVE account AS MATERIALIZED (
@@ -1151,9 +1268,46 @@ export class PostgresSignalRepository implements SignalRepository {
             )
             SELECT (SELECT status FROM account) AS status
           `;
+    } else {
+      [result] = selected
+        ? await this.sql<{ status: string | null; targetActive: boolean }[]>`
+            WITH account AS MATERIALIZED (
+              SELECT status FROM contribution_users
+              WHERE id = ${userId} FOR UPDATE
+            ), target AS MATERIALIZED (
+              SELECT id FROM reviews
+              WHERE id = ${target.reviewId} AND publication_state = 'active'
+            ), changed AS (
+              INSERT INTO review_emoji_reactions (user_id, review_id, code)
+              SELECT ${userId}, target.id, ${code}
+              FROM account CROSS JOIN target WHERE account.status = 'active'
+              ON CONFLICT DO NOTHING
+            )
+            SELECT (SELECT status FROM account) AS status,
+                   EXISTS (SELECT 1 FROM target) AS "targetActive"
+          `
+        : await this.sql<{ status: string | null; targetActive: boolean }[]>`
+            WITH account AS MATERIALIZED (
+              SELECT status FROM contribution_users
+              WHERE id = ${userId} FOR UPDATE
+            ), target AS MATERIALIZED (
+              SELECT id FROM reviews
+              WHERE id = ${target.reviewId} AND publication_state = 'active'
+            ), changed AS (
+              DELETE FROM review_emoji_reactions
+              WHERE user_id = ${userId}
+                AND review_id = (SELECT id FROM target)
+                AND code = ${code}
+                AND EXISTS (SELECT 1 FROM account WHERE status = 'active')
+            )
+            SELECT (SELECT status FROM account) AS status,
+                   EXISTS (SELECT 1 FROM target) AS "targetActive"
+          `;
     }
     if (result?.status !== "active")
       rejectSignalUser(result?.status ?? undefined);
+    if (target.type === "review" && !result.targetActive)
+      throw new SignalWriteError("invalid-target", "Review is not active");
   }
 
   async mergeInstructorSignals(retiredUuid: string, survivorUuid: string) {
@@ -1194,6 +1348,13 @@ function initializeRuntime() {
     moderation: createModerationService(new PostgresModerationRepository(sql)),
     signals: createSignalService(new PostgresSignalRepository(sql), {
       async resolveTarget(target) {
+        if (target.type === "review") {
+          const [review] = await sql<{ id: string }[]>`
+            SELECT id FROM reviews
+            WHERE id = ${target.reviewId} AND publication_state = 'active'
+          `;
+          return review ? target : undefined;
+        }
         const {
           getInstructorIdentity,
           getRankings,

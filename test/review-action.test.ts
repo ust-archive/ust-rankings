@@ -79,7 +79,7 @@ test("Review action denies cross-origin and signed-out writes before publication
   origin = "https://rankings.example";
   userId = undefined;
   expect(await redirectOf(() => publishReview(null, form()))).toContain(
-    "/sign-in?r=%2Fcourses%2FCOMP%2F2000",
+    "/auth/login?r=%2Fcourses%2FCOMP%2F2000",
   );
   expect(published).toHaveLength(0);
 });

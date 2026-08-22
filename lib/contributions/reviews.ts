@@ -4,6 +4,7 @@ import {
   normalizeAttachmentDescription,
   normalizeAttachmentFilename,
 } from "@/lib/attachments/attachments";
+import type { SignalSummary } from "./signals";
 
 export type CourseBasis = {
   coursePrefix: string;
@@ -43,6 +44,7 @@ export type PublicReview = ReviewAssociations & {
   viewerCanEdit?: boolean;
   instructorAssociationStatus?: InstructorAssociationStatus;
   attachments?: ImageAttachment[];
+  signals?: SignalSummary;
 };
 
 export type PublishReviewRecord = {

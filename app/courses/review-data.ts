@@ -32,11 +32,16 @@ export async function loadReviews(
   try {
     return {
       reviews: await read(query, viewerUserId),
+      signedIn: Boolean(viewerUserId),
       unavailable: false as const,
     };
   } catch (error) {
     if (error instanceof ContributionsUnavailableError)
-      return { reviews: [], unavailable: true as const };
+      return {
+        reviews: [],
+        signedIn: Boolean(viewerUserId),
+        unavailable: true as const,
+      };
     throw error;
   }
 }
