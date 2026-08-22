@@ -100,12 +100,32 @@ if (!connection) {
       }
       await sql`UPDATE contribution_users SET status = 'active' WHERE id = ${first.id}`;
       const reviewId = crypto.randomUUID();
+      const reviewRevisionId = crypto.randomUUID();
       const withdrawnReviewId = crypto.randomUUID();
+      const withdrawnRevisionId = crypto.randomUUID();
       await sql`
         INSERT INTO reviews (id, author_user_id, publication_state, course_prefix, course_number)
         VALUES
           (${reviewId}, ${first.id}, 'active', 'COMP', '2000'),
           (${withdrawnReviewId}, ${first.id}, 'withdrawn', 'MATH', '1000')
+      `;
+      await sql`
+        INSERT INTO review_revisions (
+          id, review_id, markdown, attribution, captured_display_name,
+          policy_version
+        ) VALUES
+          (${reviewRevisionId}, ${reviewId}, 'Active review', 'attributed',
+           'Review Author', 'review-test-v1'),
+          (${withdrawnRevisionId}, ${withdrawnReviewId}, 'Withdrawn review',
+           'identity-hidden', NULL, 'review-test-v1')
+      `;
+      await sql`
+        UPDATE reviews
+        SET current_revision_id = CASE id
+          WHEN ${reviewId} THEN ${reviewRevisionId}
+          WHEN ${withdrawnReviewId} THEN ${withdrawnRevisionId}
+        END
+        WHERE id IN (${reviewId}, ${withdrawnReviewId})
       `;
       await sql`
         INSERT INTO course_emoji_reactions
@@ -143,6 +163,9 @@ if (!connection) {
           {
             targetType: "review",
             reviewId,
+            reviewAuthor: "Review Author",
+            coursePrefix: "COMP",
+            courseNumber: "2000",
             kind: "emoji",
             code: "fire",
           },
@@ -163,12 +186,18 @@ if (!connection) {
           {
             targetType: "review",
             reviewId,
+            reviewAuthor: "Review Author",
+            coursePrefix: "COMP",
+            courseNumber: "2000",
             kind: "emoji",
             code: "love",
           },
           {
             targetType: "review",
             reviewId,
+            reviewAuthor: "Review Author",
+            coursePrefix: "COMP",
+            courseNumber: "2000",
             kind: "thumb",
             code: "down",
           },

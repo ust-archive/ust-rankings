@@ -263,7 +263,9 @@ export function AccountView({
                               reaction.instructorUuid,
                               instructorNames,
                             )
-                          : "Review";
+                          : reaction.reviewAuthor
+                            ? `${reaction.reviewAuthor}'s Review`
+                            : "Anonymous Review";
                     const href =
                       reaction.targetType === "course"
                         ? `/courses/${reaction.coursePrefix.toLowerCase()}/${reaction.courseNumber.toLowerCase()}`
@@ -282,6 +284,32 @@ export function AccountView({
                           >
                             {target}
                           </Link>
+                          {reaction.targetType === "review" &&
+                          (reaction.coursePrefix || reaction.instructorUuid) ? (
+                            <p className="flex flex-wrap gap-x-1.5 text-sm text-muted-foreground">
+                              {reaction.coursePrefix &&
+                              reaction.courseNumber ? (
+                                <Link
+                                  className="!no-underline hover:!underline"
+                                  href={`/courses/${reaction.coursePrefix.toLowerCase()}/${reaction.courseNumber.toLowerCase()}`}
+                                >
+                                  {reaction.coursePrefix}{" "}
+                                  {reaction.courseNumber}
+                                </Link>
+                              ) : null}
+                              {reaction.instructorUuid ? (
+                                <Link
+                                  className="!no-underline hover:!underline"
+                                  href={`/instructors/${reaction.instructorUuid}`}
+                                >
+                                  {instructorLabel(
+                                    reaction.instructorUuid,
+                                    instructorNames,
+                                  )}
+                                </Link>
+                              ) : null}
+                            </p>
+                          ) : null}
                           <time
                             className="text-sm text-muted-foreground"
                             dateTime={reaction.createdAt.toISOString()}

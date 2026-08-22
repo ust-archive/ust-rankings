@@ -29,6 +29,7 @@ export type AccountContributions = {
           courseNumber: string;
           instructorUuid: null;
           reviewId: null;
+          reviewAuthor: null;
         }
       | {
           targetType: "instructor";
@@ -36,13 +37,15 @@ export type AccountContributions = {
           courseNumber: null;
           instructorUuid: string;
           reviewId: null;
+          reviewAuthor: null;
         }
       | {
           targetType: "review";
-          coursePrefix: null;
-          courseNumber: null;
-          instructorUuid: null;
+          coursePrefix: string | null;
+          courseNumber: string | null;
+          instructorUuid: string | null;
           reviewId: string;
+          reviewAuthor: string | null;
         }
     ) &
       (
