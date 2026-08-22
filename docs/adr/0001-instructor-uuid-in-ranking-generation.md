@@ -6,7 +6,7 @@ Identity is published in four Parquet relations in that Ranking Generation: one 
 
 Offered Courses with no samples get the same treatment as schedule-only Instructors: zero samples, Bayesian score equal to their family's prior mean, receive-only, dense term grid.
 
-Merge, split, and ITSC corrections are pipeline input. The app does not overlay a registry at refresh. Schedule resolves a Class source name against the accepted ranking generation at read time; it does not snapshot Instructor UUIDs into a Schedule generation.
+Merge, split, and ITSC corrections are pipeline input. Two Instructors may share one Canonical Instructor Name: split history and its affected Course Offering associations keep their evidence on distinct Instructor UUIDs, while an unqualified same-name collision fails publication. The app does not overlay a registry at refresh. Schedule resolves a Class source name against the accepted ranking generation at read time; it does not snapshot Instructor UUIDs into a Schedule generation.
 
 Between pipeline runs the full identity snapshot is the previous Ranking Generation on Hugging Face. The identity relations carry current identities and append-only event history.
 

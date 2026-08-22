@@ -431,7 +431,7 @@ type Generation = {
   directory: string;
   instance: DuckDBInstance;
   connection: DuckDBConnection;
-  identitiesByCurrentName: Map<string, InstructorIdentity>;
+  identitiesByCurrentName: Map<string, InstructorIdentity[]>;
   identitiesByObservedName: Map<string, InstructorIdentity[]>;
   identitiesByUuid: Map<string, InstructorIdentity>;
   identitiesByItsc: Map<string, InstructorIdentity>;
@@ -889,12 +889,12 @@ function validateIdentities(
   const uuidPattern = INSTRUCTOR_UUID_PATTERN;
   const itscPattern = ITSC_PATTERN;
   const observedNames = new Map<string, InstructorIdentity[]>();
-  const currentNames = new Map<string, InstructorIdentity>();
+  const currentNames = new Map<string, InstructorIdentity[]>();
+  const canonicalNames = new Map<string, InstructorIdentity[]>();
   const identitiesByUuid = new Map<string, InstructorIdentity>();
   const identitiesByItsc = new Map<string, InstructorIdentity>();
   const identifiersByUuid = new Map<string, InstructorIdentifierHistory[]>();
   const redirectByUuid = new Map<string, string>();
-  const canonicalNames = new Set<string>();
   const claimedItscs = new Map<string, string>();
 
   for (const identity of manifest.identities) {
@@ -905,12 +905,13 @@ function validateIdentities(
       identitiesByUuid.has(identity.uuid) ||
       !canonicalName ||
       canonicalName === "tba" ||
-      canonicalNames.has(canonicalName) ||
       (identity.itsc !== undefined && (!itsc || !itscPattern.test(itsc)))
     )
       throw new Error("Invalid Instructor identity");
     identitiesByUuid.set(identity.uuid, identity);
-    canonicalNames.add(canonicalName);
+    const canonicalOwners = canonicalNames.get(canonicalName) ?? [];
+    canonicalOwners.push(identity);
+    canonicalNames.set(canonicalName, canonicalOwners);
     if (itsc) {
       if (claimedItscs.has(itsc)) throw new Error("ITSC history is not unique");
       identity.itsc = itsc;
@@ -964,10 +965,10 @@ function validateIdentities(
         .map((alias) => alias.name),
     ]) {
       const normalized = normalizedInstructorName(observedName);
-      const owner = currentNames.get(normalized);
-      if (owner && owner.uuid !== identity.uuid)
-        throw new Error("Current Instructor name is ambiguous");
-      currentNames.set(normalized, identity);
+      const owners = currentNames.get(normalized) ?? [];
+      if (!owners.some((owner) => owner.uuid === identity.uuid))
+        owners.push(identity);
+      currentNames.set(normalized, owners);
     }
   }
 
@@ -1060,6 +1061,32 @@ function validateIdentities(
     }
   }
 
+  for (const owners of canonicalNames.values()) {
+    if (owners.length < 2) continue;
+    const uuids = new Set(owners.map((identity) => identity.uuid));
+    const links = identityEvents.flatMap((event) => {
+      if (event.type === "split")
+        return uuids.has(event.sourceUuid) && uuids.has(event.newUuid)
+          ? [[event.sourceUuid, event.newUuid] as const]
+          : [];
+      if (event.type === "merge")
+        return uuids.has(event.retiredUuid) && uuids.has(event.survivorUuid)
+          ? [[event.retiredUuid, event.survivorUuid] as const]
+          : [];
+      return [];
+    });
+    const connected = new Set([owners[0]?.uuid ?? ""]);
+    for (let size = -1; size !== connected.size; ) {
+      size = connected.size;
+      for (const [left, right] of links) {
+        if (connected.has(left)) connected.add(right);
+        if (connected.has(right)) connected.add(left);
+      }
+    }
+    if (connected.size !== uuids.size)
+      throw new Error("Same-name Instructors lack distinguishing history");
+  }
+
   const finalUuid = (uuid: string) => {
     const visited = new Set<string>();
     let current = uuid;
@@ -1091,7 +1118,9 @@ function validateIdentities(
     const identity = identitiesByUuid.get(uuid);
     if (
       !identity ||
-      currentNames.get(normalizedInstructorName(name))?.uuid !== uuid
+      !currentNames
+        .get(normalizedInstructorName(name))
+        ?.some((candidate) => candidate.uuid === uuid)
     )
       throw new Error("Instructor registry does not match the generation");
     const existing = currentNameByUuid.get(uuid);
@@ -1166,6 +1195,7 @@ function lookupInstructorIdentity(
 function associationNeedsResolution(
   registry: InstructorRegistry,
   association: {
+    uuid?: string;
     sourceName: string;
     termCode: string;
     courseCode: string;
@@ -1174,6 +1204,7 @@ function associationNeedsResolution(
   return registry.identityEvents.some(
     (event) =>
       event.type === "split" &&
+      association.uuid !== event.newUuid &&
       event.affectedAssociations.some(
         (affected) =>
           normalizedInstructorName(affected.sourceName) ===
@@ -1509,6 +1540,125 @@ export async function resolveObservedInstructorNames(names: string[]) {
   return resolved;
 }
 
+export type ObservedInstructorCourseOffering = {
+  sourceName: string;
+  termCode: string;
+  coursePrefix: string;
+  courseNumber: string;
+};
+
+export async function resolveObservedInstructorCourseOfferings(
+  associations: ObservedInstructorCourseOffering[],
+) {
+  if (associations.length === 0) return [];
+  const registry = await instructorRegistry();
+  const resolved = associations.map((association) => {
+    const candidates = new Set(
+      (
+        registry.identitiesByObservedName.get(
+          normalizedInstructorName(association.sourceName),
+        ) ?? []
+      ).map((identity) => resolvedInstructorIdentity(registry, identity).uuid),
+    );
+    return candidates.size === 1 ? [...candidates][0] : undefined;
+  });
+  const ambiguous = associations.flatMap((association, index) =>
+    resolved[index] ? [] : [{ association, index }],
+  );
+  if (ambiguous.length === 0) return resolved;
+
+  const lease = await acquireGeneration();
+  try {
+    const parameters = Object.fromEntries(
+      ambiguous.flatMap(({ association, index }) => [
+        [`term${index}`, association.termCode],
+        [`prefix${index}`, association.coursePrefix],
+        [`number${index}`, association.courseNumber],
+      ]),
+    );
+    const where = ambiguous
+      .map(
+        ({ index }) =>
+          `(term_code = $term${index} AND subject = $prefix${index} AND code = $number${index})`,
+      )
+      .join(" OR ");
+    const rows = await queryRows(
+      lease.accepted.connection,
+      `SELECT uuid, term_code, subject, code FROM read_parquet('${sqlPath(lease.accepted.directory, "course-instructors.parquet")}') WHERE ${where}`,
+      parameters,
+    );
+    for (const { association, index } of ambiguous) {
+      const candidates = new Set(
+        (
+          lease.accepted.identitiesByObservedName.get(
+            normalizedInstructorName(association.sourceName),
+          ) ?? []
+        ).map(
+          (identity) =>
+            resolvedInstructorIdentity(lease.accepted, identity).uuid,
+        ),
+      );
+      const matches = new Set(
+        rows.flatMap((row) =>
+          String(row.term_code) === association.termCode &&
+          String(row.subject) === association.coursePrefix &&
+          String(row.code) === association.courseNumber &&
+          candidates.has(String(row.uuid))
+            ? [String(row.uuid)]
+            : [],
+        ),
+      );
+      if (matches.size === 1) resolved[index] = [...matches][0];
+    }
+    return resolved;
+  } finally {
+    await lease.release();
+  }
+}
+
+export async function courseOfferingsForInstructorUuids(uuids: string[]) {
+  const unique = [...new Set(uuids.map((uuid) => uuid.toLowerCase()))];
+  if (unique.length === 0) return [];
+  const lease = await acquireGeneration();
+  try {
+    const wanted = new Set(
+      unique.flatMap((uuid) => {
+        const identity = lease.accepted.identitiesByUuid.get(uuid);
+        return identity
+          ? [resolvedInstructorIdentity(lease.accepted, identity).uuid]
+          : [];
+      }),
+    );
+    const mergeFamilyUuids = [
+      ...lease.accepted.identitiesByUuid.values(),
+    ].flatMap((identity) =>
+      wanted.has(resolvedInstructorIdentity(lease.accepted, identity).uuid)
+        ? [identity.uuid]
+        : [],
+    );
+    if (mergeFamilyUuids.length === 0) return [];
+    const parameters = Object.fromEntries(
+      mergeFamilyUuids.map((uuid, index) => [`uuid${index}`, uuid]),
+    );
+    const placeholders = mergeFamilyUuids
+      .map((_, index) => `$uuid${index}`)
+      .join(", ");
+    const rows = await queryRows(
+      lease.accepted.connection,
+      `SELECT DISTINCT uuid, term_code, subject, code FROM read_parquet('${sqlPath(lease.accepted.directory, "course-instructors.parquet")}') WHERE uuid IN (${placeholders})`,
+      parameters,
+    );
+    return rows.map((row) => ({
+      uuid: String(row.uuid),
+      termCode: String(row.term_code),
+      coursePrefix: String(row.subject),
+      courseNumber: String(row.code),
+    }));
+  } finally {
+    await lease.release();
+  }
+}
+
 export async function observedNamesForInstructorUuids(uuids: string[]) {
   const wanted = new Set(uuids);
   if (wanted.size === 0 || !rankingGenerationIsReady()) return [];
@@ -1518,10 +1668,21 @@ export async function observedNamesForInstructorUuids(uuids: string[]) {
     for (const identity of registry.identitiesByUuid.values()) {
       const resolved = resolvedInstructorIdentity(registry, identity);
       if (!wanted.has(resolved.uuid)) continue;
-      names.push(
+      for (const name of [
         identity.canonicalName,
         ...identity.aliases.map((alias) => alias.name),
-      );
+      ]) {
+        const owners = new Set(
+          (
+            registry.identitiesByObservedName.get(
+              normalizedInstructorName(name),
+            ) ?? []
+          ).map(
+            (candidate) => resolvedInstructorIdentity(registry, candidate).uuid,
+          ),
+        );
+        if (owners.size === 1) names.push(name);
+      }
     }
     return [...new Set(names)];
   } catch {
@@ -2646,6 +2807,7 @@ export async function getRankings(
         }
         const courses = courseRows.flatMap((row) => {
           const association = {
+            uuid,
             sourceName: String(row.name ?? name),
             termCode: String(row.term_code),
             courseCode: String(row.course_code),

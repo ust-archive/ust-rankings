@@ -47,7 +47,7 @@ The rating relations contain dense longitudinal history. The ranking relations c
 
 The pipeline never mints identity during a normal publication. It loads all four identity relations from the previous identity-aware Ranking Generation and fails when any are missing. `--init` permits missing event and split-association relations only for an intentional first identity-history publication; identities and aliases remain required.
 
-Current source spellings are clustered conservatively. Token and initial matches require supporting Course-Term evidence, co-Instructor collisions are rejected, and unresolved names fail rather than receiving a new UUID. Schedule and UST Space spellings are preferred for the Canonical Instructor Name; SFQ is the fallback. TBA and program labels are not Instructors.
+Current source spellings are clustered conservatively. Token and initial matches require supporting Course Offering evidence, co-Instructor collisions are rejected, and unresolved names fail rather than receiving a new UUID. Canonical Instructor Names and aliases are display data and may be shared. Same-name Instructors remain distinct only when a prior UUID association or split history identifies the Course Offering association; otherwise publication fails closed. Schedule and UST Space spellings are preferred for the Canonical Instructor Name; SFQ is the fallback. TBA and program labels are not Instructors.
 
 ## Model semantics
 

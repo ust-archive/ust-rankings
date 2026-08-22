@@ -44,6 +44,67 @@ test("Instructor UUIDs resolve to current display names in one generation read",
   );
 });
 
+test("same-name Instructors remain distinct by UUID when split history identifies them", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "ranking-same-name-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      sameNameSplit: true,
+    }),
+  );
+  const { queryRankings } = await import("@/lib/rankings/server");
+
+  const page = await queryRankings({
+    entity: "instructor",
+    preset: "learning",
+    termCode: "2510",
+  });
+  expect(
+    page.results
+      .filter((row) => row.canonicalName === "Alpha Instructor")
+      .map((row) => row.uuid)
+      .sort(),
+  ).toEqual([
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+  ]);
+});
+
+test("Instructor Course Offerings include retired merge-family UUIDs", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "ranking-merged-offerings-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      identityEvents: [
+        {
+          type: "merge",
+          retiredUuid: "00000000-0000-4000-8000-000000000002",
+          survivorUuid: "00000000-0000-4000-8000-000000000001",
+          sourceCommit: fixtureSha,
+        },
+      ],
+    }),
+  );
+  const { courseOfferingsForInstructorUuids } = await import(
+    "@/lib/rankings/server"
+  );
+
+  await expect(
+    courseOfferingsForInstructorUuids(["00000000-0000-4000-8000-000000000001"]),
+  ).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        coursePrefix: "MATH",
+        courseNumber: "2000",
+      }),
+    ]),
+  );
+});
+
 test("the original bright grade palette is preserved", () => {
   expect(gradeColor(0)).toEqual([237, 27, 47]);
   expect(gradeColor(0.25)).toEqual([250, 166, 26]);
@@ -676,6 +737,10 @@ for (const [malformation, label] of [
   ["wrong-latest-term", "an invalid latest-Term relation"],
   ["failed-smoke-query", "a failed representative smoke query"],
   ["tba-alias", "a TBA Instructor Alias"],
+  [
+    "ambiguous-canonical-name",
+    "same-name Instructors without identity history",
+  ],
 ] as const) {
   test(`queryRankings rejects ${label}`, async () => {
     const temporaryDirectory = await mkdtemp(

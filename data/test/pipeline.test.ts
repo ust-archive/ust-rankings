@@ -25,7 +25,7 @@ async function copyQuery(
 
 async function makeFixtures(
   dataDir: string,
-  { conflictingCatalog = false } = {},
+  { conflictingCatalog = false, sameName = false, extraSameName = false } = {},
 ): Promise<void> {
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
@@ -80,11 +80,12 @@ async function makeFixtures(
           [{'instructors': [
             'ALPHA, Alice Beatrice', 'Adam Blake DELTA',
             'WANG, Wei', 'WEI, Wang', 'TBA', 'MSC(TLE) PROGRAM, .'
+            ${sameName ? ", 'Alex Lee'" : ""}
           ]}], 'high', 'E', 'LEC'),
         (100, 'class-low', TIMESTAMP '2025-01-01', 'ACTIVE',
-          [{'instructors': ['Cara Gamma']}], 'low', 'E', 'LEC'),
+          [{'instructors': ['Cara Gamma'${sameName ? ", 'Alex Lee'" : ""}]}], 'low', 'E', 'LEC'),
         (100, 'class-prior', TIMESTAMP '2025-01-01', 'ACTIVE',
-          [{'instructors': ['Eve Epsilon']}], 'prior', 'E', 'LEC')
+          [{'instructors': ['Eve Epsilon'${extraSameName ? ", 'Alex Lee'" : ""}]}], 'prior', 'E', 'LEC')
       ) AS classes(term_num, number, "timestamp", status, schedules, course_id, role, type)
     `,
     );
@@ -136,6 +137,14 @@ async function makeFixtures(
           100, false, 0.8, 2.0, 0.2, 2.0, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ic'),
         ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '2000', 'L1', 'Cara Gamma', 33,
           100, false, 0.8, 2.1, 0.2, 2.1, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ic')
+        ${
+          sameName
+            ? `,('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'Alex Lee', 40,
+          100, false, 0.8, 4.8, 0.2, 4.8, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'same-high'),
+        ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '2000', 'L1', 'Alex Lee', 41,
+          100, false, 0.8, 1.2, 0.2, 1.2, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'same-low')`
+            : ""
+        }
       ) AS sfq(${sfqColumns})
     `,
     );
@@ -172,6 +181,7 @@ async function makePreviousGeneration(
   directory: string,
   omittedName?: string,
   sharedIdentityNames?: readonly [string, string],
+  sameName?: "resolved" | "ambiguous" | "merged" | "wildcard",
 ): Promise<string> {
   const names = [
     "ALPHA, Alice Beatrice",
@@ -193,6 +203,18 @@ async function makePreviousGeneration(
           : index + 1,
       ).padStart(12, "0")}`,
     }));
+  if (sameName) {
+    rows.push(
+      {
+        name: "Alex Lee",
+        uuid: "00000000-0000-4000-8000-000000000091",
+      },
+      {
+        name: "Alex Lee",
+        uuid: "00000000-0000-4000-8000-000000000092",
+      },
+    );
+  }
   const values = rows
     .map(
       ({ name, uuid }) =>
@@ -219,13 +241,27 @@ async function makePreviousGeneration(
     await copyQuery(
       connection,
       join(directory, "instructor-identity-events.parquet"),
-      "SELECT NULL::VARCHAR AS event_type, NULL::VARCHAR AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, NULL::VARCHAR AS retired_uuid, NULL::VARCHAR AS survivor_uuid, NULL::VARCHAR AS source_uuid, NULL::VARCHAR AS new_uuid WHERE false",
+      sameName === "resolved" || sameName === "wildcard"
+        ? "SELECT 'split' AS event_type, 'fixture' AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, NULL::VARCHAR AS retired_uuid, NULL::VARCHAR AS survivor_uuid, '00000000-0000-4000-8000-000000000091' AS source_uuid, '00000000-0000-4000-8000-000000000092' AS new_uuid"
+        : sameName === "merged"
+          ? "SELECT 'merge' AS event_type, 'fixture' AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, '00000000-0000-4000-8000-000000000092' AS retired_uuid, '00000000-0000-4000-8000-000000000091' AS survivor_uuid, NULL::VARCHAR AS source_uuid, NULL::VARCHAR AS new_uuid"
+          : "SELECT NULL::VARCHAR AS event_type, NULL::VARCHAR AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, NULL::VARCHAR AS retired_uuid, NULL::VARCHAR AS survivor_uuid, NULL::VARCHAR AS source_uuid, NULL::VARCHAR AS new_uuid WHERE false",
     );
     await copyQuery(
       connection,
       join(directory, "instructor-split-affected-associations.parquet"),
-      "SELECT NULL::VARCHAR AS source_commit, NULL::VARCHAR AS new_uuid, NULL::VARCHAR AS source_name, NULL::VARCHAR AS term_code, NULL::VARCHAR AS course_code WHERE false",
+      sameName === "resolved"
+        ? "SELECT 'fixture' AS source_commit, '00000000-0000-4000-8000-000000000092' AS new_uuid, 'Alex Lee' AS source_name, '2510' AS term_code, 'COMP 2000' AS course_code"
+        : sameName === "wildcard"
+          ? "SELECT 'fixture' AS source_commit, '00000000-0000-4000-8000-000000000092' AS new_uuid, 'Alex Lee' AS source_name, NULL::VARCHAR AS term_code, NULL::VARCHAR AS course_code"
+          : "SELECT NULL::VARCHAR AS source_commit, NULL::VARCHAR AS new_uuid, NULL::VARCHAR AS source_name, NULL::VARCHAR AS term_code, NULL::VARCHAR AS course_code WHERE false",
     );
+    if (sameName === "resolved")
+      await copyQuery(
+        connection,
+        join(directory, "course-instructors.parquet"),
+        "SELECT '00000000-0000-4000-8000-000000000091' AS uuid, 'Alex Lee' AS name, 100 AS term_num, '2510' AS term_code, 'COMP' AS subject, '1000' AS code",
+      );
   } finally {
     connection.closeSync();
     instance.closeSync();
@@ -605,6 +641,171 @@ test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () =
       ),
       [{ count: 0 }],
     );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("same-name Instructors stay distinct when split history identifies their associations", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true });
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      "resolved",
+    );
+    const output = runPipeline(dataDir, join(temp, "out"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+
+    assert.deepEqual(
+      await rows(`
+        SELECT uuid, code
+        FROM read_parquet('${parquet(output, "course-instructors")}')
+        WHERE name = 'Alex Lee'
+        ORDER BY code
+      `),
+      [
+        {
+          uuid: "00000000-0000-4000-8000-000000000091",
+          code: "1000",
+        },
+        {
+          uuid: "00000000-0000-4000-8000-000000000092",
+          code: "2000",
+        },
+      ],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT
+          max(bayesian) FILTER (
+            WHERE uuid = '00000000-0000-4000-8000-000000000091'
+          ) > max(bayesian) FILTER (
+            WHERE uuid = '00000000-0000-4000-8000-000000000092'
+          ) AS evidence_stays_distinct
+        FROM read_parquet('${parquet(output, "instructor-ratings")}')
+        WHERE name = 'Alex Lee' AND criterion = 'instructor'
+      `),
+      [{ evidence_stays_distinct: true }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("same-name merge history resolves new associations to the survivor UUID", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true });
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      "merged",
+    );
+    const output = runPipeline(dataDir, join(temp, "out"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    assert.deepEqual(
+      await rows(`
+        SELECT DISTINCT uuid
+        FROM read_parquet('${parquet(output, "course-instructors")}')
+        WHERE name = 'Alex Lee'
+      `),
+      [{ uuid: "00000000-0000-4000-8000-000000000091" }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("new same-name associations fail closed without durable evidence", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true, extraSameName: true });
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      "resolved",
+    );
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "out"),
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stderr}${result.stdout}`, /Ambiguous Instructor/);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("name-only split evidence does not assign same-name Instructor UUIDs", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true });
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      "wildcard",
+    );
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "out"),
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(
+      `${result.stderr}${result.stdout}`,
+      /Alex Lee, 2510, COMP 1000/,
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("same-name Instructors fail closed without distinguishing history", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true });
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      "ambiguous",
+    );
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "out"),
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stderr}${result.stdout}`, /Ambiguous Instructor/);
   } finally {
     await rm(temp, { recursive: true, force: true });
   }

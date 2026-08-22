@@ -42,6 +42,18 @@ type AffectedRow = {
   course_code: string | null;
 };
 
+type AssociationRow = {
+  name: string;
+  term_num: number;
+  term_code: string;
+  prefix: string;
+  courseNumber: string;
+};
+
+type PreviousAssociationRow = AssociationRow & { uuid: string };
+
+type ObservedAliasRow = AssociationRow & { alias: string };
+
 type SeedIdentity = {
   uuid: string;
   canonicalName: string;
@@ -184,31 +196,43 @@ export async function assignInstructorIdentities(
     correctionsPath?: string;
   },
 ): Promise<void> {
-  const names = (
+  const associations = (
     await connection.runAndReadAll(`
-      SELECT DISTINCT name AS canonical_name
-      FROM instructor_entities
-      WHERE lower(trim(name)) <> 'tba'
-      ORDER BY name
+      SELECT DISTINCT
+        links.name,
+        links.term_num,
+        terms.term_code,
+        links.subject AS prefix,
+        links.code AS "courseNumber"
+      FROM course_term_instructors AS links
+      JOIN terms USING (term_num)
+      WHERE lower(trim(links.name)) <> 'tba'
+      ORDER BY links.name, links.term_num, links.subject, links.code
     `)
-  ).getRowObjectsJson() as Array<{ canonical_name: string }>;
+  ).getRowObjectsJson() as AssociationRow[];
 
   const observed = (
     await connection.runAndReadAll(`
       SELECT DISTINCT
-        anchors.name AS name,
-        aliases.name AS canonical_name
-      FROM instructor_name_anchors AS anchors
+        footprints.raw_name AS alias,
+        aliases.name,
+        footprints.term_num,
+        terms.term_code,
+        footprints.subject AS prefix,
+        footprints.code AS "courseNumber"
+      FROM instructor_name_footprints AS footprints
       JOIN instructor_aliases AS aliases
-        ON aliases.name_key = anchors.name_key
-      WHERE lower(trim(anchors.name)) <> 'tba'
+        ON aliases.name_key = instructor_name_key(footprints.raw_name)
+      JOIN terms USING (term_num)
+      WHERE lower(trim(footprints.raw_name)) <> 'tba'
     `)
-  ).getRowObjectsJson() as Array<{ name: string; canonical_name: string }>;
+  ).getRowObjectsJson() as ObservedAliasRow[];
 
   let previousIdentities: IdentityRow[] = [];
   let previousAliases: AliasRow[] = [];
   let previousEvents: EventRow[] = [];
   let previousAffected: AffectedRow[] = [];
+  let previousAssociations: PreviousAssociationRow[] = [];
 
   if (!options.previousGenerationDir)
     throw new Error("Previous Instructor identities are required");
@@ -242,65 +266,21 @@ export async function assignInstructorIdentities(
         )
       ).getRowObjectsJson() as AffectedRow[];
     }
-  }
-
-  const byName = new Map<string, string>();
-  for (const alias of previousAliases) {
-    const key = alias.name.trim().toLocaleLowerCase();
-    const existing = byName.get(key);
-    if (existing && existing !== alias.uuid)
-      throw new Error(`Ambiguous Instructor alias ${alias.name}`);
-    byName.set(key, alias.uuid);
-  }
-  for (const identity of previousIdentities) {
-    const key = identity.canonical_name.trim().toLocaleLowerCase();
-    const existing = byName.get(key);
-    if (existing && existing !== identity.uuid)
-      throw new Error(
-        `Ambiguous Instructor canonical name ${identity.canonical_name}`,
-      );
-    byName.set(key, identity.uuid);
+    const previousCourseInstructors = join(
+      options.previousGenerationDir,
+      "course-instructors.parquet",
+    );
+    if (await exists(previousCourseInstructors)) {
+      previousAssociations = (
+        await connection.runAndReadAll(
+          `SELECT uuid, name, term_num, term_code, subject AS prefix, code AS "courseNumber" FROM read_parquet('${previousCourseInstructors.replaceAll("\\", "/")}')`,
+        )
+      ).getRowObjectsJson() as PreviousAssociationRow[];
+    }
   }
 
   const identities = new Map(previousIdentities.map((row) => [row.uuid, row]));
   const aliases = [...previousAliases];
-
-  const currentNameByUuid = new Map<string, string>();
-  for (const { canonical_name } of names) {
-    const key = canonical_name.trim().toLocaleLowerCase();
-    const uuid = byName.get(key);
-    if (!uuid)
-      throw new Error(`Unmatched Instructor identity: ${canonical_name}`);
-    if (!identities.has(uuid))
-      throw new Error(`Unknown Instructor UUID: ${uuid}`);
-    const claimedName = currentNameByUuid.get(uuid);
-    if (claimedName && claimedName !== canonical_name)
-      throw new Error(
-        `Ambiguous Instructor identity ${uuid}: ${claimedName}, ${canonical_name}`,
-      );
-    currentNameByUuid.set(uuid, canonical_name);
-    const current = identities.get(uuid);
-    if (current) identities.set(uuid, { ...current, canonical_name });
-  }
-
-  const aliasKeys = new Set(
-    aliases.map((alias) => `${alias.uuid}\0${alias.name.toLocaleLowerCase()}`),
-  );
-  for (const row of observed) {
-    const uuid = byName.get(row.canonical_name.trim().toLocaleLowerCase());
-    if (!uuid) continue;
-    const key = `${uuid}\0${row.name.toLocaleLowerCase()}`;
-    if (aliasKeys.has(key)) continue;
-    aliasKeys.add(key);
-    aliases.push({
-      uuid,
-      name: row.name,
-      source: "ranking-generation",
-      source_commit: options.sourceCommit,
-      source_file: "instructor-ratings.parquet",
-    });
-  }
-
   let events = previousEvents;
   let affected = previousAffected;
   if (options.correctionsPath && (await exists(options.correctionsPath))) {
@@ -321,6 +301,126 @@ export async function assignInstructorIdentities(
           identities.set(event.uuid, { ...current, itsc: event.itsc });
       }
     }
+  }
+
+  const normalized = (value: string) => value.trim().toLocaleLowerCase();
+  const mergeRedirects = new Map(
+    events.flatMap((event) =>
+      event.event_type === "merge" &&
+      event.retired_uuid !== null &&
+      event.survivor_uuid !== null
+        ? [[event.retired_uuid, event.survivor_uuid]]
+        : [],
+    ),
+  );
+  const survivingUuid = (uuid: string) => {
+    const visited = new Set<string>();
+    let current = uuid;
+    while (mergeRedirects.has(current)) {
+      if (visited.has(current)) throw new Error("Cyclic Instructor merge");
+      visited.add(current);
+      current = mergeRedirects.get(current) as string;
+    }
+    return current;
+  };
+  const candidatesByName = new Map<string, Set<string>>();
+  for (const row of [...aliases, ...identities.values()].map((row) => ({
+    uuid: row.uuid,
+    name: "name" in row ? row.name : row.canonical_name,
+  }))) {
+    const candidates = candidatesByName.get(normalized(row.name)) ?? new Set();
+    candidates.add(survivingUuid(row.uuid));
+    candidatesByName.set(normalized(row.name), candidates);
+  }
+  const canonicalByAlias = new Map(
+    observed.map((row) => [normalized(row.alias), row.name]),
+  );
+
+  function resolveAssociation(row: AssociationRow): string {
+    const candidates = candidatesByName.get(normalized(row.name));
+    if (!candidates?.size)
+      throw new Error(`Unmatched Instructor identity: ${row.name}`);
+    if (candidates.size === 1) return [...candidates][0] as string;
+
+    const courseCode = `${row.prefix} ${row.courseNumber}`;
+    const correctedMatches = new Set(
+      affected.flatMap((item) =>
+        candidates.has(survivingUuid(item.new_uuid)) &&
+        normalized(
+          canonicalByAlias.get(normalized(item.source_name)) ??
+            item.source_name,
+        ) === normalized(row.name) &&
+        item.term_code === row.term_code &&
+        item.course_code === courseCode
+          ? [survivingUuid(item.new_uuid)]
+          : [],
+      ),
+    );
+    if (correctedMatches.size === 1) return [...correctedMatches][0] as string;
+    if (correctedMatches.size > 1)
+      throw new Error(
+        `Ambiguous Instructor identity: ${row.name}, ${row.term_code}, ${courseCode}`,
+      );
+
+    const evidenceMatches = new Set([
+      ...observed.flatMap((item) => {
+        const aliasCandidates = candidatesByName.get(normalized(item.alias));
+        return normalized(item.name) === normalized(row.name) &&
+          item.term_code === row.term_code &&
+          item.prefix === row.prefix &&
+          item.courseNumber === row.courseNumber &&
+          aliasCandidates?.size === 1
+          ? [...aliasCandidates].filter((uuid) => candidates.has(uuid))
+          : [];
+      }),
+      ...previousAssociations.flatMap((item) =>
+        candidates.has(survivingUuid(item.uuid)) &&
+        item.term_code === row.term_code &&
+        item.prefix === row.prefix &&
+        item.courseNumber === row.courseNumber
+          ? [survivingUuid(item.uuid)]
+          : [],
+      ),
+    ]);
+    if (evidenceMatches.size === 1) return [...evidenceMatches][0] as string;
+    throw new Error(
+      `Ambiguous Instructor identity: ${row.name}, ${row.term_code}, ${courseCode}`,
+    );
+  }
+
+  const assignments = associations.map((row) => ({
+    ...row,
+    uuid: resolveAssociation(row),
+  }));
+  const currentNameByUuid = new Map<string, string>();
+  for (const { name, uuid } of assignments) {
+    if (!identities.has(uuid))
+      throw new Error(`Unknown Instructor UUID: ${uuid}`);
+    const claimedName = currentNameByUuid.get(uuid);
+    if (claimedName && claimedName !== name)
+      throw new Error(
+        `Ambiguous Instructor identity ${uuid}: ${claimedName}, ${name}`,
+      );
+    currentNameByUuid.set(uuid, name);
+    const current = identities.get(uuid);
+    if (current) identities.set(uuid, { ...current, canonical_name: name });
+  }
+
+  const aliasKeys = new Set(
+    aliases.map((alias) => `${alias.uuid}\0${normalized(alias.name)}`),
+  );
+  for (const row of observed) {
+    const uuid = resolveAssociation(row);
+    const key = `${uuid}\0${normalized(row.alias)}`;
+    if (aliasKeys.has(key)) continue;
+    aliasKeys.add(key);
+    aliases.push({
+      uuid,
+      name: row.alias,
+      source: "ranking-generation",
+      source_commit: options.sourceCommit,
+      source_file: "instructor-ratings.parquet",
+    });
   }
 
   const identityList = [...identities.values()].sort((a, b) =>
@@ -360,6 +460,13 @@ export async function assignInstructorIdentities(
       term_code VARCHAR,
       course_code VARCHAR
     );
+    CREATE OR REPLACE TABLE instructor_identity_assignments (
+      name VARCHAR,
+      uuid VARCHAR,
+      term_num INTEGER,
+      subject VARCHAR,
+      code VARCHAR
+    );
   `);
 
   if (identityList.length > 0) {
@@ -380,6 +487,17 @@ export async function assignInstructorIdentities(
       .join(",\n");
     await connection.run(
       `INSERT INTO instructor_identity_aliases VALUES ${values}`,
+    );
+  }
+  if (assignments.length > 0) {
+    const values = assignments
+      .map(
+        (row) =>
+          `(${sqlLiteral(row.name)}, ${sqlLiteral(row.uuid)}, ${row.term_num}, ${sqlLiteral(row.prefix)}, ${sqlLiteral(row.courseNumber)})`,
+      )
+      .join(",\n");
+    await connection.run(
+      `INSERT INTO instructor_identity_assignments VALUES ${values}`,
     );
   }
   if (events.length > 0) {
@@ -404,4 +522,29 @@ export async function assignInstructorIdentities(
       `INSERT INTO instructor_split_affected_associations VALUES ${values}`,
     );
   }
+
+  await connection.run(`
+    CREATE OR REPLACE TABLE observation_instructor_identities AS
+    SELECT DISTINCT bridge.observation_id, assignments.uuid, assignments.name
+    FROM observation_instructors AS bridge
+    JOIN observations USING (observation_id)
+    JOIN instructor_identity_assignments AS assignments
+      ON assignments.name = bridge.name
+     AND assignments.term_num = observations.term_num
+     AND assignments.subject = observations.subject
+     AND assignments.code = observations.code;
+
+    CREATE OR REPLACE TABLE resolved_schedule_teaching_assignments AS
+    SELECT DISTINCT assignments.uuid, assignments.term_num
+    FROM schedule_teaching_assignments AS schedule
+    JOIN instructor_identity_assignments AS assignments
+      USING (name, term_num, subject, code);
+
+    CREATE OR REPLACE TABLE resolved_instructor_entities AS
+    SELECT assignments.uuid, identities.canonical_name AS name,
+      min(assignments.term_num)::INTEGER AS min_term_num
+    FROM instructor_identity_assignments AS assignments
+    JOIN instructor_identities AS identities USING (uuid)
+    GROUP BY assignments.uuid, identities.canonical_name;
+  `);
 }
