@@ -13,6 +13,7 @@ working:
 | `test:reviews` | Review service, associations, reads, and server actions |
 | `test:schedule` | Schedule query, Details lookup, calendar, and refresh |
 | `test:signals` | Thumbs Vote and Emoji Reaction service and server actions |
+| `test:browser` | Rendered navigation, history, loading feedback, and progressive enhancement in Chromium |
 
 The separate `test:contracts` suite exercises the Postgres adapters and needs
 `TEST_CONTRIBUTIONS_POSTGRES_URL`. CI supplies a disposable Postgres instance.
@@ -23,7 +24,11 @@ Tests mock only external seams such as Auth, Postgres, Spaces, time, and remote
 sources. They do not assert internal call order. Vitest isolates test files in
 workers while keeping independent files parallel.
 
-Frontend behavior is not automated in this repository. Follow `AGENTS.md`: run
-the app, inspect desktop and 390px screenshots with `agent-browser`, exercise
-keyboard interactions, and run its WCAG audit. This keeps visual checks tied to
-the rendered interface instead of implementation markup.
+Critical navigation behavior is automated through the rendered browser
+interface with Playwright. Browser tests use accessible roles, labels, URLs,
+and browser-level controls rather than test-only markup or private framework
+protocols. Run them with `npm run test:browser`.
+
+Follow `AGENTS.md` for visual coverage that automation does not replace: run the
+app, inspect desktop and 390px screenshots with `agent-browser`, exercise
+keyboard interactions, and run its WCAG audit.

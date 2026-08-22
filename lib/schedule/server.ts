@@ -9,6 +9,7 @@ import {
   type DuckDBValue,
 } from "@duckdb/node-api";
 import { normalizeInstructorUuid } from "@/lib/instructor-identity";
+import { testGenerationDirectory } from "@/lib/test-generation";
 
 const ARTIFACTS = ["classes.parquet", "courses.parquet"] as const;
 const schemas = {
@@ -253,6 +254,12 @@ let explicitGeneration:
   | { directory: string; generation?: Promise<Generation> }
   | undefined;
 let runtimeActive: Promise<Generation> | undefined;
+
+function configureBrowserTestGeneration() {
+  const directory = testGenerationDirectory("TEST_SCHEDULE_GENERATION");
+  if (directory && explicitGeneration?.directory !== directory)
+    explicitGeneration = { directory };
+}
 let runtimePrevious: Promise<Generation> | undefined;
 let runtimeActiveSha: string | undefined;
 let runtimeDependencies: ScheduleRefreshDependencies | undefined;
@@ -479,6 +486,7 @@ async function discoverGeneration() {
 }
 
 function generation() {
+  configureBrowserTestGeneration();
   if (explicitGeneration) {
     explicitGeneration.generation ??= loadGeneration(
       explicitGeneration.directory,

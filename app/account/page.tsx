@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { endSession, updateAccount } from "@/app/account/actions";
+import { EntityLink } from "@/app/entity-navigation";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -193,23 +193,23 @@ export function AccountView({
                       className="flex flex-col gap-1 py-3 first:pt-1 last:pb-0"
                       key={review.id}
                     >
-                      <Link
+                      <EntityLink
                         className="w-fit font-medium !no-underline hover:!underline"
                         href={`/reviews/${review.id}`}
                       >
                         View Review
-                      </Link>
+                      </EntityLink>
                       <p className="flex flex-wrap gap-x-1.5 text-sm text-muted-foreground">
                         {review.coursePrefix && review.courseNumber ? (
-                          <Link
+                          <EntityLink
                             className="!no-underline hover:!underline"
                             href={`/courses/${review.coursePrefix.toLowerCase()}/${review.courseNumber.toLowerCase()}`}
                           >
                             {review.coursePrefix} {review.courseNumber}
-                          </Link>
+                          </EntityLink>
                         ) : null}
                         {review.instructorUuid ? (
-                          <Link
+                          <EntityLink
                             className="!no-underline hover:!underline"
                             href={`/instructors/${review.instructorUuid}`}
                           >
@@ -217,7 +217,7 @@ export function AccountView({
                               review.instructorUuid,
                               instructorNames,
                             )}
-                          </Link>
+                          </EntityLink>
                         ) : null}
                         <time dateTime={review.publishedAt.toISOString()}>
                           {contributionDate.format(review.publishedAt)}
@@ -278,27 +278,27 @@ export function AccountView({
                         key={`${reaction.targetType}-${href}-${reaction.kind}-${reaction.code}`}
                       >
                         <div className="flex min-w-0 flex-col gap-1">
-                          <Link
+                          <EntityLink
                             className="truncate font-medium !no-underline hover:!underline"
                             href={href}
                           >
                             {target}
-                          </Link>
+                          </EntityLink>
                           {reaction.targetType === "review" &&
                           (reaction.coursePrefix || reaction.instructorUuid) ? (
                             <p className="flex flex-wrap gap-x-1.5 text-sm text-muted-foreground">
                               {reaction.coursePrefix &&
                               reaction.courseNumber ? (
-                                <Link
+                                <EntityLink
                                   className="!no-underline hover:!underline"
                                   href={`/courses/${reaction.coursePrefix.toLowerCase()}/${reaction.courseNumber.toLowerCase()}`}
                                 >
                                   {reaction.coursePrefix}{" "}
                                   {reaction.courseNumber}
-                                </Link>
+                                </EntityLink>
                               ) : null}
                               {reaction.instructorUuid ? (
-                                <Link
+                                <EntityLink
                                   className="!no-underline hover:!underline"
                                   href={`/instructors/${reaction.instructorUuid}`}
                                 >
@@ -306,7 +306,7 @@ export function AccountView({
                                     reaction.instructorUuid,
                                     instructorNames,
                                   )}
-                                </Link>
+                                </EntityLink>
                               ) : null}
                             </p>
                           ) : null}

@@ -22,6 +22,7 @@ repository root:
 ```sh
 npm ci
 npm run check
+npm run test:browser
 npm run build
 ```
 
@@ -32,7 +33,8 @@ formatter, linter, and import organizer
 (`npm run type-check`).
 
 Backend tests are grouped by public seam so one module can be checked quickly;
-see [`test/README.md`](test/README.md). Frontend verification is visual with
+see [`test/README.md`](test/README.md). Critical navigation behavior is covered
+in Chromium with Playwright; visual and accessibility verification still uses
 `agent-browser`, as required by [`AGENTS.md`](AGENTS.md).
 
 ## Production

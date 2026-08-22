@@ -21,6 +21,104 @@
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 255, 255, 255;
   --background-end-rgb: 214, 219, 220;
+  --duration-exit: 150ms;
+  --duration-enter: 210ms;
+  --duration-move: 400ms;
+}
+
+@keyframes navigation-progress {
+  from {
+    translate: -100%;
+  }
+  to {
+    translate: 250%;
+  }
+}
+
+.navigation-progress {
+  animation: navigation-progress 800ms ease-in-out 100ms infinite backwards;
+}
+
+::view-transition {
+  pointer-events: none;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-y {
+  from {
+    transform: translateY(var(--slide-y-offset, 10px));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+::view-transition-old(.nav-forward) {
+  --slide-y-offset: -24px;
+  animation:
+    var(--duration-exit) ease-in both fade reverse,
+    var(--duration-move) ease-in-out both slide-y reverse;
+}
+
+::view-transition-new(.nav-forward) {
+  --slide-y-offset: 24px;
+  animation:
+    var(--duration-enter) ease-out var(--duration-exit) both fade,
+    var(--duration-move) ease-in-out both slide-y;
+}
+
+::view-transition-group(.text-morph) {
+  animation-duration: var(--duration-move);
+}
+
+::view-transition-old(.text-morph) {
+  display: none;
+}
+
+::view-transition-new(.text-morph) {
+  animation: none;
+  object-fit: none;
+  object-position: left top;
+}
+
+::view-transition-group(site-header),
+::view-transition-group(site-footer) {
+  animation: none;
+  z-index: 100;
+}
+
+::view-transition-old(site-header),
+::view-transition-old(site-footer) {
+  display: none;
+}
+
+::view-transition-new(site-header),
+::view-transition-new(site-footer) {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navigation-progress {
+    width: 100%;
+    animation: none;
+  }
+
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    /* biome-ignore lint/complexity/noImportantStyles: Reduced motion must override every transition recipe. */
+    animation-duration: 0s !important;
+    /* biome-ignore lint/complexity/noImportantStyles: Reduced motion must override every transition recipe. */
+    animation-delay: 0s !important;
+  }
 }
 
 body {

@@ -18,6 +18,7 @@ import {
   type RankingCriterion as Criterion,
 } from "@/lib/rankings/configuration";
 import { rankingTermName } from "@/lib/rankings/presentation";
+import { testGenerationDirectory } from "@/lib/test-generation";
 
 const ARTIFACTS = [
   "course-instructors.parquet",
@@ -682,6 +683,12 @@ let explicitGeneration:
   | { directory: string; loading?: Promise<Generation> }
   | undefined;
 let openGenerationCount = 0;
+
+function configureBrowserTestGeneration() {
+  const directory = testGenerationDirectory("TEST_RANKING_GENERATION");
+  if (directory && explicitGeneration?.directory !== directory)
+    explicitGeneration = { directory };
+}
 let afterAcquireForTests: ((generation: string) => Promise<void>) | undefined;
 
 function sqlPath(directory: string, filename: string) {
@@ -1414,6 +1421,7 @@ async function loadInstructorRegistry(
 }
 
 async function instructorRegistry(): Promise<InstructorRegistry> {
+  configureBrowserTestGeneration();
   if (runtimeActive) {
     const accepted = await runtimeActive.catch(() => undefined);
     if (accepted && !accepted.closed) return accepted;
@@ -1470,6 +1478,7 @@ export async function instructorNamesForUuids(uuids: string[]) {
 }
 
 function rankingGenerationIsReady() {
+  configureBrowserTestGeneration();
   return Boolean(runtimeActive || explicitGeneration);
 }
 
@@ -1660,6 +1669,7 @@ async function discoverGeneration() {
 }
 
 function generation() {
+  configureBrowserTestGeneration();
   if (explicitGeneration) return explicitTestGeneration();
   if (
     runtimeActive &&
