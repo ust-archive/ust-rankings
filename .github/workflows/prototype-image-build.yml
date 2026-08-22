@@ -26,3 +26,10 @@ jobs:
           tags: ghcr.io/ust-archive/ust-rankings-build-benchmark:${{ github.sha }}
           cache-from: type=gha,scope=prototype-image
           cache-to: type=gha,mode=max,scope=prototype-image
+      - name: Make benchmark image public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh api --method PATCH
+          /orgs/ust-archive/packages/container/ust-rankings-build-benchmark/visibility
+          -f visibility=public
