@@ -46,7 +46,7 @@
     <p class="rank">Throwaway logic prototype</p>
     <h1>What should “Top” put first?</h1>
     <p>This demo tests a transparent Review order that combines Thumbs Vote quality, total reaction activity, and the current Review Revision’s age—without treating Emoji Reactions as approval.</p>
-    <p class="formula">Top = quality weight × Bayesian thumbs approval + activity weight × saturated reaction activity + timeliness weight × age decay</p>
+    <p class="formula">Top = ⅓ Bayesian thumbs approval + ⅓ relative reaction rank + ⅓ age decay</p>
     <p class="muted">All Reviews shown here already passed the page’s Course, Instructor, Term, and Section filters, so relevance is equal. Popular counts every Thumbs Vote and Emoji Reaction. Recent uses the current Revision date.</p>
   </header>
 
@@ -92,23 +92,29 @@
     const totalEmoji = review => Object.values(review.emoji).reduce((sum, count) => sum + count, 0);
     const totalReactions = review => review.up + review.down + totalEmoji(review);
     const quality = review => (review.up + 2) / (review.up + review.down + 4);
-    const activity = review => 1 - Math.exp(-totalReactions(review) / 8);
+    const activityRanks = reviews => {
+      const totals = [...new Set(reviews.map(totalReactions))].sort((left, right) => left - right);
+      return new Map(reviews.map(review => [review.id, totals.length === 1 ? 0 : totals.indexOf(totalReactions(review)) / (totals.length - 1)]));
+    };
     const timeliness = (review, halfLifeDays) => 2 ** (-review.ageDays / halfLifeDays);
-    const topScore = (review, settings) => {
+    const topScore = (review, settings, activityRank) => {
       const totalWeight = settings.quality + settings.activity + settings.timeliness || 1;
       return (
         settings.quality * quality(review) +
-        settings.activity * activity(review) +
+        settings.activity * activityRank +
         settings.timeliness * timeliness(review, settings.halfLifeDays)
       ) / totalWeight;
     };
     const recentThenId = (left, right) => left.ageDays - right.ageDays || left.id.localeCompare(right.id);
-    const sort = (reviews, order, settings) => [...reviews].sort((left, right) => {
-      if (order === "top") return topScore(right, settings) - topScore(left, settings) || recentThenId(left, right);
-      if (order === "popular") return totalReactions(right) - totalReactions(left) || recentThenId(left, right);
-      return recentThenId(left, right);
-    });
-    return { activity, quality, timeliness, topScore, totalEmoji, totalReactions, sort };
+    const sort = (reviews, order, settings) => {
+      const ranks = activityRanks(reviews);
+      return [...reviews].sort((left, right) => {
+        if (order === "top") return topScore(right, settings, ranks.get(right.id)) - topScore(left, settings, ranks.get(left.id)) || recentThenId(left, right);
+        if (order === "popular") return totalReactions(right) - totalReactions(left) || recentThenId(left, right);
+        return recentThenId(left, right);
+      });
+    };
+    return { activityRanks, quality, timeliness, topScore, totalEmoji, totalReactions, sort };
   })();
 
   const scenarios = {
@@ -160,7 +166,7 @@
     halfLifeDays: Number(document.querySelector("#half-life").value)
   });
 
-  function reviewCard(review, index, order, config) {
+  function reviewCard(review, index, order, config, activityRank) {
     const totalEmoji = ReviewOrder.totalEmoji(review);
     return `<article class="review">
       <p class="rank">#${index + 1} · ${review.id}</p>
@@ -172,7 +178,7 @@
         <span class="stat"><strong>🙂 ${totalEmoji}</strong>emoji</span>
         <span class="stat"><strong>${ReviewOrder.totalReactions(review)}</strong>total</span>
       </div>
-      <p class="score">${order === "top" ? `Top ${ReviewOrder.topScore(review, config).toFixed(3)} · quality ${ReviewOrder.quality(review).toFixed(2)} · activity ${ReviewOrder.activity(review).toFixed(2)} · time ${ReviewOrder.timeliness(review, config.halfLifeDays).toFixed(2)}` : order === "popular" ? `${ReviewOrder.totalReactions(review)} reactions` : `${review.ageDays} days old`}</p>
+      <p class="score">${order === "top" ? `Top ${ReviewOrder.topScore(review, config, activityRank).toFixed(3)} · quality ${ReviewOrder.quality(review).toFixed(2)} · activity rank ${activityRank.toFixed(2)} · time ${ReviewOrder.timeliness(review, config.halfLifeDays).toFixed(2)}` : order === "popular" ? `${ReviewOrder.totalReactions(review)} reactions` : `${review.ageDays} days old`}</p>
     </article>`;
   }
 
@@ -185,8 +191,9 @@
     document.querySelector("#half-life-output").value = `${config.halfLifeDays} days`;
     document.querySelector("#weight-note").textContent = totalWeight ? `Normalized shares: quality ${Math.round(config.quality / totalWeight * 100)}%, activity ${Math.round(config.activity / totalWeight * 100)}%, timeliness ${Math.round(config.timeliness / totalWeight * 100)}%.` : "Set at least one weight above zero.";
     document.querySelector("#scenario-description").textContent = scenarios[scenarioKey].description;
+    const activityRanks = ReviewOrder.activityRanks(reviews);
     for (const order of ["top", "popular", "recent"]) {
-      document.querySelector(`#${order}`).innerHTML = ReviewOrder.sort(reviews, order, config).map((review, index) => reviewCard(review, index, order, config)).join("");
+      document.querySelector(`#${order}`).innerHTML = ReviewOrder.sort(reviews, order, config).map((review, index) => reviewCard(review, index, order, config, activityRanks.get(review.id))).join("");
     }
     document.querySelectorAll("[data-scenario]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.scenario === scenarioKey)));
   }
