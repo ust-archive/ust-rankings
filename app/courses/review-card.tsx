@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -29,6 +30,7 @@ import {
 } from "@/lib/contributions/moderation";
 import type { PublicReview } from "@/lib/contributions/reviews";
 import { rankingTermName } from "@/lib/rankings/presentation";
+import { coursePath, instructorPath } from "@/lib/routes";
 import { reportReview } from "./review-actions";
 
 const publishedAt = new Intl.DateTimeFormat("en-GB", {
@@ -113,18 +115,51 @@ function ReviewCardHeader({
   const author = reviewCreditName(review);
   const details = [
     review.instructorUuid
-      ? (instructorName ?? review.instructorUuid)
+      ? {
+          label: instructorName ?? review.instructorUuid,
+          href: instructorPath(review.instructorUuid),
+        }
       : undefined,
     review.course
-      ? `${review.course.coursePrefix} ${review.course.courseNumber}`
+      ? {
+          label: `${review.course.coursePrefix} ${review.course.courseNumber}`,
+          href: coursePath(
+            review.course.coursePrefix,
+            review.course.courseNumber,
+          ),
+        }
       : undefined,
-    review.section,
     review.termCode
-      ? displayTermNames
-        ? rankingTermName(review.termCode)
-        : review.termCode
+      ? {
+          label: displayTermNames
+            ? rankingTermName(review.termCode)
+            : review.termCode,
+          href: review.course
+            ? coursePath(
+                review.course.coursePrefix,
+                review.course.courseNumber,
+                review.termCode,
+              )
+            : undefined,
+        }
       : undefined,
-  ].filter(Boolean);
+    review.section
+      ? {
+          label: review.section,
+          href:
+            review.course && review.termCode
+              ? coursePath(
+                  review.course.coursePrefix,
+                  review.course.courseNumber,
+                  review.termCode,
+                  review.section,
+                )
+              : undefined,
+        }
+      : undefined,
+  ].filter((detail): detail is { label: string; href: string | undefined } =>
+    Boolean(detail),
+  );
   return (
     <header className="flex flex-col gap-1.5">
       <p
@@ -137,7 +172,21 @@ function ReviewCardHeader({
           {publishedAt.format(review.publishedAt)}
         </time>
         {details.map((detail) => (
-          <span key={detail}>· {detail}</span>
+          <span key={`${detail.label}-${detail.href}`}>
+            ·{" "}
+            {detail.href ? (
+              <Link
+                href={detail.href}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                {detail.label}
+                <span className="sr-only"> (opens in a new tab)</span>
+              </Link>
+            ) : (
+              detail.label
+            )}
+          </span>
         ))}
       </p>
     </header>
