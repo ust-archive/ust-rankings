@@ -258,14 +258,18 @@ export function AccountView({
                     const target =
                       reaction.targetType === "course"
                         ? `${reaction.coursePrefix} ${reaction.courseNumber}`
-                        : instructorLabel(
-                            reaction.instructorUuid,
-                            instructorNames,
-                          );
+                        : reaction.targetType === "instructor"
+                          ? instructorLabel(
+                              reaction.instructorUuid,
+                              instructorNames,
+                            )
+                          : "Review";
                     const href =
                       reaction.targetType === "course"
                         ? `/courses/${reaction.coursePrefix.toLowerCase()}/${reaction.courseNumber.toLowerCase()}`
-                        : `/instructors/${reaction.instructorUuid}`;
+                        : reaction.targetType === "instructor"
+                          ? `/instructors/${reaction.instructorUuid}`
+                          : `/reviews/${reaction.reviewId}`;
                     return (
                       <li
                         className="flex items-center justify-between gap-3 py-3 first:pt-1 last:pb-0"

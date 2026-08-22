@@ -100,9 +100,12 @@ if (!connection) {
       }
       await sql`UPDATE contribution_users SET status = 'active' WHERE id = ${first.id}`;
       const reviewId = crypto.randomUUID();
+      const withdrawnReviewId = crypto.randomUUID();
       await sql`
         INSERT INTO reviews (id, author_user_id, publication_state, course_prefix, course_number)
-        VALUES (${reviewId}, ${first.id}, 'active', 'COMP', '2000')
+        VALUES
+          (${reviewId}, ${first.id}, 'active', 'COMP', '2000'),
+          (${withdrawnReviewId}, ${first.id}, 'withdrawn', 'MATH', '1000')
       `;
       await sql`
         INSERT INTO course_emoji_reactions
@@ -114,6 +117,19 @@ if (!connection) {
           (user_id, course_prefix, course_number, state, updated_at)
         VALUES (${first.id}, 'COMP', '2000', 'up', '2026-08-20T00:00:00Z')
       `;
+      await sql`
+        INSERT INTO review_emoji_reactions
+          (user_id, review_id, code, created_at)
+        VALUES
+          (${first.id}, ${reviewId}, 'fire', '2026-08-22T00:00:00Z'),
+          (${first.id}, ${reviewId}, 'love', '2026-08-19T00:00:00Z'),
+          (${first.id}, ${withdrawnReviewId}, 'sad', '2026-08-23T00:00:00Z')
+      `;
+      await sql`
+        INSERT INTO review_thumbs_votes
+          (user_id, review_id, state, updated_at)
+        VALUES (${first.id}, ${reviewId}, 'down', '2026-08-18T00:00:00Z')
+      `;
       expect(await accounts.getContributions(first.id)).toMatchObject({
         reviews: [
           {
@@ -124,6 +140,12 @@ if (!connection) {
           },
         ],
         reactions: [
+          {
+            targetType: "review",
+            reviewId,
+            kind: "emoji",
+            code: "fire",
+          },
           {
             targetType: "course",
             coursePrefix: "COMP",
@@ -138,8 +160,25 @@ if (!connection) {
             kind: "thumb",
             code: "up",
           },
+          {
+            targetType: "review",
+            reviewId,
+            kind: "emoji",
+            code: "love",
+          },
+          {
+            targetType: "review",
+            reviewId,
+            kind: "thumb",
+            code: "down",
+          },
         ],
       });
+      const [retainedWithdrawnReaction] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM review_emoji_reactions
+        WHERE review_id = ${withdrawnReviewId}
+      `;
+      expect(retainedWithdrawnReaction?.count).toBe(1);
       expect(await accounts.closeAccount(first.id)).toMatchObject({
         id: first.id,
         status: "closed",
