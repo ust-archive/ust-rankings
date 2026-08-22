@@ -89,6 +89,7 @@ if (!connection) {
         "0008_moderation.sql",
         "0009_rights_requests.sql",
         "0010_active_review_basis_set.sql",
+        "0011_review_signals.sql",
       ]) {
         await sql.unsafe(
           await readFile(

@@ -2,6 +2,7 @@ import { expect, test, vi } from "vitest";
 import { SignalWriteError } from "@/lib/contributions/signals";
 
 let origin: string | null = "https://rankings.example";
+let referer: string | undefined;
 let userId: string | undefined;
 let mutationError: unknown;
 const mutations: unknown[] = [];
@@ -11,6 +12,7 @@ vi.mock("next/headers", () => ({
     new Headers({
       host: "rankings.example",
       ...(origin ? { origin } : {}),
+      ...(referer ? { referer } : {}),
     }),
 }));
 vi.mock("@/lib/auth/user", () => ({
@@ -34,6 +36,13 @@ function courseForm() {
   form.set("targetType", "course");
   form.set("coursePrefix", "COMP");
   form.set("courseNumber", "2000");
+  return form;
+}
+
+function reviewForm() {
+  const form = new FormData();
+  form.set("targetType", "review");
+  form.set("reviewId", "00000000-0000-4000-8000-000000000010");
   return form;
 }
 
@@ -126,6 +135,41 @@ test("signal actions send desired Thumbs and Emoji states and route onboarding",
     "/onboarding?r=%2Fcourses%2FCOMP%2F2000",
   );
   mutationError = undefined;
+});
+
+test("Review signal actions preserve a validated originating query and Review anchor", async () => {
+  const { setThumbsSignal } = await import("@/app/signals/actions");
+  origin = "https://rankings.example";
+  referer =
+    "https://rankings.example/courses/COMP/2000?term=2510&q=hard#review-old";
+  userId = "00000000-0000-4000-8000-000000000047";
+  mutationError = undefined;
+  mutations.length = 0;
+  const review = reviewForm();
+  review.set("state", "up");
+
+  expect(await redirectOf(() => setThumbsSignal(review))).toContain(
+    "/courses/COMP/2000?term=2510&q=hard&signal=updated#review-00000000-0000-4000-8000-000000000010",
+  );
+  expect(mutations).toEqual([
+    {
+      type: "thumbs",
+      id: userId,
+      input: {
+        target: {
+          type: "review",
+          reviewId: "00000000-0000-4000-8000-000000000010",
+        },
+        state: "up",
+      },
+    },
+  ]);
+
+  referer = "https://evil.example/stolen?term=2510";
+  expect(await redirectOf(() => setThumbsSignal(review))).toContain(
+    "/reviews/00000000-0000-4000-8000-000000000010?signal=updated#review-00000000-0000-4000-8000-000000000010",
+  );
+  referer = undefined;
 });
 
 test("signal actions reject malformed entity kinds and arbitrary Emoji input", async () => {

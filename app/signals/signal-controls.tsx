@@ -28,12 +28,14 @@ function TargetFields({ target }: { target: SignalTarget }) {
             value={target.courseNumber}
           />
         </>
-      ) : (
+      ) : target.type === "instructor" ? (
         <input
           name="instructorUuid"
           type="hidden"
           value={target.instructorUuid}
         />
+      ) : (
+        <input name="reviewId" type="hidden" value={target.reviewId} />
       )}
     </>
   );
@@ -45,18 +47,20 @@ export function SignalControls({
   signedIn,
   unavailable = false,
   error,
+  id = "signals",
 }: {
   target: SignalTarget;
   summary?: SignalSummary;
   signedIn: boolean;
   unavailable?: boolean;
   error?: string;
+  id?: string;
 }) {
   if (unavailable || !summary)
     return (
       <div
         className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
-        id="signals"
+        id={id}
         role="status"
       >
         Community signals are unavailable. This does not represent zero signals.
@@ -64,7 +68,7 @@ export function SignalControls({
     );
   const mine = summary.mine ?? { thumbs: "none" as const, emoji: [] };
   return (
-    <div className="text-left" id="signals">
+    <div className="text-left" id={id}>
       {error ? (
         <p
           className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-900"

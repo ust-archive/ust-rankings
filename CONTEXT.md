@@ -149,7 +149,7 @@ An Attachment whose Stored File is an accepted document format. It is opened sep
 The historical Attachment record retained when its Stored File is no longer available.
 
 **Thumbs Vote**:
-An authenticated User's current positive or negative evaluation of a Course or Instructor. The absence of a Thumbs Vote is neutral. Thumbs Votes are separate from Emoji Reactions and do not affect first-release rankings.
+An authenticated User's current positive or negative evaluation of a Course, Instructor, or Review. The absence of a Thumbs Vote is neutral. A User may Thumbs Vote on their own Review. Thumbs Votes are separate from Emoji Reactions and do not affect first-release rankings. Individual voters are not public.
 
 **Emoji Reaction**:
-An authenticated User's selected expression on a Course or Instructor. A User may select several allowed reaction codes on one entity, but each code at most once.
+An authenticated User's selected expression on a Course, Instructor, or Review. A User may select several allowed reaction codes on one entity, including their own Review, but each code at most once. Individual reactors are not public.

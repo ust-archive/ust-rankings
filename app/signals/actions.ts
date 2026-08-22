@@ -34,6 +34,11 @@ function parsedTarget(formData: FormData): SignalTarget | undefined {
     if (typeof uuid !== "string" || !UUID.test(uuid)) return;
     return { type: "instructor", instructorUuid: uuid.toLowerCase() };
   }
+  if (formData.get("targetType") === "review") {
+    const reviewId = formData.get("reviewId");
+    if (typeof reviewId !== "string" || !UUID.test(reviewId)) return;
+    return { type: "review", reviewId: reviewId.toLowerCase() };
+  }
 }
 
 function targetPath(target?: SignalTarget) {
@@ -41,48 +46,127 @@ function targetPath(target?: SignalTarget) {
     return `/courses/${target.coursePrefix}/${target.courseNumber}`;
   if (target?.type === "instructor")
     return `/instructors/${target.instructorUuid}`;
+  if (target?.type === "review") return `/reviews/${target.reviewId}`;
   return "/rankings/courses";
 }
 
-async function authorize(path: string) {
+function anchor(target?: SignalTarget) {
+  return target?.type === "review" ? `review-${target.reviewId}` : "signals";
+}
+
+function originatingPath(
+  target: SignalTarget | undefined,
+  referer: string | null,
+  origin: string | null,
+) {
+  if (target?.type !== "review" || !referer || !origin)
+    return targetPath(target);
+  try {
+    const url = new URL(referer);
+    if (url.origin !== new URL(origin).origin || url.username || url.password)
+      return targetPath(target);
+    url.searchParams.delete("signal");
+    url.searchParams.delete("signalError");
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return targetPath(target);
+  }
+}
+
+function destination(
+  path: string,
+  target: SignalTarget | undefined,
+  result?: { type: "signal" | "signalError"; value: string },
+) {
+  const url = new URL(path, "https://local.invalid");
+  if (result) {
+    url.searchParams.delete(
+      result.type === "signal" ? "signalError" : "signal",
+    );
+    url.searchParams.set(result.type, result.value);
+  }
+  return `${url.pathname}${url.search}#${anchor(target)}`;
+}
+
+async function requestContext(target?: SignalTarget) {
   const requestHeaders = await headers();
   const host =
     requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-  if (!isSameOriginWrite(requestHeaders.get("origin"), host))
-    redirect(`${path}?signalError=cross-origin#signals`);
-  const userId = await authenticatedUserId();
-  if (!userId) redirect(`/sign-in?r=${encodeURIComponent(path)}`);
-  return userId;
+  return {
+    host,
+    origin: requestHeaders.get("origin"),
+    path: originatingPath(
+      target,
+      requestHeaders.get("referer"),
+      requestHeaders.get("origin"),
+    ),
+  };
 }
 
-function handleWriteError(error: unknown, path: string): never {
+async function authorize(target: SignalTarget) {
+  const context = await requestContext(target);
+  if (!isSameOriginWrite(context.origin, context.host))
+    redirect(
+      destination(context.path, target, {
+        type: "signalError",
+        value: "cross-origin",
+      }),
+    );
+  const userId = await authenticatedUserId();
+  if (!userId)
+    redirect(
+      `/sign-in?r=${encodeURIComponent(
+        target.type === "review"
+          ? destination(context.path, target)
+          : context.path,
+      )}`,
+    );
+  return { path: context.path, userId };
+}
+
+function handleWriteError(
+  error: unknown,
+  path: string,
+  target: SignalTarget,
+): never {
   if (!(error instanceof SignalWriteError)) throw error;
   if (error.code === "onboarding-required")
-    redirect(`/onboarding?r=${encodeURIComponent(path)}`);
-  redirect(`${path}?signalError=${error.code}#signals`);
+    redirect(
+      `/onboarding?r=${encodeURIComponent(
+        target.type === "review" ? destination(path, target) : path,
+      )}`,
+    );
+  redirect(
+    destination(path, target, { type: "signalError", value: error.code }),
+  );
 }
 
 export async function setThumbsSignal(formData: FormData) {
   const target = parsedTarget(formData);
-  const path = targetPath(target);
   const state = formData.get("state");
-  if (!target || !["up", "down", "none"].includes(String(state)))
-    redirect(`${path}?signalError=invalid-signal#signals`);
-  const userId = await authorize(path);
+  if (!target || !["up", "down", "none"].includes(String(state))) {
+    const context = await requestContext(target);
+    redirect(
+      destination(context.path, target, {
+        type: "signalError",
+        value: "invalid-signal",
+      }),
+    );
+  }
+  const { path, userId } = await authorize(target);
   try {
     await getSignalService().setThumbs(userId, {
       target,
       state: state as ThumbsState,
     });
   } catch (error) {
-    handleWriteError(error, path);
+    handleWriteError(error, path, target);
   }
-  redirect(`${path}?signal=updated#signals`);
+  redirect(destination(path, target, { type: "signal", value: "updated" }));
 }
 
 export async function setEmojiSignal(formData: FormData) {
   const target = parsedTarget(formData);
-  const path = targetPath(target);
   const code = formData.get("code");
   const selected = formData.get("selected");
   if (
@@ -90,9 +174,16 @@ export async function setEmojiSignal(formData: FormData) {
     typeof code !== "string" ||
     !EMOJI_CODES.includes(code as EmojiCode) ||
     (selected !== "true" && selected !== "false")
-  )
-    redirect(`${path}?signalError=invalid-signal#signals`);
-  const userId = await authorize(path);
+  ) {
+    const context = await requestContext(target);
+    redirect(
+      destination(context.path, target, {
+        type: "signalError",
+        value: "invalid-signal",
+      }),
+    );
+  }
+  const { path, userId } = await authorize(target);
   try {
     await getSignalService().setEmoji(userId, {
       target,
@@ -100,7 +191,7 @@ export async function setEmojiSignal(formData: FormData) {
       selected: selected === "true",
     });
   } catch (error) {
-    handleWriteError(error, path);
+    handleWriteError(error, path, target);
   }
-  redirect(`${path}?signal=updated#signals`);
+  redirect(destination(path, target, { type: "signal", value: "updated" }));
 }

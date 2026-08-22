@@ -14,7 +14,8 @@ export type EmojiCode = (typeof EMOJI_CODES)[number];
 export type ThumbsState = "up" | "down" | "none";
 export type SignalTarget =
   | { type: "course"; coursePrefix: string; courseNumber: string }
-  | { type: "instructor"; instructorUuid: string };
+  | { type: "instructor"; instructorUuid: string }
+  | { type: "review"; reviewId: string };
 
 export type SignalSummary = {
   thumbs: { up: number; down: number };
@@ -93,19 +94,29 @@ function target(input: SignalTarget): SignalTarget {
       );
     return { type: "course", coursePrefix, courseNumber };
   }
-  if (
-    input.type === "instructor" &&
-    typeof input.instructorUuid === "string" &&
-    UUID.test(input.instructorUuid)
-  )
+  if (input.type === "instructor") {
+    if (
+      typeof input.instructorUuid !== "string" ||
+      !UUID.test(input.instructorUuid)
+    )
+      throw new SignalWriteError(
+        "invalid-target",
+        "Instructor target is malformed",
+      );
     return {
       type: "instructor",
       instructorUuid: input.instructorUuid.toLowerCase(),
     };
-  throw new SignalWriteError(
-    "invalid-target",
-    "Only Courses and Instructors accept signals",
-  );
+  }
+  if (input.type === "review") {
+    if (typeof input.reviewId !== "string" || !UUID.test(input.reviewId))
+      throw new SignalWriteError(
+        "invalid-target",
+        "Review target is malformed",
+      );
+    return { type: "review", reviewId: input.reviewId.toLowerCase() };
+  }
+  throw new SignalWriteError("invalid-target", "Signal target is malformed");
 }
 
 export function createSignalService(
@@ -125,9 +136,15 @@ export function createSignalService(
   }
 
   return {
-    readSignals(input: SignalTarget, authenticatedUserId?: string) {
+    async readSignals(input: SignalTarget, authenticatedUserId?: string) {
+      const normalized = target(input);
+      if (
+        normalized.type === "review" &&
+        !(await options.resolveTarget(normalized))
+      )
+        throw new SignalWriteError("invalid-target", "Review is not active");
       return repository.readSignals(
-        target(input),
+        normalized,
         authenticatedUserId ? userId(authenticatedUserId) : undefined,
       );
     },
