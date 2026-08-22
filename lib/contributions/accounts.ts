@@ -28,12 +28,24 @@ export type AccountContributions = {
           coursePrefix: string;
           courseNumber: string;
           instructorUuid: null;
+          reviewId: null;
+          reviewAuthor: null;
         }
       | {
           targetType: "instructor";
           coursePrefix: null;
           courseNumber: null;
           instructorUuid: string;
+          reviewId: null;
+          reviewAuthor: null;
+        }
+      | {
+          targetType: "review";
+          coursePrefix: string | null;
+          courseNumber: string | null;
+          instructorUuid: string | null;
+          reviewId: string;
+          reviewAuthor: string | null;
         }
     ) &
       (

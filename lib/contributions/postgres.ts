@@ -134,6 +134,8 @@ export class PostgresAccountRepository implements AccountRepository {
                course_prefix AS "coursePrefix",
                course_number AS "courseNumber",
                NULL::uuid AS "instructorUuid",
+               NULL::uuid AS "reviewId",
+               NULL::text AS "reviewAuthor",
                'emoji'::text AS kind,
                code,
                created_at AS "createdAt"
@@ -141,19 +143,43 @@ export class PostgresAccountRepository implements AccountRepository {
         WHERE user_id = ${userId}
         UNION ALL
         SELECT 'instructor'::text, NULL::text, NULL::text, instructor_uuid,
-               'emoji'::text, code, created_at
+               NULL::uuid, NULL::text, 'emoji'::text, code, created_at
         FROM instructor_emoji_reactions
         WHERE user_id = ${userId}
         UNION ALL
         SELECT 'course'::text, course_prefix, course_number, NULL::uuid,
-               'thumb'::text, state, updated_at
+               NULL::uuid, NULL::text, 'thumb'::text, state, updated_at
         FROM course_thumbs_votes
         WHERE user_id = ${userId}
         UNION ALL
         SELECT 'instructor'::text, NULL::text, NULL::text, instructor_uuid,
-               'thumb'::text, state, updated_at
+               NULL::uuid, NULL::text, 'thumb'::text, state, updated_at
         FROM instructor_thumbs_votes
         WHERE user_id = ${userId}
+        UNION ALL
+        SELECT 'review'::text, review.course_prefix, review.course_number,
+               review.instructor_uuid, reaction.review_id,
+               CASE WHEN revision.attribution = 'attributed'
+                 THEN revision.captured_display_name
+               END,
+               'emoji'::text, reaction.code, reaction.created_at
+        FROM review_emoji_reactions reaction
+        JOIN reviews review ON review.id = reaction.review_id
+        JOIN review_revisions revision ON revision.id = review.current_revision_id
+        WHERE reaction.user_id = ${userId}
+          AND review.publication_state = 'active'
+        UNION ALL
+        SELECT 'review'::text, review.course_prefix, review.course_number,
+               review.instructor_uuid, vote.review_id,
+               CASE WHEN revision.attribution = 'attributed'
+                 THEN revision.captured_display_name
+               END,
+               'thumb'::text, vote.state, vote.updated_at
+        FROM review_thumbs_votes vote
+        JOIN reviews review ON review.id = vote.review_id
+        JOIN review_revisions revision ON revision.id = review.current_revision_id
+        WHERE vote.user_id = ${userId}
+          AND review.publication_state = 'active'
         ORDER BY "createdAt" DESC, kind, code
       `,
     ]);
