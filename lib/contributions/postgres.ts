@@ -524,7 +524,9 @@ export class PostgresReviewRepository implements ReviewRepository {
 
   async listReviews(query: ReviewListQuery, viewerUserId?: string) {
     try {
+      const order = query.order ?? "top";
       const rows = await this.sql<ReviewDatabaseRow[]>`
+        WITH filtered AS (
         SELECT r.id,
                rr.id AS "revisionId",
                rcb.course_prefix AS "coursePrefix",
@@ -556,6 +558,8 @@ export class PostgresReviewRepository implements ReviewRepository {
                  WHERE user_id = ${viewerUserId ?? null}::uuid
                    AND review_id = r.id), ARRAY[]::text[]) AS "mineEmoji",
                (${viewerUserId ?? null}::uuid IS NOT NULL) AS "signalsAuthenticated",
+               ((SELECT count(*) FROM review_thumbs_votes WHERE review_id = r.id)
+                 + (SELECT count(*) FROM review_emoji_reactions WHERE review_id = r.id))::int AS "totalReactions",
                COALESCE((SELECT jsonb_agg(jsonb_build_object(
                  'id', a.id,
                  'storedFileId', a.stored_file_id,
@@ -580,7 +584,27 @@ export class PostgresReviewRepository implements ReviewRepository {
           AND (${query.termCode ?? null}::text IS NULL OR rc.term_code = ${query.termCode ?? null})
           AND (${query.type === "course" ? (query.section ?? null) : null}::text IS NULL
                OR rc.section = ${query.type === "course" ? (query.section ?? null) : null})
-        ORDER BY rr.published_at DESC, r.id
+        ), ranked AS (
+          SELECT filtered.*,
+                 dense_rank() OVER (ORDER BY "totalReactions") - 1 AS "activityRank",
+                 (SELECT count(DISTINCT "totalReactions") FROM filtered) AS "distinctTotals"
+          FROM filtered
+        )
+        SELECT * FROM ranked
+        ORDER BY
+          CASE WHEN ${order} = 'top' THEN (
+            (("thumbsUp" + 1)::double precision
+              / ("thumbsUp" + "thumbsDown" + 2))
+            + CASE WHEN "distinctTotals" = 1 THEN 0
+              ELSE "activityRank"::double precision / ("distinctTotals" - 1)
+              END
+            + power(2::double precision,
+                -greatest(extract(epoch FROM (now() - "publishedAt")) / 86400, 0) / 365)
+          ) / 3 END DESC,
+          CASE WHEN ${order} = 'popular' THEN "totalReactions" END DESC,
+          CASE WHEN ${order} = 'recent' THEN "publishedAt" END DESC,
+          CASE WHEN ${order} IN ('top', 'popular') THEN "publishedAt" END DESC,
+          id
       `;
       return rows.map(publicReview);
     } catch (error) {

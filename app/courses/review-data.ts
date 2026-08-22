@@ -2,6 +2,7 @@ import {
   ContributionsUnavailableError,
   type PublicReview,
   type ReviewListQuery,
+  type ReviewOrder,
 } from "@/lib/contributions/reviews";
 
 type ReadReviews = (
@@ -45,6 +46,10 @@ export function loadCourseReviews(
   coursePrefix: string,
   courseNumber: string,
   read?: ReadReviews,
+  order?: ReviewOrder,
 ) {
-  return loadReviews({ type: "course", coursePrefix, courseNumber }, read);
+  return loadReviews(
+    { type: "course", coursePrefix, courseNumber, order },
+    read,
+  );
 }

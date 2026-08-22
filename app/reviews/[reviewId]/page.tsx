@@ -78,7 +78,7 @@ export async function renderReviewPage(
         </p>
       </header>
       <Separator className="my-5" />
-      <Reviews editor={editor} reviews={[review]} />
+      <Reviews editor={editor} reviews={[review]} showOrder={false} />
     </article>
   );
 }

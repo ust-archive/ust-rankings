@@ -107,6 +107,194 @@ if (!connection) {
       for (const shape of shapes)
         published.push(await publish(activeId, shape));
 
+      const newestAuthorId = crypto.randomUUID();
+      const reactorIds = Array.from({ length: 10 }, () => crypto.randomUUID());
+      await sql`
+        INSERT INTO contribution_users (id, status, public_display_name)
+        SELECT id, 'active', 'Order Test User'
+        FROM unnest(${[newestAuthorId, ...reactorIds]}::uuid[]) AS ids(id)
+      `;
+      const newest = await publish(newestAuthorId, { course });
+      const approved = published[0];
+      const controversial = published[2];
+      if (!approved || !controversial)
+        throw new Error("Expected Reviews for ordering");
+      await sql`
+        INSERT INTO review_thumbs_votes (user_id, review_id, state)
+        SELECT id, ${approved.id}, 'up'
+        FROM unnest(${reactorIds.slice(0, 8)}::uuid[]) AS ids(id)
+      `;
+      await sql`
+        INSERT INTO review_thumbs_votes (user_id, review_id, state)
+        SELECT ${reactorIds[0]}::uuid, ${controversial.id}::uuid, 'up'
+        UNION ALL
+        SELECT id, ${controversial.id}::uuid, 'down'
+        FROM unnest(${reactorIds.slice(1)}::uuid[]) AS ids(id)
+      `;
+      await sql`
+        INSERT INTO review_emoji_reactions (user_id, review_id, code)
+        VALUES (${reactorIds[0]}, ${controversial.id}, 'angry')
+      `;
+      const orderedIds = async (order: "top" | "popular" | "recent") =>
+        (
+          await reviews.listReviews({
+            type: "course",
+            ...course,
+            order,
+          })
+        ).map((review) => review.id);
+      expect(await orderedIds("top")).toEqual([
+        approved.id,
+        controversial.id,
+        newest.id,
+      ]);
+      expect(await orderedIds("popular")).toEqual([
+        controversial.id,
+        approved.id,
+        newest.id,
+      ]);
+      expect(await orderedIds("recent")).toEqual([
+        newest.id,
+        controversial.id,
+        approved.id,
+      ]);
+
+      const formulaCourse = { coursePrefix: "TEST", courseNumber: "1000" };
+      const formulaUsers = Array.from({ length: 14 }, () =>
+        crypto.randomUUID(),
+      );
+      await sql`
+        INSERT INTO contribution_users (id, status, public_display_name)
+        SELECT id, 'active', 'Formula Test User'
+        FROM unnest(${formulaUsers}::uuid[]) AS ids(id)
+      `;
+      const insertFormulaReview = async (
+        id: string,
+        revisionId: string,
+        authorId: string,
+        ageDays: number,
+      ) => {
+        await sql`
+          INSERT INTO reviews (
+            id, author_user_id, publication_state, course_prefix,
+            course_number, current_revision_id
+          ) VALUES (
+            ${id}, ${authorId}, 'active', ${formulaCourse.coursePrefix},
+            ${formulaCourse.courseNumber}, NULL
+          )
+        `;
+        await sql`
+          INSERT INTO review_revisions (
+            id, review_id, markdown, attribution, captured_display_name,
+            policy_version, published_at
+          ) VALUES (
+            ${revisionId}, ${id}, 'Formula Review', 'attributed',
+            'Formula Test User', 'review-test-v1',
+            current_date - ${ageDays} * interval '1 day'
+          )
+        `;
+        await sql`
+          INSERT INTO review_course_bases (
+            revision_id, course_prefix, course_number
+          ) VALUES (
+            ${revisionId}, ${formulaCourse.coursePrefix},
+            ${formulaCourse.courseNumber}
+          )
+        `;
+        await sql`
+          UPDATE reviews SET current_revision_id = ${revisionId}
+          WHERE id = ${id}
+        `;
+      };
+      const freshId = "10000000-0000-4000-8000-000000000101";
+      const tiedDownId = "10000000-0000-4000-8000-000000000102";
+      const editedOneUpId = "10000000-0000-4000-8000-000000000103";
+      const busyNegativeId = "10000000-0000-4000-8000-000000000104";
+      await insertFormulaReview(
+        freshId,
+        "20000000-0000-4000-8000-000000000101",
+        formulaUsers[0] as string,
+        0,
+      );
+      await insertFormulaReview(
+        tiedDownId,
+        "20000000-0000-4000-8000-000000000102",
+        formulaUsers[1] as string,
+        0,
+      );
+      await insertFormulaReview(
+        editedOneUpId,
+        "20000000-0000-4000-8000-000000000103",
+        formulaUsers[2] as string,
+        730,
+      );
+      const editedRevisionId = "20000000-0000-4000-8000-000000000113";
+      await sql`
+        INSERT INTO review_revisions (
+          id, review_id, markdown, attribution, captured_display_name,
+          policy_version, published_at
+        ) VALUES (
+          ${editedRevisionId}, ${editedOneUpId}, 'Edited Formula Review',
+          'attributed', 'Formula Test User', 'review-test-v1',
+          current_date - 365 * interval '1 day'
+        )
+      `;
+      await sql`
+        INSERT INTO review_course_bases (
+          revision_id, course_prefix, course_number
+        ) VALUES (
+          ${editedRevisionId}, ${formulaCourse.coursePrefix},
+          ${formulaCourse.courseNumber}
+        )
+      `;
+      await sql`
+        UPDATE reviews SET current_revision_id = ${editedRevisionId}
+        WHERE id = ${editedOneUpId}
+      `;
+      await insertFormulaReview(
+        busyNegativeId,
+        "20000000-0000-4000-8000-000000000104",
+        formulaUsers[3] as string,
+        730,
+      );
+      await sql`
+        INSERT INTO review_thumbs_votes (user_id, review_id, state)
+        VALUES
+          (${formulaUsers[4]}, ${tiedDownId}, 'down'),
+          (${formulaUsers[4]}, ${editedOneUpId}, 'up')
+      `;
+      await sql`
+        INSERT INTO review_thumbs_votes (user_id, review_id, state)
+        SELECT id, ${busyNegativeId}, 'down'
+        FROM unnest(${formulaUsers.slice(4)}::uuid[]) AS ids(id)
+      `;
+      const formulaOrder = async (order: "top" | "popular" | "recent") =>
+        (
+          await reviews.listReviews({
+            type: "course",
+            ...formulaCourse,
+            order,
+          })
+        ).map((review) => review.id);
+      expect(await formulaOrder("top")).toEqual([
+        tiedDownId,
+        editedOneUpId,
+        freshId,
+        busyNegativeId,
+      ]);
+      expect(await formulaOrder("popular")).toEqual([
+        busyNegativeId,
+        tiedDownId,
+        editedOneUpId,
+        freshId,
+      ]);
+      expect(await formulaOrder("recent")).toEqual([
+        freshId,
+        tiedDownId,
+        editedOneUpId,
+        busyNegativeId,
+      ]);
+
       for (const duplicate of [
         { course, termCode: "2510" },
         { instructorUuid: INSTRUCTOR_UUID },
@@ -117,7 +305,7 @@ if (!connection) {
         });
       expect(
         await reviews.listReviews({ type: "course", ...course }),
-      ).toHaveLength(2);
+      ).toHaveLength(3);
       expect(
         await reviews.listReviews({
           type: "course",

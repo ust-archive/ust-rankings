@@ -220,7 +220,12 @@ test("Instructor family aggregation normalizes UUIDs and de-duplicates each Revi
     }),
   ).toEqual([stored]);
   expect(queries).toEqual([
-    { type: "instructor", instructorUuids: [INSTRUCTOR_UUID] },
+    {
+      type: "instructor",
+      instructorUuids: [INSTRUCTOR_UUID],
+      order: "top",
+      termCode: undefined,
+    },
   ]);
 });
 

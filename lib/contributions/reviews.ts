@@ -24,6 +24,15 @@ export type InstructorAssociationStatus =
   | "needs-resolution";
 
 export type ReviewAttribution = "attributed" | "identity-hidden";
+export const REVIEW_ORDERS = ["top", "popular", "recent"] as const;
+export type ReviewOrder = (typeof REVIEW_ORDERS)[number];
+
+export function reviewOrder(value: unknown): ReviewOrder {
+  return typeof value === "string" &&
+    REVIEW_ORDERS.includes(value as ReviewOrder)
+    ? (value as ReviewOrder)
+    : "top";
+}
 
 export type ReviewAttachmentDraft = {
   id?: string;
@@ -68,11 +77,16 @@ export type WithdrawReviewRecord = {
 };
 
 export type ReviewListQuery =
-  | ({ type: "course" } & CourseBasis & { termCode?: string; section?: string })
+  | ({ type: "course" } & CourseBasis & {
+        termCode?: string;
+        section?: string;
+        order?: ReviewOrder;
+      })
   | {
       type: "instructor";
       instructorUuids: string[];
       termCode?: string;
+      order?: ReviewOrder;
     };
 
 export interface ReviewRepository {
@@ -383,6 +397,7 @@ export function createReviewService(
     },
 
     async listReviews(query: ReviewListQuery, viewerUserId?: string) {
+      const order = reviewOrder(query.order);
       const instructorUuids =
         query.type === "instructor" && Array.isArray(query.instructorUuids)
           ? [
@@ -417,6 +432,7 @@ export function createReviewService(
             ...context.course,
             termCode: context.termCode,
             section: context.section,
+            order,
           },
           viewerUserId && UUID.test(viewerUserId) ? viewerUserId : undefined,
         );
@@ -432,6 +448,7 @@ export function createReviewService(
             type: "instructor",
             instructorUuids,
             termCode: context.termCode,
+            order,
           },
           viewerUserId && UUID.test(viewerUserId) ? viewerUserId : undefined,
         );

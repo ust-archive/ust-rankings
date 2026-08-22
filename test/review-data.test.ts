@@ -1,6 +1,17 @@
 import { expect, test } from "vitest";
 import { loadCourseReviews, loadReviews } from "@/app/courses/review-data";
-import { ContributionsUnavailableError } from "@/lib/contributions/reviews";
+import {
+  ContributionsUnavailableError,
+  reviewOrder,
+} from "@/lib/contributions/reviews";
+
+test("Review Order defaults invalid and absent input to Top", () => {
+  expect(reviewOrder(undefined)).toBe("top");
+  expect(reviewOrder("unknown")).toBe("top");
+  expect(reviewOrder(["recent"])).toBe("top");
+  expect(reviewOrder("popular")).toBe("popular");
+  expect(reviewOrder("recent")).toBe("recent");
+});
 
 const review = {
   id: "00000000-0000-4000-8000-000000000144",

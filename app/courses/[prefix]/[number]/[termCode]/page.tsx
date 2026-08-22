@@ -9,6 +9,7 @@ import {
   normalizeCourseRoute,
   type RouteSearchParams,
 } from "@/app/courses/routes";
+import { reviewOrder } from "@/lib/contributions/reviews";
 import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
 import {
   getSchedule,
@@ -49,6 +50,7 @@ export default async function CourseOfferingPage({
         coursePrefix,
         courseNumber,
         termCode,
+        order: reviewOrder(query.order),
       }),
     ]);
     if (offering.type !== "course-offering") notFound();
