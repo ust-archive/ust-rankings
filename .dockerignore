@@ -7,7 +7,9 @@ node_modules
 .agents
 scripts/provision-rankings-refresh.sh
 *.md
-test
+test/*
+!test/rankings-fixture.ts
+!test/schedule-fixture.ts
 data/test
 data/out
 rankings/seed
