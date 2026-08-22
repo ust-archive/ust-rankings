@@ -47,11 +47,7 @@ const activeRootFiles = new Set([
   "README.md",
   "vitest.config.ts",
 ]);
-const ignoredFiles = new Set([
-  "scripts/check-toolchain.ts",
-  "data/PLAN.md",
-  "data/SPECIFICATION.md",
-]);
+const ignoredFiles = new Set(["scripts/check-toolchain.ts"]);
 const staleReferences = [
   ["js" + "-joda", "superseded date/time library"],
   ["@upstash/" + "redis", "removed reaction store"],

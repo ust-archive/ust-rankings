@@ -6,8 +6,8 @@ contributions for HKUST students.
 
 Ranking evidence is published as immutable Hugging Face generations. Schedule
 data resolves Course Offerings, Classes, and Instructor identities for Details
-and calendar subscriptions. See [`rankings/README.md`](rankings/README.md),
-[`schedule/README.md`](schedule/README.md), and
+and calendar subscriptions. See [`data/rankings.md`](data/rankings.md),
+[`data/schedule.md`](data/schedule.md), and
 [`contributions/README.md`](contributions/README.md) for each module's runtime
 contract.
 

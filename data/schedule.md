@@ -27,10 +27,9 @@ refresh records only a bounded failure class, leaves that pointer unchanged,
 and keeps the in-memory generation if one is already accepted. There is no
 repository generation or shared last-known-good across instances: Hugging Face
 is the source of truth. The process warms from Hugging Face on `next start` and again
-daily. Schedule stays unavailable until a generation is accepted.
-The temporary generation directory is only a disposable per-instance cache.
-Schedule
-cache identities, freshness, and failure records never reuse ranking keys.
+daily. Schedule stays unavailable until a generation is accepted. The temporary
+generation directory is only a disposable per-instance cache. Schedule cache
+identities, freshness, and failure records never reuse ranking keys.
 
 Configure `POSTGRES_URL`, `CRON_SECRET`, and optional `SCHEDULE_REFRESH_SECRET`
 as shown in `.env.example`. Public `GET /api/health/schedule` reports

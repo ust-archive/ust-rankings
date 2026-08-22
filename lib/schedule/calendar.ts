@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import * as ics from "ics";
 import { DateTime } from "luxon";
 import { RRule } from "rrule";
-import { PathAdvisor } from "@/data/cq/path-advisor";
+import { PathAdvisor } from "@/lib/schedule/path-advisor";
 import {
   InvalidScheduleQueryError,
   resolveClassesWithGeneration,
