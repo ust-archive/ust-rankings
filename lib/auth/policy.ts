@@ -11,7 +11,7 @@ const LINE_BREAK = /[\n\r\v\f\u0085\u2028\u2029]/u;
 const INVISIBLE_OR_CONTROL = /\p{C}/u;
 const ENCODED_SEPARATOR_OR_CONTROL = /%(?:0[0-9a-f]|1[0-9a-f]|2f|5c|7f)/iu;
 const CALLBACK_PATHS = [
-  "/sign-in",
+  "/auth/login",
   "/onboarding",
   "/api/auth",
   "/auth/continue",

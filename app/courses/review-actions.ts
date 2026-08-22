@@ -85,7 +85,7 @@ async function authorizeWrite(path: string) {
   if (!isSameOriginWrite(requestHeaders.get("origin"), host))
     redirect(`${path}?reviewError=cross-origin#reviews`);
   const userId = await authenticatedUserId();
-  if (!userId) redirect(`/sign-in?r=${encodeURIComponent(path)}`);
+  if (!userId) redirect(`/auth/login?r=${encodeURIComponent(path)}`);
   return userId;
 }
 

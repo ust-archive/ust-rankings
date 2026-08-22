@@ -9,7 +9,6 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import Link from "next/link";
 import type React from "react";
-import { startSignIn } from "@/app/sign-in/actions";
 import { Toaster } from "@/components/ui/sonner";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { getAccountService } from "@/lib/contributions/postgres";
@@ -68,15 +67,12 @@ async function HeaderAuth() {
     );
   }
   const userId = await authenticatedUserId();
-  if (!userId) {
+  if (!userId)
     return (
-      <form action={startSignIn.bind(null, "/account")}>
-        <button className={pill} type="submit">
-          Login
-        </button>
-      </form>
+      <Link className={pill} href="/auth/login?r=%2Faccount">
+        Login
+      </Link>
     );
-  }
   let label = "Account";
   if (process.env.CONTRIBUTIONS_POSTGRES_URL)
     try {

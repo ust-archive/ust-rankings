@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
+import { LoginLink } from "@/app/auth/login-link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -414,6 +415,7 @@ export function DetailsCommunity({
   reviews,
   reviewsUnavailable,
   editor,
+  signedIn,
   published,
   withdrawn,
   error,
@@ -424,6 +426,7 @@ export function DetailsCommunity({
   reviews: PublicReview[];
   reviewsUnavailable: boolean;
   editor: ReviewEditorOptions;
+  signedIn: boolean;
   published?: boolean;
   withdrawn?: boolean;
   error?: string;
@@ -460,7 +463,11 @@ export function DetailsCommunity({
             >
               Reviews
             </h3>
-            {reviewComposer}
+            {signedIn ? (
+              reviewComposer
+            ) : (
+              <LoginLink>Login to create a review</LoginLink>
+            )}
           </div>
           {reviewsUnavailable ? (
             <p

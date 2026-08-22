@@ -382,6 +382,7 @@ export function CourseDetails({
             }
             reviews={reviews}
             reviewsUnavailable={reviewsUnavailable}
+            signedIn={signedIn}
             signalControls={
               <SignalControls
                 error={signalError}
@@ -464,11 +465,13 @@ export function CourseOfferingDetails({
   rankings,
   reviews = [],
   reviewsUnavailable = true,
+  signedIn = false,
 }: {
   offering: Extract<ScheduleDetails, { type: "course-offering" }>;
   rankings?: CourseRankings;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
+  signedIn?: boolean;
 }) {
   const instructors = uniqueInstructors([offering], rankings).filter((item) =>
     item.termCodes.has(offering.termCode),
@@ -542,6 +545,7 @@ export function CourseOfferingDetails({
             }
             reviews={reviews}
             reviewsUnavailable={reviewsUnavailable}
+            signedIn={signedIn}
             signalControls={
               <p className="text-sm text-slate-600" id="signals">
                 This Course Offering is Review Context, not a signal target.
@@ -650,11 +654,13 @@ export function ClassDetails({
   rankings,
   reviews = [],
   reviewsUnavailable = true,
+  signedIn = false,
 }: {
   scheduleClass: Extract<ScheduleDetails, { type: "class" }>;
   rankings?: CourseRankings;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
+  signedIn?: boolean;
 }) {
   const instructors = new Map<string, { name: string; uuid?: string }>();
   for (const meeting of scheduleClass.meetings)
@@ -735,6 +741,7 @@ export function ClassDetails({
             }
             reviews={reviews}
             reviewsUnavailable={reviewsUnavailable}
+            signedIn={signedIn}
             signalControls={
               <div className="flex flex-col gap-3 text-sm" id="signals">
                 <p className="text-slate-600">

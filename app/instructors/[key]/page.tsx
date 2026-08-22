@@ -148,7 +148,7 @@ export async function renderInstructorPage(
       invalidTermCode={invalidTermCode}
       signals={signalResult.summary}
       signalsUnavailable={signalResult.unavailable}
-      signedIn={Boolean(signalResult.summary?.mine)}
+      signedIn={reviewResult.signedIn}
       signalError={
         typeof query.signalError === "string" ? query.signalError : undefined
       }

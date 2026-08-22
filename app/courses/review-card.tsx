@@ -373,10 +373,11 @@ export function ReviewCard({
             </ul>
           ) : null}
         </div>
-        <div className="mt-5 border-t border-slate-200 pt-4">
+        <div className="mt-3">
           <SignalControls
             id={`review-${review.id}-signals`}
             signedIn={Boolean(review.signals?.mine)}
+            size="sm"
             summary={review.signals}
             target={{ type: "review", reviewId: review.id }}
             unavailable={!review.signals}

@@ -80,7 +80,7 @@ test("signal actions require same-origin authentication and preserve the target 
   const signedOut = instructorForm();
   signedOut.set("state", "down");
   expect(await redirectOf(() => setThumbsSignal(signedOut))).toContain(
-    "/sign-in?r=%2Finstructors%2F00000000-0000-4000-8000-000000000001",
+    "/auth/login?r=%2Finstructors%2F00000000-0000-4000-8000-000000000001",
   );
   expect(mutations).toEqual([]);
 });

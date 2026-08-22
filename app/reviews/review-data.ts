@@ -18,9 +18,12 @@ export async function loadReview(
   reviewId: string,
   read: ReadReview = readReview,
 ) {
+  const viewerUserId = process.env.AUTH_SECRET
+    ? await authenticatedUserId().catch(() => undefined)
+    : undefined;
   try {
     return {
-      review: await read(reviewId, await authenticatedUserId()),
+      review: await read(reviewId, viewerUserId),
       unavailable: false as const,
     };
   } catch (error) {

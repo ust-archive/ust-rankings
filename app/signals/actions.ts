@@ -115,7 +115,7 @@ async function authorize(target: SignalTarget) {
   const userId = await authenticatedUserId();
   if (!userId)
     redirect(
-      `/sign-in?r=${encodeURIComponent(
+      `/auth/login?r=${encodeURIComponent(
         target.type === "review"
           ? destination(context.path, target)
           : context.path,
