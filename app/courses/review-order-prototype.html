@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review Top Order Prototype</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #172033; background: #f5f7fb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { width: min(1120px, calc(100% - 32px)); margin: 32px auto 64px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: clamp(1.8rem, 5vw, 3rem); line-height: 1.08; }
+    h2 { font-size: 1.15rem; }
+    button, input { font: inherit; }
+    button { min-height: 44px; border: 1px solid #cbd5e1; border-radius: 10px; background: white; color: inherit; padding: 8px 12px; cursor: pointer; }
+    button:hover { border-color: #2563eb; }
+    button[aria-pressed="true"], .primary { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 700; }
+    .intro, .panel, .review { border: 1px solid #dbe2ea; border-radius: 16px; background: white; box-shadow: 0 8px 24px rgb(15 23 42 / 6%); }
+    .intro, .panel { padding: 20px; }
+    .intro { border-top: 5px solid #2563eb; }
+    .muted { color: #475569; }
+    .formula { padding: 12px; border-radius: 10px; background: #f1f5f9; font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+    .controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    label { display: grid; gap: 6px; font-size: .85rem; font-weight: 700; }
+    input[type="range"] { width: 100%; }
+    .scenarios, .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .column { min-width: 0; }
+    .column > h2 { display: flex; justify-content: space-between; align-items: baseline; }
+    .review { padding: 16px; margin-bottom: 12px; }
+    .review h3 { margin-bottom: 4px; }
+    .rank { color: #2563eb; font-size: .8rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0; }
+    .stat { padding: 8px; border-radius: 8px; background: #f8fafc; text-align: center; }
+    .stat strong { display: block; }
+    .score { font-variant-numeric: tabular-nums; }
+    .walkthrough { border-left: 4px solid #f59e0b; }
+    section { margin-top: 20px; }
+    @media (max-width: 820px) { .grid, .controls { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header class="intro">
+    <p class="rank">Throwaway logic prototype</p>
+    <h1>What should “Top” put first?</h1>
+    <p>This demo tests a transparent Review order that combines Thumbs Vote quality, total reaction activity, and the current Review Revision’s age—without treating Emoji Reactions as approval.</p>
+    <p class="formula">Top = quality weight × Bayesian thumbs approval + activity weight × saturated reaction activity + timeliness weight × age decay</p>
+    <p class="muted">All Reviews shown here already passed the page’s Course, Instructor, Term, and Section filters, so relevance is equal. Popular counts every Thumbs Vote and Emoji Reaction. Recent uses the current Revision date.</p>
+  </header>
+
+  <section class="panel">
+    <h2>Formula controls</h2>
+    <div class="controls">
+      <label>Quality <output id="quality-output"></output><input id="quality" type="range" min="0" max="100" value="55"></label>
+      <label>Activity <output id="activity-output"></output><input id="activity" type="range" min="0" max="100" value="25"></label>
+      <label>Timeliness <output id="timeliness-output"></output><input id="timeliness" type="range" min="0" max="100" value="20"></label>
+      <label>Age half-life <output id="half-life-output"></output><input id="half-life" type="range" min="30" max="730" step="30" value="180"></label>
+    </div>
+    <p class="muted" id="weight-note"></p>
+  </section>
+
+  <section class="panel walkthrough">
+    <h2>Guided scenarios</h2>
+    <div class="scenarios" id="scenarios"></div>
+    <p id="scenario-description"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Free play</h2>
+    <p class="muted">Change the first Review, then compare all three lists.</p>
+    <div class="actions">
+      <button data-action="up">Add 👍</button>
+      <button data-action="down">Add 👎</button>
+      <button data-action="emoji">Add emoji</button>
+      <button data-action="age">Age 30 days</button>
+      <button data-action="refresh">Publish edit now</button>
+      <button data-action="reset">Reset scenario</button>
+    </div>
+  </section>
+
+  <section class="grid" aria-live="polite">
+    <div class="column"><h2>Top <small class="muted">default</small></h2><div id="top"></div></div>
+    <div class="column"><h2>Popular</h2><div id="popular"></div></div>
+    <div class="column"><h2>Recent</h2><div id="recent"></div></div>
+  </section>
+</main>
+<script>
+  // Portable pure ranking module. The surrounding page is throwaway.
+  const ReviewOrder = (() => {
+    const totalEmoji = review => Object.values(review.emoji).reduce((sum, count) => sum + count, 0);
+    const totalReactions = review => review.up + review.down + totalEmoji(review);
+    const quality = review => (review.up + 2) / (review.up + review.down + 4);
+    const activity = review => 1 - Math.exp(-totalReactions(review) / 8);
+    const timeliness = (review, halfLifeDays) => 2 ** (-review.ageDays / halfLifeDays);
+    const topScore = (review, settings) => {
+      const totalWeight = settings.quality + settings.activity + settings.timeliness || 1;
+      return (
+        settings.quality * quality(review) +
+        settings.activity * activity(review) +
+        settings.timeliness * timeliness(review, settings.halfLifeDays)
+      ) / totalWeight;
+    };
+    const recentThenId = (left, right) => left.ageDays - right.ageDays || left.id.localeCompare(right.id);
+    const sort = (reviews, order, settings) => [...reviews].sort((left, right) => {
+      if (order === "top") return topScore(right, settings) - topScore(left, settings) || recentThenId(left, right);
+      if (order === "popular") return totalReactions(right) - totalReactions(left) || recentThenId(left, right);
+      return recentThenId(left, right);
+    });
+    return { activity, quality, timeliness, topScore, totalEmoji, totalReactions, sort };
+  })();
+
+  const scenarios = {
+    balance: {
+      label: "Fresh vs proven",
+      description: "Does a fresh Review with no reactions get a fair chance without immediately outranking an older, strongly approved Review?",
+      reviews: [
+        { id: "fresh", title: "Fresh and untouched", ageDays: 1, up: 0, down: 0, emoji: { love: 0, laugh: 0, surprised: 0, confused: 0, sad: 0, angry: 0, fire: 0 } },
+        { id: "proven", title: "Proven for a term", ageDays: 90, up: 12, down: 1, emoji: { love: 4, laugh: 1, surprised: 0, confused: 0, sad: 0, angry: 0, fire: 3 } },
+        { id: "classic", title: "Old community favorite", ageDays: 500, up: 60, down: 5, emoji: { love: 18, laugh: 4, surprised: 2, confused: 0, sad: 0, angry: 0, fire: 12 } }
+      ]
+    },
+    negative: {
+      label: "Negative attention",
+      description: "A heavily downvoted Review may be Popular, but should not become Top merely because it attracted attention.",
+      reviews: [
+        { id: "controversial", title: "Lots of negative attention", ageDays: 4, up: 4, down: 28, emoji: { love: 0, laugh: 3, surprised: 18, confused: 20, sad: 2, angry: 16, fire: 1 } },
+        { id: "helpful", title: "Quietly helpful", ageDays: 35, up: 10, down: 0, emoji: { love: 2, laugh: 0, surprised: 0, confused: 0, sad: 0, angry: 0, fire: 1 } },
+        { id: "new", title: "New with one approval", ageDays: 2, up: 1, down: 0, emoji: { love: 0, laugh: 0, surprised: 0, confused: 0, sad: 0, angry: 0, fire: 0 } }
+      ]
+    },
+    edit: {
+      label: "Edit refresh",
+      description: "Reactions persist across edits. Publishing a current Revision refreshes timeliness because that is the date the Review card shows.",
+      reviews: [
+        { id: "edited", title: "Old Review edited yesterday", ageDays: 1, up: 8, down: 2, emoji: { love: 2, laugh: 1, surprised: 0, confused: 0, sad: 0, angry: 0, fire: 1 } },
+        { id: "steady", title: "Unedited recent Review", ageDays: 21, up: 10, down: 1, emoji: { love: 3, laugh: 0, surprised: 0, confused: 0, sad: 0, angry: 0, fire: 2 } },
+        { id: "brand-new", title: "Brand-new Review", ageDays: 0, up: 0, down: 0, emoji: { love: 0, laugh: 0, surprised: 0, confused: 0, sad: 0, angry: 0, fire: 0 } }
+      ]
+    },
+    sparse: {
+      label: "Tiny samples",
+      description: "The Bayesian prior prevents one early vote from behaving like certainty. Check whether it is too cautious for expected Review volume.",
+      reviews: [
+        { id: "one-up", title: "One thumbs up", ageDays: 20, up: 1, down: 0, emoji: { love: 0, laugh: 0, surprised: 0, confused: 0, sad: 0, angry: 0, fire: 0 } },
+        { id: "none", title: "No reactions", ageDays: 5, up: 0, down: 0, emoji: { love: 0, laugh: 0, surprised: 0, confused: 0, sad: 0, angry: 0, fire: 0 } },
+        { id: "one-down", title: "One thumbs down", ageDays: 1, up: 0, down: 1, emoji: { love: 0, laugh: 0, surprised: 0, confused: 0, sad: 0, angry: 0, fire: 0 } }
+      ]
+    }
+  };
+
+  let scenarioKey = "balance";
+  let reviews = structuredClone(scenarios[scenarioKey].reviews);
+  const ids = ["quality", "activity", "timeliness", "half-life"];
+  const settings = () => ({
+    quality: Number(document.querySelector("#quality").value),
+    activity: Number(document.querySelector("#activity").value),
+    timeliness: Number(document.querySelector("#timeliness").value),
+    halfLifeDays: Number(document.querySelector("#half-life").value)
+  });
+
+  function reviewCard(review, index, order, config) {
+    const totalEmoji = ReviewOrder.totalEmoji(review);
+    return `<article class="review">
+      <p class="rank">#${index + 1} · ${review.id}</p>
+      <h3>${review.title}</h3>
+      <p class="muted">Current Revision: ${review.ageDays === 0 ? "today" : `${review.ageDays} day${review.ageDays === 1 ? "" : "s"} ago`}</p>
+      <div class="stats">
+        <span class="stat"><strong>👍 ${review.up}</strong>up</span>
+        <span class="stat"><strong>👎 ${review.down}</strong>down</span>
+        <span class="stat"><strong>🙂 ${totalEmoji}</strong>emoji</span>
+        <span class="stat"><strong>${ReviewOrder.totalReactions(review)}</strong>total</span>
+      </div>
+      <p class="score">${order === "top" ? `Top ${ReviewOrder.topScore(review, config).toFixed(3)} · quality ${ReviewOrder.quality(review).toFixed(2)} · activity ${ReviewOrder.activity(review).toFixed(2)} · time ${ReviewOrder.timeliness(review, config.halfLifeDays).toFixed(2)}` : order === "popular" ? `${ReviewOrder.totalReactions(review)} reactions` : `${review.ageDays} days old`}</p>
+    </article>`;
+  }
+
+  function render() {
+    const config = settings();
+    const totalWeight = config.quality + config.activity + config.timeliness;
+    document.querySelector("#quality-output").value = config.quality;
+    document.querySelector("#activity-output").value = config.activity;
+    document.querySelector("#timeliness-output").value = config.timeliness;
+    document.querySelector("#half-life-output").value = `${config.halfLifeDays} days`;
+    document.querySelector("#weight-note").textContent = totalWeight ? `Normalized shares: quality ${Math.round(config.quality / totalWeight * 100)}%, activity ${Math.round(config.activity / totalWeight * 100)}%, timeliness ${Math.round(config.timeliness / totalWeight * 100)}%.` : "Set at least one weight above zero.";
+    document.querySelector("#scenario-description").textContent = scenarios[scenarioKey].description;
+    for (const order of ["top", "popular", "recent"]) {
+      document.querySelector(`#${order}`).innerHTML = ReviewOrder.sort(reviews, order, config).map((review, index) => reviewCard(review, index, order, config)).join("");
+    }
+    document.querySelectorAll("[data-scenario]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.scenario === scenarioKey)));
+  }
+
+  document.querySelector("#scenarios").innerHTML = Object.entries(scenarios).map(([key, scenario]) => `<button data-scenario="${key}">${scenario.label}</button>`).join("");
+  document.querySelector("#scenarios").addEventListener("click", event => {
+    const key = event.target.dataset.scenario;
+    if (!key) return;
+    scenarioKey = key;
+    reviews = structuredClone(scenarios[key].reviews);
+    render();
+  });
+  document.querySelector(".actions").addEventListener("click", event => {
+    const action = event.target.dataset.action;
+    if (!action) return;
+    if (action === "reset") reviews = structuredClone(scenarios[scenarioKey].reviews);
+    else {
+      const first = reviews[0];
+      if (action === "up") first.up++;
+      if (action === "down") first.down++;
+      if (action === "emoji") first.emoji.love++;
+      if (action === "age") first.ageDays += 30;
+      if (action === "refresh") first.ageDays = 0;
+    }
+    render();
+  });
+  for (const id of ids) document.querySelector(`#${id}`).addEventListener("input", render);
+  render();
+</script>
+</body>
+</html>
