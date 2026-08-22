@@ -6,6 +6,7 @@ on:
     types: [completed]
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -20,6 +21,8 @@ jobs:
       github.event.workflow_run.head_branch == 'master'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      DIGITALOCEAN_APP_ID: 435103e7-5383-4f5e-804e-f8a1fb715c72
     steps:
       - name: Check this is still the latest commit
         id: latest
@@ -33,11 +36,38 @@ jobs:
             echo "A newer commit is awaiting CI; leaving deployment to that run."
           fi
 
-      - name: Deploy to DigitalOcean App Platform
-        if: steps.latest.outputs.deploy == 'true'
-        uses: digitalocean/app_action/deploy@v2
+      - if: steps.latest.outputs.deploy == 'true'
+        uses: actions/checkout@v6
         with:
-          app_name: ust-rankings
-          print_build_logs: true
-          print_deploy_logs: true
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - if: steps.latest.outputs.deploy == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: production-image-digest
+          path: .deploy
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - if: steps.latest.outputs.deploy == 'true'
+        uses: digitalocean/action-doctl@v2
+        with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Create image app spec
+        if: steps.latest.outputs.deploy == 'true'
+        run: |
+          mkdir -p .do
+          digest="$(tr -d '\r\n' < .deploy/image-digest.txt)"
+          doctl apps get "$DIGITALOCEAN_APP_ID" --output json > .deploy/app.json
+          node scripts/create-image-app-spec.ts .deploy/app.json "$digest" .do/app.json
+
+      - name: Deploy verified image to DigitalOcean App Platform
+        if: steps.latest.outputs.deploy == 'true'
+        run: |
+          if doctl apps update "$DIGITALOCEAN_APP_ID" --spec .do/app.json --wait; then
+            exit 0
+          fi
+          deployment_id="$(doctl apps list-deployments "$DIGITALOCEAN_APP_ID" --format ID --no-header | head -1)"
+          doctl apps logs "$DIGITALOCEAN_APP_ID" web --deployment "$deployment_id" --type deploy --tail 100 || true
+          exit 1

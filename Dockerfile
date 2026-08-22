@@ -7,6 +7,9 @@ COPY data/package.json data/package.json
 RUN npm ci --no-audit --no-fund
 
 COPY . .
+ARG PRIVACY_CONTACT_ADDRESS
+ARG PRIVACY_CONTACT_EMAIL
+ARG PRIVACY_CONTACT_TITLE
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
