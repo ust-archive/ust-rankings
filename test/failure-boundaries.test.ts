@@ -14,7 +14,6 @@ const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   delete process.env.RANKINGS_SEED_DIR;
-  delete process.env.SCHEDULE_SEED_DIR;
   const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
     await Promise.all([
       import("@/lib/rankings/server"),
@@ -59,17 +58,18 @@ test("calendar ETags are bound to the accepted Schedule generation", async () =>
   const firstRoot = await mkdtemp(join(tmpdir(), "cache-cal-first-"));
   const secondRoot = await mkdtemp(join(tmpdir(), "cache-cal-second-"));
   temporaryDirectories.push(firstRoot, secondRoot);
-  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(firstRoot);
-  const { generateScheduleCalendar } = await import("@/lib/schedule/calendar");
-  const first = await generateScheduleCalendar("2510", [1001]);
   const { resetScheduleRuntimeForTests } = await import(
     "@/lib/schedule/server"
   );
-  await resetScheduleRuntimeForTests();
-  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(
-    secondRoot,
-    undefined,
-    "aaaabbbbccccddddeeeeffff0000111122223333",
+  await resetScheduleRuntimeForTests(await makeScheduleGeneration(firstRoot));
+  const { generateScheduleCalendar } = await import("@/lib/schedule/calendar");
+  const first = await generateScheduleCalendar("2510", [1001]);
+  await resetScheduleRuntimeForTests(
+    await makeScheduleGeneration(
+      secondRoot,
+      undefined,
+      "aaaabbbbccccddddeeeeffff0000111122223333",
+    ),
   );
   const second = await generateScheduleCalendar("2510", [1001]);
   expect(first.etag).not.toBe(second.etag);
@@ -80,8 +80,12 @@ test("ranking failure leaves Schedule and public identity routes usable", async 
   const scheduleRoot = await mkdtemp(join(tmpdir(), "fail-rank-schedule-"));
   temporaryDirectories.push(rankingRoot, scheduleRoot);
   process.env.RANKINGS_SEED_DIR = join(rankingRoot, "missing");
-  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(scheduleRoot);
-  const { querySchedule } = await import("@/lib/schedule/server");
+  const { querySchedule, resetScheduleRuntimeForTests } = await import(
+    "@/lib/schedule/server"
+  );
+  await resetScheduleRuntimeForTests(
+    await makeScheduleGeneration(scheduleRoot),
+  );
   const { queryRankings, RankingsUnavailableError } = await import(
     "@/lib/rankings/server"
   );
@@ -96,11 +100,13 @@ test("Schedule failure leaves Rankings usable", async () => {
   const rankingRoot = await mkdtemp(join(tmpdir(), "fail-sched-rank-"));
   temporaryDirectories.push(rankingRoot);
   process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(rankingRoot);
-  process.env.SCHEDULE_SEED_DIR = join(rankingRoot, "missing-schedule");
   const { queryRankings } = await import("@/lib/rankings/server");
-  const { querySchedule, ScheduleUnavailableError } = await import(
-    "@/lib/schedule/server"
-  );
+  const {
+    querySchedule,
+    resetScheduleRuntimeForTests,
+    ScheduleUnavailableError,
+  } = await import("@/lib/schedule/server");
+  await resetScheduleRuntimeForTests(join(rankingRoot, "missing-schedule"));
   const page = await queryRankings({ entity: "instructor", termCode: "2510" });
   expect(page.results.length).toBeGreaterThan(0);
   await expect(querySchedule({ termCode: "2510" })).rejects.toBeInstanceOf(

@@ -22,7 +22,6 @@ vi.mock("server-only", () => ({}));
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  delete process.env.SCHEDULE_SEED_DIR;
   delete process.env.RANKINGS_SEED_DIR;
   const { resetScheduleRuntimeForTests } = await import(
     "@/lib/schedule/server"

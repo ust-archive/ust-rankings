@@ -11,8 +11,7 @@
       "!!**/.agents",
       "!!**/node_modules",
       "!!data/out",
-      "!!rankings/seed",
-      "!!schedule/seed"
+      "!!rankings/seed"
     ]
   },
   "formatter": {

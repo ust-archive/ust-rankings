@@ -21,7 +21,12 @@ async function configureAssociations() {
     undefined,
     { includeScheduleCourse: true },
   );
-  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(scheduleRoot);
+  const { resetScheduleRuntimeForTests } = await import(
+    "@/lib/schedule/server"
+  );
+  await resetScheduleRuntimeForTests(
+    await makeScheduleGeneration(scheduleRoot),
+  );
 }
 
 async function updateManifest(
@@ -38,7 +43,6 @@ async function updateManifest(
 
 afterEach(async () => {
   delete process.env.RANKINGS_SEED_DIR;
-  delete process.env.SCHEDULE_SEED_DIR;
   const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
     await Promise.all([
       import("@/lib/rankings/server"),
