@@ -252,9 +252,8 @@ export class InvalidScheduleQueryError extends TypeError {
 }
 
 let explicitGeneration:
-  | { directory: string; generation: Promise<Generation> }
+  | { directory: string; generation?: Promise<Generation> }
   | undefined;
-let seedLoading: Promise<Generation> | undefined;
 let runtimeActive: Promise<Generation> | undefined;
 let runtimePrevious: Promise<Generation> | undefined;
 let runtimeActiveSha: string | undefined;
@@ -264,12 +263,6 @@ let runtimeDiscovery: Promise<Generation> | undefined;
 let afterAcquireForTests: ((generation: string) => Promise<void>) | undefined;
 const queryQueues = new WeakMap<DuckDBConnection, Promise<void>>();
 const queuedQueryCounts = new WeakMap<DuckDBConnection, number>();
-
-function seedDirectory() {
-  const directory = process.env.SCHEDULE_SEED_DIR;
-  if (!directory) throw new ScheduleUnavailableError();
-  return directory;
-}
 
 function sqlPath(directory: string, filename: string) {
   return resolve(directory, filename)
@@ -497,13 +490,10 @@ async function discoverGeneration() {
 }
 
 function generation() {
-  if (process.env.SCHEDULE_SEED_DIR) {
-    const directory = seedDirectory();
-    if (explicitGeneration?.directory !== directory) {
-      const previous = explicitGeneration?.generation;
-      explicitGeneration = { directory, generation: loadGeneration(directory) };
-      void retireGeneration(previous);
-    }
+  if (explicitGeneration) {
+    explicitGeneration.generation ??= loadGeneration(
+      explicitGeneration.directory,
+    );
     return explicitGeneration.generation;
   }
   if (
@@ -571,7 +561,7 @@ async function installRuntimeGeneration(
   runtimeActive = loading;
   runtimeActiveSha = sha;
   runtimePrevious = undefined;
-  if (oldActive && oldActive !== seedLoading) {
+  if (oldActive) {
     if ((await oldActive).sha === previousSha) runtimePrevious = oldActive;
     else await retireGeneration(oldActive);
   }
@@ -779,24 +769,23 @@ export async function getScheduleHealth(
 }
 
 export async function resetScheduleRuntimeForTests(
-  dependencies?: ScheduleRefreshDependencies,
+  source?: ScheduleRefreshDependencies | string,
 ) {
   const retained = [
     explicitGeneration?.generation,
-    seedLoading,
     runtimeActive,
     runtimePrevious,
   ];
   explicitGeneration = undefined;
-  seedLoading = undefined;
   runtimeActive = undefined;
   runtimePrevious = undefined;
   runtimeActiveSha = undefined;
-  runtimeDependencies = dependencies;
+  runtimeDependencies = typeof source === "string" ? undefined : source;
   runtimeCheckedAt = 0;
   runtimeDiscovery = undefined;
   afterAcquireForTests = undefined;
   for (const loading of new Set(retained)) await retireGeneration(loading);
+  if (typeof source === "string") explicitGeneration = { directory: source };
 }
 
 function text(value: unknown) {

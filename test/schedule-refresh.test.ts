@@ -29,11 +29,15 @@ async function installRankingGeneration(directory: string) {
 }
 
 afterEach(async () => {
-  delete process.env.SCHEDULE_SEED_DIR;
-  const { resetScheduleRuntimeForTests } = await import(
-    "@/lib/schedule/server"
-  );
-  await resetScheduleRuntimeForTests();
+  const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
+    await Promise.all([
+      import("@/lib/rankings/server"),
+      import("@/lib/schedule/server"),
+    ]);
+  await Promise.all([
+    resetRankingsRuntimeForTests(),
+    resetScheduleRuntimeForTests(),
+  ]);
   await Promise.all(
     temporaryDirectories
       .splice(0)

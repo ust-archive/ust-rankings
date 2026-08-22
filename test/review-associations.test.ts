@@ -20,11 +20,15 @@ async function configureAssociations() {
   rankingDirectory = await makeRankingGeneration(rankingRoot, undefined, {
     includeScheduleCourse: true,
   });
-  const { resetRankingsRuntimeForTests } = await import(
-    "@/lib/rankings/server"
-  );
-  await resetRankingsRuntimeForTests(rankingDirectory);
-  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(scheduleRoot);
+  const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
+    await Promise.all([
+      import("@/lib/rankings/server"),
+      import("@/lib/schedule/server"),
+    ]);
+  await Promise.all([
+    resetRankingsRuntimeForTests(rankingDirectory),
+    resetScheduleRuntimeForTests(await makeScheduleGeneration(scheduleRoot)),
+  ]);
 }
 
 async function updateManifest(
@@ -42,7 +46,6 @@ async function updateManifest(
 
 afterEach(async () => {
   rankingDirectory = undefined;
-  delete process.env.SCHEDULE_SEED_DIR;
   const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
     await Promise.all([
       import("@/lib/rankings/server"),

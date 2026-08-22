@@ -25,10 +25,9 @@ npm run check
 npm run build
 ```
 
-Use `npm run dev` for local development. Rankings load the accepted Hugging
-Face generation without mutating source data. For Schedule fixture data, copy
-`.env.example` to `.env.local`, set `AUTH_SECRET`, and uncomment
-`SCHEDULE_SEED_DIR`. Biome is the formatter, linter, and import organizer
+Use `npm run dev` for local development. Rankings and Schedule lazily download
+accepted Hugging Face generations without mutating source data. Biome is the
+formatter, linter, and import organizer
 (`npm run check:write`), while TypeScript remains a separate check
 (`npm run type-check`).
 

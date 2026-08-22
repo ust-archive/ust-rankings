@@ -10,15 +10,13 @@ export async function register() {
     await refreshRankings({}, productionRankingRefreshDependencies()).catch(
       () => undefined,
     );
-    if (!process.env.SCHEDULE_SEED_DIR) {
-      const { refreshSchedule } = await import("./lib/schedule/server");
-      const { productionScheduleRefreshDependencies } = await import(
-        "./lib/schedule/runtime"
-      );
-      await refreshSchedule({}, productionScheduleRefreshDependencies()).catch(
-        () => undefined,
-      );
-    }
+    const { refreshSchedule } = await import("./lib/schedule/server");
+    const { productionScheduleRefreshDependencies } = await import(
+      "./lib/schedule/runtime"
+    );
+    await refreshSchedule({}, productionScheduleRefreshDependencies()).catch(
+      () => undefined,
+    );
   };
   void refresh();
   setInterval(

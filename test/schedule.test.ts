@@ -22,15 +22,18 @@ async function configureFixture(
   const root = await mkdtemp(join(tmpdir(), "schedule-generation-"));
   const rankingRoot = await mkdtemp(join(tmpdir(), "ranking-for-schedule-"));
   temporaryDirectories.push(root, rankingRoot);
-  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(
-    root,
-    malformation,
+  const directory = await makeScheduleGeneration(root, malformation);
+  const { resetScheduleRuntimeForTests } = await import(
+    "@/lib/schedule/server"
   );
-  await installRankingGeneration(await makeRankingGeneration(rankingRoot));
+  await Promise.all([
+    installRankingGeneration(await makeRankingGeneration(rankingRoot)),
+    resetScheduleRuntimeForTests(directory),
+  ]);
+  return directory;
 }
 
 afterEach(async () => {
-  delete process.env.SCHEDULE_SEED_DIR;
   const { resetScheduleRuntimeForTests } = await import(
     "@/lib/schedule/server"
   );
@@ -46,17 +49,12 @@ afterEach(async () => {
   );
 });
 
-test("an explicit SCHEDULE_SEED_DIR generation is accepted before it is served", async () => {
-  process.env.SCHEDULE_SEED_DIR = join(
-    process.cwd(),
-    "schedule",
-    "seed",
-    "0ddb2e493caeeb8aa9c56728496c866c358a2431",
-  );
+test("a generated fixture generation is accepted before it is served", async () => {
+  await configureFixture();
   const { querySchedule } = await import("@/lib/schedule/server");
   const page = await querySchedule({ limit: 1 });
 
-  expect(page.generation).toBe("0ddb2e493caeeb8aa9c56728496c866c358a2431");
+  expect(page.generation).toBe(scheduleFixtureSha);
   expect(page.terms.length).toBeGreaterThan(0);
   expect(page.results).toHaveLength(1);
 });
@@ -161,8 +159,10 @@ test("unmatched Class source names stay unresolved and TBA is omitted", async ()
 test("Schedule still serves when Rankings are unavailable", async () => {
   const root = await mkdtemp(join(tmpdir(), "schedule-without-rankings-"));
   temporaryDirectories.push(root);
-  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(root);
-  const { querySchedule } = await import("@/lib/schedule/server");
+  const { querySchedule, resetScheduleRuntimeForTests } = await import(
+    "@/lib/schedule/server"
+  );
+  await resetScheduleRuntimeForTests(await makeScheduleGeneration(root));
   const page = await querySchedule({ termCode: "2510", search: "COMP 2000" });
   expect(page.results[0]?.courseCode).toBe("COMP 2000");
   expect(page.results[0]?.classes[0]?.meetings[0]?.instructors).toContainEqual({
@@ -268,18 +268,19 @@ test("duplicate event grains and broken Course/Class joins fail closed", async (
   }
 });
 
-test("missing or corrupted seed data fails only the Schedule module", async () => {
-  await configureFixture();
-  const directory = process.env.SCHEDULE_SEED_DIR;
-  if (!directory) throw new Error("Schedule fixture was not configured");
+test("missing or corrupted fixture data fails only the Schedule module", async () => {
+  const directory = await configureFixture();
   const manifestPath = join(directory, "manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   manifest.artifacts["courses.parquet"].sha256 = "0".repeat(64);
   await writeFile(manifestPath, JSON.stringify(manifest));
 
-  const { querySchedule, ScheduleUnavailableError } = await import(
-    "@/lib/schedule/server"
-  );
+  const {
+    querySchedule,
+    resetScheduleRuntimeForTests,
+    ScheduleUnavailableError,
+  } = await import("@/lib/schedule/server");
+  await resetScheduleRuntimeForTests(directory);
   await expect(querySchedule({})).rejects.toBeInstanceOf(
     ScheduleUnavailableError,
   );

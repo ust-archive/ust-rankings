@@ -6,13 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": [
-      "**",
-      "!!**/.agents",
-      "!!**/node_modules",
-      "!!data/out",
-      "!!schedule/seed"
-    ]
+    "includes": ["**", "!!**/.agents", "!!**/node_modules", "!!data/out"]
   },
   "formatter": {
     "enabled": true,
