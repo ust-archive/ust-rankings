@@ -1,8 +1,7 @@
 name: Prototype image build benchmark
 
 on:
-  push:
-    branches: [prototype/build-benchmark]
+  workflow_dispatch:
 
 permissions:
   contents: read
