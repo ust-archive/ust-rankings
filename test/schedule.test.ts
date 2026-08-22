@@ -9,6 +9,13 @@ vi.mock("server-only", () => ({}));
 
 const temporaryDirectories: string[] = [];
 
+async function installRankingGeneration(directory: string) {
+  const { resetRankingsRuntimeForTests } = await import(
+    "@/lib/rankings/server"
+  );
+  await resetRankingsRuntimeForTests(directory);
+}
+
 async function configureFixture(
   malformation?: "duplicate-event" | "orphan-class",
 ) {
@@ -19,12 +26,11 @@ async function configureFixture(
     root,
     malformation,
   );
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(rankingRoot);
+  await installRankingGeneration(await makeRankingGeneration(rankingRoot));
 }
 
 afterEach(async () => {
   delete process.env.SCHEDULE_SEED_DIR;
-  delete process.env.RANKINGS_SEED_DIR;
   const { resetScheduleRuntimeForTests } = await import(
     "@/lib/schedule/server"
   );

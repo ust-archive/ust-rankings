@@ -11,16 +11,19 @@ vi.mock("server-only", () => ({}));
 const ALPHA_UUID = "00000000-0000-4000-8000-000000000001";
 const BETA_UUID = "00000000-0000-4000-8000-000000000002";
 const temporaryDirectories: string[] = [];
+let rankingDirectory: string | undefined;
 
 async function configureAssociations() {
   const rankingRoot = await mkdtemp(join(tmpdir(), "review-rankings-"));
   const scheduleRoot = await mkdtemp(join(tmpdir(), "review-schedule-"));
   temporaryDirectories.push(rankingRoot, scheduleRoot);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
-    rankingRoot,
-    undefined,
-    { includeScheduleCourse: true },
+  rankingDirectory = await makeRankingGeneration(rankingRoot, undefined, {
+    includeScheduleCourse: true,
+  });
+  const { resetRankingsRuntimeForTests } = await import(
+    "@/lib/rankings/server"
   );
+  await resetRankingsRuntimeForTests(rankingDirectory);
   process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(scheduleRoot);
 }
 
@@ -30,14 +33,15 @@ async function updateManifest(
     identityEvents?: unknown[];
   }) => void,
 ) {
-  const path = join(process.env.RANKINGS_SEED_DIR as string, "manifest.json");
+  if (!rankingDirectory) throw new Error("Ranking fixture was not configured");
+  const path = join(rankingDirectory, "manifest.json");
   const manifest = JSON.parse(await readFile(path, "utf8"));
   update(manifest);
   await writeFile(path, JSON.stringify(manifest));
 }
 
 afterEach(async () => {
-  delete process.env.RANKINGS_SEED_DIR;
+  rankingDirectory = undefined;
   delete process.env.SCHEDULE_SEED_DIR;
   const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
     await Promise.all([

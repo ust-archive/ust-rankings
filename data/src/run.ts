@@ -146,11 +146,8 @@ try {
     await executeFile(connection, file);
   }
 
-  const bootstrapPath = process.env.RANKINGS_IDENTITY_BOOTSTRAP;
   await assignInstructorIdentities(connection, {
     previousGenerationDir: process.env.RANKINGS_PREVIOUS_GENERATION_DIR,
-    bootstrapPath,
-    requirePrevious: !bootstrapPath,
     sourceCommit: process.env.RANKINGS_IDENTITY_COMMIT ?? "local",
     correctionsPath: process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE,
   });

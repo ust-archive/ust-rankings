@@ -30,7 +30,6 @@ async function reidentifyGeneration(directory: string, sha: string) {
 }
 
 afterEach(async () => {
-  delete process.env.RANKINGS_SEED_DIR;
   delete process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE;
   const { resetRankingsRuntimeForTests } = await import(
     "@/lib/rankings/server"

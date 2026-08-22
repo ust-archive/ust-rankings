@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -168,11 +168,11 @@ async function makeFixtures(
   }
 }
 
-async function writeIdentityBootstrap(
-  path: string,
+async function makePreviousGeneration(
+  directory: string,
   omittedName?: string,
   sharedIdentityNames?: readonly [string, string],
-): Promise<void> {
+): Promise<string> {
   const names = [
     "ALPHA, Alice Beatrice",
     "Adam Blake DELTA",
@@ -183,23 +183,44 @@ async function writeIdentityBootstrap(
     "WANG, Wei",
     "WEI, Wang",
   ];
-  await writeFile(
-    path,
-    JSON.stringify({
-      schemaMajor: 0,
-      identities: names
-        .filter((canonicalName) => canonicalName !== omittedName)
-        .map((canonicalName, index) => ({
-          uuid: `00000000-0000-4000-8000-${String(
-            sharedIdentityNames?.[1] === canonicalName
-              ? names.indexOf(sharedIdentityNames[0]) + 1
-              : index + 1,
-          ).padStart(12, "0")}`,
-          canonicalName,
-        })),
-      events: [],
-    }),
-  );
+  const rows = names
+    .filter((name) => name !== omittedName)
+    .map((name, index) => ({
+      name,
+      uuid: `00000000-0000-4000-8000-${String(
+        sharedIdentityNames?.[1] === name
+          ? names.indexOf(sharedIdentityNames[0]) + 1
+          : index + 1,
+      ).padStart(12, "0")}`,
+    }));
+  const values = rows
+    .map(
+      ({ name, uuid }) =>
+        `('${uuid}', '${name.replaceAll("'", "''")}', NULL::VARCHAR)`,
+    )
+    .join(",");
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  try {
+    const empty =
+      "SELECT ''::VARCHAR AS uuid, ''::VARCHAR AS canonical_name, NULL::VARCHAR AS itsc WHERE false";
+    await copyQuery(
+      connection,
+      join(directory, "instructor-identities.parquet"),
+      values
+        ? `SELECT * FROM (VALUES ${values}) AS identities(uuid, canonical_name, itsc)`
+        : empty,
+    );
+    await copyQuery(
+      connection,
+      join(directory, "instructor-aliases.parquet"),
+      `SELECT uuid, canonical_name AS name, 'fixture' AS source, 'fixture' AS source_commit, NULL::VARCHAR AS source_file FROM read_parquet('${parquet(directory, "instructor-identities")}')`,
+    );
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
+  }
+  return directory;
 }
 
 function runPipeline(
@@ -328,11 +349,10 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const bootstrap = join(temp, "identities.json");
-    await writeIdentityBootstrap(bootstrap);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
 
     const first = runPipeline(dataDir, join(temp, "first"), {
-      RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
     });
     const second = runPipeline(dataDir, join(temp, "second"), {
       RANKINGS_PREVIOUS_GENERATION_DIR: first,
@@ -546,10 +566,9 @@ test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () =
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const bootstrap = join(temp, "identities.json");
-    await writeIdentityBootstrap(bootstrap);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
     const first = runPipeline(dataDir, join(temp, "first"), {
-      RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
     });
     const second = runPipeline(dataDir, join(temp, "second"), {
       RANKINGS_PREVIOUS_GENERATION_DIR: first,
@@ -586,10 +605,9 @@ test("zero-sample teaching Instructors and offered Courses receive the evidence-
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const bootstrap = join(temp, "identities.json");
-    await writeIdentityBootstrap(bootstrap);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
     const output = runPipeline(dataDir, join(temp, "out"), {
-      RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
     });
     const instructorRatings = parquet(output, "instructor-ratings");
     const courseRatings = parquet(output, "course-ratings");
@@ -641,11 +659,7 @@ test("the pipeline rejects conflicting cross-campus Course metadata", async () =
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir, { conflictingCatalog: true });
-    const bootstrap = join(temp, "empty-identities.json");
-    await writeFile(
-      bootstrap,
-      JSON.stringify({ schemaMajor: 0, identities: [], events: [] }),
-    );
+    const previous = await makePreviousGeneration(join(temp, "previous"));
     const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
       cwd: root,
       encoding: "utf8",
@@ -653,7 +667,7 @@ test("the pipeline rejects conflicting cross-campus Course metadata", async () =
         ...process.env,
         RANKINGS_DATA_DIR: dataDir,
         RANKINGS_OUTPUT_DIR: join(temp, "out"),
-        RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
       },
     });
     assert.notEqual(result.status, 0);
@@ -670,8 +684,10 @@ test("the pipeline rejects unmatched Instructor names", async () => {
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const bootstrap = join(temp, "identities.json");
-    await writeIdentityBootstrap(bootstrap, "Cara Gamma");
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      "Cara Gamma",
+    );
     const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
       cwd: root,
       encoding: "utf8",
@@ -679,7 +695,7 @@ test("the pipeline rejects unmatched Instructor names", async () => {
         ...process.env,
         RANKINGS_DATA_DIR: dataDir,
         RANKINGS_OUTPUT_DIR: join(temp, "out"),
-        RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
       },
     });
     assert.notEqual(result.status, 0);
@@ -699,11 +715,11 @@ test("the pipeline rejects ambiguous Instructor identities", async () => {
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const bootstrap = join(temp, "identities.json");
-    await writeIdentityBootstrap(bootstrap, undefined, [
-      "Cara Gamma",
-      "Dora Delta",
-    ]);
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      ["Cara Gamma", "Dora Delta"],
+    );
     const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
       cwd: root,
       encoding: "utf8",
@@ -711,7 +727,7 @@ test("the pipeline rejects ambiguous Instructor identities", async () => {
         ...process.env,
         RANKINGS_DATA_DIR: dataDir,
         RANKINGS_OUTPUT_DIR: join(temp, "out"),
-        RANKINGS_IDENTITY_BOOTSTRAP: bootstrap,
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
       },
     });
     assert.notEqual(result.status, 0);
@@ -737,11 +753,13 @@ test("the pipeline fails when previous identities are required but missing", asy
         ...process.env,
         RANKINGS_DATA_DIR: dataDir,
         RANKINGS_OUTPUT_DIR: outputDir,
-        RANKINGS_REQUIRE_PREVIOUS_IDENTITIES: "1",
       },
     });
     assert.notEqual(result.status, 0);
-    assert.match(`${result.stderr}${result.stdout}`, /previous identities/i);
+    assert.match(
+      `${result.stderr}${result.stdout}`,
+      /previous Instructor identities/i,
+    );
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
