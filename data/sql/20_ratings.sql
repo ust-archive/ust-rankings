@@ -4,13 +4,16 @@
 -- Outputs: criterion_stats, course_ratings, instructor_ratings, and the two
 --          current-term snapshot views.
 --
--- Rating parameters are kept together so the model constants are visible and
--- can be evaluated by the deferred walk-forward backtest.
+-- Rating parameters are kept together so production and walk-forward
+-- validation execute the same calculation with explicit candidate settings.
 CREATE OR REPLACE TABLE ranking_parameters AS
 SELECT
-  0.65::DOUBLE AS timeliness_base,
+  getvariable('timeliness_base')::DOUBLE AS timeliness_base,
   4::INTEGER AS timeliness_term_span,
-  12::DOUBLE AS course_instructor_multiplier;
+  getvariable('course_instructor_multiplier')::DOUBLE
+    AS course_instructor_multiplier,
+  getvariable('context_affects_uncertainty')::BOOLEAN
+    AS context_affects_uncertainty;
 
 -- Rolling weighted source distributions prevent future terms from influencing
 -- historical standardized scores.
@@ -90,7 +93,8 @@ WITH expanded AS (
         AND current.subject = course_terms.subject
         AND current.code = course_terms.code
         AND current.term_num = course_terms.term_num
-    ) THEN parameters.course_instructor_multiplier ELSE 1 END AS instructor_multiplier
+    ) THEN parameters.course_instructor_multiplier ELSE 1 END AS instructor_multiplier,
+    parameters.context_affects_uncertainty
   FROM course_terms
   JOIN observations
     ON observations.subject = course_terms.subject
@@ -100,7 +104,11 @@ WITH expanded AS (
 ), weighted AS (
   SELECT
     *,
-    weight * timeliness * instructor_multiplier AS effective_weight
+    weight * timeliness * instructor_multiplier AS rating_weight,
+    weight * timeliness * CASE
+      WHEN context_affects_uncertainty THEN instructor_multiplier
+      ELSE 1
+    END AS confidence_weight
   FROM expanded
 )
 SELECT
@@ -108,14 +116,19 @@ SELECT
   code,
   term_num,
   criterion,
-  sum(rating * effective_weight) / nullif(sum(effective_weight), 0) AS raw_rating,
-  sum(effective_weight) AS confidence,
+  sum(rating * rating_weight) / nullif(sum(rating_weight), 0) AS raw_rating,
+  sum(confidence_weight) AS confidence,
   sum(samples) FILTER (WHERE observation_term_num = term_num) AS samples,
   sum(samples) AS cumulative_samples,
-  sum(samples * timeliness * instructor_multiplier) AS effective_samples
+  sum(
+    samples * timeliness * CASE
+      WHEN context_affects_uncertainty THEN instructor_multiplier
+      ELSE 1
+    END
+  ) AS effective_samples
 FROM weighted
 GROUP BY subject, code, term_num, criterion
-HAVING sum(effective_weight) > 0;
+HAVING sum(rating_weight) > 0;
 
 -- Instructor histories use the same time decay but no course-context multiplier.
 CREATE OR REPLACE TABLE instructor_terms AS

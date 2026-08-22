@@ -11,6 +11,26 @@ if (unknownArgument) throw new Error(`Unknown argument: ${unknownArgument}`);
 const initializeIdentityHistory = cliArguments.includes("--init");
 const outputDir = resolve(root, process.env.RANKINGS_OUTPUT_DIR ?? "out");
 const localDataDir = process.env.DATA_DIR;
+const backtestRowsPath = process.env.RANKINGS_BACKTEST_ROWS;
+
+function numberSetting(name: string, fallback: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(value) || value < 0)
+    throw new Error(`Invalid ${name}: ${process.env[name]}`);
+  return value;
+}
+
+const modelSettings = {
+  timeliness_base: numberSetting("RANKINGS_TIMELINESS_BASE", 0.65),
+  course_instructor_multiplier: numberSetting(
+    "RANKINGS_COURSE_INSTRUCTOR_MULTIPLIER",
+    12,
+  ),
+  review_vote_scale: numberSetting("RANKINGS_REVIEW_VOTE_SCALE", 1),
+  sfq_rate_penalty: numberSetting("RANKINGS_SFQ_RATE_PENALTY", 1),
+  context_affects_uncertainty:
+    process.env.RANKINGS_CONTEXT_AFFECTS_UNCERTAINTY !== "false",
+};
 
 const revisions = {
   catalog: process.env.CATALOG_REVISION ?? "main",
@@ -115,7 +135,11 @@ try {
     }
   }
 
-  for (const [name, value] of Object.entries({ ...sources, ...outputs })) {
+  for (const [name, value] of Object.entries({
+    ...sources,
+    ...outputs,
+    ...modelSettings,
+  })) {
     await connection.run(`SET VARIABLE ${name} = $value`, { value });
   }
 
@@ -156,6 +180,58 @@ try {
   });
 
   await executeFile(connection, "20_ratings.sql");
+
+  if (backtestRowsPath) {
+    await mkdir(dirname(resolve(backtestRowsPath)), { recursive: true });
+    await connection.run("SET VARIABLE backtest_rows = $value", {
+      value: sqlPath(resolve(backtestRowsPath)),
+    });
+    await connection.run(`
+      COPY (
+        WITH course_observations AS (
+          SELECT
+            subject AS prefix,
+            code AS number,
+            term_num,
+            criterion,
+            rating,
+            weight
+          FROM observations
+        ), outcomes AS (
+          SELECT
+            concat_ws(chr(31), prefix, number) AS course_id,
+            term_num,
+            criterion,
+            rating,
+            weight
+          FROM course_observations
+        )
+        SELECT
+          predictions.entity_id AS course_id,
+          predictions.term_num AS cutoff_term,
+          outcomes.term_num AS outcome_term,
+          predictions.criterion,
+          predictions.bayesian * stats.stddev + stats.mean AS prediction,
+          stats.stddev * sqrt(
+            pow(predictions.posterior_stddev, 2) + 1 / outcomes.weight
+          )
+            AS predictive_stddev,
+          predictions.cumulative_samples,
+          outcomes.rating AS outcome
+        FROM scored_entity_ratings AS predictions
+        JOIN outcomes
+          ON outcomes.course_id = predictions.entity_id
+         AND outcomes.criterion = predictions.criterion
+         AND outcomes.term_num > predictions.term_num
+         AND outcomes.term_num <= predictions.term_num + 4
+        JOIN criterion_stats AS stats
+          ON stats.criterion = predictions.criterion
+         AND stats.term_num = predictions.term_num
+         AND stats.stddev > 0
+        WHERE predictions.family = 'course'
+      ) TO (getvariable('backtest_rows')) (FORMAT parquet, COMPRESSION zstd)
+    `);
+  }
   await executeFile(connection, "30_export.sql");
 
   const summary = await connection.runAndReadAll(`

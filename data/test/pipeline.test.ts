@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +32,7 @@ async function makeFixtures(
     extraSameName = false,
     falseReview = false,
     lowInstructor = "Cara Gamma",
+    backtestHistory = false,
   } = {},
 ): Promise<void> {
   const instance = await DuckDBInstance.create(":memory:");
@@ -44,6 +45,14 @@ async function makeFixtures(
       join(dataDir, "schedule", "courses.parquet"),
       `
       SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `(98, 'high', TIMESTAMP '2024-01-01', 'ACTIVE', 'COMP', '1000', '2430'),
+        (98, 'low', TIMESTAMP '2024-01-01', 'ACTIVE', 'COMP', '2000', '2430'),
+        (99, 'high', TIMESTAMP '2024-06-01', 'ACTIVE', 'COMP', '1000', '2440'),
+        (99, 'low', TIMESTAMP '2024-06-01', 'ACTIVE', 'COMP', '2000', '2440'),`
+            : ""
+        }
         (100, 'high', TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '1000', '2510'),
         (100, 'low',  TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '2000', '2510'),
         (100, 'prior', TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '3000', '2510')
@@ -84,6 +93,18 @@ async function makeFixtures(
       join(dataDir, "schedule", "classes.parquet"),
       `
       SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `(98, 'class-high', TIMESTAMP '2024-01-01', 'ACTIVE',
+          [{'instructors': ['ALPHA, Alice Beatrice']}], 'high', 'E', 'LEC'),
+        (98, 'class-low', TIMESTAMP '2024-01-01', 'ACTIVE',
+          [{'instructors': ['Cara Gamma']}], 'low', 'E', 'LEC'),
+        (99, 'class-high', TIMESTAMP '2024-06-01', 'ACTIVE',
+          [{'instructors': ['ALPHA, Alice Beatrice']}], 'high', 'E', 'LEC'),
+        (99, 'class-low', TIMESTAMP '2024-06-01', 'ACTIVE',
+          [{'instructors': ['Cara Gamma']}], 'low', 'E', 'LEC'),`
+            : ""
+        }
         (100, 'class-high', TIMESTAMP '2025-01-01', 'ACTIVE',
           [{'instructors': [
             'ALPHA, Alice Beatrice', 'Adam Blake DELTA',
@@ -103,6 +124,20 @@ async function makeFixtures(
       join(dataDir, "ust-space", "reviews.parquet"),
       `
       SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `('high-review-98', TIMESTAMP '2024-01-01', 'ACTIVE', '2024-25 Spring', 1, 1,
+          4.0, 4.0, 4.0, 4.0, 'COMP', '1000', [{'name': 'ALPHA, Alice Beatrice'}]),
+        ('high-extra-98', TIMESTAMP '2024-01-02', 'ACTIVE', '2024-25 Spring', 0, 0,
+          3.5, 3.5, 3.5, 3.5, 'COMP', '1000', [{'name': 'ALPHA, Alice Beatrice'}]),
+        ('low-review-98', TIMESTAMP '2024-01-01', 'ACTIVE', '2024-25 Spring', 0, 1,
+          2.0, 2.0, 2.0, 2.0, 'COMP', '2000', [{'name': 'Cara Gamma'}]),
+        ('high-review-99', TIMESTAMP '2024-06-01', 'ACTIVE', '2024-25 Summer', 2, 2,
+          4.5, 4.5, 4.5, 4.5, 'COMP', '1000', [{'name': 'ALPHA, Alice Beatrice'}]),
+        ('low-review-99', TIMESTAMP '2024-06-01', 'ACTIVE', '2024-25 Summer', 0, 2,
+          1.5, 1.5, 1.5, 1.5, 'COMP', '2000', [{'name': 'Cara Gamma'}]),`
+            : ""
+        }
         ('high-review', TIMESTAMP '2025-01-01', 'ACTIVE', '2025-26 Fall', 3, 4,
           5.0, 5.0, 5.0, 4.0, 'COMP', '1000', [{'name': 'ALPHA, ALICE BEATRICE'}]),
         ('low-review', TIMESTAMP '2025-01-01', 'ACTIVE', '2025-26 Fall', 0, 2,
@@ -139,6 +174,18 @@ async function makeFixtures(
       join(dataDir, "sfq", "canonical", "instructor_records.parquet"),
       `
       SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `('v1', 98, '2430', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'Alice Beatrice ALPHA', 981,
+          50, false, 0.8, 4.0, 0.2, 4.1, 0.2, DATE '2024-01-01', TIMESTAMP '2024-01-01', 'ACTIVE', 'ia98'),
+        ('v1', 98, '2430', 'SENG', 'CSE', 'COMP', '2000', 'L1', 'Cara Gamma', 982,
+          50, true, 0.5, 2.0, 0.2, 2.0, 0.2, DATE '2024-01-01', TIMESTAMP '2024-01-01', 'ACTIVE', 'ic98'),
+        ('v1', 99, '2440', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'Alice Beatrice ALPHA', 991,
+          60, false, 0.9, 4.5, 0.2, 4.6, 0.2, DATE '2024-06-01', TIMESTAMP '2024-06-01', 'ACTIVE', 'ia99'),
+        ('v1', 99, '2440', 'SENG', 'CSE', 'COMP', '2000', 'L1', 'Cara Gamma', 992,
+          60, true, 0.4, 1.5, 0.2, 1.5, 0.2, DATE '2024-06-01', TIMESTAMP '2024-06-01', 'ACTIVE', 'ic99'),`
+            : ""
+        }
         ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'Alice Beatrice ALPHA', 1,
           100, false, 0.8, 4.8, 0.2, 4.9, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ia'),
         ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '1000', 'L1', 'Alice Beatrice ALPHA', 99,
@@ -174,6 +221,18 @@ async function makeFixtures(
       join(dataDir, "sfq", "canonical", "section_records.parquet"),
       `
       SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `('v1', 98, '2430', 'SENG', 'CSE', 'COMP', '1000', 'L1',
+          50, false, 0.8, 4.0, 0.2, 4.1, 0.2, DATE '2024-01-01', TIMESTAMP '2024-01-01', 'ACTIVE', 'sa98'),
+        ('v1', 98, '2430', 'SENG', 'CSE', 'COMP', '2000', 'L1',
+          50, true, 0.5, 2.0, 0.2, 2.0, 0.2, DATE '2024-01-01', TIMESTAMP '2024-01-01', 'ACTIVE', 'sb98'),
+        ('v1', 99, '2440', 'SENG', 'CSE', 'COMP', '1000', 'L1',
+          60, false, 0.9, 4.5, 0.2, 4.6, 0.2, DATE '2024-06-01', TIMESTAMP '2024-06-01', 'ACTIVE', 'sa99'),
+        ('v1', 99, '2440', 'SENG', 'CSE', 'COMP', '2000', 'L1',
+          60, true, 0.4, 1.5, 0.2, 1.5, 0.2, DATE '2024-06-01', TIMESTAMP '2024-06-01', 'ACTIVE', 'sb99'),`
+            : ""
+        }
         ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '1000', 'L1',
           100, false, 0.8, 4.8, 0.2, 4.8, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'sa'),
         ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '1000', 'L1',
@@ -624,6 +683,93 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
     await rm(temp, { recursive: true, force: true });
   }
 });
+
+test("walk-forward backtests compare candidates across historical cutoffs", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-backtest-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { backtestHistory: true });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const reportPath = join(temp, "model-validation.json");
+    const sfqEvidencePath = join(temp, "sfq-comparability.md");
+    await writeFile(
+      sfqEvidencePath,
+      "SFQ versions use one comparable scale.\n",
+    );
+    const result = spawnSync(
+      process.execPath,
+      [join(root, "src", "backtest.ts")],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          DATA_DIR: dataDir,
+          RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+          RANKINGS_BACKTEST_OUTPUT: reportPath,
+          RANKINGS_SFQ_COMPARABILITY_EVIDENCE: sfqEvidencePath,
+        },
+      },
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    assert.equal(report.historyMode, "retrospective");
+    assert.equal(report.asOfAvailable, false);
+    assert.equal(report.sources.mode, "local");
+    assert.ok(
+      Object.values(report.sources.files).every((hash) =>
+        /^[0-9a-f]{64}$/.test(String(hash)),
+      ),
+    );
+    assert.ok(report.candidates.length >= 8);
+    assert.ok(
+      report.candidates.every(
+        (candidate: { cutoffs: unknown[] }) => candidate.cutoffs.length >= 2,
+      ),
+    );
+    assert.ok(
+      report.candidates.every(
+        (candidate: {
+          criterionCutoffs: Record<string, number>;
+          sparseEvidenceSensitivity: number | null;
+        }) =>
+          candidate.sparseEvidenceSensitivity !== null &&
+          Object.values(candidate.criterionCutoffs).every(
+            (cutoffs) => cutoffs >= 2,
+          ),
+      ),
+    );
+    assert.ok(
+      report.candidates.every(
+        (candidate: {
+          cutoffs: Array<{ uncertaintyCalibrationError: number }>;
+        }) =>
+          candidate.cutoffs.every((cutoff) =>
+            Number.isFinite(cutoff.uncertaintyCalibrationError),
+          ),
+      ),
+    );
+    assert.ok(report.selected.parameters);
+    assert.equal(report.predictionScale, "source-rating");
+    assert.equal(report.uncertaintyTarget, "future-observation");
+    assert.deepEqual(report.uncertaintyCriteria, [
+      "content",
+      "teaching",
+      "grading",
+      "workload",
+      "course",
+      "instructor",
+    ]);
+    assert.equal(report.sfqStandardDeviationsUsed, false);
+    assert.equal(report.sfqRespondentCountsUsedAsMeasurementError, true);
+    assert.equal(report.sfqUncertaintyCalibrationAvailable, true);
+    assert.equal(report.sfqComparabilityEstablished, true);
+    assert.match(report.sfqComparabilityEvidence.sha256, /^[0-9a-f]{64}$/);
+    assert.equal(report.candidates[0].cutoffs[0].rankingStability, null);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+}, 30_000);
 
 test("new Instructor UUIDs are stable across pipeline runs and omit TBA", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-"));

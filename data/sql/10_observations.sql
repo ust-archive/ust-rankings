@@ -433,7 +433,10 @@ SELECT
   upper(trim(number)) AS code,
   criterion,
   rating::DOUBLE AS rating,
-  greatest(0.25, 1 + net_votes)::DOUBLE AS weight,
+  greatest(
+    0.25,
+    1 + net_votes * getvariable('review_vote_scale')::DOUBLE
+  )::DOUBLE AS weight,
   1::BIGINT AS samples,
   hash AS source_id
 FROM criteria
@@ -459,7 +462,12 @@ SELECT DISTINCT
   upper(trim(number)) AS code,
   'course' AS criterion,
   course_overall_mean::DOUBLE AS rating,
-  (num_invites * response_rate * (0.5 + 0.5 * response_rate))::DOUBLE AS weight,
+  (
+    num_invites * response_rate * (
+      1 - getvariable('sfq_rate_penalty')::DOUBLE
+      + getvariable('sfq_rate_penalty')::DOUBLE * (0.5 + 0.5 * response_rate)
+    )
+  )::DOUBLE AS weight,
   round(num_invites * response_rate)::BIGINT AS samples,
   version,
   school_code,
@@ -490,7 +498,12 @@ SELECT DISTINCT
   upper(trim(number)) AS code,
   'instructor' AS criterion,
   instructor_overall_mean::DOUBLE AS rating,
-  (num_invites * response_rate * (0.5 + 0.5 * response_rate))::DOUBLE AS weight,
+  (
+    num_invites * response_rate * (
+      1 - getvariable('sfq_rate_penalty')::DOUBLE
+      + getvariable('sfq_rate_penalty')::DOUBLE * (0.5 + 0.5 * response_rate)
+    )
+  )::DOUBLE AS weight,
   round(num_invites * response_rate)::BIGINT AS samples,
   instructor_name
 FROM source_sfq_instructors

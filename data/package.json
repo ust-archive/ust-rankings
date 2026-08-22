@@ -6,6 +6,7 @@
   "scripts": {
     "run": "node src/run.ts",
     "build-delivery": "node src/build-delivery.ts",
+    "backtest": "node src/backtest.ts",
     "test": "vitest run test/pipeline.test.ts test/delivery.test.ts test/waitlist-evidence.test.ts",
     "type-check": "tsc --noEmit"
   },
