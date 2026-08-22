@@ -7,16 +7,19 @@ Development and production lazily download the accepted immutable
 temporary directory. Tests install generated fixture generations through the
 Ranking runtime reset helper and remain offline.
 
-The manifest pins the immutable source commit and declares every Parquet file's
-SHA-256 and byte size. It also assigns permanent application UUIDs to the
-Canonical Instructor Names in that generation. Each source-observed spelling is
-retained as an Instructor Alias with its source commit and file provenance. The
-registry is append-only: each publication preserves UUIDs from the previous
-identity-aware Ranking Generation. If those identity artifacts are unavailable,
-publication fails rather than minting a parallel registry. An intentional first
-identity-history publication may use `npm run run -- --init` to start with empty
-event and split-association relations; Instructor identities and aliases remain
-required. TBA is never an identity.
+The manifest pins the immutable source commit and declares the six Course,
+rating, and association Parquet files' SHA-256 hashes and byte sizes. The four
+Instructor identity Parquet relations are required and validated separately.
+The generation publishes a permanent application UUID for each Instructor and
+keeps Canonical Instructor Name as display data. Each source-observed spelling
+is retained as an Instructor Alias with its source commit and file provenance.
+Identity history is append-only: each publication preserves UUIDs from the
+previous identity-aware Ranking Generation. If those identity artifacts are
+unavailable, publication fails rather than minting a parallel registry. An
+intentional first identity-history publication may use
+`npm run run -- --init` to start with empty event and split-association
+relations; Instructor identities and aliases remain required. TBA is never an
+identity.
 
 `lib/rankings/server.ts` validates filenames, declarations, Parquet framing, v0
 schemas, relation grains, finite measures, latest-Term relationships,
