@@ -1,5 +1,3 @@
-import { ArrowUpRight } from "lucide-react";
-import Link from "next/link";
 import {
   ReviewComposer,
   type ReviewEditorOptions,
@@ -12,7 +10,9 @@ import {
   ExpandCardTrigger,
 } from "@/app/courses/details-sections";
 import { coursePath } from "@/app/courses/routes";
+import { EntityLink } from "@/app/entity-navigation";
 import { SignalControls } from "@/app/signals/signal-controls";
+import { instructorTitleTransitionName } from "@/app/transition-names";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import type { PublicReview } from "@/lib/contributions/reviews";
@@ -41,16 +41,12 @@ function CourseEntry({
   return (
     <section className="flex flex-col gap-1">
       <h3 className="font-semibold text-balance">
-        <Link
+        <EntityLink
           className={`${detailsStyles.sidebarLink} inline-flex items-center gap-1`}
           href={coursePath(coursePrefix, courseNumber)}
-          rel="noopener noreferrer"
-          target="_blank"
         >
           {courseCode}
-          <ArrowUpRight aria-hidden="true" className="size-3" />
-          <span className="sr-only"> (opens in a new tab)</span>
-        </Link>
+        </EntityLink>
       </h3>
       <p className="text-sm text-slate-600">
         {termCodes
@@ -68,7 +64,7 @@ function ClassEntry({ scheduleClass }: { scheduleClass: ScheduleClass }) {
   return (
     <section className="flex flex-col gap-1">
       <h3 className="font-semibold text-balance">
-        <Link
+        <EntityLink
           className={`${detailsStyles.sidebarLink} inline-flex items-center gap-1`}
           href={coursePath(
             scheduleClass.coursePrefix,
@@ -76,14 +72,10 @@ function ClassEntry({ scheduleClass }: { scheduleClass: ScheduleClass }) {
             scheduleClass.termCode,
             scheduleClass.section,
           )}
-          rel="noopener noreferrer"
-          target="_blank"
         >
           {scheduleClass.courseCode} {scheduleClass.section} (
           {scheduleClass.classNumber})
-          <ArrowUpRight aria-hidden="true" className="size-3" />
-          <span className="sr-only"> (opens in a new tab)</span>
-        </Link>
+        </EntityLink>
       </h3>
       <p className="text-sm text-slate-600">
         {rankingTermName(scheduleClass.termCode)} · {scheduleClass.enrollment}{" "}
@@ -401,6 +393,7 @@ export function InstructorDetails({
         }
         termName={rankingTermName(selectedTermCode)}
         title={identity.instructor.canonicalName}
+        transitionName={instructorTitleTransitionName(identity.instructor.uuid)}
       />
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <section
@@ -451,22 +444,6 @@ export function InstructorDetails({
           />
           <IdentityCard identity={identity} rankings={rankings} />
         </aside>
-      </div>
-    </div>
-  );
-}
-
-export function InstructorDetailLoading() {
-  return (
-    <div
-      aria-busy="true"
-      aria-live="polite"
-      className="flex w-full flex-col gap-8 text-left"
-    >
-      <DetailsHeader eyebrow="Instructor" title="Loading Instructor details…" />
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="h-56 rounded-2xl bg-slate-100 motion-safe:animate-pulse" />
-        <div className="h-40 rounded-2xl bg-slate-100 motion-safe:animate-pulse" />
       </div>
     </div>
   );

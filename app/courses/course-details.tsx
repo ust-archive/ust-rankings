@@ -1,7 +1,7 @@
-import { ArrowUpRight } from "lucide-react";
-import Link from "next/link";
+import { EntityLink } from "@/app/entity-navigation";
 import { instructorPath } from "@/app/instructors/routes";
 import { SignalControls } from "@/app/signals/signal-controls";
+import { courseTitleTransitionName } from "@/app/transition-names";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import type { PublicReview } from "@/lib/contributions/reviews";
@@ -74,7 +74,7 @@ function ClassLinks({ offering }: { offering: CourseOffering }) {
           key={scheduleClass.classNumber}
         >
           <h3 className="font-semibold text-balance">
-            <Link
+            <EntityLink
               className={`${styles.sidebarLink} inline-flex items-center gap-1`}
               href={coursePath(
                 offering.coursePrefix,
@@ -82,14 +82,10 @@ function ClassLinks({ offering }: { offering: CourseOffering }) {
                 offering.termCode,
                 scheduleClass.section,
               )}
-              rel="noopener noreferrer"
-              target="_blank"
             >
               {offering.courseCode} {scheduleClass.section} (
               {scheduleClass.classNumber})
-              <ArrowUpRight aria-hidden="true" className="size-3" />
-              <span className="sr-only"> (opens in a new tab)</span>
-            </Link>
+            </EntityLink>
           </h3>
           <p className="text-sm text-slate-600 tabular-nums">
             {scheduleClass.enrollment} of {scheduleClass.capacity} enrolled
@@ -258,19 +254,15 @@ export function CourseDetails({
     >
       <h3 className="font-semibold text-balance">
         {instructor.uuid ? (
-          <Link
+          <EntityLink
             className={`${styles.sidebarLink} inline-flex items-center gap-1`}
             href={instructorPath({
               itsc: instructor.itsc,
               uuid: instructor.uuid,
             })}
-            rel="noopener noreferrer"
-            target="_blank"
           >
             {instructor.name}
-            <ArrowUpRight aria-hidden="true" className="size-3" />
-            <span className="sr-only"> (opens in a new tab)</span>
-          </Link>
+          </EntityLink>
         ) : (
           instructor.name
         )}
@@ -291,20 +283,16 @@ export function CourseDetails({
     <section className="flex flex-col gap-3" key={offering.termCode}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="font-semibold text-balance">
-          <Link
+          <EntityLink
             className={`${styles.sidebarLink} inline-flex items-center gap-1`}
             href={coursePath(
               offering.coursePrefix,
               offering.courseNumber,
               offering.termCode,
             )}
-            rel="noopener noreferrer"
-            target="_blank"
           >
             {offering.termName}
-            <ArrowUpRight aria-hidden="true" className="size-3" />
-            <span className="sr-only"> (opens in a new tab)</span>
-          </Link>
+          </EntityLink>
         </h3>
         <p className="text-sm text-slate-600">{offering.credits} credits</p>
       </div>
@@ -316,7 +304,7 @@ export function CourseDetails({
               key={scheduleClass.classNumber}
             >
               <h4 className="font-medium">
-                <Link
+                <EntityLink
                   className={`${styles.sidebarLink} inline-flex items-center gap-1`}
                   href={coursePath(
                     offering.coursePrefix,
@@ -324,14 +312,10 @@ export function CourseDetails({
                     offering.termCode,
                     scheduleClass.section,
                   )}
-                  rel="noopener noreferrer"
-                  target="_blank"
                 >
                   {offering.courseCode} {scheduleClass.section} (
                   {scheduleClass.classNumber})
-                  <ArrowUpRight aria-hidden="true" className="size-3" />
-                  <span className="sr-only"> (opens in a new tab)</span>
-                </Link>
+                </EntityLink>
               </h4>
               <p className="text-sm text-slate-600 tabular-nums">
                 {scheduleClass.enrollment} of {scheduleClass.capacity} enrolled
@@ -355,6 +339,7 @@ export function CourseDetails({
           rankingTermName(evidenceTermCode)
         }
         title={`${coursePrefix} ${courseNumber}`}
+        transitionName={courseTitleTransitionName(coursePrefix, courseNumber)}
       />
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <section
@@ -599,25 +584,15 @@ export function CourseOfferingDetails({
                     >
                       <h3 className="font-semibold text-balance">
                         {instructor.uuid ? (
-                          <Link
+                          <EntityLink
                             className={`${styles.sidebarLink} inline-flex items-center gap-1`}
                             href={instructorPath({
                               itsc: instructor.itsc,
                               uuid: instructor.uuid,
                             })}
-                            rel="noopener noreferrer"
-                            target="_blank"
                           >
                             {instructor.name}
-                            <ArrowUpRight
-                              aria-hidden="true"
-                              className="size-3"
-                            />
-                            <span className="sr-only">
-                              {" "}
-                              (opens in a new tab)
-                            </span>
-                          </Link>
+                          </EntityLink>
                         ) : (
                           `${instructor.name} (unresolved source name)`
                         )}
@@ -749,28 +724,20 @@ export function ClassDetails({
                   belong to its Review Bases.
                 </p>
                 <div className="flex flex-wrap gap-2 font-semibold">
-                  <Link
+                  <EntityLink
                     className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5"
                     href={`${coursePath(scheduleClass.coursePrefix, scheduleClass.courseNumber)}#signals`}
-                    rel="noopener noreferrer"
-                    target="_blank"
                   >
                     Course Basis
-                    <ArrowUpRight aria-hidden="true" className="size-3" />
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </Link>
+                  </EntityLink>
                   {instructorOptions.map((instructor) => (
-                    <Link
+                    <EntityLink
                       className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5"
                       href={`${instructorPath(instructor.instructorUuid)}#signals`}
                       key={instructor.instructorUuid}
-                      rel="noopener noreferrer"
-                      target="_blank"
                     >
                       Instructor Basis · {instructor.name}
-                      <ArrowUpRight aria-hidden="true" className="size-3" />
-                      <span className="sr-only"> (opens in a new tab)</span>
-                    </Link>
+                    </EntityLink>
                   ))}
                 </div>
               </div>
@@ -843,35 +810,27 @@ export function ClassDetails({
             <CardContent className="flex flex-col gap-3 text-sm">
               <p>
                 Course ·{" "}
-                <Link
+                <EntityLink
                   className={`${styles.sidebarLink} inline-flex items-center gap-1 font-semibold`}
                   href={coursePath(
                     scheduleClass.coursePrefix,
                     scheduleClass.courseNumber,
                   )}
-                  rel="noopener noreferrer"
-                  target="_blank"
                 >
                   {scheduleClass.courseCode}
-                  <ArrowUpRight aria-hidden="true" className="size-3" />
-                  <span className="sr-only"> (opens in a new tab)</span>
-                </Link>
+                </EntityLink>
               </p>
               {instructors.size ? (
                 [...instructors.values()].map((instructor) => (
                   <p key={instructor.uuid ?? instructor.name}>
                     Instructor ·{" "}
                     {instructor.uuid ? (
-                      <Link
+                      <EntityLink
                         className={`${styles.sidebarLink} inline-flex items-center gap-1 font-semibold`}
                         href={instructorPath(instructor.uuid)}
-                        rel="noopener noreferrer"
-                        target="_blank"
                       >
                         {instructor.name}
-                        <ArrowUpRight aria-hidden="true" className="size-3" />
-                        <span className="sr-only"> (opens in a new tab)</span>
-                      </Link>
+                      </EntityLink>
                     ) : (
                       `${instructor.name} (unresolved source name)`
                     )}

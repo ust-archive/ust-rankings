@@ -17,7 +17,8 @@
     "lint": "biome lint --write .",
     "lint:check": "biome lint .",
     "type-check": "tsc --noEmit",
-    "test": "vitest run --dir test --exclude \"*-postgres.test.ts\"",
+    "test": "vitest run --dir test --exclude \"*-postgres.test.ts\" --exclude \"**/browser/**\"",
+    "test:browser": "node scripts/generate-browser-fixture.ts && playwright test",
     "test:accounts": "vitest run test/account-service.test.ts test/auth-policy.test.ts test/auth-session.test.ts",
     "test:attachments": "vitest run test/attachment-routes.test.ts test/attachment-service.test.ts test/attachment-spaces.test.ts test/attachment-validation.test.ts",
     "test:contracts": "vitest run --test-timeout 30000 test/account-postgres.test.ts test/attachment-postgres.test.ts test/moderation-postgres.test.ts test/review-postgres.test.ts test/signal-postgres.test.ts",
@@ -72,6 +73,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.9",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/forms": "^0.5.11",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/typography": "^0.5.20",

@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
 import { LoginLink } from "@/app/auth/login-link";
+import { EntityTitleTransition } from "@/app/page-transition";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -57,6 +58,7 @@ export function DetailsHeader({
   termName,
   description,
   notice,
+  transitionName,
 }: {
   eyebrow: string;
   title: string;
@@ -64,15 +66,18 @@ export function DetailsHeader({
   termName?: string;
   description?: string;
   notice?: ReactNode;
+  transitionName?: string;
 }) {
   return (
     <header className={`border-b border-slate-200 pb-7 ${styles.heading}`}>
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-700">
         {eyebrow}
       </p>
-      <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900 sm:text-6xl">
-        {title}
-      </h1>
+      <EntityTitleTransition name={transitionName}>
+        <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900 sm:text-6xl">
+          {title}
+        </h1>
+      </EntityTitleTransition>
       {subtitle ? (
         <p className="mt-2 max-w-3xl text-lg font-medium text-slate-700">
           {subtitle}

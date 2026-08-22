@@ -10,5 +10,8 @@ type Props = {
 };
 
 export default async function CoursesPage({ searchParams }: Props) {
-  return RankingPage({ entity: "course", searchParams: await searchParams });
+  return RankingPage({
+    entity: "course",
+    searchParams: await searchParams,
+  });
 }

@@ -20,6 +20,7 @@ const roboto_mono = Roboto_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
 });
+const forwardTransition = ["nav-forward"];
 
 export const metadata: Metadata = {
   title: "UST Rankings",
@@ -48,6 +49,9 @@ function FooterLinks({
           className="w-fit text-sm underline-offset-4 hover:text-slate-950"
           href={href}
           key={href}
+          transitionTypes={
+            href.startsWith("/rankings/") ? forwardTransition : undefined
+          }
         >
           {label}
         </Link>
@@ -112,12 +116,16 @@ export default function RootLayout({
         >
           Skip to Main Content
         </a>
-        <header className="bg-gradient-to-r from-[#003366] via-[#2b6297] to-[#003366] text-white dark:from-[#003366] dark:via-[#224e77] dark:to-[#003366]">
+        <header
+          className="bg-gradient-to-r from-[#003366] via-[#2b6297] to-[#003366] text-white dark:from-[#003366] dark:via-[#224e77] dark:to-[#003366]"
+          style={{ viewTransitionName: "site-header" }}
+        >
           <div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center gap-4 px-4 py-3 sm:px-6">
             <Link
               aria-label="UST Rankings home"
               className="flex items-center gap-2 font-bold no-underline"
               href="/"
+              transitionTypes={forwardTransition}
             >
               <GraduationCapIcon aria-hidden="true" className="h-8 w-8" />
               <span className="hidden sm:inline">UST Rankings</span>
@@ -129,12 +137,14 @@ export default function RootLayout({
               <Link
                 className="no-underline underline-offset-4 hover:underline"
                 href="/rankings/instructors"
+                transitionTypes={forwardTransition}
               >
                 Instructors
               </Link>
               <Link
                 className="no-underline underline-offset-4 hover:underline"
                 href="/rankings/courses"
+                transitionTypes={forwardTransition}
               >
                 Courses
               </Link>
@@ -142,18 +152,23 @@ export default function RootLayout({
             </nav>
           </div>
         </header>
+        <div className="relative h-0" id="navigation-progress" />
         <main
           className="mx-auto flex w-full max-w-7xl flex-1 flex-col items-center gap-8 px-4 py-12 text-center sm:px-6 lg:py-16"
           id="main-content"
         >
           {children}
         </main>
-        <footer className="border-t border-slate-200 bg-white text-slate-700">
+        <footer
+          className="border-t border-slate-200 bg-white text-slate-700"
+          style={{ viewTransitionName: "site-footer" }}
+        >
           <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:grid-cols-2 sm:px-6 lg:grid-cols-[2fr_1fr_1fr_1fr]">
             <div className="flex max-w-sm flex-col gap-4">
               <Link
                 className="flex w-fit items-center gap-2 text-lg font-bold text-slate-950 no-underline hover:text-slate-950"
                 href="/rankings/instructors"
+                transitionTypes={forwardTransition}
               >
                 <GraduationCapIcon aria-hidden="true" className="size-6" />
                 UST Rankings

@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { toast } from "sonner";
+import { EntityLink } from "@/app/entity-navigation";
 import { SignalControls } from "@/app/signals/signal-controls";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -176,15 +176,12 @@ function ReviewCardHeader({
           <span key={`${detail.label}-${detail.href}`}>
             ·{" "}
             {detail.href ? (
-              <Link
+              <EntityLink
                 className="!no-underline hover:!underline"
                 href={detail.href}
-                rel="noopener noreferrer"
-                target="_blank"
               >
                 {detail.label}
-                <span className="sr-only"> (opens in a new tab)</span>
-              </Link>
+              </EntityLink>
             ) : (
               detail.label
             )}
@@ -395,14 +392,9 @@ export function ReviewCard({
                 className="h-auto p-0 text-xs text-gray-500 underline underline-offset-4 hover:text-gray-900"
                 variant="link"
               >
-                <a
-                  href={`/reviews/${review.id}`}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
+                <EntityLink href={`/reviews/${review.id}`}>
                   Permalink
-                  <span className="sr-only"> (opens in a new tab)</span>
-                </a>
+                </EntityLink>
               </Button>
               {children}
               {review.viewerCanEdit ? null : (

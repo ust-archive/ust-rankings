@@ -6,9 +6,13 @@
 
 # testing
 /coverage
+/playwright-report
+/test-results
+/.playwright
 
 # generated output
 /.next/
+/.next-playwright/
 /out/
 /data/out/
 
