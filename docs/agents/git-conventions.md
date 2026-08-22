@@ -14,6 +14,6 @@ The pull request title becomes the squash commit title. The pull request body be
 
 - `## Summary` for the delivered behavior.
 - `## Verification` for the checks performed.
-- `Closes #<issue>` when merging completes an issue.
+- A separate `Closes #<issue>` for every fully delivered parent or child ticket. GitHub does not infer closure through issue relationships.
 
 Accept GitHub's generated squash message without rewriting it at merge time.
