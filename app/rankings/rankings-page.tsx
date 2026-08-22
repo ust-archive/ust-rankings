@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Announcement } from "@/components/component/announcement";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -252,6 +253,7 @@ function RankingChrome({
           {label} Rankings · {presetLabel}
         </p>
       </header>
+      <Announcement />
       <RankingForm
         entity={entity}
         query={query}
