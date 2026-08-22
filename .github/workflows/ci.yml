@@ -66,9 +66,7 @@ jobs:
           TEST_CONTRIBUTIONS_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/ust_rankings_test
 
   image:
-    if: >-
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/feat/ghcr-delivery')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       contents: read
