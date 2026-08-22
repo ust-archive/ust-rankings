@@ -120,12 +120,12 @@ if (!connection) {
            'identity-hidden', NULL, 'review-test-v1')
       `;
       await sql`
-        UPDATE reviews
-        SET current_revision_id = CASE id
-          WHEN ${reviewId} THEN ${reviewRevisionId}
-          WHEN ${withdrawnReviewId} THEN ${withdrawnRevisionId}
-        END
-        WHERE id IN (${reviewId}, ${withdrawnReviewId})
+        UPDATE reviews SET current_revision_id = ${reviewRevisionId}
+        WHERE id = ${reviewId}
+      `;
+      await sql`
+        UPDATE reviews SET current_revision_id = ${withdrawnRevisionId}
+        WHERE id = ${withdrawnReviewId}
       `;
       await sql`
         INSERT INTO course_emoji_reactions
