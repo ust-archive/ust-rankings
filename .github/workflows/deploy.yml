@@ -1,0 +1,43 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check this is still the latest commit
+        id: latest
+        env:
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          latest_sha="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/master | cut -f1)"
+          if [ "$latest_sha" = "$TESTED_SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "A newer commit is awaiting CI; leaving deployment to that run."
+          fi
+
+      - name: Deploy to DigitalOcean App Platform
+        if: steps.latest.outputs.deploy == 'true'
+        uses: digitalocean/app_action/deploy@v2
+        with:
+          app_name: ust-rankings
+          print_build_logs: true
+          print_deploy_logs: true
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
