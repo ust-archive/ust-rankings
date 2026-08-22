@@ -4,7 +4,10 @@ import {
   normalizeAttachmentDescription,
   normalizeAttachmentFilename,
 } from "@/lib/attachments/attachments";
+import { type ReviewOrder, reviewOrder } from "./review-order";
 import type { SignalSummary } from "./signals";
+
+export { type ReviewOrder, reviewOrder } from "./review-order";
 
 export type CourseBasis = {
   coursePrefix: string;
@@ -68,11 +71,16 @@ export type WithdrawReviewRecord = {
 };
 
 export type ReviewListQuery =
-  | ({ type: "course" } & CourseBasis & { termCode?: string; section?: string })
+  | ({ type: "course" } & CourseBasis & {
+        termCode?: string;
+        section?: string;
+        order?: ReviewOrder;
+      })
   | {
       type: "instructor";
       instructorUuids: string[];
       termCode?: string;
+      order?: ReviewOrder;
     };
 
 export interface ReviewRepository {
@@ -383,6 +391,7 @@ export function createReviewService(
     },
 
     async listReviews(query: ReviewListQuery, viewerUserId?: string) {
+      const order = reviewOrder(query.order);
       const instructorUuids =
         query.type === "instructor" && Array.isArray(query.instructorUuids)
           ? [
@@ -417,6 +426,7 @@ export function createReviewService(
             ...context.course,
             termCode: context.termCode,
             section: context.section,
+            order,
           },
           viewerUserId && UUID.test(viewerUserId) ? viewerUserId : undefined,
         );
@@ -432,6 +442,7 @@ export function createReviewService(
             type: "instructor",
             instructorUuids,
             termCode: context.termCode,
+            order,
           },
           viewerUserId && UUID.test(viewerUserId) ? viewerUserId : undefined,
         );

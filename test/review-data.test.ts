@@ -1,7 +1,18 @@
 import { expect, test, vi } from "vitest";
 import { loadCourseReviews, loadReviews } from "@/app/courses/review-data";
 import { loadReview } from "@/app/reviews/review-data";
-import { ContributionsUnavailableError } from "@/lib/contributions/reviews";
+import {
+  ContributionsUnavailableError,
+  reviewOrder,
+} from "@/lib/contributions/reviews";
+
+test("Review Order defaults invalid and absent input to Top", () => {
+  expect(reviewOrder(undefined)).toBe("top");
+  expect(reviewOrder("unknown")).toBe("top");
+  expect(reviewOrder(["recent"])).toBe("top");
+  expect(reviewOrder("popular")).toBe("popular");
+  expect(reviewOrder("recent")).toBe("recent");
+});
 
 vi.mock("server-only", () => ({}));
 

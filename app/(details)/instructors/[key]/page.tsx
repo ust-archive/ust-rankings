@@ -7,6 +7,7 @@ import {
   normalizeInstructorRoute,
 } from "@/app/instructors/routes";
 import { loadSignals } from "@/app/signals/data";
+import { reviewOrder } from "@/lib/contributions/review-order";
 import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
 import {
   getInstructorIdentity,
@@ -117,6 +118,7 @@ export async function renderInstructorPage(
       readReviews({
         type: "instructor",
         instructorUuids: identity.familyUuids,
+        order: reviewOrder(query.order),
       }),
     ]);
   const classes = scheduleResult.classes.filter(

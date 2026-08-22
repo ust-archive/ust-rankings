@@ -118,6 +118,9 @@ An optional Term and Section that make a Review more specific. A Term qualifies 
 **Review Revision**:
 An immutable version of a Review created whenever its author publishes an edit. A Review points to one current Review Revision while retaining its earlier Revisions internally.
 
+**Review Order**:
+The User-selected ordering of a multi-Review list: Top, Popular, or Recent. Top is the default.
+
 **Identity-Hidden Review Revision**:
 A Review Revision that displays no author publicly while retaining its internal User link for authorized moderation, security, and legal purposes.
 _Avoid_: Anonymous Review

@@ -22,6 +22,7 @@ import { Reviews } from "./course-reviews";
 import styles from "./details.module.css";
 import { DetailsTrend } from "./details-trend";
 import { ReviewNotice } from "./review-notice";
+import { ReviewOrderSelect } from "./review-order-select";
 
 const criteria = [
   ["content", "Content"],
@@ -468,11 +469,14 @@ export function DetailsCommunity({
             >
               Reviews
             </h3>
-            {signedIn ? (
-              reviewComposer
-            ) : (
-              <LoginLink>Login to create a review</LoginLink>
-            )}
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <ReviewOrderSelect />
+              {signedIn ? (
+                reviewComposer
+              ) : (
+                <LoginLink>Login to create a review</LoginLink>
+              )}
+            </div>
           </div>
           {reviewsUnavailable ? (
             <p

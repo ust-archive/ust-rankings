@@ -7,6 +7,7 @@ import {
   type RouteSearchParams,
 } from "@/app/courses/routes";
 import { loadSignals } from "@/app/signals/data";
+import { reviewOrder } from "@/lib/contributions/review-order";
 import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
 import {
   getSchedule,
@@ -52,7 +53,12 @@ export async function renderCoursePage(
     await Promise.all([
       schedulePromise,
       readRankingPreferenceQuery(),
-      readReviews(coursePrefix, courseNumber),
+      readReviews(
+        coursePrefix,
+        courseNumber,
+        undefined,
+        reviewOrder(query.order),
+      ),
       loadSignals({ type: "course", coursePrefix, courseNumber }),
     ]);
   const selectedTerm =
