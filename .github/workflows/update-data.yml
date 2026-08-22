@@ -1,10 +1,16 @@
-name: Update rankings data
+name: Update data
 
 on:
+  push:
+    branches: [master]
   schedule:
     # 04:21 HKT daily.
     - cron: "21 20 * * *"
   workflow_dispatch:
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -36,26 +42,20 @@ jobs:
             | jq -r .sha)"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           echo "RANKINGS_IDENTITY_COMMIT=$sha" >> "$GITHUB_ENV"
-          if curl --fail --silent --show-error \
-            "https://huggingface.co/api/datasets/ust-archive/ust-rankings/tree/$sha?recursive=true" \
-            | jq -e 'any(.[]; .path == "instructor-identities.parquet")' >/dev/null; then
-            uvx hf download ust-archive/ust-rankings \
-              --type dataset \
-              --revision "$sha" \
-              --local-dir "$RUNNER_TEMP/previous-rankings"
-            echo "RANKINGS_PREVIOUS_GENERATION_DIR=$RUNNER_TEMP/previous-rankings" >> "$GITHUB_ENV"
-          else
-            [[ "$sha" == "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d" ]]
-            echo "RANKINGS_IDENTITY_BOOTSTRAP=$GITHUB_WORKSPACE/rankings/seed/$sha/manifest.json" >> "$GITHUB_ENV"
-          fi
+          uvx hf download ust-archive/ust-rankings \
+            --type dataset \
+            --revision "$sha" \
+            --local-dir "$RUNNER_TEMP/previous-rankings"
+          test -f "$RUNNER_TEMP/previous-rankings/instructor-identities.parquet"
+          echo "RANKINGS_PREVIOUS_GENERATION_DIR=$RUNNER_TEMP/previous-rankings" >> "$GITHUB_ENV"
 
-      - name: Build rankings data
+      - name: Build data
         working-directory: data
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           npm run type-check
-          RANKINGS_IDENTITY_BOOTSTRAP= RANKINGS_PREVIOUS_GENERATION_DIR= npm test
+          RANKINGS_PREVIOUS_GENERATION_DIR= npm test
           npm run run
           cp dataset/README.md out/README.md
 
@@ -67,7 +67,7 @@ jobs:
             --type dataset \
             --exist-ok
 
-      - name: Upload rankings data
+      - name: Upload data
         working-directory: data
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

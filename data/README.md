@@ -1,10 +1,10 @@
-# UST Rankings data
+# UST data
 
-DuckDB builds course and instructor ratings directly from the
+DuckDB builds Course and Instructor ratings directly from the
 [`ust-archive`](https://huggingface.co/ust-archive) Parquet datasets. SQL owns
-the data cleanup and every calculation; [`src/run.ts`](src/run.ts) only opens
-DuckDB, supplies paths, and runs the files in [`sql/`](sql/). The
-[`SQL reading guide`](sql/README.md) documents stage order and table contracts.
+the cleanup and calculations; [`src/run.ts`](src/run.ts) supplies paths and runs
+the files in [`sql/`](sql/). The full contract is documented in
+[`docs/data-pipeline.md`](../docs/data-pipeline.md).
 
 The inputs are [`catalog`](https://huggingface.co/datasets/ust-archive/catalog),
 [`schedule`](https://huggingface.co/datasets/ust-archive/schedule),
@@ -28,7 +28,7 @@ npm ci
 npm run data:run
 ```
 
-For an offline/local run, set `RANKINGS_DATA_DIR` to a directory with this
+For an offline/local run, set `DATA_DIR` to a directory with this
 layout; authentication is then unnecessary:
 
 ```text
@@ -103,8 +103,7 @@ ORDER BY r.rank, a.subject, a.code;
 ```
 
 Run `npm run type-check` and `npm run test` for static analysis and the
-end-to-end pipeline test. Model semantics and intentional behavior changes are
-documented in [`SPECIFICATION.md`](SPECIFICATION.md). Deferred validation and
-known identity limitations are tracked in [`PLAN.md`](PLAN.md).
+end-to-end pipeline test. Deferred model validation is tracked in
+[#99](https://github.com/ust-archive/ust-rankings/issues/99).
 
 The upstream dataset cards declare `license: other`; two inputs are private.

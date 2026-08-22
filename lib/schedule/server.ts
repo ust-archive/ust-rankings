@@ -64,7 +64,6 @@ type Manifest = {
   schemaMajor: number;
   sourceCommit: string;
   artifacts: Record<string, { sha256: string; size: number }>;
-  instructors: Array<{ sourceName: string; uuid: string }>;
 };
 
 type Generation = {
@@ -72,7 +71,6 @@ type Generation = {
   directory: string;
   instance: DuckDBInstance;
   connection: DuckDBConnection;
-  instructors: Map<string, string>;
   readers: number;
   retired: boolean;
   closed: boolean;
@@ -252,9 +250,8 @@ export class InvalidScheduleQueryError extends TypeError {
 }
 
 let explicitGeneration:
-  | { directory: string; generation: Promise<Generation> }
+  | { directory: string; generation?: Promise<Generation> }
   | undefined;
-let seedLoading: Promise<Generation> | undefined;
 let runtimeActive: Promise<Generation> | undefined;
 let runtimePrevious: Promise<Generation> | undefined;
 let runtimeActiveSha: string | undefined;
@@ -264,12 +261,6 @@ let runtimeDiscovery: Promise<Generation> | undefined;
 let afterAcquireForTests: ((generation: string) => Promise<void>) | undefined;
 const queryQueues = new WeakMap<DuckDBConnection, Promise<void>>();
 const queuedQueryCounts = new WeakMap<DuckDBConnection, number>();
-
-function seedDirectory() {
-  const directory = process.env.SCHEDULE_SEED_DIR;
-  if (!directory) throw new ScheduleUnavailableError();
-  return directory;
-}
 
 function sqlPath(directory: string, filename: string) {
   return resolve(directory, filename)
@@ -362,13 +353,6 @@ async function validateFiles(directory: string, manifest: Manifest) {
   );
 }
 
-function validateInstructorMappings(manifest: Manifest) {
-  if (manifest.instructors === undefined) return new Map<string, string>();
-  if (!Array.isArray(manifest.instructors))
-    throw new Error("Invalid Schedule Instructor mappings");
-  return new Map<string, string>();
-}
-
 async function validateRelations(
   connection: DuckDBConnection,
   directory: string,
@@ -430,7 +414,6 @@ async function loadGeneration(
       await readFile(resolve(directory, "manifest.json"), "utf8"),
     ) as Manifest;
     await validateFiles(directory, manifest);
-    const instructors = validateInstructorMappings(manifest);
     const instance = await DuckDBInstance.create(":memory:");
     const connection = await instance.connect();
     await connection.run("SET threads = 1");
@@ -442,7 +425,6 @@ async function loadGeneration(
         directory,
         instance,
         connection,
-        instructors,
         readers: 0,
         retired: false,
         closed: false,
@@ -497,13 +479,10 @@ async function discoverGeneration() {
 }
 
 function generation() {
-  if (process.env.SCHEDULE_SEED_DIR) {
-    const directory = seedDirectory();
-    if (explicitGeneration?.directory !== directory) {
-      const previous = explicitGeneration?.generation;
-      explicitGeneration = { directory, generation: loadGeneration(directory) };
-      void retireGeneration(previous);
-    }
+  if (explicitGeneration) {
+    explicitGeneration.generation ??= loadGeneration(
+      explicitGeneration.directory,
+    );
     return explicitGeneration.generation;
   }
   if (
@@ -571,7 +550,7 @@ async function installRuntimeGeneration(
   runtimeActive = loading;
   runtimeActiveSha = sha;
   runtimePrevious = undefined;
-  if (oldActive && oldActive !== seedLoading) {
+  if (oldActive) {
     if ((await oldActive).sha === previousSha) runtimePrevious = oldActive;
     else await retireGeneration(oldActive);
   }
@@ -603,7 +582,6 @@ async function prepareCandidateManifest(
         schemaMajor: 0,
         sourceCommit: candidate.sha,
         artifacts: candidate.artifacts,
-        instructors: [],
       },
       null,
       2,
@@ -778,25 +756,33 @@ export async function getScheduleHealth(
   }
 }
 
-export async function resetScheduleRuntimeForTests(
-  dependencies?: ScheduleRefreshDependencies,
-) {
+async function clearScheduleRuntimeForTests() {
   const retained = [
     explicitGeneration?.generation,
-    seedLoading,
     runtimeActive,
     runtimePrevious,
   ];
   explicitGeneration = undefined;
-  seedLoading = undefined;
   runtimeActive = undefined;
   runtimePrevious = undefined;
   runtimeActiveSha = undefined;
-  runtimeDependencies = dependencies;
+  runtimeDependencies = undefined;
   runtimeCheckedAt = 0;
   runtimeDiscovery = undefined;
   afterAcquireForTests = undefined;
   for (const loading of new Set(retained)) await retireGeneration(loading);
+}
+
+export async function resetScheduleRuntimeForTests(
+  dependencies?: ScheduleRefreshDependencies,
+) {
+  await clearScheduleRuntimeForTests();
+  runtimeDependencies = dependencies;
+}
+
+export async function installScheduleGenerationForTests(directory: string) {
+  await clearScheduleRuntimeForTests();
+  explicitGeneration = { directory };
 }
 
 function text(value: unknown) {

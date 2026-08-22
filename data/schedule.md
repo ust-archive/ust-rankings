@@ -1,38 +1,35 @@
-# Schedule runtime seed
+# Schedule runtime generation
 
-Tests and local `SCHEDULE_SEED_DIR` may point at
-`seed/0ddb2e493caeeb8aa9c56728496c866c358a2431`. Production does not ship or
-serve that seed. It downloads the immutable `ust-archive/schedule` Hugging Face
-commit at runtime.
+Development and production lazily download the immutable
+`ust-archive/schedule` Hugging Face generation into the operating system's
+temporary directory. Tests install generated fixture generations through the
+Schedule runtime reset helper and remain offline.
 
 The manifest records the two required Parquet files' LFS SHA-256 digests and
-sizes. It also carries only exact, unambiguous source-name associations to the
-durable Instructor UUID registry shipped with the ranking seed; all other
-source names remain unresolved plain text. The server-only Schedule module
+sizes. Schedule data keeps Instructor source names only; the server resolves
+exact matches against the accepted Ranking Generation at read time and leaves
+all other source names unresolved plain text. The server-only Schedule module
 revalidates framing, hashes, schemas, source event grains, Term relationships,
 and representative queries before serving the generation.
-
-Set `SCHEDULE_SEED_DIR` to a commit-named generation directory for isolated
-local validation and tests.
 
 ## Refresh and retention
 
 `GET /api/schedule/refresh` performs the authenticated daily refresh. A manual
 or upstream-triggered `POST` may supply one full commit SHA. Both files are
 resolved from that single immutable `ust-archive/schedule` commit, bounded,
-checked against their LFS declarations, validated together, written under
-`/tmp/ust-schedule` on the running instance, and only then made active.
+checked against their LFS declarations, validated together, written under the
+operating system's temporary directory, and only then made active.
 PostgreSQL advisory lock `(1431520338, 40)` excludes concurrent Schedule
 refreshes independently of the ranking lock.
 
 The local `active.json` pointer retains the previous accepted SHA. A failed
 refresh records only a bounded failure class, leaves that pointer unchanged,
 and keeps the in-memory generation if one is already accepted. There is no
-image seed and no shared last-known-good across instances: Hugging Face is the
-source of truth. The process warms from Hugging Face on `next start` and again
-daily. Schedule stays unavailable until a generation is accepted.
-`/tmp/ust-schedule/{sha}` is only a disposable per-instance cache. Schedule
-cache identities, freshness, and failure records never reuse ranking keys.
+repository generation or shared last-known-good across instances: Hugging Face
+is the source of truth. The process warms from Hugging Face on `next start` and again
+daily. Schedule stays unavailable until a generation is accepted. The temporary
+generation directory is only a disposable per-instance cache. Schedule cache
+identities, freshness, and failure records never reuse ranking keys.
 
 Configure `POSTGRES_URL`, `CRON_SECRET`, and optional `SCHEDULE_REFRESH_SECRET`
 as shown in `.env.example`. Public `GET /api/health/schedule` reports

@@ -5,6 +5,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { gradeColor } from "@/lib/rankings/presentation";
 import {
   fixtureSha,
+  installRankingGeneration,
   makeRankingGeneration,
   makeRankingGenerationWithSha,
 } from "./rankings-fixture";
@@ -14,7 +15,6 @@ vi.mock("server-only", () => ({}));
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  delete process.env.RANKINGS_SEED_DIR;
   const { resetRankingsRuntimeForTests } = await import(
     "@/lib/rankings/server"
   );
@@ -29,8 +29,9 @@ afterEach(async () => {
 test("Instructor UUIDs resolve to current display names in one generation read", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-names-"));
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR =
-    await makeRankingGeneration(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory),
+  );
   const { instructorNamesForUuids } = await import("@/lib/rankings/server");
 
   await expect(
@@ -53,7 +54,7 @@ test("the original bright grade palette is preserved", () => {
 test("no valid generation fails only the ranking module", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "no-rankings-"));
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR = join(temporaryDirectory, "missing");
+  await installRankingGeneration(join(temporaryDirectory, "missing"));
   const { queryRankings, RankingsUnavailableError } = await import(
     "@/lib/rankings/server"
   );
@@ -63,12 +64,11 @@ test("no valid generation fails only the ranking module", async () => {
   );
 });
 
-test("a legacy name-keyed generation without Courses is rejected", async () => {
-  process.env.RANKINGS_SEED_DIR = join(
-    process.cwd(),
-    "rankings",
-    "seed",
-    "0699cb351bcd01cd2efc0cbf5c4ff479d2ff558d",
+test("a generated legacy name-keyed generation without Courses is rejected", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "legacy-rankings-"));
+  temporaryDirectories.push(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, "legacy-name-keyed"),
   );
   const { queryRankings, RankingsUnavailableError } = await import(
     "@/lib/rankings/server"
@@ -121,8 +121,9 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
     join(tmpdir(), "rankings-generation-"),
   );
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR =
-    await makeRankingGeneration(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory),
+  );
 
   const { getRankings, queryRankings } = await import("@/lib/rankings/server");
   const page = await queryRankings({
@@ -207,10 +208,10 @@ test("queryRankings serves the Learning-focused Instructor Ranking Population", 
 test("getRankings exposes Course evidence and associated Instructors", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "course-details-"));
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
-    temporaryDirectory,
-    undefined,
-    { includeScheduleCourse: true },
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      includeScheduleCourse: true,
+    }),
   );
 
   const { getRankings, queryRankings } = await import("@/lib/rankings/server");
@@ -280,10 +281,10 @@ test("Course details retain exact Rank beyond the first 100 results", async () =
     join(tmpdir(), "course-detail-rank-"),
   );
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
-    temporaryDirectory,
-    undefined,
-    { extraCourses: 110 },
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      extraCourses: 110,
+    }),
   );
 
   const { getRankings, queryRankings } = await import("@/lib/rankings/server");
@@ -310,8 +311,9 @@ test("Course details retain exact Rank beyond the first 100 results", async () =
 test("queryRankings serves Course presets and normalized custom weights", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "course-rankings-"));
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR =
-    await makeRankingGeneration(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory),
+  );
 
   const { queryRankings } = await import("@/lib/rankings/server");
   const learning = await queryRankings({
@@ -403,8 +405,9 @@ test("queryRankings serves Course presets and normalized custom weights", async 
 test("structured filters preserve Rank and Rank of all time", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-filters-"));
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR =
-    await makeRankingGeneration(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory),
+  );
 
   const { queryRankings } = await import("@/lib/rankings/server");
   const instructors = await queryRankings({
@@ -470,8 +473,9 @@ test("structured filters preserve Rank and Rank of all time", async () => {
 test("historical mode and generation-bound cursors remain reproducible", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-cursors-"));
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR =
-    await makeRankingGeneration(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory),
+  );
 
   const { queryRankings, StaleRankingsCursorError } = await import(
     "@/lib/rankings/server"
@@ -514,9 +518,11 @@ test("historical mode and generation-bound cursors remain reproducible", async (
 
   const secondRoot = await mkdtemp(join(tmpdir(), "ranking-cursor-second-"));
   temporaryDirectories.push(secondRoot);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGenerationWithSha(
-    secondRoot,
-    "1123456789abcdef0123456789abcdef01234567",
+  await installRankingGeneration(
+    await makeRankingGenerationWithSha(
+      secondRoot,
+      "1123456789abcdef0123456789abcdef01234567",
+    ),
   );
   await expect(
     queryRankings({
@@ -532,7 +538,7 @@ test("catalog identity binds Course and association-title cursors", async () => 
   const firstRoot = await mkdtemp(join(tmpdir(), "ranking-catalog-first-"));
   const secondRoot = await mkdtemp(join(tmpdir(), "ranking-catalog-second-"));
   temporaryDirectories.push(firstRoot, secondRoot);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(firstRoot);
+  await installRankingGeneration(await makeRankingGeneration(firstRoot));
   const { queryRankings, StaleRankingsCursorError } = await import(
     "@/lib/rankings/server"
   );
@@ -543,10 +549,10 @@ test("catalog identity binds Course and association-title cursors", async () => 
   });
   expect(first.nextCursor).toEqual(expect.any(String));
 
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
-    secondRoot,
-    undefined,
-    { firstCourseTitle: "Changed title" },
+  await installRankingGeneration(
+    await makeRankingGeneration(secondRoot, undefined, {
+      firstCourseTitle: "Changed title",
+    }),
   );
   await expect(
     queryRankings({
@@ -561,9 +567,11 @@ test("catalog identity binds Course and association-title cursors", async () => 
 test("a malformed Course dimension fails generation acceptance", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-catalog-"));
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
-    temporaryDirectory,
-    "malformed-course-dimension",
+  await installRankingGeneration(
+    await makeRankingGeneration(
+      temporaryDirectory,
+      "malformed-course-dimension",
+    ),
   );
 
   const { queryRankings, RankingsUnavailableError } = await import(
@@ -590,7 +598,7 @@ test("shared historical Instructor Aliases do not establish identity", async () 
       sourceCommit: fixtureSha,
     });
   await writeFile(manifestPath, JSON.stringify(manifest));
-  process.env.RANKINGS_SEED_DIR = directory;
+  await installRankingGeneration(directory);
   const { queryRankings } = await import("@/lib/rankings/server");
 
   const page = await queryRankings({
@@ -609,8 +617,9 @@ test("shared historical Instructor Aliases do not establish identity", async () 
 test("search distinguishes strict-ineligible entities from unknown entities", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-unranked-"));
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR =
-    await makeRankingGeneration(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory),
+  );
 
   const { queryRankings } = await import("@/lib/rankings/server");
   const unranked = await queryRankings({
@@ -635,10 +644,10 @@ test("ranking pages stop at 100 rows and continue after the last position", asyn
     join(tmpdir(), "ranking-page-size-"),
   );
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
-    temporaryDirectory,
-    undefined,
-    { extraInstructors: 101 },
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      extraInstructors: 101,
+    }),
   );
 
   const { queryRankings } = await import("@/lib/rankings/server");
@@ -673,9 +682,8 @@ for (const [malformation, label] of [
       join(tmpdir(), `rankings-${malformation}-`),
     );
     temporaryDirectories.push(temporaryDirectory);
-    process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
-      temporaryDirectory,
-      malformation,
+    await installRankingGeneration(
+      await makeRankingGeneration(temporaryDirectory, malformation),
     );
 
     const { queryRankings, RankingsUnavailableError } = await import(
@@ -690,10 +698,10 @@ for (const [malformation, label] of [
 test("zero-sample teaching Instructors and offered Courses receive a Rank from the prior", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "rankings-prior-"));
   temporaryDirectories.push(temporaryDirectory);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
-    temporaryDirectory,
-    undefined,
-    { includePriorOnly: true },
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      includePriorOnly: true,
+    }),
   );
   const { getRankings, queryRankings } = await import("@/lib/rankings/server");
   const instructors = await queryRankings({

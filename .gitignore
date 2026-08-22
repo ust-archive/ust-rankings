@@ -2,13 +2,15 @@
 
 # dependencies
 /node_modules
+/data/node_modules
 
 # testing
 /coverage
 
-# next.js
+# generated output
 /.next/
 /out/
+/data/out/
 
 # production
 /build

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import {
+  installScheduleGeneration,
   makeScheduleGeneration,
   type ScheduleFixtureVariant,
 } from "./schedule-fixture";
@@ -17,11 +18,8 @@ async function configureFixture(
 ) {
   const root = await mkdtemp(join(tmpdir(), "schedule-calendar-"));
   temporaryDirectories.push(root);
-  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(
-    root,
-    variant,
-    sourceCommit,
-  );
+  const directory = await makeScheduleGeneration(root, variant, sourceCommit);
+  await installScheduleGeneration(directory);
 }
 
 function eventUidsByStart(body: string) {
@@ -39,7 +37,6 @@ function eventUidsByStart(body: string) {
 }
 
 afterEach(async () => {
-  delete process.env.SCHEDULE_SEED_DIR;
   const { resetScheduleRuntimeForTests } = await import(
     "@/lib/schedule/server"
   );

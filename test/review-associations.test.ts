@@ -3,25 +3,34 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import type { PublicReview } from "@/lib/contributions/reviews";
-import { fixtureSha, makeRankingGeneration } from "./rankings-fixture";
-import { makeScheduleGeneration } from "./schedule-fixture";
+import {
+  fixtureSha,
+  installRankingGeneration,
+  makeRankingGeneration,
+} from "./rankings-fixture";
+import {
+  installScheduleGeneration,
+  makeScheduleGeneration,
+} from "./schedule-fixture";
 
 vi.mock("server-only", () => ({}));
 
 const ALPHA_UUID = "00000000-0000-4000-8000-000000000001";
 const BETA_UUID = "00000000-0000-4000-8000-000000000002";
 const temporaryDirectories: string[] = [];
+let rankingDirectory: string | undefined;
 
 async function configureAssociations() {
   const rankingRoot = await mkdtemp(join(tmpdir(), "review-rankings-"));
   const scheduleRoot = await mkdtemp(join(tmpdir(), "review-schedule-"));
   temporaryDirectories.push(rankingRoot, scheduleRoot);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(
-    rankingRoot,
-    undefined,
-    { includeScheduleCourse: true },
-  );
-  process.env.SCHEDULE_SEED_DIR = await makeScheduleGeneration(scheduleRoot);
+  rankingDirectory = await makeRankingGeneration(rankingRoot, undefined, {
+    includeScheduleCourse: true,
+  });
+  await Promise.all([
+    installRankingGeneration(rankingDirectory),
+    installScheduleGeneration(await makeScheduleGeneration(scheduleRoot)),
+  ]);
 }
 
 async function updateManifest(
@@ -30,15 +39,15 @@ async function updateManifest(
     identityEvents?: unknown[];
   }) => void,
 ) {
-  const path = join(process.env.RANKINGS_SEED_DIR as string, "manifest.json");
+  if (!rankingDirectory) throw new Error("Ranking fixture was not configured");
+  const path = join(rankingDirectory, "manifest.json");
   const manifest = JSON.parse(await readFile(path, "utf8"));
   update(manifest);
   await writeFile(path, JSON.stringify(manifest));
 }
 
 afterEach(async () => {
-  delete process.env.RANKINGS_SEED_DIR;
-  delete process.env.SCHEDULE_SEED_DIR;
+  rankingDirectory = undefined;
   const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
     await Promise.all([
       import("@/lib/rankings/server"),

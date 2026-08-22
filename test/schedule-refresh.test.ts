@@ -14,7 +14,10 @@ import type {
   ScheduleGenerationPointer,
   ScheduleRefreshDependencies,
 } from "@/lib/schedule/server";
-import { makeRankingGeneration } from "./rankings-fixture";
+import {
+  installRankingGeneration,
+  makeRankingGeneration,
+} from "./rankings-fixture";
 import { makeScheduleGeneration, scheduleFixtureSha } from "./schedule-fixture";
 
 vi.mock("server-only", () => ({}));
@@ -22,12 +25,15 @@ vi.mock("server-only", () => ({}));
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  delete process.env.SCHEDULE_SEED_DIR;
-  delete process.env.RANKINGS_SEED_DIR;
-  const { resetScheduleRuntimeForTests } = await import(
-    "@/lib/schedule/server"
-  );
-  await resetScheduleRuntimeForTests();
+  const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
+    await Promise.all([
+      import("@/lib/rankings/server"),
+      import("@/lib/schedule/server"),
+    ]);
+  await Promise.all([
+    resetRankingsRuntimeForTests(),
+    resetScheduleRuntimeForTests(),
+  ]);
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -572,7 +578,7 @@ test("a failed Schedule refresh keeps last-known-good active and reports stale h
   });
   const rankingsRoot = await mkdtemp(join(tmpdir(), "rankings-boundary-"));
   temporaryDirectories.push(rankingsRoot);
-  process.env.RANKINGS_SEED_DIR = await makeRankingGeneration(rankingsRoot);
+  await installRankingGeneration(await makeRankingGeneration(rankingsRoot));
   const { queryRankings } = await import("@/lib/rankings/server");
   expect(
     (await queryRankings({ entity: "instructor", limit: 1 })).results,

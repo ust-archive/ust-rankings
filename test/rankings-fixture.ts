@@ -5,6 +5,13 @@ import { DuckDBInstance } from "@duckdb/node-api";
 
 export const fixtureSha = "0123456789abcdef0123456789abcdef01234567";
 
+export async function installRankingGeneration(directory: string) {
+  const { installRankingGenerationForTests } = await import(
+    "@/lib/rankings/server"
+  );
+  await installRankingGenerationForTests(directory);
+}
+
 const identities = [
   {
     uuid: "00000000-0000-4000-8000-000000000001",
@@ -80,6 +87,7 @@ type Malformation =
   | "wrong-latest-term"
   | "failed-smoke-query"
   | "tba-alias"
+  | "legacy-name-keyed"
   | "missing-course-dimension"
   | "malformed-course-dimension"
   | "invalid-course-dimension"
@@ -263,11 +271,17 @@ export async function makeRankingGeneration(
       }
     }
     const instructorValues = rows.join(",\n");
+    const instructorRatings = `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(uuid, name, ${ratingColumns.replace("is_active", "is_teaching")})`;
     await copy(
       "instructor-ratings.parquet",
-      `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(uuid, name, ${ratingColumns.replace("is_active", "is_teaching")})`,
+      malformation === "legacy-name-keyed"
+        ? `SELECT * EXCLUDE (uuid) FROM (${instructorRatings})`
+        : instructorRatings,
     );
-    const instructorRankings = `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(uuid, name, ${ratingColumns.replace("is_active", "is_teaching")})`;
+    const instructorRankings =
+      malformation === "legacy-name-keyed"
+        ? `SELECT * EXCLUDE (uuid) FROM (${instructorRatings})`
+        : instructorRatings;
     const malformedInstructorRankings =
       malformation === "invalid-schema"
         ? `SELECT * EXCLUDE (posterior_stddev) FROM (${instructorRankings})`
@@ -283,7 +297,7 @@ export async function makeRankingGeneration(
     await copy("instructor-rankings.parquet", malformedInstructorRankings);
     await copy(
       "course-instructors.parquet",
-      `SELECT ${malformation === "failed-smoke-query" ? "* REPLACE ('10000000-0000-4000-8000-000000000000' AS uuid)" : "*"} FROM (VALUES
+      `SELECT ${malformation === "failed-smoke-query" ? "* REPLACE ('10000000-0000-4000-8000-000000000000' AS uuid)" : malformation === "legacy-name-keyed" ? "* EXCLUDE (uuid)" : "*"} FROM (VALUES
         ('00000000-0000-4000-8000-000000000001', 'Alpha Instructor', 100, '2510', 'COMP', '1000'),
         ('00000000-0000-4000-8000-000000000002', 'Beta Instructor', 100, '2510', 'MATH', '2000'),
         ('00000000-0000-4000-8000-000000000002', 'Beta Instructor', 100, '2510', 'COMP', '1029C'),
@@ -406,7 +420,10 @@ export async function makeRankingGeneration(
     join(directory, "manifest.json"),
     `${JSON.stringify({ schemaMajor: 0, sourceCommit: fixtureSha, artifacts, identities: fixtureIdentities }, null, 2)}\n`,
   );
-  if (malformation === "missing-course-dimension")
+  if (
+    malformation === "missing-course-dimension" ||
+    malformation === "legacy-name-keyed"
+  )
     await rm(join(directory, "courses.parquet"));
   return directory;
 }

@@ -95,10 +95,13 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function loadPreviousParquet(directory: string) {
-  const identitiesPath = join(directory, "instructor-identities.parquet");
-  if (!(await exists(identitiesPath)))
-    throw new Error(`Previous identities are missing: ${identitiesPath}`);
+async function loadPreviousParquet(directory: string, initialize: boolean) {
+  const required = initialize ? IDENTITY_FILES.slice(0, 2) : IDENTITY_FILES;
+  for (const filename of required) {
+    const path = join(directory, filename);
+    if (!(await exists(path)))
+      throw new Error(`Previous identity artifact is missing: ${path}`);
+  }
   return {
     identities: join(directory, IDENTITY_FILES[0]).replaceAll("\\", "/"),
     aliases: join(directory, IDENTITY_FILES[1]).replaceAll("\\", "/"),
@@ -176,8 +179,7 @@ export async function assignInstructorIdentities(
   connection: DuckDBConnection,
   options: {
     previousGenerationDir?: string;
-    bootstrapPath?: string;
-    requirePrevious: boolean;
+    initialize: boolean;
     sourceCommit: string;
     correctionsPath?: string;
   },
@@ -208,8 +210,14 @@ export async function assignInstructorIdentities(
   let previousEvents: EventRow[] = [];
   let previousAffected: AffectedRow[] = [];
 
-  if (options.previousGenerationDir) {
-    const paths = await loadPreviousParquet(options.previousGenerationDir);
+  if (!options.previousGenerationDir)
+    throw new Error("Previous Instructor identities are required");
+
+  {
+    const paths = await loadPreviousParquet(
+      options.previousGenerationDir,
+      options.initialize,
+    );
     previousIdentities = (
       await connection.runAndReadAll(
         `SELECT uuid, canonical_name, itsc FROM read_parquet('${paths.identities}')`,
@@ -234,32 +242,6 @@ export async function assignInstructorIdentities(
         )
       ).getRowObjectsJson() as AffectedRow[];
     }
-  } else if (options.bootstrapPath) {
-    const seed = await loadBootstrapJson(options.bootstrapPath);
-    previousIdentities = seed.identities.map((identity) => ({
-      uuid: identity.uuid,
-      canonical_name: identity.canonicalName,
-      itsc: identity.itsc ?? null,
-    }));
-    previousAliases = seed.identities.flatMap((identity) =>
-      (identity.aliases ?? []).map((alias) => ({
-        uuid: identity.uuid,
-        name: alias.name,
-        source: alias.source,
-        source_commit: alias.sourceCommit,
-        source_file: alias.sourceFile ?? null,
-      })),
-    );
-    previousEvents = eventRows(seed.events);
-    previousAffected = affectedRows(seed.events);
-  } else if (options.requirePrevious) {
-    throw new Error(
-      "Previous identities are required after bootstrap and were not provided",
-    );
-  } else {
-    throw new Error(
-      "Previous identities or an identity bootstrap file is required",
-    );
   }
 
   const byName = new Map<string, string>();
