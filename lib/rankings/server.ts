@@ -1460,6 +1460,27 @@ export async function getInstructorIdentity(key: string) {
   return lookupInstructorIdentity(await instructorRegistry(), key.trim());
 }
 
+export async function instructorNamesForUuids(uuids: string[]) {
+  const names = new Map<string, string>();
+  if (uuids.length === 0) return names;
+  let registry: InstructorRegistry;
+  try {
+    registry = await instructorRegistry();
+  } catch {
+    return names;
+  }
+  for (const uuid of new Set(uuids.map((value) => value.toLowerCase())))
+    try {
+      names.set(
+        uuid,
+        lookupInstructorIdentity(registry, uuid).instructor.canonicalName,
+      );
+    } catch {
+      // Contributions remain available when an Instructor cannot be resolved.
+    }
+  return names;
+}
+
 function rankingGenerationIsReady() {
   return Boolean(
     process.env.RANKINGS_SEED_DIR || runtimeActive || explicitGeneration,

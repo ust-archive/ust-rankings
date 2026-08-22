@@ -12,6 +12,37 @@ export type AccountRow = {
   publicDisplayName: string | null;
 };
 
+export type AccountContributions = {
+  reviews: Array<{
+    id: string;
+    publicationState: "active" | "withdrawn";
+    coursePrefix: string | null;
+    courseNumber: string | null;
+    instructorUuid: string | null;
+    publishedAt: Date;
+  }>;
+  reactions: Array<
+    (
+      | {
+          targetType: "course";
+          coursePrefix: string;
+          courseNumber: string;
+          instructorUuid: null;
+        }
+      | {
+          targetType: "instructor";
+          coursePrefix: null;
+          courseNumber: null;
+          instructorUuid: string;
+        }
+    ) &
+      (
+        | { kind: "emoji"; code: string; createdAt: Date }
+        | { kind: "thumb"; code: "up" | "down"; createdAt: Date }
+      )
+  >;
+};
+
 export type EstablishIdentityInput = {
   issuer: string;
   subject: string;
@@ -23,6 +54,7 @@ export type EstablishIdentityInput = {
 export interface AccountRepository {
   establishIdentity(input: EstablishIdentityInput): Promise<AccountRow>;
   findUser(userId: string): Promise<AccountRow | undefined>;
+  findContributions(userId: string): Promise<AccountContributions>;
   activateUser(
     userId: string,
     publicDisplayName: string,
@@ -113,6 +145,16 @@ export function createAccountService(
 
     getUser(userId: string) {
       return repository.findUser(userId);
+    },
+
+    async getContributions(userId: string) {
+      const contributions = await repository.findContributions(userId);
+      return {
+        ...contributions,
+        reviews: contributions.reviews.filter(
+          (review) => review.publicationState === "active",
+        ),
+      };
     },
 
     async requireActiveUser(userId: string) {

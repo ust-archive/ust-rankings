@@ -26,6 +26,23 @@ afterEach(async () => {
   );
 });
 
+test("Instructor UUIDs resolve to current display names in one generation read", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "ranking-names-"));
+  temporaryDirectories.push(temporaryDirectory);
+  process.env.RANKINGS_SEED_DIR =
+    await makeRankingGeneration(temporaryDirectory);
+  const { instructorNamesForUuids } = await import("@/lib/rankings/server");
+
+  await expect(
+    instructorNamesForUuids([
+      "00000000-0000-4000-8000-000000000001",
+      "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    ]),
+  ).resolves.toEqual(
+    new Map([["00000000-0000-4000-8000-000000000001", "Alpha Instructor"]]),
+  );
+});
+
 test("the original bright grade palette is preserved", () => {
   expect(gradeColor(0)).toEqual([237, 27, 47]);
   expect(gradeColor(0.25)).toEqual([250, 166, 26]);

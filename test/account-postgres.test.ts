@@ -79,7 +79,17 @@ if (!connection) {
         "External Identity bindings are immutable",
       );
 
-      for (const migration of ["0002_course_reviews.sql", "0003_signals.sql"]) {
+      for (const migration of [
+        "0002_course_reviews.sql",
+        "0003_signals.sql",
+        "0004_complete_review_associations.sql",
+        "0005_review_lifecycle.sql",
+        "0006_raster_attachments.sql",
+        "0007_document_attachments.sql",
+        "0008_moderation.sql",
+        "0009_rights_requests.sql",
+        "0010_active_review_basis_set.sql",
+      ]) {
         await sql.unsafe(
           await readFile(
             join(process.cwd(), "contributions", "migrations", migration),
@@ -88,12 +98,47 @@ if (!connection) {
         );
       }
       await sql`UPDATE contribution_users SET status = 'active' WHERE id = ${first.id}`;
+      const reviewId = crypto.randomUUID();
       await sql`
         INSERT INTO reviews (id, author_user_id, publication_state, course_prefix, course_number)
-        VALUES (
-          ${crypto.randomUUID()}, ${first.id}, 'active', 'COMP', '2000'
-        )
+        VALUES (${reviewId}, ${first.id}, 'active', 'COMP', '2000')
       `;
+      await sql`
+        INSERT INTO course_emoji_reactions
+          (user_id, course_prefix, course_number, code, created_at)
+        VALUES (${first.id}, 'COMP', '2000', 'love', '2026-08-21T00:00:00Z')
+      `;
+      await sql`
+        INSERT INTO course_thumbs_votes
+          (user_id, course_prefix, course_number, state, updated_at)
+        VALUES (${first.id}, 'COMP', '2000', 'up', '2026-08-20T00:00:00Z')
+      `;
+      expect(await accounts.getContributions(first.id)).toMatchObject({
+        reviews: [
+          {
+            id: reviewId,
+            publicationState: "active",
+            coursePrefix: "COMP",
+            courseNumber: "2000",
+          },
+        ],
+        reactions: [
+          {
+            targetType: "course",
+            coursePrefix: "COMP",
+            courseNumber: "2000",
+            kind: "emoji",
+            code: "love",
+          },
+          {
+            targetType: "course",
+            coursePrefix: "COMP",
+            courseNumber: "2000",
+            kind: "thumb",
+            code: "up",
+          },
+        ],
+      });
       expect(await accounts.closeAccount(first.id)).toMatchObject({
         id: first.id,
         status: "closed",
