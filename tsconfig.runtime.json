@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    ".next-playwright/types/**/*.ts",
+    ".next-playwright/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "data",
+    "scripts",
+    "test",
+    "playwright.config.ts",
+    "vitest.config.ts"
+  ]
+}

@@ -1,7 +1,5 @@
-import { resolve } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
-import { fixtureSha } from "./test/rankings-fixture";
-import { scheduleFixtureSha } from "./test/schedule-fixture";
+import { browserFixtureEnvironment } from "./test/browser-fixture";
 
 const port = 17831;
 
@@ -22,11 +20,7 @@ export default defineConfig({
       AUTH_SECRET: "",
       CONTRIBUTIONS_POSTGRES_URL: "",
       NEXT_DIST_DIR: ".next-playwright",
-      TEST_RANKING_GENERATION: resolve(".playwright/rankings", fixtureSha),
-      TEST_SCHEDULE_GENERATION: resolve(
-        ".playwright/schedule",
-        scheduleFixtureSha,
-      ),
+      ...browserFixtureEnvironment,
     },
     reuseExistingServer: false,
     timeout: 120_000,

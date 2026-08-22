@@ -4,8 +4,40 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26.7.0
+          cache: npm
+      - run: npm install --global npm@12.0.2
+      - run: npm ci
+      - run: npm run check
+        env:
+          TZ: America/New_York
+      - if: github.event_name != 'push' || github.ref != 'refs/heads/master'
+        run: npm run build
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26.7.0
+          cache: npm
+      - run: npm install --global npm@12.0.2
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+
+  contracts:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -23,20 +55,45 @@ jobs:
           - 5432:5432
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-node@v6
         with:
           node-version: 26.7.0
           cache: npm
-
       - run: npm install --global npm@12.0.2
       - run: npm ci
-      - run: npm run check
-        env:
-          TZ: America/New_York
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser
       - run: npm run test:contracts
         env:
           TEST_CONTRIBUTIONS_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/ust_rankings_test
-      - run: npm run build
+
+  image:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/ust-archive/ust-rankings:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/ust-archive/ust-rankings
+          build-args: |
+            PRIVACY_CONTACT_ADDRESS=${{ vars.PRIVACY_CONTACT_ADDRESS }}
+            PRIVACY_CONTACT_EMAIL=${{ vars.PRIVACY_CONTACT_EMAIL }}
+            PRIVACY_CONTACT_TITLE=${{ vars.PRIVACY_CONTACT_TITLE }}
+      - run: printf '%s\n' '${{ steps.build.outputs.digest }}' > image-digest.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-image-digest
+          path: image-digest.txt
+          retention-days: 1
