@@ -72,6 +72,34 @@ test("same-name Instructors remain distinct by UUID when split history identifie
   ]);
 });
 
+test("same-name Instructors remain distinct by prior Course Offering evidence", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "ranking-same-name-offerings-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      sameNameAssociations: true,
+    }),
+  );
+  const { queryRankings } = await import("@/lib/rankings/server");
+
+  const page = await queryRankings({
+    entity: "instructor",
+    preset: "learning",
+    termCode: "2510",
+  });
+  expect(
+    page.results
+      .filter((row) => row.canonicalName === "Alpha Instructor")
+      .map((row) => row.uuid)
+      .sort(),
+  ).toEqual([
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+  ]);
+});
+
 test("Instructor Course Offerings include retired merge-family UUIDs", async () => {
   const temporaryDirectory = await mkdtemp(
     join(tmpdir(), "ranking-merged-offerings-"),

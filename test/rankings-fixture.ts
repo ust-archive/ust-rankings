@@ -123,6 +123,7 @@ export async function makeRankingGeneration(
     includeScheduleCourse?: boolean;
     includePriorOnly?: boolean;
     identityEvents?: FixtureIdentityEvent[];
+    sameNameAssociations?: boolean;
     sameNameSplit?: boolean;
     firstCourseTitle?: string;
   } = {},
@@ -131,11 +132,21 @@ export async function makeRankingGeneration(
   await mkdir(directory, { recursive: true });
   const fixtureIdentities = structuredClone(identities);
   if (
-    (malformation === "ambiguous-canonical-name" || options.sameNameSplit) &&
+    (malformation === "ambiguous-canonical-name" ||
+      options.sameNameAssociations ||
+      options.sameNameSplit) &&
     fixtureIdentities[1]
-  )
+  ) {
     fixtureIdentities[1].canonicalName =
       fixtureIdentities[0]?.canonicalName ?? "";
+    if (
+      malformation === "ambiguous-canonical-name" ||
+      options.sameNameAssociations
+    )
+      fixtureIdentities[1].aliases = structuredClone(
+        fixtureIdentities[0]?.aliases ?? [],
+      );
+  }
   if (options.includePriorOnly) {
     fixtureIdentities.push({
       uuid: "00000000-0000-4000-8000-000000000006",
@@ -309,12 +320,28 @@ export async function makeRankingGeneration(
                 ? `SELECT * REPLACE (99::INTEGER AS term_num) FROM (${instructorRankings})`
                 : instructorRankings;
     await copy("instructor-rankings.parquet", malformedInstructorRankings);
+    const sameNameWithoutUniqueAlias =
+      malformation === "ambiguous-canonical-name" ||
+      options.sameNameAssociations;
+    const secondInstructorName =
+      sameNameWithoutUniqueAlias || options.sameNameSplit
+        ? "Alpha Instructor"
+        : "Beta Instructor";
+    const secondCoursePrefix =
+      malformation === "ambiguous-canonical-name" ? "COMP" : "MATH";
+    const secondCourseNumber =
+      malformation === "ambiguous-canonical-name" || options.sameNameSplit
+        ? "1000"
+        : "2000";
+    const additionalBetaAssociation = sameNameWithoutUniqueAlias
+      ? ""
+      : ", ('00000000-0000-4000-8000-000000000002', 'Beta Instructor', 100, '2510', 'COMP', '1029C')";
     await copy(
       "course-instructors.parquet",
       `SELECT ${malformation === "failed-smoke-query" ? "* REPLACE ('10000000-0000-4000-8000-000000000000' AS uuid)" : malformation === "legacy-name-keyed" ? "* EXCLUDE (uuid)" : "*"} FROM (VALUES
         ('00000000-0000-4000-8000-000000000001', 'Alpha Instructor', 100, '2510', 'COMP', '1000'),
-        ('00000000-0000-4000-8000-000000000002', '${options.sameNameSplit ? "Alpha Instructor" : "Beta Instructor"}', 100, '2510', '${malformation === "ambiguous-canonical-name" ? "COMP" : "MATH"}', '${malformation === "ambiguous-canonical-name" || options.sameNameSplit ? "1000" : "2000"}'),
-        ('00000000-0000-4000-8000-000000000002', 'Beta Instructor', 100, '2510', 'COMP', '1029C'),
+        ('00000000-0000-4000-8000-000000000002', '${secondInstructorName}', 100, '2510', '${secondCoursePrefix}', '${secondCourseNumber}')
+        ${additionalBetaAssociation},
         ('00000000-0000-4000-8000-000000000003', 'Delta Instructor', 100, '2510', 'HIST', '3000'),
         ('00000000-0000-4000-8000-000000000004', 'Gamma Instructor', 100, '2510', 'MISS', '4000'),
         ('00000000-0000-4000-8000-000000000005', 'Historical Instructor', 100, '2510', 'COMP', '1000')

@@ -9,6 +9,7 @@ import {
   type DuckDBValue,
 } from "@duckdb/node-api";
 import { normalizeInstructorUuid } from "@/lib/instructor-identity";
+import type { ObservedInstructorCourseOffering } from "@/lib/rankings/server";
 import { testGenerationDirectory } from "@/lib/test-generation";
 
 const ARTIFACTS = ["classes.parquet", "courses.parquet"] as const;
@@ -872,21 +873,14 @@ type NestedMeeting = {
   instructors?: unknown;
 };
 
-type SourceInstructorCourseOffering = {
-  sourceName: string;
-  termCode: string;
-  coursePrefix: string;
-  courseNumber: string;
-};
-
-function sourceInstructorKey(association: SourceInstructorCourseOffering) {
+function sourceInstructorKey(association: ObservedInstructorCourseOffering) {
   return `${association.sourceName}\0${association.termCode}\0${association.coursePrefix}\0${association.courseNumber}`;
 }
 
 function collectSourceInstructorAssociations(
   rows: Array<Record<string, unknown>>,
 ) {
-  const associations: SourceInstructorCourseOffering[] = [];
+  const associations: ObservedInstructorCourseOffering[] = [];
   for (const row of rows) {
     for (const meeting of (row.schedules as NestedMeeting[] | undefined) ??
       []) {
@@ -907,7 +901,7 @@ function collectSourceInstructorAssociations(
 }
 
 async function rankingInstructorUuids(
-  associations: SourceInstructorCourseOffering[],
+  associations: ObservedInstructorCourseOffering[],
 ) {
   try {
     const { resolveObservedInstructorCourseOfferings } = await import(

@@ -861,6 +861,30 @@ function normalizedInstructorName(name: string) {
   return name.trim().toLocaleLowerCase();
 }
 
+type InstructorCourseOfferingEvidence = {
+  uuid: string;
+  termCode: string;
+  coursePrefix: string;
+  courseNumber: string;
+};
+
+async function instructorCourseOfferingEvidence(
+  connection: DuckDBConnection,
+  directory: string,
+) {
+  return (
+    await queryRows(
+      connection,
+      `SELECT DISTINCT uuid, term_code, subject, code FROM read_parquet('${sqlPath(directory, "course-instructors.parquet")}') ORDER BY uuid, term_code, subject, code`,
+    )
+  ).map((row) => ({
+    uuid: String(row.uuid),
+    termCode: String(row.term_code),
+    coursePrefix: String(row.subject),
+    courseNumber: String(row.code),
+  }));
+}
+
 type InstructorRegistry = Pick<
   Generation,
   | "sha"
@@ -885,6 +909,7 @@ function resolvedInstructorIdentity(
 function validateIdentities(
   manifest: Manifest,
   rankingIdentities: Array<{ uuid: string; name: string }>,
+  courseOfferings: InstructorCourseOfferingEvidence[],
 ) {
   const uuidPattern = INSTRUCTOR_UUID_PATTERN;
   const itscPattern = ITSC_PATTERN;
@@ -1061,29 +1086,66 @@ function validateIdentities(
     }
   }
 
+  const offeringKeysByUuid = new Map<string, Set<string>>();
+  for (const offering of courseOfferings) {
+    if (!identitiesByUuid.has(offering.uuid))
+      throw new Error("Instructor association has an unknown UUID");
+    const keys = offeringKeysByUuid.get(offering.uuid) ?? new Set<string>();
+    keys.add(
+      `${offering.termCode}\0${offering.coursePrefix}\0${offering.courseNumber}`,
+    );
+    offeringKeysByUuid.set(offering.uuid, keys);
+  }
   for (const owners of canonicalNames.values()) {
     if (owners.length < 2) continue;
     const uuids = new Set(owners.map((identity) => identity.uuid));
-    const links = identityEvents.flatMap((event) => {
-      if (event.type === "split")
-        return uuids.has(event.sourceUuid) && uuids.has(event.newUuid)
-          ? [[event.sourceUuid, event.newUuid] as const]
-          : [];
-      if (event.type === "merge")
-        return uuids.has(event.retiredUuid) && uuids.has(event.survivorUuid)
-          ? [[event.retiredUuid, event.survivorUuid] as const]
-          : [];
-      return [];
-    });
-    const connected = new Set([owners[0]?.uuid ?? ""]);
-    for (let size = -1; size !== connected.size; ) {
-      size = connected.size;
-      for (const [left, right] of links) {
-        if (connected.has(left)) connected.add(right);
-        if (connected.has(right)) connected.add(left);
+    const distinguished = new Set<string>();
+    for (const event of identityEvents) {
+      if (
+        event.type === "split" &&
+        uuids.has(event.sourceUuid) &&
+        uuids.has(event.newUuid)
+      ) {
+        distinguished.add(event.sourceUuid);
+        distinguished.add(event.newUuid);
+      } else if (
+        event.type === "merge" &&
+        uuids.has(event.retiredUuid) &&
+        uuids.has(event.survivorUuid)
+      ) {
+        distinguished.add(event.retiredUuid);
+        distinguished.add(event.survivorUuid);
       }
     }
-    if (connected.size !== uuids.size)
+    const fingerprintByUuid = new Map(
+      owners.map((identity) => [
+        identity.uuid,
+        [...(offeringKeysByUuid.get(identity.uuid) ?? [])].sort().join("\n"),
+      ]),
+    );
+    const offeringFingerprintCounts = new Map<string, number>();
+    for (const fingerprint of fingerprintByUuid.values())
+      if (fingerprint)
+        offeringFingerprintCounts.set(
+          fingerprint,
+          (offeringFingerprintCounts.get(fingerprint) ?? 0) + 1,
+        );
+    for (const identity of owners) {
+      const hasUniqueName = [
+        identity.canonicalName,
+        ...identity.aliases.map((alias) => alias.name),
+      ].some(
+        (name) =>
+          observedNames.get(normalizedInstructorName(name))?.length === 1,
+      );
+      const fingerprint = fingerprintByUuid.get(identity.uuid);
+      if (
+        hasUniqueName ||
+        (fingerprint && offeringFingerprintCounts.get(fingerprint) === 1)
+      )
+        distinguished.add(identity.uuid);
+    }
+    if (distinguished.size < owners.length - 1)
       throw new Error("Same-name Instructors lack distinguishing history");
   }
 
@@ -1383,6 +1445,7 @@ async function loadGeneration(
           uuid: String(row.uuid),
           name: String(row.name),
         })),
+        await instructorCourseOfferingEvidence(connection, directory),
       );
       openGenerationCount += 1;
       return {
@@ -1430,13 +1493,18 @@ async function loadInstructorRegistry(
       throw new Error("Invalid Instructor registry manifest");
     const instance = await DuckDBInstance.create(":memory:");
     const connection = await instance.connect();
+    let identities: ReturnType<typeof validateIdentities>;
     try {
       await applyIdentityParquet(connection, directory, manifest);
+      identities = validateIdentities(
+        manifest,
+        [],
+        await instructorCourseOfferingEvidence(connection, directory),
+      );
     } finally {
       connection.closeSync();
       instance.closeSync();
     }
-    const identities = validateIdentities(manifest, []);
     return {
       sha: manifest.sourceCommit,
       identitiesByUuid: identities.identitiesByUuid,
@@ -1540,6 +1608,19 @@ export async function resolveObservedInstructorNames(names: string[]) {
   return resolved;
 }
 
+function observedInstructorCandidateUuids(
+  registry: InstructorRegistry,
+  sourceName: string,
+) {
+  return new Set(
+    (
+      registry.identitiesByObservedName.get(
+        normalizedInstructorName(sourceName),
+      ) ?? []
+    ).map((identity) => resolvedInstructorIdentity(registry, identity).uuid),
+  );
+}
+
 export type ObservedInstructorCourseOffering = {
   sourceName: string;
   termCode: string;
@@ -1553,12 +1634,9 @@ export async function resolveObservedInstructorCourseOfferings(
   if (associations.length === 0) return [];
   const registry = await instructorRegistry();
   const resolved = associations.map((association) => {
-    const candidates = new Set(
-      (
-        registry.identitiesByObservedName.get(
-          normalizedInstructorName(association.sourceName),
-        ) ?? []
-      ).map((identity) => resolvedInstructorIdentity(registry, identity).uuid),
+    const candidates = observedInstructorCandidateUuids(
+      registry,
+      association.sourceName,
     );
     return candidates.size === 1 ? [...candidates][0] : undefined;
   });
@@ -1588,15 +1666,9 @@ export async function resolveObservedInstructorCourseOfferings(
       parameters,
     );
     for (const { association, index } of ambiguous) {
-      const candidates = new Set(
-        (
-          lease.accepted.identitiesByObservedName.get(
-            normalizedInstructorName(association.sourceName),
-          ) ?? []
-        ).map(
-          (identity) =>
-            resolvedInstructorIdentity(lease.accepted, identity).uuid,
-        ),
+      const candidates = observedInstructorCandidateUuids(
+        lease.accepted,
+        association.sourceName,
       );
       const matches = new Set(
         rows.flatMap((row) =>
