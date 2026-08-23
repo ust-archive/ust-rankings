@@ -1183,11 +1183,10 @@ export async function getSchedule(
   });
 }
 
-/** Resolve Classes and their accepted generation in one Schedule query boundary. */
-export async function resolveClassesWithGeneration(
+async function resolveClassSelectionWithGeneration(
   term: string,
   classNumbers: ReadonlyArray<number>,
-): Promise<{ generation: string; classes: ScheduleClass[] }> {
+) {
   const termCode = validateTermCode(term);
   const numbers = [...new Set(classNumbers)].sort(
     (left, right) => left - right,
@@ -1217,10 +1216,27 @@ export async function resolveClassesWithGeneration(
       .flatMap((offering) => offering.classes)
       .filter((scheduleClass) => wanted.has(scheduleClass.classNumber))
       .sort((left, right) => left.classNumber - right.classNumber);
-    if (classes.length !== numbers.length)
-      throw new InvalidScheduleQueryError("Unknown Class Number.");
-    return { generation: accepted.sha, classes };
+    const found = new Set(
+      classes.map((scheduleClass) => scheduleClass.classNumber),
+    );
+    return {
+      generation: accepted.sha,
+      classes,
+      invalidClassNumbers: numbers.filter((number) => !found.has(number)),
+    };
   });
+}
+
+/** Resolve Classes and their accepted generation in one strict Schedule query boundary. */
+export async function resolveClassesWithGeneration(
+  term: string,
+  classNumbers: ReadonlyArray<number>,
+): Promise<{ generation: string; classes: ScheduleClass[] }> {
+  const { invalidClassNumbers, ...resolved } =
+    await resolveClassSelectionWithGeneration(term, classNumbers);
+  if (invalidClassNumbers.length)
+    throw new InvalidScheduleQueryError("Unknown Class Number.");
+  return resolved;
 }
 
 export async function resolveClasses(
@@ -1228,4 +1244,13 @@ export async function resolveClasses(
   classNumbers: ReadonlyArray<number>,
 ): Promise<ScheduleClass[]> {
   return (await resolveClassesWithGeneration(term, classNumbers)).classes;
+}
+
+export async function resolvePlannerClasses(
+  term: string,
+  classNumbers: ReadonlyArray<number>,
+) {
+  const { classes, invalidClassNumbers } =
+    await resolveClassSelectionWithGeneration(term, classNumbers);
+  return { classes, invalidClassNumbers };
 }

@@ -148,6 +148,12 @@ export default function RootLayout({
               >
                 Courses
               </Link>
+              <Link
+                className="no-underline underline-offset-4 hover:underline"
+                href="/schedule"
+              >
+                Schedule
+              </Link>
               <HeaderAuth />
             </nav>
           </div>
@@ -190,6 +196,7 @@ export default function RootLayout({
               links={[
                 ["Instructor Rankings", "/rankings/instructors"],
                 ["Course Rankings", "/rankings/courses"],
+                ["UST Schedule", "/schedule"],
               ]}
             />
             <FooterLinks

@@ -195,7 +195,9 @@ test("bounded Schedule search covers Course, Instructor, room, Section, and Clas
 
 test("getSchedule and resolveClasses expose domain details without source mechanics", async () => {
   await configureFixture();
-  const { getSchedule, resolveClasses } = await import("@/lib/schedule/server");
+  const { getSchedule, resolveClasses, resolvePlannerClasses } = await import(
+    "@/lib/schedule/server"
+  );
 
   const course = await getSchedule({
     type: "course",
@@ -249,6 +251,9 @@ test("getSchedule and resolveClasses expose domain details without source mechan
   await expect(resolveClasses("2510", [1001, 9999])).rejects.toThrow(
     "Unknown Class Number",
   );
+  const planner = await resolvePlannerClasses("2510", [1001, 9999]);
+  expect(planner.classes.map((item) => item.classNumber)).toEqual([1001]);
+  expect(planner.invalidClassNumbers).toEqual([9999]);
 });
 
 test("duplicate event grains and broken Course/Class joins fail closed", async () => {
