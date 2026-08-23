@@ -1,6 +1,11 @@
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DuckDBConnection } from "@duckdb/node-api";
+import {
+  buildInstructorIdentityHistory,
+  type InstructorAssociationCorrection,
+  type InstructorIdentityHistoryEvent,
+} from "../../lib/instructor-identity.ts";
 
 const IDENTITY_FILES = [
   "instructor-identities.parquet",
@@ -35,8 +40,9 @@ type EventRow = {
 };
 
 type AffectedRow = {
+  correction_type: "split" | "calibration";
   source_commit: string;
-  new_uuid: string;
+  target_uuid: string;
   source_name: string;
   term_code: string | null;
   course_code: string | null;
@@ -100,7 +106,7 @@ type SeedEvent =
         sourceCommit?: string;
         sourceName: string;
         termCode?: string;
-        courseCode?: string;
+        courseCode: string;
       }>;
     };
 
@@ -146,6 +152,57 @@ async function loadBootstrapJson(path: string) {
   };
 }
 
+async function loadPreviousCorrections(
+  connection: DuckDBConnection,
+  path: string,
+  events: EventRow[],
+): Promise<AffectedRow[]> {
+  const described = await connection.runAndReadAll(
+    `DESCRIBE SELECT * FROM read_parquet('${path}')`,
+  );
+  const columns = new Set(
+    (described.getRowObjectsJson() as Array<{ column_name: string }>).map(
+      (column) => column.column_name,
+    ),
+  );
+  if (columns.has("correction_type") && columns.has("target_uuid")) {
+    return (
+      await connection.runAndReadAll(
+        `SELECT correction_type, source_commit, target_uuid, source_name, term_code, course_code FROM read_parquet('${path}')`,
+      )
+    ).getRowObjectsJson() as AffectedRow[];
+  }
+  if (columns.has("new_uuid")) {
+    // ponytail: remove this one-release migration adapter after the first typed
+    // Ranking Generation is published; old artifacts are not a runtime contract.
+    const rows = (
+      await connection.runAndReadAll(
+        `SELECT source_commit, new_uuid, source_name, term_code, course_code FROM read_parquet('${path}')`,
+      )
+    ).getRowObjectsJson() as Array<{
+      source_commit: string;
+      new_uuid: string;
+      source_name: string;
+      term_code: string | null;
+      course_code: string | null;
+    }>;
+    const splitTargets = new Set(
+      events.flatMap((event) =>
+        event.event_type === "split" && event.new_uuid ? [event.new_uuid] : [],
+      ),
+    );
+    return rows.map((row) => ({
+      correction_type: splitTargets.has(row.new_uuid) ? "split" : "calibration",
+      source_commit: row.source_commit,
+      target_uuid: row.new_uuid,
+      source_name: row.source_name,
+      term_code: row.term_code,
+      course_code: row.course_code,
+    }));
+  }
+  throw new Error("Invalid Instructor association correction artifact");
+}
+
 function eventRows(events: SeedEvent[]): EventRow[] {
   return events.map((event) => {
     if (event.type === "itsc-added")
@@ -189,8 +246,9 @@ function affectedRows(events: SeedEvent[]): AffectedRow[] {
     if (event.type !== "split") continue;
     for (const association of event.affectedAssociations ?? []) {
       rows.push({
+        correction_type: "split",
         source_commit: association.sourceCommit ?? event.sourceCommit,
-        new_uuid: event.newUuid,
+        target_uuid: event.newUuid,
         source_name: association.sourceName,
         term_code: association.termCode ?? null,
         course_code: association.courseCode ?? null,
@@ -214,8 +272,9 @@ function calibrationRows(calibrations: SeedCalibration[]): AffectedRow[] {
     )
       throw new Error("Invalid Instructor association calibration");
     return {
+      correction_type: "calibration",
       source_commit: calibration.sourceCommit,
-      new_uuid: calibration.instructorUuid,
+      target_uuid: calibration.instructorUuid,
       source_name: calibration.sourceName.trim(),
       term_code: calibration.termCode ?? null,
       course_code: calibration.courseCode,
@@ -296,11 +355,11 @@ export async function assignInstructorIdentities(
       ).getRowObjectsJson() as EventRow[];
     }
     if (await exists(join(options.previousGenerationDir, IDENTITY_FILES[3]))) {
-      previousAffected = (
-        await connection.runAndReadAll(
-          `SELECT source_commit, new_uuid, source_name, term_code, course_code FROM read_parquet('${paths.affected}')`,
-        )
-      ).getRowObjectsJson() as AffectedRow[];
+      previousAffected = await loadPreviousCorrections(
+        connection,
+        paths.affected,
+        previousEvents,
+      );
     }
     const previousCourseInstructors = join(
       options.previousGenerationDir,
@@ -369,41 +428,68 @@ export async function assignInstructorIdentities(
       affectedKeys.add(key);
       affected.push(association);
     }
-    for (const event of corrections.events) {
-      if (event.type === "itsc-added") {
-        const current = identities.get(event.uuid);
-        if (current)
-          identities.set(event.uuid, { ...current, itsc: event.itsc });
-      }
-    }
   }
 
-  const mergeRedirects = new Map(
-    events.flatMap((event) =>
-      event.event_type === "merge" &&
-      event.retired_uuid !== null &&
-      event.survivor_uuid !== null
-        ? [[event.retired_uuid, event.survivor_uuid]]
-        : [],
-    ),
+  const identityHistoryEvents: InstructorIdentityHistoryEvent[] = events.map(
+    (event): InstructorIdentityHistoryEvent => {
+      if (event.event_type === "itsc-added" && event.uuid && event.itsc)
+        return {
+          type: "itsc-added",
+          uuid: event.uuid,
+          itsc: event.itsc,
+          sourceCommit: event.source_commit,
+        };
+      if (
+        event.event_type === "merge" &&
+        event.retired_uuid &&
+        event.survivor_uuid
+      )
+        return {
+          type: "merge",
+          retiredUuid: event.retired_uuid,
+          survivorUuid: event.survivor_uuid,
+          sourceCommit: event.source_commit,
+        };
+      if (event.event_type === "split" && event.source_uuid && event.new_uuid)
+        return {
+          type: "split",
+          sourceUuid: event.source_uuid,
+          newUuid: event.new_uuid,
+          sourceCommit: event.source_commit,
+        };
+      throw new Error("Invalid Instructor identity event history");
+    },
   );
-  const survivingUuid = (uuid: string) => {
-    const visited = new Set<string>();
-    let current = uuid;
-    while (mergeRedirects.has(current)) {
-      if (visited.has(current)) throw new Error("Cyclic Instructor merge");
-      visited.add(current);
-      current = mergeRedirects.get(current) as string;
-    }
-    return current;
-  };
-  for (const association of affected) {
-    const target = survivingUuid(association.new_uuid);
-    if (!identities.has(target))
-      throw new Error(
-        `Unknown Instructor association target: ${association.new_uuid}`,
-      );
+  const associationCorrections: InstructorAssociationCorrection[] =
+    affected.map((row) => ({
+      correctionType: row.correction_type,
+      sourceCommit: row.source_commit,
+      targetUuid: row.target_uuid,
+      sourceName: row.source_name,
+      ...(row.term_code === null ? {} : { termCode: row.term_code }),
+      courseCode: row.course_code ?? "",
+    }));
+  const aliasSourceCommitsByUuid = new Map<string, string[]>();
+  for (const alias of aliases) {
+    const commits = aliasSourceCommitsByUuid.get(alias.uuid) ?? [];
+    commits.push(alias.source_commit);
+    aliasSourceCommitsByUuid.set(alias.uuid, commits);
   }
+  const identityHistory = buildInstructorIdentityHistory({
+    sourceCommit: options.sourceCommit,
+    identities: [...identities.values()].map((identity) => ({
+      uuid: identity.uuid,
+      itsc: identity.itsc,
+      aliasSourceCommits: aliasSourceCommitsByUuid.get(identity.uuid) ?? [],
+    })),
+    events: identityHistoryEvents,
+    associationCorrections,
+  });
+  for (const [uuid, identity] of identities)
+    identities.set(uuid, {
+      ...identity,
+      itsc: identityHistory.itscByUuid.get(uuid) ?? null,
+    });
 
   const candidatesByName = new Map<string, Set<string>>();
   for (const row of [...aliases, ...identities.values()].map((row) => ({
@@ -411,55 +497,38 @@ export async function assignInstructorIdentities(
     name: "name" in row ? row.name : row.canonical_name,
   }))) {
     const candidates = candidatesByName.get(normalized(row.name)) ?? new Set();
-    candidates.add(survivingUuid(row.uuid));
+    candidates.add(identityHistory.resolveUuid(row.uuid));
     candidatesByName.set(normalized(row.name), candidates);
   }
-  const canonicalByAlias = new Map(
-    observed.map((row) => [normalized(row.alias), row.name]),
-  );
-
-  function calibratedUuid(row: AssociationRow): string | undefined {
-    const courseCode = `${row.prefix} ${row.courseNumber}`;
-    // ponytail: scan the operator-sized ledger; index by scope if it grows.
-    const matches = affected.filter(
-      (association) =>
-        normalized(
-          canonicalByAlias.get(normalized(association.source_name)) ??
-            association.source_name,
-        ) === normalized(row.name) &&
-        association.course_code === courseCode &&
-        (association.term_code === null ||
-          association.term_code === row.term_code),
-    );
-    const exact = matches.filter(
-      (association) => association.term_code === row.term_code,
-    );
-    const targets = new Set(
-      (exact.length > 0 ? exact : matches).map((association) =>
-        survivingUuid(association.new_uuid),
-      ),
-    );
-    if (targets.size > 1)
-      throw new Error(
-        `Conflicting Instructor association calibration: ${row.name}, ${row.term_code}, ${courseCode}`,
-      );
-    return targets.size === 1 ? ([...targets][0] as string) : undefined;
+  const sourceAliasesByCanonical = new Map<string, Set<string>>();
+  for (const row of observed) {
+    const aliases =
+      sourceAliasesByCanonical.get(normalized(row.name)) ?? new Set<string>();
+    aliases.add(row.alias);
+    sourceAliasesByCanonical.set(normalized(row.name), aliases);
   }
 
   function resolveAssociation(row: AssociationRow): {
     uuid: string;
-    calibrated: boolean;
+    corrected: boolean;
   } {
-    const calibrated = calibratedUuid(row);
-    if (calibrated) return { uuid: calibrated, calibrated: true };
+    const courseCode = `${row.prefix} ${row.courseNumber}`;
+    const correction = identityHistory.matchAssociation({
+      sourceName: row.name,
+      sourceAliases: [
+        ...(sourceAliasesByCanonical.get(normalized(row.name)) ?? []),
+      ],
+      termCode: row.term_code,
+      courseCode,
+    });
+    if (correction) return { uuid: correction.targetUuid, corrected: true };
 
     const candidates = candidatesByName.get(normalized(row.name));
     if (!candidates?.size)
       throw new Error(`Unmatched Instructor identity: ${row.name}`);
     if (candidates.size === 1)
-      return { uuid: [...candidates][0] as string, calibrated: false };
+      return { uuid: [...candidates][0] as string, corrected: false };
 
-    const courseCode = `${row.prefix} ${row.courseNumber}`;
     const evidenceMatches = new Set([
       ...observed.flatMap((item) => {
         const aliasCandidates = candidatesByName.get(normalized(item.alias));
@@ -472,16 +541,16 @@ export async function assignInstructorIdentities(
           : [];
       }),
       ...previousAssociations.flatMap((item) =>
-        candidates.has(survivingUuid(item.uuid)) &&
+        candidates.has(identityHistory.resolveUuid(item.uuid)) &&
         item.term_code === row.term_code &&
         item.prefix === row.prefix &&
         item.courseNumber === row.courseNumber
-          ? [survivingUuid(item.uuid)]
+          ? [identityHistory.resolveUuid(item.uuid)]
           : [],
       ),
     ]);
     if (evidenceMatches.size === 1)
-      return { uuid: [...evidenceMatches][0] as string, calibrated: false };
+      return { uuid: [...evidenceMatches][0] as string, corrected: false };
     throw new Error(
       `Ambiguous Instructor identity: ${row.name}, ${row.term_code}, ${courseCode}`,
     );
@@ -493,12 +562,14 @@ export async function assignInstructorIdentities(
   }));
   const currentNamesByUuid = new Map<string, Set<string>>();
   const mergedSurvivors = new Set(
-    [...mergeRedirects.keys()].map((uuid) => survivingUuid(uuid)),
+    [...identityHistory.redirectByUuid.keys()].map((uuid) =>
+      identityHistory.resolveUuid(uuid),
+    ),
   );
-  for (const { name, uuid, calibrated } of assignments) {
+  for (const { name, uuid, corrected } of assignments) {
     if (!identities.has(uuid))
       throw new Error(`Unknown Instructor UUID: ${uuid}`);
-    if (calibrated) continue;
+    if (corrected) continue;
     const names = currentNamesByUuid.get(uuid) ?? new Set<string>();
     names.add(name);
     currentNamesByUuid.set(uuid, names);
@@ -564,9 +635,10 @@ export async function assignInstructorIdentities(
       source_uuid VARCHAR,
       new_uuid VARCHAR
     );
-    CREATE OR REPLACE TABLE instructor_split_affected_associations (
+    CREATE OR REPLACE TABLE instructor_identity_association_corrections (
+      correction_type VARCHAR,
       source_commit VARCHAR,
-      new_uuid VARCHAR,
+      target_uuid VARCHAR,
       source_name VARCHAR,
       term_code VARCHAR,
       course_code VARCHAR
@@ -626,11 +698,11 @@ export async function assignInstructorIdentities(
     const values = affected
       .map(
         (row) =>
-          `(${sqlLiteral(row.source_commit)}, ${sqlLiteral(row.new_uuid)}, ${sqlLiteral(row.source_name)}, ${sqlLiteral(row.term_code)}, ${sqlLiteral(row.course_code)})`,
+          `(${sqlLiteral(row.correction_type)}, ${sqlLiteral(row.source_commit)}, ${sqlLiteral(row.target_uuid)}, ${sqlLiteral(row.source_name)}, ${sqlLiteral(row.term_code)}, ${sqlLiteral(row.course_code)})`,
       )
       .join(",\n");
     await connection.run(
-      `INSERT INTO instructor_split_affected_associations VALUES ${values}`,
+      `INSERT INTO instructor_identity_association_corrections VALUES ${values}`,
     );
   }
 

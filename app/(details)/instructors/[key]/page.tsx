@@ -123,17 +123,18 @@ export async function renderInstructorPage(
     ]);
   const classes = scheduleResult.classes.filter(
     (scheduleClass) =>
-      !identity.identityHistory.affectedAssociations.some(
-        (affected) =>
-          (affected.termCode === undefined ||
-            affected.termCode === scheduleClass.termCode) &&
-          (affected.courseCode === undefined ||
-            affected.courseCode === scheduleClass.courseCode) &&
+      !identity.identityHistory.associationCorrections.some(
+        (correction) =>
+          correction.correctionType === "split" &&
+          correction.status === "needs-resolution" &&
+          (correction.termCode === undefined ||
+            correction.termCode === scheduleClass.termCode) &&
+          correction.courseCode === scheduleClass.courseCode &&
           scheduleClass.meetings.some((meeting) =>
             meeting.instructors.some(
               (instructor) =>
                 instructor.sourceName.trim().toLowerCase() ===
-                affected.sourceName.trim().toLowerCase(),
+                correction.sourceName.trim().toLowerCase(),
             ),
           ),
       ),

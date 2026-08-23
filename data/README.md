@@ -107,3 +107,5 @@ end-to-end pipeline test. Deferred model validation is tracked in
 [#99](https://github.com/ust-archive/ust-rankings/issues/99).
 
 The upstream dataset cards declare `license: other`; two inputs are private.
+
+Identity history is projected by the shared `lib/instructor-identity.ts` module. The fourth identity artifact retains its storage filename but now contains typed Instructor Association Corrections: `correction_type`, `source_commit`, `target_uuid`, `source_name`, optional `term_code`, and `course_code`. Accepted Course–Instructor UUIDs are authoritative; the `name` column is display data.

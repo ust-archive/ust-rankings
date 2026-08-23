@@ -257,11 +257,42 @@ function IdentityCard({
             ))}
           </ul>
         </section>
-        {identity.identityHistory.affectedAssociations.length ? (
-          <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-            Some historical associations were affected by an Instructor split.
-            They remain unassigned rather than being guessed.
-          </p>
+        {identity.identityHistory.associationCorrections.length ? (
+          <section className="flex flex-col gap-3">
+            <h3 className="font-semibold">Association Corrections</h3>
+            <ul className="flex list-none flex-col gap-2 ms-0 text-sm">
+              {identity.identityHistory.associationCorrections.map(
+                (correction) => (
+                  <li
+                    className={
+                      correction.correctionType === "split"
+                        ? "break-words rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950"
+                        : "break-words rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-950"
+                    }
+                    key={`${correction.correctionType}-${correction.sourceCommit}-${correction.targetUuid}-${correction.sourceName}-${correction.termCode ?? "all"}-${correction.courseCode}`}
+                  >
+                    <span className="font-medium">
+                      {correction.correctionType === "split"
+                        ? "Split scope needs resolution"
+                        : "Calibration applied"}
+                    </span>
+                    <span
+                      className={
+                        correction.correctionType === "split"
+                          ? "block text-xs text-amber-800"
+                          : "block text-xs text-emerald-800"
+                      }
+                    >
+                      {correction.sourceName} · {correction.courseCode} ·{" "}
+                      {correction.termCode
+                        ? rankingTermName(correction.termCode)
+                        : "Every Term"}
+                    </span>
+                  </li>
+                ),
+              )}
+            </ul>
+          </section>
         ) : null}
         {rankings?.historicalEvidence.length ? (
           <section className="flex flex-col gap-3 border-t border-slate-200 pt-4">

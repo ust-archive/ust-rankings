@@ -37,6 +37,7 @@ async function updateManifest(
   update: (manifest: {
     identities: Array<Record<string, unknown>>;
     identityEvents?: unknown[];
+    associationCorrections?: unknown[];
   }) => void,
 ) {
   if (!rankingDirectory) throw new Error("Ranking fixture was not configured");
@@ -130,16 +131,17 @@ test("production identity correction matching flags overlapping Reviews and pres
         type: "split",
         sourceUuid: ALPHA_UUID,
         newUuid: splitUuid,
-        newIdentity: splitIdentity,
         sourceCommit: fixtureSha,
-        affectedAssociations: [
-          {
-            sourceCommit: fixtureSha,
-            sourceName: "Alpha Instructor",
-            termCode: "2510",
-            courseCode: "COMP 2000",
-          },
-        ],
+      },
+    ];
+    manifest.associationCorrections = [
+      {
+        correctionType: "split",
+        targetUuid: splitUuid,
+        sourceCommit: fixtureSha,
+        sourceName: "Alpha Instructor",
+        termCode: "2510",
+        courseCode: "COMP 2000",
       },
     ];
   });
@@ -181,6 +183,15 @@ test("production identity correction matching flags overlapping Reviews and pres
   expect(
     await resolveReviewInstructorAssociationStatus(
       review({ termCode: "2430" }),
+    ),
+  ).toBe("resolved");
+  expect(
+    await resolveReviewInstructorAssociationStatus(
+      review({
+        instructorUuid: splitUuid,
+        course: { coursePrefix: "COMP", courseNumber: "2000" },
+        termCode: "2510",
+      }),
     ),
   ).toBe("resolved");
   expect(

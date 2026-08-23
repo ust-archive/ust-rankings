@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { once } from "node:events";
+import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
@@ -113,4 +114,21 @@ test("a hanging health response expires at the workflow deadline", async () => {
     ),
   });
   expect(healthChecks).toBe(1);
+});
+
+test("master deploy waits for the rebuilt Ranking Generation", async () => {
+  const [updateData, deploy] = await Promise.all([
+    readFile(resolve(".github/workflows/update-data.yml"), "utf8"),
+    readFile(resolve(".github/workflows/deploy.yml"), "utf8"),
+  ]);
+
+  expect(updateData).toContain("workflows: [CI]");
+  expect(updateData).toContain("if: github.event_name != 'workflow_run'");
+  expect(updateData).toContain("name: ranking-generation-sha");
+  expect(deploy).toContain("workflows: [Update data]");
+  expect(deploy).toContain("uses: actions/setup-node@v6");
+  expect(deploy).toContain("run-id: $" + "{{ github.event.workflow_run.id }}");
+  expect(deploy.indexOf("Deploy verified image")).toBeLessThan(
+    deploy.indexOf("Activate published Ranking Generation"),
+  );
 });

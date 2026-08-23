@@ -123,6 +123,14 @@ export async function makeRankingGeneration(
     includeScheduleCourse?: boolean;
     includePriorOnly?: boolean;
     identityEvents?: FixtureIdentityEvent[];
+    associationCorrections?: Array<{
+      correctionType: "split" | "calibration";
+      sourceCommit: string;
+      targetUuid: string;
+      sourceName: string;
+      termCode?: string;
+      courseCode: string;
+    }>;
     sameNameAssociations?: boolean;
     sameNameSplit?: boolean;
     firstCourseTitle?: string;
@@ -437,18 +445,33 @@ export async function makeRankingGeneration(
               ", ",
             )}) AS t(event_type, source_commit, uuid, itsc, retired_uuid, survivor_uuid, source_uuid, new_uuid)`,
     );
+    const associationCorrections = options.sameNameSplit
+      ? [
+          {
+            correctionType: "split" as const,
+            sourceCommit: fixtureSha,
+            targetUuid: fixtureIdentities[1]?.uuid ?? "",
+            sourceName: fixtureIdentities[1]?.canonicalName ?? "",
+            termCode: "2510",
+            courseCode: "MATH 1000",
+          },
+        ]
+      : (options.associationCorrections ?? []);
     await copy(
       "instructor-split-affected-associations.parquet",
-      options.sameNameSplit
-        ? `SELECT '${fixtureSha}' AS source_commit,
-          '${fixtureIdentities[1]?.uuid}' AS new_uuid,
-          '${fixtureIdentities[1]?.canonicalName}' AS source_name,
-          '2510' AS term_code,
-          'MATH ${options.sameNameSplit ? "1000" : "2000"}' AS course_code`
-        : `SELECT * FROM (VALUES
-          (NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR)
-        ) AS t(source_commit, new_uuid, source_name, term_code, course_code)
-        WHERE 1 = 0`,
+      associationCorrections.length === 0
+        ? `SELECT * FROM (VALUES
+          (NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR)
+        ) AS t(correction_type, source_commit, target_uuid, source_name, term_code, course_code)
+        WHERE 1 = 0`
+        : `SELECT * FROM (VALUES ${associationCorrections
+            .map(
+              (correction) =>
+                `('${correction.correctionType}', '${correction.sourceCommit}', '${correction.targetUuid}', '${correction.sourceName.replaceAll("'", "''")}', ${correction.termCode ? `'${correction.termCode}'` : "NULL"}, ${correction.courseCode ? `'${correction.courseCode}'` : "NULL"})`,
+            )
+            .join(
+              ", ",
+            )}) AS t(correction_type, source_commit, target_uuid, source_name, term_code, course_code)`,
     );
   } finally {
     connection.closeSync();

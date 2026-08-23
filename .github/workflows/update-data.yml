@@ -1,8 +1,9 @@
 name: Update data
 
 on:
-  push:
-    branches: [master]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   schedule:
     # 04:21 HKT daily.
     - cron: "21 20 * * *"
@@ -14,10 +15,16 @@ concurrency:
 
 jobs:
   update:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'master')
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-node@v6
         with:
@@ -77,7 +84,24 @@ jobs:
             --delete "*.parquet" \
             --commit-message "update(v0): $(TZ='Asia/Hong_Kong' date --iso-8601=seconds)"
 
+      - name: Record uploaded Ranking Generation
+        run: |
+          mkdir -p .deploy
+          sha="$(curl --fail --silent --show-error \
+            https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main \
+            | jq -r .sha)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "$sha" > .deploy/ranking-generation-sha.txt
+
+      - if: github.event_name == 'workflow_run'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ranking-generation-sha
+          path: .deploy/ranking-generation-sha.txt
+          retention-days: 1
+
       - name: Trigger commit-pinned runtime refresh
+        if: github.event_name != 'workflow_run'
         env:
           RANKINGS_REFRESH_URL: ${{ secrets.RANKINGS_REFRESH_URL }}
           RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
@@ -86,8 +110,4 @@ jobs:
             echo "Runtime refresh secrets are not configured; the daily fallback remains active."
             exit 0
           fi
-          sha="$(curl --fail --silent --show-error \
-            https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main \
-            | jq -r .sha)"
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
-          node scripts/refresh-rankings-runtime.ts "$sha"
+          node scripts/refresh-rankings-runtime.ts "$(<.deploy/ranking-generation-sha.txt)"

@@ -107,9 +107,10 @@ COPY (
 ) TO (getvariable('instructor_identity_events_parquet'))
   (FORMAT parquet, COMPRESSION zstd);
 
+-- Storage keeps the historical filename; the relation is domain-named.
 COPY (
-  SELECT source_commit, new_uuid, source_name, term_code, course_code
-  FROM instructor_split_affected_associations
-  ORDER BY source_commit, new_uuid, source_name
+  SELECT correction_type, source_commit, target_uuid, source_name, term_code, course_code
+  FROM instructor_identity_association_corrections
+  ORDER BY source_commit, correction_type, target_uuid, source_name
 ) TO (getvariable('instructor_split_affected_associations_parquet'))
   (FORMAT parquet, COMPRESSION zstd);

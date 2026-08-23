@@ -121,14 +121,15 @@ export async function resolveReviewInstructorAssociationStatus(
       ? `${review.course.coursePrefix} ${review.course.courseNumber}`
       : undefined;
     if (
-      identity.identityHistory.affectedAssociations.some(
-        (affected) =>
-          (!courseCode ||
-            !affected.courseCode ||
-            affected.courseCode === courseCode) &&
+      identity.identityHistory.associationCorrections.some(
+        (correction) =>
+          correction.correctionType === "split" &&
+          correction.status === "needs-resolution" &&
+          identity.instructor.uuid !== correction.targetUuid &&
+          (!courseCode || correction.courseCode === courseCode) &&
           (!review.termCode ||
-            !affected.termCode ||
-            affected.termCode === review.termCode),
+            !correction.termCode ||
+            correction.termCode === review.termCode),
       )
     )
       return "needs-resolution";

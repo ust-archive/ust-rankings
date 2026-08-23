@@ -8,6 +8,7 @@ import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { test } from "vitest";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const fixtureCommit = "0123456789abcdef0123456789abcdef01234567";
 
 async function copyQuery(
   connection: DuckDBConnection,
@@ -182,6 +183,7 @@ async function makePreviousGeneration(
   omittedName?: string,
   sharedIdentityNames?: readonly [string, string],
   sameName?: "resolved" | "ambiguous" | "merged" | "wildcard",
+  itscByName: Readonly<Record<string, string>> = {},
 ): Promise<string> {
   const names = [
     "ALPHA, Alice Beatrice",
@@ -216,10 +218,10 @@ async function makePreviousGeneration(
     );
   }
   const values = rows
-    .map(
-      ({ name, uuid }) =>
-        `('${uuid}', '${name.replaceAll("'", "''")}', NULL::VARCHAR)`,
-    )
+    .map(({ name, uuid }) => {
+      const itsc = itscByName[name];
+      return `('${uuid}', '${name.replaceAll("'", "''")}', ${itsc ? `'${itsc.replaceAll("'", "''")}'` : "NULL::VARCHAR"})`;
+    })
     .join(",");
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
@@ -236,24 +238,24 @@ async function makePreviousGeneration(
     await copyQuery(
       connection,
       join(directory, "instructor-aliases.parquet"),
-      `SELECT uuid, canonical_name AS name, 'fixture' AS source, 'fixture' AS source_commit, NULL::VARCHAR AS source_file FROM read_parquet('${parquet(directory, "instructor-identities")}')`,
+      `SELECT uuid, canonical_name AS name, 'fixture' AS source, '${fixtureCommit}' AS source_commit, NULL::VARCHAR AS source_file FROM read_parquet('${parquet(directory, "instructor-identities")}')`,
     );
     await copyQuery(
       connection,
       join(directory, "instructor-identity-events.parquet"),
       sameName === "resolved" || sameName === "wildcard"
-        ? "SELECT 'split' AS event_type, 'fixture' AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, NULL::VARCHAR AS retired_uuid, NULL::VARCHAR AS survivor_uuid, '00000000-0000-4000-8000-000000000091' AS source_uuid, '00000000-0000-4000-8000-000000000092' AS new_uuid"
+        ? `SELECT 'split' AS event_type, '${fixtureCommit}' AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, NULL::VARCHAR AS retired_uuid, NULL::VARCHAR AS survivor_uuid, '00000000-0000-4000-8000-000000000091' AS source_uuid, '00000000-0000-4000-8000-000000000092' AS new_uuid`
         : sameName === "merged"
-          ? "SELECT 'merge' AS event_type, 'fixture' AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, '00000000-0000-4000-8000-000000000092' AS retired_uuid, '00000000-0000-4000-8000-000000000091' AS survivor_uuid, NULL::VARCHAR AS source_uuid, NULL::VARCHAR AS new_uuid"
+          ? `SELECT 'merge' AS event_type, '${fixtureCommit}' AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, '00000000-0000-4000-8000-000000000092' AS retired_uuid, '00000000-0000-4000-8000-000000000091' AS survivor_uuid, NULL::VARCHAR AS source_uuid, NULL::VARCHAR AS new_uuid`
           : "SELECT NULL::VARCHAR AS event_type, NULL::VARCHAR AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, NULL::VARCHAR AS retired_uuid, NULL::VARCHAR AS survivor_uuid, NULL::VARCHAR AS source_uuid, NULL::VARCHAR AS new_uuid WHERE false",
     );
     await copyQuery(
       connection,
       join(directory, "instructor-split-affected-associations.parquet"),
       sameName === "resolved"
-        ? "SELECT 'fixture' AS source_commit, '00000000-0000-4000-8000-000000000092' AS new_uuid, 'Alex Lee' AS source_name, '2510' AS term_code, 'COMP 2000' AS course_code"
+        ? `SELECT '${fixtureCommit}' AS source_commit, '00000000-0000-4000-8000-000000000092' AS new_uuid, 'Alex Lee' AS source_name, '2510' AS term_code, 'COMP 2000' AS course_code`
         : sameName === "wildcard"
-          ? "SELECT 'fixture' AS source_commit, '00000000-0000-4000-8000-000000000092' AS new_uuid, 'Alex Lee' AS source_name, NULL::VARCHAR AS term_code, NULL::VARCHAR AS course_code"
+          ? `SELECT '${fixtureCommit}' AS source_commit, '00000000-0000-4000-8000-000000000092' AS new_uuid, 'Alex Lee' AS source_name, NULL::VARCHAR AS term_code, NULL::VARCHAR AS course_code`
           : "SELECT NULL::VARCHAR AS source_commit, NULL::VARCHAR AS new_uuid, NULL::VARCHAR AS source_name, NULL::VARCHAR AS term_code, NULL::VARCHAR AS course_code WHERE false",
     );
     if (sameName === "resolved")
@@ -646,12 +648,18 @@ test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () =
   }
 });
 
-test("merge corrections preserve aliases and apply only once", async () => {
+test("merge corrections preserve aliases, ITSC history, and apply only once", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-merge-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      undefined,
+      { "Dora Delta": "dora" },
+    );
     const corrections = join(temp, "corrections.json");
     await writeFile(
       corrections,
@@ -700,6 +708,14 @@ test("merge corrections preserve aliases and apply only once", async () => {
         ORDER BY name
       `),
       [{ name: "Cara Gamma" }, { name: "Dora Delta" }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT itsc
+        FROM read_parquet('${parquet(second, "instructor-identities")}')
+        WHERE uuid = '00000000-0000-4000-8000-000000000005'
+      `),
+      [{ itsc: "dora" }],
     );
   } finally {
     await rm(temp, { recursive: true, force: true });
@@ -769,9 +785,10 @@ test("split corrections preserve their identity and association once", async () 
         SELECT
           (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-identity-events")}') WHERE event_type = 'split')::INTEGER AS events,
           (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}'))::INTEGER AS associations,
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}') WHERE correction_type = 'split' AND target_uuid = '${newUuid}')::INTEGER AS typed_split,
           (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-aliases")}') WHERE uuid = '${newUuid}')::INTEGER AS aliases
       `),
-      [{ events: 1, associations: 1, aliases: 1 }],
+      [{ events: 1, associations: 1, typed_split: 1, aliases: 1 }],
     );
   } finally {
     await rm(temp, { recursive: true, force: true });
@@ -796,7 +813,7 @@ test("association calibrations reassign names within Course scopes", async () =>
             sourceCommit: "0123456789abcdef0123456789abcdef01234567",
           },
           {
-            sourceName: "ALPHA, Alice Beatrice",
+            sourceName: "Alice Beatrice ALPHA",
             courseCode: "COMP 1000",
             termCode: "2510",
             instructorUuid: "00000000-0000-4000-8000-000000000006",
@@ -843,16 +860,34 @@ test("association calibrations reassign names within Course scopes", async () =>
         SELECT count(DISTINCT lower(name))::INTEGER AS count
         FROM read_parquet('${parquet(second, "instructor-aliases")}')
         WHERE uuid = '00000000-0000-4000-8000-000000000006'
-          AND lower(name) IN ('alpha, alice beatrice', 'cara gamma')
+          AND lower(name) IN (
+            'alpha, alice beatrice',
+            'alice beatrice alpha',
+            'cara gamma'
+          )
       `),
-      [{ count: 2 }],
+      [{ count: 3 }],
     );
     assert.deepEqual(
       await rows(`
-        SELECT count(*)::INTEGER AS count
+        SELECT correction_type, target_uuid, term_code, course_code
         FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}')
+        ORDER BY correction_type, target_uuid, term_code NULLS LAST
       `),
-      [{ count: 2 }],
+      [
+        {
+          correction_type: "calibration",
+          target_uuid: "00000000-0000-4000-8000-000000000006",
+          term_code: "2510",
+          course_code: "COMP 1000",
+        },
+        {
+          correction_type: "calibration",
+          target_uuid: "00000000-0000-4000-8000-000000000006",
+          term_code: null,
+          course_code: "COMP 2000",
+        },
+      ],
     );
   } finally {
     await rm(temp, { recursive: true, force: true });
@@ -989,7 +1024,7 @@ test("name-only split evidence does not assign same-name Instructor UUIDs", asyn
     assert.notEqual(result.status, 0);
     assert.match(
       `${result.stderr}${result.stdout}`,
-      /Alex Lee, 2510, COMP 1000/,
+      /Invalid Instructor association correction/,
     );
   } finally {
     await rm(temp, { recursive: true, force: true });

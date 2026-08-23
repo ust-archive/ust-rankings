@@ -100,6 +100,97 @@ test("same-name Instructors remain distinct by prior Course Offering evidence", 
   ]);
 });
 
+test("Calibrations resolve raw associations while accepted bridge UUIDs stay authoritative", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "ranking-calibration-resolution-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      associationCorrections: [
+        {
+          correctionType: "calibration",
+          sourceCommit: fixtureSha,
+          targetUuid: "00000000-0000-4000-8000-000000000002",
+          sourceName: "Wrong Source Name",
+          termCode: "2510",
+          courseCode: "COMP 1000",
+        },
+      ],
+    }),
+  );
+  const {
+    getRankings,
+    resolveInstructorAssociations,
+    resolveObservedInstructorCourseOfferings,
+  } = await import("@/lib/rankings/server");
+  await expect(
+    resolveInstructorAssociations([
+      {
+        uuid: "00000000-0000-4000-8000-000000000001",
+        sourceName: "Wrong Source Name",
+        termCode: "2510",
+        courseCode: "COMP 1000",
+      },
+    ]),
+  ).resolves.toMatchObject([
+    {
+      status: "resolved",
+      instructor: { uuid: "00000000-0000-4000-8000-000000000002" },
+    },
+  ]);
+
+  const splitDirectoryRoot = await mkdtemp(
+    join(tmpdir(), "ranking-bridge-authority-"),
+  );
+  temporaryDirectories.push(splitDirectoryRoot);
+  await installRankingGeneration(
+    await makeRankingGeneration(splitDirectoryRoot, undefined, {
+      identityEvents: [
+        {
+          type: "split",
+          sourceUuid: "00000000-0000-4000-8000-000000000001",
+          newUuid: "00000000-0000-4000-8000-000000000002",
+          sourceCommit: fixtureSha,
+        },
+      ],
+      associationCorrections: [
+        {
+          correctionType: "split",
+          sourceCommit: fixtureSha,
+          targetUuid: "00000000-0000-4000-8000-000000000002",
+          sourceName: "Alpha Instructor",
+          termCode: "2510",
+          courseCode: "COMP 1000",
+        },
+      ],
+    }),
+  );
+  const course = await getRankings(
+    { type: "course", coursePrefix: "COMP", courseNumber: "1000" },
+    { termCode: "2510" },
+  );
+  expect(course.instructors).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        instructor: expect.objectContaining({
+          uuid: "00000000-0000-4000-8000-000000000001",
+        }),
+      }),
+    ]),
+  );
+  await expect(
+    resolveObservedInstructorCourseOfferings([
+      {
+        sourceName: "Alpha Instructor",
+        termCode: "2510",
+        coursePrefix: "COMP",
+        courseNumber: "1000",
+      },
+    ]),
+  ).resolves.toEqual([undefined]);
+});
+
 test("Instructor Course Offerings include retired merge-family UUIDs", async () => {
   const temporaryDirectory = await mkdtemp(
     join(tmpdir(), "ranking-merged-offerings-"),

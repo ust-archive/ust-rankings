@@ -39,7 +39,7 @@ All outputs are Parquet relations in `data/out/`:
 | `instructor-identities.parquet` | Current Canonical Instructor Name and optional ITSC by Instructor UUID. |
 | `instructor-aliases.parquet` | Source-observed Instructor names and provenance by Instructor UUID. |
 | `instructor-identity-events.parquet` | Append-only ITSC, merge, and split history. |
-| `instructor-split-affected-associations.parquet` | Append-only explicit Course scopes for splits and Instructor Association Calibrations. |
+| `instructor-split-affected-associations.parquet` | Append-only typed Instructor Association Corrections; columns are `correction_type`, `source_commit`, `target_uuid`, `source_name`, optional `term_code`, and `course_code`. The filename is retained for storage compatibility. |
 
 The rating relations contain dense longitudinal history. The ranking relations contain the same measures for the latest source Term; they do not contain a precomputed Rank, percentile, or population size. Consumers select a criterion and population, then rank `bayesian` dynamically.
 
@@ -51,7 +51,9 @@ Current source spellings are clustered conservatively. Token and initial matches
 
 The daily build applies [`data/instructor-identity-corrections.json`](../data/instructor-identity-corrections.json) idempotently, then carries its events and calibrations forward in the Ranking Generation. Complete Schedule history preserves every already-resolved Course Offering. A new ambiguous same-name Course Offering still stops publication until an operator records exact evidence; the pipeline does not guess from cross-Term similarity.
 
-An Instructor Association Calibration assigns one source-observed name on a Course to an existing Instructor UUID without merging identities. Omit `termCode` to calibrate every Term of that Course; include it to calibrate only that Course Offering. A Term-specific calibration takes precedence over a Course-wide calibration, and conflicting calibrations stop publication. The observed spelling remains alias evidence; its Course scope supplies the identity evidence.
+Instructor Identity History is the shared projection of append-only ITSC, merge, split, and Instructor Association Correction records. It owns merge redirects and cycle detection, ITSC history, scoped matching, Term-specific-over-Course specificity, and equal-specificity conflict rejection.
+
+An Instructor Association Calibration assigns one source-observed name on a Course to an existing Instructor UUID without merging identities. Omit `termCode` to calibrate every Term of that Course; include it to calibrate only that Course Offering. A Term-specific calibration takes precedence over a Course-wide calibration, and conflicting corrections stop publication. A split correction remains unresolved when a different UUID is presented; a Calibration resolves directly to its target. The observed spelling remains alias evidence; its Course scope supplies the identity evidence.
 
 ```json
 {
