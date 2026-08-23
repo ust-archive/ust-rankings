@@ -90,9 +90,4 @@ jobs:
             https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main \
             | jq -r .sha)"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
-          curl --fail --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer $RANKINGS_REFRESH_SECRET" \
-            --header "Content-Type: application/json" \
-            --data "{\"sha\":\"$sha\"}" \
-            "${RANKINGS_REFRESH_URL%/}/api/rankings/refresh"
+          node scripts/refresh-rankings-runtime.ts "$sha"
