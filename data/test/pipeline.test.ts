@@ -26,9 +26,15 @@ async function copyQuery(
 
 async function makeFixtures(
   dataDir: string,
-  { conflictingCatalog = false, sameName = false, extraSameName = false } = {},
+  {
+    conflictingCatalog = false,
+    sameName = false,
+    extraSameName = false,
+    lowInstructor = "Cara Gamma",
+  } = {},
 ): Promise<void> {
   const instance = await DuckDBInstance.create(":memory:");
+  const escapedLowInstructor = lowInstructor.replaceAll("'", "''");
   const connection = await instance.connect();
 
   try {
@@ -84,7 +90,7 @@ async function makeFixtures(
             ${sameName ? ", 'Alex Lee'" : ""}
           ]}], 'high', 'E', 'LEC'),
         (100, 'class-low', TIMESTAMP '2025-01-01', 'ACTIVE',
-          [{'instructors': ['Cara Gamma'${sameName ? ", 'Alex Lee'" : ""}]}], 'low', 'E', 'LEC'),
+          [{'instructors': ['${escapedLowInstructor}'${sameName ? ", 'Alex Lee'" : ""}]}], 'low', 'E', 'LEC'),
         (100, 'class-prior', TIMESTAMP '2025-01-01', 'ACTIVE',
           [{'instructors': ['Eve Epsilon'${extraSameName ? ", 'Alex Lee'" : ""}]}], 'prior', 'E', 'LEC')
       ) AS classes(term_num, number, "timestamp", status, schedules, course_id, role, type)
@@ -99,7 +105,7 @@ async function makeFixtures(
         ('high-review', TIMESTAMP '2025-01-01', 'ACTIVE', '2025-26 Fall', 3, 4,
           5.0, 5.0, 5.0, 4.0, 'COMP', '1000', [{'name': 'ALPHA, ALICE BEATRICE'}]),
         ('low-review', TIMESTAMP '2025-01-01', 'ACTIVE', '2025-26 Fall', 0, 2,
-          1.0, 1.0, 1.0, 2.0, 'COMP', '2000', [{'name': 'Cara Gamma'}]),
+          1.0, 1.0, 1.0, 2.0, 'COMP', '2000', [{'name': '${escapedLowInstructor}'}]),
         ('history-review', TIMESTAMP '2024-08-01', 'ACTIVE', '2024-25 Summer', 0, 0,
           3.0, 3.0, 3.0, 3.0, 'HIST', '3000', [{'name': 'Dora Delta'}]),
         ('deleted-review', TIMESTAMP '2025-01-01', 'ACTIVE', '2025-26 Fall', 1, 1,
@@ -134,9 +140,9 @@ async function makeFixtures(
           100, false, 0.8, 4.8, 0.2, 4.7, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ib'),
         ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'DELTA, A B', 4,
           100, false, 0.8, 4.8, 0.2, 4.6, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'id'),
-        ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '2000', 'L1', 'Cara Gamma', 3,
+        ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '2000', 'L1', '${escapedLowInstructor}', 3,
           100, false, 0.8, 2.0, 0.2, 2.0, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ic'),
-        ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '2000', 'L1', 'Cara Gamma', 33,
+        ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '2000', 'L1', '${escapedLowInstructor}', 33,
           100, false, 0.8, 2.1, 0.2, 2.1, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ic')
         ${
           sameName
@@ -262,7 +268,10 @@ async function makePreviousGeneration(
       await copyQuery(
         connection,
         join(directory, "course-instructors.parquet"),
-        "SELECT '00000000-0000-4000-8000-000000000091' AS uuid, 'Alex Lee' AS name, 100 AS term_num, '2510' AS term_code, 'COMP' AS subject, '1000' AS code",
+        `SELECT * FROM (VALUES
+          ('00000000-0000-4000-8000-000000000091', 'Alex Lee', 100, '2510', 'COMP', '1000'),
+          ('00000000-0000-4000-8000-000000000092', 'Alex Lee', 100, '2510', 'COMP', '2000')
+        ) AS associations(uuid, name, term_num, term_code, subject, code)`,
       );
   } finally {
     connection.closeSync();
@@ -726,6 +735,79 @@ test("split corrections preserve their identity and association once", async () 
   const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-split-"));
   try {
     const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { lowInstructor: "Cara Split" });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    const sourceCommit = "0123456789abcdef0123456789abcdef01234567";
+    const newUuid = "00000000-0000-4000-8000-000000000099";
+    await writeFile(
+      corrections,
+      JSON.stringify({
+        events: [
+          {
+            type: "split",
+            sourceUuid: "00000000-0000-4000-8000-000000000003",
+            newUuid,
+            sourceCommit,
+            newIdentity: {
+              uuid: newUuid,
+              canonicalName: "Cara Gamma",
+              aliases: [
+                {
+                  name: "Cara Split",
+                  source: "ranking-generation",
+                  sourceCommit,
+                  sourceFile: "instructor-ratings.parquet",
+                },
+              ],
+            },
+            affectedAssociations: [
+              {
+                sourceName: "Cara Split",
+                termCode: "2510",
+                courseCode: "COMP 2000",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+
+    assert.deepEqual(
+      await rows(`
+        SELECT DISTINCT uuid
+        FROM read_parquet('${parquet(second, "course-instructors")}')
+        WHERE subject = 'COMP' AND code = '2000'
+      `),
+      [{ uuid: newUuid }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-identity-events")}') WHERE event_type = 'split')::INTEGER AS events,
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}'))::INTEGER AS associations,
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}') WHERE correction_type = 'split' AND target_uuid = '${newUuid}')::INTEGER AS typed_split,
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-aliases")}') WHERE uuid = '${newUuid}')::INTEGER AS aliases
+      `),
+      [{ events: 1, associations: 1, typed_split: 1, aliases: 1 }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("a split correction without target evidence fails publication", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-split-fail-"));
+  try {
+    const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
     const previous = await makePreviousGeneration(join(temp, "previous"));
     const corrections = join(temp, "corrections.json");
@@ -748,7 +830,6 @@ test("split corrections preserve their identity and association once", async () 
                   name: "Cara Gamma",
                   source: "ranking-generation",
                   sourceCommit,
-                  sourceFile: "instructor-ratings.parquet",
                 },
               ],
             },
@@ -763,32 +844,14 @@ test("split corrections preserve their identity and association once", async () 
         ],
       }),
     );
-    const first = runPipeline(dataDir, join(temp, "first"), {
-      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
-      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
-    });
-    const second = runPipeline(dataDir, join(temp, "second"), {
-      RANKINGS_PREVIOUS_GENERATION_DIR: first,
-      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
-    });
 
-    assert.deepEqual(
-      await rows(`
-        SELECT DISTINCT uuid
-        FROM read_parquet('${parquet(second, "course-instructors")}')
-        WHERE name = 'Cara Gamma'
-      `),
-      [{ uuid: newUuid }],
-    );
-    assert.deepEqual(
-      await rows(`
-        SELECT
-          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-identity-events")}') WHERE event_type = 'split')::INTEGER AS events,
-          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}'))::INTEGER AS associations,
-          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}') WHERE correction_type = 'split' AND target_uuid = '${newUuid}')::INTEGER AS typed_split,
-          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-aliases")}') WHERE uuid = '${newUuid}')::INTEGER AS aliases
-      `),
-      [{ events: 1, associations: 1, typed_split: 1, aliases: 1 }],
+    assert.throws(
+      () =>
+        runPipeline(dataDir, join(temp, "failed"), {
+          RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+          RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+        }),
+      /Ambiguous Instructor identity: Cara Gamma, 2510, COMP 2000/,
     );
   } finally {
     await rm(temp, { recursive: true, force: true });
