@@ -684,6 +684,35 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
   }
 });
 
+test("walk-forward backtests reject unestablished SFQ comparability", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-backtest-evidence-"));
+  try {
+    const sfqEvidencePath = join(temp, "sfq-comparability.json");
+    await writeFile(sfqEvidencePath, "{}\n");
+    const result = spawnSync(
+      process.execPath,
+      [join(root, "src", "backtest.ts")],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          DATA_DIR: temp,
+          RANKINGS_PREVIOUS_GENERATION_DIR: temp,
+          RANKINGS_SFQ_COMPARABILITY_EVIDENCE: sfqEvidencePath,
+        },
+      },
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.stderr,
+      /must establish one 1-5 scale across at least two source versions/,
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
 test("walk-forward backtests compare candidates across historical cutoffs", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-backtest-"));
   try {
@@ -691,10 +720,16 @@ test("walk-forward backtests compare candidates across historical cutoffs", asyn
     await makeFixtures(dataDir, { backtestHistory: true });
     const previous = await makePreviousGeneration(join(temp, "previous"));
     const reportPath = join(temp, "model-validation.json");
-    const sfqEvidencePath = join(temp, "sfq-comparability.md");
+    const sfqEvidencePath = join(temp, "sfq-comparability.json");
     await writeFile(
       sfqEvidencePath,
-      "SFQ versions use one comparable scale.\n",
+      `${JSON.stringify({
+        schemaVersion: 1,
+        conclusion: "comparable",
+        ratingScale: "1-5",
+        basis: "Generated SFQ fixtures use one stable survey scale.",
+        sourceVersions: ["fixture-v1", "fixture-v2"],
+      })}\n`,
     );
     const result = spawnSync(
       process.execPath,
@@ -765,6 +800,10 @@ test("walk-forward backtests compare candidates across historical cutoffs", asyn
     assert.equal(report.sfqUncertaintyCalibrationAvailable, true);
     assert.equal(report.sfqComparabilityEstablished, true);
     assert.match(report.sfqComparabilityEvidence.sha256, /^[0-9a-f]{64}$/);
+    assert.deepEqual(report.sfqComparabilityEvidence.sourceVersions, [
+      "fixture-v1",
+      "fixture-v2",
+    ]);
     assert.equal(report.candidates[0].cutoffs[0].rankingStability, null);
   } finally {
     await rm(temp, { recursive: true, force: true });

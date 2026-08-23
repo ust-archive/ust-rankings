@@ -9,21 +9,18 @@ import { DuckDBInstance } from "@duckdb/node-api";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const previousGeneration = process.env.RANKINGS_PREVIOUS_GENERATION_DIR;
 const localDataDir = process.env.DATA_DIR;
-const sfqComparabilityEvidence =
+const sfqComparabilityEvidencePath =
   process.env.RANKINGS_SFQ_COMPARABILITY_EVIDENCE;
-if (!previousGeneration)
-  throw new Error("RANKINGS_PREVIOUS_GENERATION_DIR is required");
 const revisionNames = [
   "CATALOG_REVISION",
   "SCHEDULE_REVISION",
   "REVIEWS_REVISION",
   "SFQ_REVISION",
 ] as const;
-if (!sfqComparabilityEvidence)
+if (!previousGeneration)
+  throw new Error("RANKINGS_PREVIOUS_GENERATION_DIR is required");
+if (!sfqComparabilityEvidencePath)
   throw new Error("RANKINGS_SFQ_COMPARABILITY_EVIDENCE is required");
-const sfqComparabilityEvidenceSha256 = createHash("sha256")
-  .update(await readFile(resolve(sfqComparabilityEvidence)))
-  .digest("hex");
 if (
   !localDataDir &&
   revisionNames.some((name) => !/^[0-9a-f]{40}$/.test(process.env[name] ?? ""))
@@ -31,6 +28,51 @@ if (
   throw new Error(
     "Backtests require DATA_DIR or immutable 40-character Catalog, Schedule, Reviews, and SFQ commits",
   );
+
+const sfqComparabilityEvidenceBytes = await readFile(
+  resolve(sfqComparabilityEvidencePath),
+);
+let sfqComparabilityRecord: unknown;
+try {
+  sfqComparabilityRecord = JSON.parse(sfqComparabilityEvidenceBytes.toString());
+} catch {
+  throw new Error("SFQ comparability evidence must be valid JSON");
+}
+if (
+  !sfqComparabilityRecord ||
+  typeof sfqComparabilityRecord !== "object" ||
+  !("schemaVersion" in sfqComparabilityRecord) ||
+  sfqComparabilityRecord.schemaVersion !== 1 ||
+  !("conclusion" in sfqComparabilityRecord) ||
+  sfqComparabilityRecord.conclusion !== "comparable" ||
+  !("ratingScale" in sfqComparabilityRecord) ||
+  sfqComparabilityRecord.ratingScale !== "1-5" ||
+  !("basis" in sfqComparabilityRecord) ||
+  typeof sfqComparabilityRecord.basis !== "string" ||
+  !sfqComparabilityRecord.basis.trim() ||
+  !("sourceVersions" in sfqComparabilityRecord) ||
+  !Array.isArray(sfqComparabilityRecord.sourceVersions) ||
+  sfqComparabilityRecord.sourceVersions.length < 2 ||
+  sfqComparabilityRecord.sourceVersions.some(
+    (version) => typeof version !== "string" || !version.trim(),
+  ) ||
+  new Set(sfqComparabilityRecord.sourceVersions).size !==
+    sfqComparabilityRecord.sourceVersions.length
+)
+  throw new Error(
+    "SFQ comparability evidence must establish one 1-5 scale across at least two source versions",
+  );
+const sfqSourceVersions = sfqComparabilityRecord.sourceVersions as string[];
+if (
+  !localDataDir &&
+  !sfqSourceVersions.includes(process.env.SFQ_REVISION as string)
+)
+  throw new Error(
+    "SFQ comparability evidence does not cover the selected SFQ revision",
+  );
+const sfqComparabilityEvidenceSha256 = createHash("sha256")
+  .update(sfqComparabilityEvidenceBytes)
+  .digest("hex");
 
 const localSourceFiles = [
   "catalog/courses.parquet",
@@ -362,6 +404,7 @@ try {
     sfqComparabilityEstablished: true,
     sfqComparabilityEvidence: {
       sha256: sfqComparabilityEvidenceSha256,
+      sourceVersions: sfqSourceVersions,
     },
     sfqComparability:
       "The supplied, hashed comparability evidence was required before respondent counts were used for confidence and interval calibration.",
