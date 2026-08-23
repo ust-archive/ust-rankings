@@ -64,14 +64,15 @@ COPY (
 -- Course-instructor evidence is a normalized bridge. It includes historical
 -- associations inferred from ratings as well as current schedule assignments.
 COPY (
-  SELECT
+  SELECT DISTINCT
     links.uuid,
-    links.name,
+    identities.canonical_name AS name,
     links.term_num,
     terms.term_code,
     links.subject,
     links.code
   FROM instructor_identity_assignments AS links
+  JOIN instructor_identities AS identities USING (uuid)
   JOIN terms USING (term_num)
   ORDER BY term_num, subject, code, uuid
 ) TO (getvariable('course_instructors_parquet'))

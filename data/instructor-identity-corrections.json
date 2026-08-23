@@ -1,4 +1,28 @@
 {
+  "calibrations": [
+    {
+      "sourceName": "LI, Xi",
+      "courseCode": "COMP 2011",
+      "instructorUuid": "77aad6a2-f1dc-4e84-acdb-cdd4a16b6f7a",
+      "instructorName": "LI, Xin",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "sourceName": "LI, Xi",
+      "courseCode": "COMP 2611",
+      "instructorUuid": "77aad6a2-f1dc-4e84-acdb-cdd4a16b6f7a",
+      "instructorName": "LI, Xin",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "sourceName": "YAN, Dengfeng",
+      "courseCode": "CIVL 3420",
+      "termCode": "2430",
+      "instructorUuid": "b0c68636-93ef-4245-b3ec-c201f151fcfb",
+      "instructorName": "DENG, Yangfan",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    }
+  ],
   "events": [
     {
       "type": "merge",

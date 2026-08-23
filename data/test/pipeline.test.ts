@@ -778,6 +778,87 @@ test("split corrections preserve their identity and association once", async () 
   }
 });
 
+test("association calibrations reassign names within Course scopes", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-calibration-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    await writeFile(
+      corrections,
+      JSON.stringify({
+        calibrations: [
+          {
+            sourceName: "Cara Gamma",
+            courseCode: "COMP 2000",
+            instructorUuid: "00000000-0000-4000-8000-000000000006",
+            sourceCommit: "0123456789abcdef0123456789abcdef01234567",
+          },
+          {
+            sourceName: "ALPHA, Alice Beatrice",
+            courseCode: "COMP 1000",
+            termCode: "2510",
+            instructorUuid: "00000000-0000-4000-8000-000000000006",
+            sourceCommit: "0123456789abcdef0123456789abcdef01234567",
+          },
+        ],
+      }),
+    );
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+    });
+
+    assert.deepEqual(
+      await rows(`
+        SELECT DISTINCT code, uuid, name
+        FROM read_parquet('${parquet(second, "course-instructors")}')
+        WHERE subject = 'COMP' AND code IN ('1000', '2000')
+          AND uuid IN (
+            '00000000-0000-4000-8000-000000000001',
+            '00000000-0000-4000-8000-000000000003',
+            '00000000-0000-4000-8000-000000000006'
+          )
+        ORDER BY code
+      `),
+      [
+        {
+          code: "1000",
+          uuid: "00000000-0000-4000-8000-000000000006",
+          name: "Eve Epsilon",
+        },
+        {
+          code: "2000",
+          uuid: "00000000-0000-4000-8000-000000000006",
+          name: "Eve Epsilon",
+        },
+      ],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT count(DISTINCT lower(name))::INTEGER AS count
+        FROM read_parquet('${parquet(second, "instructor-aliases")}')
+        WHERE uuid = '00000000-0000-4000-8000-000000000006'
+          AND lower(name) IN ('alpha, alice beatrice', 'cara gamma')
+      `),
+      [{ count: 2 }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT count(*)::INTEGER AS count
+        FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}')
+      `),
+      [{ count: 2 }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
 test("same-name Instructors stay distinct when split history identifies their associations", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
   try {

@@ -72,6 +72,10 @@ The preferred public display spelling of an Instructor's name. Schedule and UST 
 **Instructor Alias**:
 A source-observed spelling associated with an Instructor. An alias is not globally unique and does not alone establish Instructor identity. When names collide, identity requires durable evidence such as an ITSC or identity-history association to a specific Course and Term.
 
+**Instructor Association Calibration**:
+An operator-reviewed assignment of an Instructor Alias on one Course or Course Offering to an Instructor UUID. A Course calibration applies to every Term; a Course Offering calibration applies only to its Term. It corrects source spelling or association evidence without merging the Instructors who otherwise use that alias.
+_Avoid_: Instructor Merge when only an association is corrected
+
 **TBA**:
 A special value indicating that no Instructor is specified for a Class. It does not identify an Instructor.
 
