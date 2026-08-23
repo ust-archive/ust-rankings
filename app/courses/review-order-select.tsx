@@ -2,6 +2,15 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  REVIEW_ORDERS,
   type ReviewOrder,
   reviewOrder,
 } from "@/lib/contributions/review-order";
@@ -20,24 +29,30 @@ export function ReviewOrderSelect() {
   const selected = reviewOrder(orders.length === 1 ? orders[0] : undefined);
 
   return (
-    <label className="flex items-center gap-2 text-sm font-medium">
-      Review Order
-      <select
-        className="min-h-11 rounded-lg border border-input bg-background px-3 py-2 text-foreground"
-        name="order"
-        onChange={(event) => {
-          const next = new URLSearchParams(searchParams);
-          next.set("order", event.target.value);
-          router.replace(`${pathname}?${next}`, { scroll: false });
-        }}
-        value={selected}
+    <Select
+      name="order"
+      onValueChange={(value) => {
+        const next = new URLSearchParams(searchParams);
+        next.set("order", reviewOrder(value));
+        router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+      }}
+      value={selected}
+    >
+      <SelectTrigger
+        aria-label="Review Order"
+        className="h-9 w-auto min-w-24 gap-2 px-2.5"
       >
-        {Object.entries(labels).map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </select>
-    </label>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="end">
+        <SelectGroup>
+          {REVIEW_ORDERS.map((order) => (
+            <SelectItem key={order} value={order}>
+              {labels[order]}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
