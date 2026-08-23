@@ -136,6 +136,58 @@ test("querySchedule reconstructs latest events before ACTIVE filtering", async (
   expect(JSON.stringify(page)).not.toContain('"section":"T1"');
 });
 
+test("unambiguous Instructor names resolve newer Course Offerings", async () => {
+  await configureFixture();
+  const { getSchedule } = await import("@/lib/schedule/server");
+
+  const details = await getSchedule({
+    type: "instructor",
+    uuids: ["00000000-0000-4000-8000-000000000001"],
+  });
+  if (details.type !== "instructor")
+    throw new Error("Expected Instructor Schedule details");
+  expect(details.classes.map((item) => item.courseCode)).toEqual(["COMP 2000"]);
+});
+
+test("same-name Instructor Schedule associations stay distinct by UUID", async () => {
+  const root = await mkdtemp(join(tmpdir(), "schedule-same-name-"));
+  const rankingRoot = await mkdtemp(join(tmpdir(), "ranking-same-name-"));
+  temporaryDirectories.push(root, rankingRoot);
+  await Promise.all([
+    installRankingGeneration(
+      await makeRankingGeneration(rankingRoot, undefined, {
+        includeScheduleCourse: true,
+        sameNameSplit: true,
+      }),
+    ),
+    installScheduleGeneration(await makeScheduleGeneration(root, "same-name")),
+  ]);
+  const { getSchedule, querySchedule } = await import("@/lib/schedule/server");
+
+  const page = await querySchedule({ termCode: "2510" });
+  expect(
+    page.results.map((offering) => [
+      offering.courseCode,
+      offering.classes[0]?.meetings[0]?.instructors[0]?.uuid,
+    ]),
+  ).toEqual([
+    ["COMP 2000", "00000000-0000-4000-8000-000000000001"],
+    ["MATH 1000", "00000000-0000-4000-8000-000000000002"],
+  ]);
+  const first = await getSchedule({
+    type: "instructor",
+    uuids: ["00000000-0000-4000-8000-000000000001"],
+  });
+  const second = await getSchedule({
+    type: "instructor",
+    uuids: ["00000000-0000-4000-8000-000000000002"],
+  });
+  if (first.type !== "instructor" || second.type !== "instructor")
+    throw new Error("Expected Instructor Schedule details");
+  expect(first.classes.map((item) => item.courseCode)).toEqual(["COMP 2000"]);
+  expect(second.classes.map((item) => item.courseCode)).toEqual(["MATH 1000"]);
+});
+
 test("unmatched Class source names stay unresolved and TBA is omitted", async () => {
   await configureFixture();
   const { querySchedule } = await import("@/lib/schedule/server");

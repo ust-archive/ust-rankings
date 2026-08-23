@@ -9,6 +9,7 @@ import {
   type DuckDBValue,
 } from "@duckdb/node-api";
 import { normalizeInstructorUuid } from "@/lib/instructor-identity";
+import type { ObservedInstructorCourseOffering } from "@/lib/rankings/server";
 import { testGenerationDirectory } from "@/lib/test-generation";
 
 const ARTIFACTS = ["classes.parquet", "courses.parquet"] as const;
@@ -872,19 +873,14 @@ type NestedMeeting = {
   instructors?: unknown;
 };
 
-async function rankingInstructorUuids(names: string[]) {
-  try {
-    const { resolveObservedInstructorNames } = await import(
-      "@/lib/rankings/server"
-    );
-    return await resolveObservedInstructorNames(names);
-  } catch {
-    return new Map<string, string>();
-  }
+function sourceInstructorKey(association: ObservedInstructorCourseOffering) {
+  return `${association.sourceName}\0${association.termCode}\0${association.coursePrefix}\0${association.courseNumber}`;
 }
 
-function collectSourceNames(rows: Array<Record<string, unknown>>) {
-  const names: string[] = [];
+function collectSourceInstructorAssociations(
+  rows: Array<Record<string, unknown>>,
+) {
+  const associations: ObservedInstructorCourseOffering[] = [];
   for (const row of rows) {
     for (const meeting of (row.schedules as NestedMeeting[] | undefined) ??
       []) {
@@ -892,15 +888,41 @@ function collectSourceNames(rows: Array<Record<string, unknown>>) {
         []) {
         const sourceName = text(value).trim();
         if (sourceName && sourceName.toLocaleLowerCase() !== "tba")
-          names.push(sourceName);
+          associations.push({
+            sourceName,
+            termCode: text(row.term_code),
+            coursePrefix: text(row.prefix),
+            courseNumber: text(row.course_number),
+          });
       }
     }
   }
-  return names;
+  return associations;
+}
+
+async function rankingInstructorUuids(
+  associations: ObservedInstructorCourseOffering[],
+) {
+  try {
+    const { resolveObservedInstructorCourseOfferings } = await import(
+      "@/lib/rankings/server"
+    );
+    const resolved =
+      await resolveObservedInstructorCourseOfferings(associations);
+    return new Map(
+      associations.flatMap((association, index) => {
+        const uuid = resolved[index];
+        return uuid ? [[sourceInstructorKey(association), uuid]] : [];
+      }),
+    );
+  } catch {
+    return new Map<string, string>();
+  }
 }
 
 async function mapRows(rows: Array<Record<string, unknown>>) {
-  const instructors = await rankingInstructorUuids(collectSourceNames(rows));
+  const sourceAssociations = collectSourceInstructorAssociations(rows);
+  const instructors = await rankingInstructorUuids(sourceAssociations);
   const offerings = new Map<string, CourseOffering>();
   for (const row of rows) {
     const key = `${row.term_num}\0${row.course_id}`;
@@ -950,7 +972,14 @@ async function mapRows(rows: Array<Record<string, unknown>>) {
           const sourceName = text(value).trim();
           if (!sourceName || sourceName.toLocaleLowerCase() === "tba")
             return [];
-          const uuid = instructors.get(sourceName);
+          const uuid = instructors.get(
+            sourceInstructorKey({
+              sourceName,
+              termCode: offering.termCode,
+              coursePrefix: offering.coursePrefix,
+              courseNumber: offering.courseNumber,
+            }),
+          );
           return [uuid ? { sourceName, uuid } : { sourceName }];
         }),
       }),
@@ -1095,46 +1124,82 @@ export async function getSchedule(
       )
         throw new InvalidScheduleQueryError("Invalid Instructor UUIDs.");
       const wanted = new Set(instructorUuids as string[]);
+      let associations: Array<{
+        termCode: string;
+        coursePrefix: string;
+        courseNumber: string;
+      }> = [];
       let sourceNames: string[] = [];
       try {
-        const { observedNamesForInstructorUuids } = await import(
-          "@/lib/rankings/server"
-        );
-        sourceNames = (await observedNamesForInstructorUuids([...wanted])).map(
-          (name) => name.trim().toLocaleLowerCase(),
-        );
+        const {
+          courseOfferingsForInstructorUuids,
+          observedNamesForInstructorUuids,
+        } = await import("@/lib/rankings/server");
+        [associations, sourceNames] = await Promise.all([
+          courseOfferingsForInstructorUuids([...wanted]),
+          observedNamesForInstructorUuids([...wanted]),
+        ]);
+        sourceNames = [
+          ...new Set(
+            sourceNames.map((name) => name.trim().toLocaleLowerCase()),
+          ),
+        ];
       } catch {
+        associations = [];
         sourceNames = [];
       }
-      if (sourceNames.length === 0)
+      if (associations.length === 0 && sourceNames.length === 0)
         return {
           type: "instructor",
           instructorUuids: [...wanted],
           classes: [],
         };
-      const parameters = Object.fromEntries(
-        sourceNames.map((sourceName, index) => [
+      const parameters = Object.fromEntries([
+        ...associations.flatMap((association, index) => [
+          [`term${index}`, association.termCode],
+          [`prefix${index}`, association.coursePrefix],
+          [`number${index}`, association.courseNumber],
+        ]),
+        ...sourceNames.map((sourceName, index) => [
           `sourceName${index}`,
           sourceName,
         ]),
+      ]);
+      const offeringPredicates = associations.map(
+        (_, index) =>
+          `(course.term_code = $term${index} AND course.prefix = $prefix${index} AND course.number = $number${index})`,
       );
-      const placeholders = sourceNames
-        .map((_, index) => `$sourceName${index}`)
-        .join(", ");
-      const rows = await queryRows(
-        accepted.connection,
-        `${offeringSql(accepted.directory)} WHERE EXISTS (
+      if (sourceNames.length > 0) {
+        const placeholders = sourceNames
+          .map((_, index) => `$sourceName${index}`)
+          .join(", ");
+        offeringPredicates.push(`EXISTS (
           SELECT 1
           FROM unnest(class.schedules) AS schedules(meeting),
                unnest(meeting.instructors) AS instructors(name)
           WHERE lower(trim(name)) IN (${placeholders})
-        ) ORDER BY course.term_num, course.prefix, course.number, class.section`,
+        )`);
+      }
+      const where = offeringPredicates.join(" OR ");
+      // ponytail: identity evidence is Course Offering-grained; use Class-grained evidence if the source adds it.
+      const rows = await queryRows(
+        accepted.connection,
+        `${offeringSql(accepted.directory)} WHERE ${where} ORDER BY course.term_num, course.prefix, course.number, class.section`,
         parameters,
       );
+      const classes = (await mapRows(rows))
+        .flatMap((offering) => offering.classes)
+        .filter((scheduleClass) =>
+          scheduleClass.meetings.some((meeting) =>
+            meeting.instructors.some(
+              (instructor) => instructor.uuid && wanted.has(instructor.uuid),
+            ),
+          ),
+        );
       return {
         type: "instructor",
         instructorUuids: [...wanted],
-        classes: (await mapRows(rows)).flatMap((offering) => offering.classes),
+        classes,
       };
     }
     const { coursePrefix, courseNumber } = validateCourse(

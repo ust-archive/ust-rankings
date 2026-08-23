@@ -67,10 +67,20 @@ An immutable opaque identifier assigned to every Instructor. It remains the Inst
 The HKUST account identifier used, when available, to distinguish an Instructor. An Instructor has at most one current ITSC.
 
 **Canonical Instructor Name**:
-The preferred public display spelling of an Instructor's name. Schedule and UST Space spellings take precedence; an SFQ spelling is used only when neither is available.
+The preferred public display spelling of an Instructor's name. Schedule and UST Space spellings take precedence; an SFQ spelling is used only when neither is available. Several Instructors may share one Canonical Instructor Name; the name never establishes identity.
 
 **Instructor Alias**:
-A source-observed spelling associated with an Instructor. An alias is not globally unique and does not alone establish Instructor identity.
+A source-observed spelling associated with an Instructor. An alias is not globally unique and does not alone establish Instructor identity. When names collide, identity requires durable evidence such as an ITSC or identity-history association to a specific Course and Term.
+
+**Instructor Identity History**:
+The append-only record of ITSC additions, merges, splits, and Instructor Association Corrections carried across Ranking Generations.
+
+**Instructor Association Correction**:
+An append-only Course or Course Offering scope connecting an Instructor Alias to an Instructor UUID. It records either an association affected by a split or an Instructor Association Calibration.
+
+**Instructor Association Calibration**:
+An operator-reviewed Instructor Association Correction. A Course calibration applies to every Term; a Course Offering calibration applies only to its Term. It corrects source spelling or association evidence without merging the Instructors who otherwise use that alias.
+_Avoid_: Instructor Merge when only an association is corrected
 
 **TBA**:
 A special value indicating that no Instructor is specified for a Class. It does not identify an Instructor.

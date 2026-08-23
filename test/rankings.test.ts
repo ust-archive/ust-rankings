@@ -44,6 +44,186 @@ test("Instructor UUIDs resolve to current display names in one generation read",
   );
 });
 
+test("same-name Instructors remain distinct by UUID when split history identifies them", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "ranking-same-name-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      sameNameSplit: true,
+    }),
+  );
+  const { queryRankings } = await import("@/lib/rankings/server");
+
+  const page = await queryRankings({
+    entity: "instructor",
+    preset: "learning",
+    termCode: "2510",
+  });
+  expect(
+    page.results
+      .filter((row) => row.canonicalName === "Alpha Instructor")
+      .map((row) => row.uuid)
+      .sort(),
+  ).toEqual([
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+  ]);
+});
+
+test("same-name Instructors remain distinct by prior Course Offering evidence", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "ranking-same-name-offerings-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      sameNameAssociations: true,
+    }),
+  );
+  const { queryRankings } = await import("@/lib/rankings/server");
+
+  const page = await queryRankings({
+    entity: "instructor",
+    preset: "learning",
+    termCode: "2510",
+  });
+  expect(
+    page.results
+      .filter((row) => row.canonicalName === "Alpha Instructor")
+      .map((row) => row.uuid)
+      .sort(),
+  ).toEqual([
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+  ]);
+});
+
+test("Calibrations resolve raw associations while accepted bridge UUIDs stay authoritative", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "ranking-calibration-resolution-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      associationCorrections: [
+        {
+          correctionType: "calibration",
+          sourceCommit: fixtureSha,
+          targetUuid: "00000000-0000-4000-8000-000000000002",
+          sourceName: "Wrong Source Name",
+          termCode: "2510",
+          courseCode: "COMP 1000",
+        },
+      ],
+    }),
+  );
+  const {
+    getRankings,
+    resolveInstructorAssociations,
+    resolveObservedInstructorCourseOfferings,
+  } = await import("@/lib/rankings/server");
+  await expect(
+    resolveInstructorAssociations([
+      {
+        uuid: "00000000-0000-4000-8000-000000000001",
+        sourceName: "Wrong Source Name",
+        termCode: "2510",
+        courseCode: "COMP 1000",
+      },
+    ]),
+  ).resolves.toMatchObject([
+    {
+      status: "resolved",
+      instructor: { uuid: "00000000-0000-4000-8000-000000000002" },
+    },
+  ]);
+
+  const splitDirectoryRoot = await mkdtemp(
+    join(tmpdir(), "ranking-bridge-authority-"),
+  );
+  temporaryDirectories.push(splitDirectoryRoot);
+  await installRankingGeneration(
+    await makeRankingGeneration(splitDirectoryRoot, undefined, {
+      identityEvents: [
+        {
+          type: "split",
+          sourceUuid: "00000000-0000-4000-8000-000000000001",
+          newUuid: "00000000-0000-4000-8000-000000000002",
+          sourceCommit: fixtureSha,
+        },
+      ],
+      associationCorrections: [
+        {
+          correctionType: "split",
+          sourceCommit: fixtureSha,
+          targetUuid: "00000000-0000-4000-8000-000000000002",
+          sourceName: "Alpha Instructor",
+          termCode: "2510",
+          courseCode: "COMP 1000",
+        },
+      ],
+    }),
+  );
+  const course = await getRankings(
+    { type: "course", coursePrefix: "COMP", courseNumber: "1000" },
+    { termCode: "2510" },
+  );
+  expect(course.instructors).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        instructor: expect.objectContaining({
+          uuid: "00000000-0000-4000-8000-000000000001",
+        }),
+      }),
+    ]),
+  );
+  await expect(
+    resolveObservedInstructorCourseOfferings([
+      {
+        sourceName: "Alpha Instructor",
+        termCode: "2510",
+        coursePrefix: "COMP",
+        courseNumber: "1000",
+      },
+    ]),
+  ).resolves.toEqual([undefined]);
+});
+
+test("Instructor Course Offerings include retired merge-family UUIDs", async () => {
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "ranking-merged-offerings-"),
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  await installRankingGeneration(
+    await makeRankingGeneration(temporaryDirectory, undefined, {
+      identityEvents: [
+        {
+          type: "merge",
+          retiredUuid: "00000000-0000-4000-8000-000000000002",
+          survivorUuid: "00000000-0000-4000-8000-000000000001",
+          sourceCommit: fixtureSha,
+        },
+      ],
+    }),
+  );
+  const { courseOfferingsForInstructorUuids } = await import(
+    "@/lib/rankings/server"
+  );
+
+  await expect(
+    courseOfferingsForInstructorUuids(["00000000-0000-4000-8000-000000000001"]),
+  ).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        coursePrefix: "MATH",
+        courseNumber: "2000",
+      }),
+    ]),
+  );
+});
+
 test("the original bright grade palette is preserved", () => {
   expect(gradeColor(0)).toEqual([237, 27, 47]);
   expect(gradeColor(0.25)).toEqual([250, 166, 26]);
@@ -676,6 +856,10 @@ for (const [malformation, label] of [
   ["wrong-latest-term", "an invalid latest-Term relation"],
   ["failed-smoke-query", "a failed representative smoke query"],
   ["tba-alias", "a TBA Instructor Alias"],
+  [
+    "ambiguous-canonical-name",
+    "same-name Instructors without identity history",
+  ],
 ] as const) {
   test(`queryRankings rejects ${label}`, async () => {
     const temporaryDirectory = await mkdtemp(

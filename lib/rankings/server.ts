@@ -9,7 +9,12 @@ import {
   type DuckDBValue,
 } from "@duckdb/node-api";
 import {
+  buildInstructorIdentityHistory,
   INSTRUCTOR_UUID_PATTERN,
+  type InstructorAssociationCorrection,
+  type InstructorIdentifierHistory,
+  type InstructorIdentityHistory,
+  type InstructorIdentityHistoryEvent,
   ITSC_PATTERN,
   normalizeInstructorKey,
 } from "@/lib/instructor-identity";
@@ -381,41 +386,17 @@ export type InstructorIdentity = {
   }>;
 };
 
-type AffectedInstructorAssociation = {
-  sourceCommit: string;
-  sourceName: string;
-  termCode?: string;
-  courseCode?: string;
-};
+export type InstructorAssociationCorrectionRecord =
+  | (InstructorAssociationCorrection & {
+      correctionType: "split";
+      status: "needs-resolution";
+    })
+  | (InstructorAssociationCorrection & {
+      correctionType: "calibration";
+      status: "resolved";
+    });
 
-export type InstructorIdentityEvent =
-  | {
-      type: "itsc-added";
-      uuid: string;
-      itsc: string;
-      sourceCommit: string;
-    }
-  | {
-      type: "merge";
-      retiredUuid: string;
-      survivorUuid: string;
-      sourceCommit: string;
-    }
-  | {
-      type: "split";
-      sourceUuid: string;
-      newUuid: string;
-      newIdentity: InstructorIdentity;
-      sourceCommit: string;
-      affectedAssociations: AffectedInstructorAssociation[];
-    };
-
-type InstructorIdentifierHistory = {
-  type: "itsc";
-  value: string;
-  status: "current" | "retired";
-  sourceCommit: string;
-};
+export type InstructorIdentityEvent = InstructorIdentityHistoryEvent;
 
 type Manifest = {
   schemaMajor: number;
@@ -423,6 +404,7 @@ type Manifest = {
   artifacts: Record<string, { sha256: string; size: number }>;
   identities: InstructorIdentity[];
   identityEvents?: InstructorIdentityEvent[];
+  associationCorrections?: InstructorAssociationCorrection[];
 };
 
 type Generation = {
@@ -431,14 +413,12 @@ type Generation = {
   directory: string;
   instance: DuckDBInstance;
   connection: DuckDBConnection;
-  identitiesByCurrentName: Map<string, InstructorIdentity>;
+  identitiesByCurrentName: Map<string, InstructorIdentity[]>;
   identitiesByObservedName: Map<string, InstructorIdentity[]>;
   identitiesByUuid: Map<string, InstructorIdentity>;
   identitiesByItsc: Map<string, InstructorIdentity>;
   currentNameByUuid: Map<string, string>;
-  redirectByUuid: Map<string, string>;
-  identifiersByUuid: Map<string, InstructorIdentifierHistory[]>;
-  identityEvents: InstructorIdentityEvent[];
+  identityHistory: InstructorIdentityHistory;
   readers: number;
   retired: boolean;
   closed: boolean;
@@ -603,9 +583,7 @@ export type InstructorIdentityLookup = {
   identityHistory: {
     identifiers: InstructorIdentifierHistory[];
     events: InstructorIdentityEvent[];
-    affectedAssociations: Array<
-      AffectedInstructorAssociation & { status: "needs-resolution" }
-    >;
+    associationCorrections: InstructorAssociationCorrectionRecord[];
   };
 };
 
@@ -861,41 +839,60 @@ function normalizedInstructorName(name: string) {
   return name.trim().toLocaleLowerCase();
 }
 
+type InstructorCourseOfferingEvidence = {
+  uuid: string;
+  termCode: string;
+  coursePrefix: string;
+  courseNumber: string;
+};
+
+async function instructorCourseOfferingEvidence(
+  connection: DuckDBConnection,
+  directory: string,
+) {
+  return (
+    await queryRows(
+      connection,
+      `SELECT DISTINCT uuid, term_code, subject, code FROM read_parquet('${sqlPath(directory, "course-instructors.parquet")}') ORDER BY uuid, term_code, subject, code`,
+    )
+  ).map((row) => ({
+    uuid: String(row.uuid),
+    termCode: String(row.term_code),
+    coursePrefix: String(row.subject),
+    courseNumber: String(row.code),
+  }));
+}
+
 type InstructorRegistry = Pick<
   Generation,
   | "sha"
   | "identitiesByUuid"
   | "identitiesByItsc"
   | "identitiesByObservedName"
-  | "redirectByUuid"
-  | "identifiersByUuid"
-  | "identityEvents"
+  | "identityHistory"
 >;
 
 function resolvedInstructorIdentity(
   generation: InstructorRegistry,
   identity: InstructorIdentity,
 ) {
-  let uuid = identity.uuid;
-  while (generation.redirectByUuid.has(uuid))
-    uuid = generation.redirectByUuid.get(uuid) as string;
-  return generation.identitiesByUuid.get(uuid) as InstructorIdentity;
+  return generation.identitiesByUuid.get(
+    generation.identityHistory.resolveUuid(identity.uuid),
+  ) as InstructorIdentity;
 }
 
 function validateIdentities(
   manifest: Manifest,
   rankingIdentities: Array<{ uuid: string; name: string }>,
+  courseOfferings: InstructorCourseOfferingEvidence[],
 ) {
   const uuidPattern = INSTRUCTOR_UUID_PATTERN;
   const itscPattern = ITSC_PATTERN;
   const observedNames = new Map<string, InstructorIdentity[]>();
-  const currentNames = new Map<string, InstructorIdentity>();
+  const currentNames = new Map<string, InstructorIdentity[]>();
+  const canonicalNames = new Map<string, InstructorIdentity[]>();
   const identitiesByUuid = new Map<string, InstructorIdentity>();
   const identitiesByItsc = new Map<string, InstructorIdentity>();
-  const identifiersByUuid = new Map<string, InstructorIdentifierHistory[]>();
-  const redirectByUuid = new Map<string, string>();
-  const canonicalNames = new Set<string>();
-  const claimedItscs = new Map<string, string>();
 
   for (const identity of manifest.identities) {
     const canonicalName = identity.canonicalName?.trim().toLocaleLowerCase();
@@ -905,25 +902,14 @@ function validateIdentities(
       identitiesByUuid.has(identity.uuid) ||
       !canonicalName ||
       canonicalName === "tba" ||
-      canonicalNames.has(canonicalName) ||
       (identity.itsc !== undefined && (!itsc || !itscPattern.test(itsc)))
     )
       throw new Error("Invalid Instructor identity");
     identitiesByUuid.set(identity.uuid, identity);
-    canonicalNames.add(canonicalName);
-    if (itsc) {
-      if (claimedItscs.has(itsc)) throw new Error("ITSC history is not unique");
-      identity.itsc = itsc;
-      claimedItscs.set(itsc, identity.uuid);
-      identifiersByUuid.set(identity.uuid, [
-        {
-          type: "itsc",
-          value: itsc,
-          status: "current",
-          sourceCommit: manifest.sourceCommit,
-        },
-      ]);
-    }
+    const canonicalOwners = canonicalNames.get(canonicalName) ?? [];
+    canonicalOwners.push(identity);
+    canonicalNames.set(canonicalName, canonicalOwners);
+    if (itsc) identity.itsc = itsc;
     if (
       !Array.isArray(identity.aliases) ||
       identity.aliases.length === 0 ||
@@ -964,126 +950,95 @@ function validateIdentities(
         .map((alias) => alias.name),
     ]) {
       const normalized = normalizedInstructorName(observedName);
-      const owner = currentNames.get(normalized);
-      if (owner && owner.uuid !== identity.uuid)
-        throw new Error("Current Instructor name is ambiguous");
-      currentNames.set(normalized, identity);
+      const owners = currentNames.get(normalized) ?? [];
+      if (!owners.some((owner) => owner.uuid === identity.uuid))
+        owners.push(identity);
+      currentNames.set(normalized, owners);
     }
   }
 
   const identityEvents = manifest.identityEvents ?? [];
   if (!Array.isArray(identityEvents))
     throw new Error("Invalid Instructor identity event history");
-  const eventKeys = new Set<string>();
-  const splitTargets = new Set<string>();
-  const addedItscs = new Set<string>();
-  for (const event of identityEvents) {
-    const eventKey = JSON.stringify(event);
-    if (eventKeys.has(eventKey) || !/^[0-9a-f]{40}$/.test(event.sourceCommit))
-      throw new Error("Invalid Instructor identity event history");
-    eventKeys.add(eventKey);
-    if (event.type === "itsc-added") {
-      const identity = identitiesByUuid.get(event.uuid);
-      const itsc = event.itsc?.trim().toLocaleLowerCase();
-      const claimedBy = claimedItscs.get(itsc);
-      if (
-        !identity ||
-        !itscPattern.test(itsc) ||
-        (claimedBy !== undefined && claimedBy !== event.uuid) ||
-        addedItscs.has(itsc)
-      )
-        throw new Error("Invalid ITSC addition");
-      addedItscs.add(itsc);
-      const identifiers = identifiersByUuid.get(event.uuid) ?? [];
-      for (const identifier of identifiers) identifier.status = "retired";
-      const projected = identifiers.find(
-        (identifier) => identifier.value === itsc,
-      );
-      if (projected) {
-        projected.status = "current";
-        projected.sourceCommit = event.sourceCommit;
-      } else
-        identifiers.push({
-          type: "itsc",
-          value: itsc,
-          status: "current",
-          sourceCommit: event.sourceCommit,
-        });
-      identifiersByUuid.set(event.uuid, identifiers);
-      claimedItscs.set(itsc, event.uuid);
-      identity.itsc = itsc;
-    } else if (event.type === "merge") {
-      if (
-        event.retiredUuid === event.survivorUuid ||
-        !identitiesByUuid.has(event.retiredUuid) ||
-        !identitiesByUuid.has(event.survivorUuid) ||
-        redirectByUuid.has(event.retiredUuid)
-      )
-        throw new Error("Invalid Instructor merge");
-      redirectByUuid.set(event.retiredUuid, event.survivorUuid);
-    } else if (event.type === "split") {
-      if (
-        event.sourceUuid === event.newUuid ||
-        !identitiesByUuid.has(event.sourceUuid) ||
-        !identitiesByUuid.has(event.newUuid) ||
-        event.newIdentity?.uuid !== event.newUuid ||
-        identitiesByUuid.get(event.newUuid)?.canonicalName !==
-          event.newIdentity.canonicalName ||
-        JSON.stringify(
-          identitiesByUuid
-            .get(event.newUuid)
-            ?.aliases.slice(0, event.newIdentity.aliases.length),
-        ) !== JSON.stringify(event.newIdentity.aliases) ||
-        event.newIdentity.aliases.length === 0 ||
-        event.newIdentity.aliases.some(
-          (alias) => alias.sourceCommit !== event.sourceCommit,
-        ) ||
-        splitTargets.has(event.newUuid) ||
-        !Array.isArray(event.affectedAssociations) ||
-        event.affectedAssociations.length === 0 ||
-        event.affectedAssociations.some(
-          (association) =>
-            !association.sourceName?.trim() ||
-            !/^[0-9a-f]{40}$/.test(association.sourceCommit) ||
-            (association.termCode !== undefined &&
-              !/^[0-9]{4}$/.test(association.termCode)) ||
-            (association.courseCode !== undefined &&
-              !/^[A-Z]{2,8} [0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?$/.test(
-                association.courseCode,
-              )),
-        )
-      )
-        throw new Error("Invalid Instructor split");
-      splitTargets.add(event.newUuid);
-    } else {
-      throw new Error("Unknown Instructor identity event");
-    }
-  }
+  const identityHistory = buildInstructorIdentityHistory({
+    sourceCommit: manifest.sourceCommit,
+    identities: manifest.identities.map((identity) => ({
+      uuid: identity.uuid,
+      itsc: identity.itsc,
+      aliasSourceCommits: identity.aliases.map((alias) => alias.sourceCommit),
+    })),
+    events: identityEvents,
+    associationCorrections: manifest.associationCorrections ?? [],
+  });
+  for (const identity of identitiesByUuid.values())
+    identity.itsc = identityHistory.itscByUuid.get(identity.uuid);
+  for (const [itsc, uuid] of identityHistory.uuidByItsc)
+    identitiesByItsc.set(
+      itsc,
+      identitiesByUuid.get(uuid) as InstructorIdentity,
+    );
 
-  const finalUuid = (uuid: string) => {
-    const visited = new Set<string>();
-    let current = uuid;
-    while (redirectByUuid.has(current)) {
-      if (visited.has(current)) throw new Error("Cyclic Instructor merge");
-      visited.add(current);
-      current = redirectByUuid.get(current) as string;
-    }
-    return current;
-  };
-  for (const uuid of identitiesByUuid.keys()) finalUuid(uuid);
-  for (const [itsc, uuid] of claimedItscs) {
-    const identity = identitiesByUuid.get(uuid);
-    if (!identity) throw new Error("Unknown ITSC owner");
-    identitiesByItsc.set(itsc, identity);
+  const offeringKeysByUuid = new Map<string, Set<string>>();
+  for (const offering of courseOfferings) {
+    if (!identitiesByUuid.has(offering.uuid))
+      throw new Error("Instructor association has an unknown UUID");
+    const keys = offeringKeysByUuid.get(offering.uuid) ?? new Set<string>();
+    keys.add(
+      `${offering.termCode}\0${offering.coursePrefix}\0${offering.courseNumber}`,
+    );
+    offeringKeysByUuid.set(offering.uuid, keys);
   }
-  for (const [uuid, identifiers] of identifiersByUuid) {
-    const final = finalUuid(uuid);
-    const preferred = identitiesByUuid.get(final)?.itsc;
-    for (const identifier of identifiers)
-      identifier.status =
-        uuid === final && identifier.value === preferred
-          ? "current"
-          : "retired";
+  for (const owners of canonicalNames.values()) {
+    if (owners.length < 2) continue;
+    const uuids = new Set(owners.map((identity) => identity.uuid));
+    const distinguished = new Set<string>();
+    for (const event of identityEvents) {
+      if (
+        event.type === "split" &&
+        uuids.has(event.sourceUuid) &&
+        uuids.has(event.newUuid)
+      ) {
+        distinguished.add(event.sourceUuid);
+        distinguished.add(event.newUuid);
+      } else if (
+        event.type === "merge" &&
+        uuids.has(event.retiredUuid) &&
+        uuids.has(event.survivorUuid)
+      ) {
+        distinguished.add(event.retiredUuid);
+        distinguished.add(event.survivorUuid);
+      }
+    }
+    const fingerprintByUuid = new Map(
+      owners.map((identity) => [
+        identity.uuid,
+        [...(offeringKeysByUuid.get(identity.uuid) ?? [])].sort().join("\n"),
+      ]),
+    );
+    const offeringFingerprintCounts = new Map<string, number>();
+    for (const fingerprint of fingerprintByUuid.values())
+      if (fingerprint)
+        offeringFingerprintCounts.set(
+          fingerprint,
+          (offeringFingerprintCounts.get(fingerprint) ?? 0) + 1,
+        );
+    for (const identity of owners) {
+      const hasUniqueName = [
+        identity.canonicalName,
+        ...identity.aliases.map((alias) => alias.name),
+      ].some(
+        (name) =>
+          observedNames.get(normalizedInstructorName(name))?.length === 1,
+      );
+      const fingerprint = fingerprintByUuid.get(identity.uuid);
+      if (
+        hasUniqueName ||
+        (fingerprint && offeringFingerprintCounts.get(fingerprint) === 1)
+      )
+        distinguished.add(identity.uuid);
+    }
+    if (distinguished.size < owners.length - 1)
+      throw new Error("Same-name Instructors lack distinguishing history");
   }
 
   const currentNameByUuid = new Map<string, string>();
@@ -1091,7 +1046,9 @@ function validateIdentities(
     const identity = identitiesByUuid.get(uuid);
     if (
       !identity ||
-      currentNames.get(normalizedInstructorName(name))?.uuid !== uuid
+      !currentNames
+        .get(normalizedInstructorName(name))
+        ?.some((candidate) => candidate.uuid === uuid)
     )
       throw new Error("Instructor registry does not match the generation");
     const existing = currentNameByUuid.get(uuid);
@@ -1105,9 +1062,7 @@ function validateIdentities(
     identitiesByUuid,
     identitiesByItsc,
     currentNameByUuid,
-    redirectByUuid,
-    identifiersByUuid,
-    identityEvents,
+    identityHistory,
   };
 }
 
@@ -1128,7 +1083,7 @@ function lookupInstructorIdentity(
   );
   const familyUuids = family.map((identity) => identity.uuid);
   const familySet = new Set(familyUuids);
-  const events = registry.identityEvents.filter((event) => {
+  const events = registry.identityHistory.events.filter((event) => {
     if (event.type === "itsc-added") return familySet.has(event.uuid);
     if (event.type === "merge")
       return (
@@ -1148,55 +1103,32 @@ function lookupInstructorIdentity(
     },
     identityHistory: {
       identifiers: familyUuids.flatMap(
-        (uuid) => registry.identifiersByUuid.get(uuid) ?? [],
+        (uuid) => registry.identityHistory.identifiersByUuid.get(uuid) ?? [],
       ),
       events,
-      affectedAssociations: events.flatMap((event) =>
-        event.type === "split"
-          ? event.affectedAssociations.map((association) => ({
-              ...association,
-              status: "needs-resolution" as const,
-            }))
-          : [],
-      ),
+      associationCorrections: registry.identityHistory
+        .correctionsForUuids(familySet)
+        .map(
+          (correction): InstructorAssociationCorrectionRecord =>
+            correction.correctionType === "split"
+              ? {
+                  ...correction,
+                  correctionType: "split",
+                  status: "needs-resolution",
+                }
+              : {
+                  ...correction,
+                  correctionType: "calibration",
+                  status: "resolved",
+                },
+        ),
     },
   };
 }
 
-function associationNeedsResolution(
-  registry: InstructorRegistry,
-  association: {
-    sourceName: string;
-    termCode: string;
-    courseCode: string;
-  },
-) {
-  return registry.identityEvents.some(
-    (event) =>
-      event.type === "split" &&
-      event.affectedAssociations.some(
-        (affected) =>
-          normalizedInstructorName(affected.sourceName) ===
-            normalizedInstructorName(association.sourceName) &&
-          (affected.termCode === undefined ||
-            affected.termCode === association.termCode) &&
-          (affected.courseCode === undefined ||
-            affected.courseCode === association.courseCode),
-      ),
-  );
-}
-
-function resolveInstructorAssociation(
-  registry: Generation,
-  association: {
-    uuid: string;
-    sourceName: string;
-    termCode: string;
-    courseCode: string;
-  },
-) {
-  if (associationNeedsResolution(registry, association)) return undefined;
-  const identity = registry.identitiesByUuid.get(association.uuid);
+function resolveInstructorAssociation(registry: Generation, uuid: string) {
+  // Course–Instructor UUIDs are authoritative in an accepted Ranking Generation.
+  const identity = registry.identitiesByUuid.get(uuid);
   return identity ? resolvedInstructorIdentity(registry, identity) : undefined;
 }
 
@@ -1214,6 +1146,7 @@ async function applyIdentityParquet(
   }
   const extraIdentities = [...manifest.identities];
   const extraEvents = [...(manifest.identityEvents ?? [])];
+  const extraCorrections = [...(manifest.associationCorrections ?? [])];
   const identityRows = await queryRows(
     connection,
     `SELECT uuid, canonical_name, itsc FROM read_parquet('${sqlPath(directory, "instructor-identities.parquet")}')`,
@@ -1252,69 +1185,74 @@ async function applyIdentityParquet(
         : String(row.itsc),
     aliases: aliasesByUuid.get(String(row.uuid)) ?? [],
   }));
-  const affectedRows = await queryRows(
-    connection,
-    `SELECT source_commit, new_uuid, source_name, term_code, course_code FROM read_parquet('${sqlPath(directory, "instructor-split-affected-associations.parquet")}')`,
+  const correctionPath = sqlPath(
+    directory,
+    "instructor-split-affected-associations.parquet",
   );
-  const affectedByNewUuid = new Map<string, AffectedInstructorAssociation[]>();
-  for (const row of affectedRows) {
-    const newUuid = String(row.new_uuid);
-    const affected = affectedByNewUuid.get(newUuid) ?? [];
-    affected.push({
+  const correctionSchema = await queryRows(
+    connection,
+    `DESCRIBE SELECT * FROM read_parquet('${correctionPath}')`,
+  );
+  if (
+    JSON.stringify(
+      correctionSchema.map((row) => [row.column_name, row.column_type]),
+    ) !==
+    JSON.stringify([
+      ["correction_type", "VARCHAR"],
+      ["source_commit", "VARCHAR"],
+      ["target_uuid", "VARCHAR"],
+      ["source_name", "VARCHAR"],
+      ["term_code", "VARCHAR"],
+      ["course_code", "VARCHAR"],
+    ])
+  )
+    throw new Error("Instructor association correction schema mismatch");
+  const correctionRows = await queryRows(
+    connection,
+    `SELECT correction_type, source_commit, target_uuid, source_name, term_code, course_code FROM read_parquet('${correctionPath}')`,
+  );
+  manifest.associationCorrections = [
+    ...correctionRows.map((row) => ({
+      correctionType: String(row.correction_type) as "split" | "calibration",
       sourceCommit: String(row.source_commit),
+      targetUuid: String(row.target_uuid),
       sourceName: String(row.source_name),
-      termCode:
-        row.term_code === null || row.term_code === undefined
-          ? undefined
-          : String(row.term_code),
+      ...(row.term_code === null || row.term_code === undefined
+        ? {}
+        : { termCode: String(row.term_code) }),
       courseCode:
         row.course_code === null || row.course_code === undefined
-          ? undefined
+          ? ""
           : String(row.course_code),
-    });
-    affectedByNewUuid.set(newUuid, affected);
-  }
-  const identitiesByUuid = new Map(
-    manifest.identities.map((identity) => [identity.uuid, identity]),
-  );
-  const identityEvents: InstructorIdentityEvent[] = eventRows.flatMap(
-    (row): InstructorIdentityEvent[] => {
+    })),
+    ...extraCorrections,
+  ];
+  const identityEvents: InstructorIdentityEvent[] = eventRows.map(
+    (row): InstructorIdentityEvent => {
       const type = String(row.event_type);
       const sourceCommit = String(row.source_commit);
       if (type === "itsc-added")
-        return [
-          {
-            type: "itsc-added" as const,
-            uuid: String(row.uuid),
-            itsc: String(row.itsc),
-            sourceCommit,
-          },
-        ];
+        return {
+          type: "itsc-added",
+          uuid: String(row.uuid),
+          itsc: String(row.itsc),
+          sourceCommit,
+        };
       if (type === "merge")
-        return [
-          {
-            type: "merge" as const,
-            retiredUuid: String(row.retired_uuid),
-            survivorUuid: String(row.survivor_uuid),
-            sourceCommit,
-          },
-        ];
-      if (type === "split") {
-        const newIdentity = identitiesByUuid.get(String(row.new_uuid));
-        if (!newIdentity) return [];
-        return [
-          {
-            type: "split" as const,
-            sourceUuid: String(row.source_uuid),
-            newUuid: String(row.new_uuid),
-            newIdentity,
-            sourceCommit,
-            affectedAssociations:
-              affectedByNewUuid.get(String(row.new_uuid)) ?? [],
-          },
-        ];
-      }
-      return [];
+        return {
+          type: "merge",
+          retiredUuid: String(row.retired_uuid),
+          survivorUuid: String(row.survivor_uuid),
+          sourceCommit,
+        };
+      if (type === "split")
+        return {
+          type: "split",
+          sourceUuid: String(row.source_uuid),
+          newUuid: String(row.new_uuid),
+          sourceCommit,
+        };
+      throw new Error("Unknown Instructor identity event");
     },
   );
   const known = new Set(manifest.identities.map((identity) => identity.uuid));
@@ -1352,6 +1290,7 @@ async function loadGeneration(
           uuid: String(row.uuid),
           name: String(row.name),
         })),
+        await instructorCourseOfferingEvidence(connection, directory),
       );
       openGenerationCount += 1;
       return {
@@ -1365,9 +1304,7 @@ async function loadGeneration(
         identitiesByUuid: identityNames.identitiesByUuid,
         identitiesByItsc: identityNames.identitiesByItsc,
         currentNameByUuid: identityNames.currentNameByUuid,
-        redirectByUuid: identityNames.redirectByUuid,
-        identifiersByUuid: identityNames.identifiersByUuid,
-        identityEvents: identityNames.identityEvents,
+        identityHistory: identityNames.identityHistory,
         readers: 0,
         retired: false,
         closed: false,
@@ -1399,21 +1336,24 @@ async function loadInstructorRegistry(
       throw new Error("Invalid Instructor registry manifest");
     const instance = await DuckDBInstance.create(":memory:");
     const connection = await instance.connect();
+    let identities: ReturnType<typeof validateIdentities>;
     try {
       await applyIdentityParquet(connection, directory, manifest);
+      identities = validateIdentities(
+        manifest,
+        [],
+        await instructorCourseOfferingEvidence(connection, directory),
+      );
     } finally {
       connection.closeSync();
       instance.closeSync();
     }
-    const identities = validateIdentities(manifest, []);
     return {
       sha: manifest.sourceCommit,
       identitiesByUuid: identities.identitiesByUuid,
       identitiesByItsc: identities.identitiesByItsc,
       identitiesByObservedName: identities.observedNames,
-      redirectByUuid: identities.redirectByUuid,
-      identifiersByUuid: identities.identifiersByUuid,
-      identityEvents: identities.identityEvents,
+      identityHistory: identities.identityHistory,
     };
   } catch (error) {
     throw new RankingsUnavailableError({ cause: error });
@@ -1509,6 +1449,155 @@ export async function resolveObservedInstructorNames(names: string[]) {
   return resolved;
 }
 
+function observedInstructorCandidateUuids(
+  registry: InstructorRegistry,
+  sourceName: string,
+) {
+  return new Set(
+    (
+      registry.identitiesByObservedName.get(
+        normalizedInstructorName(sourceName),
+      ) ?? []
+    ).map((identity) => resolvedInstructorIdentity(registry, identity).uuid),
+  );
+}
+
+export type ObservedInstructorCourseOffering = {
+  sourceName: string;
+  termCode: string;
+  coursePrefix: string;
+  courseNumber: string;
+};
+
+export async function resolveObservedInstructorCourseOfferings(
+  associations: ObservedInstructorCourseOffering[],
+) {
+  if (associations.length === 0) return [];
+  const registry = await instructorRegistry();
+  const resolveCandidate = (
+    history: InstructorIdentityHistory,
+    association: ObservedInstructorCourseOffering,
+    uuid?: string,
+  ) => {
+    const resolution = history.resolveAssociation({
+      sourceName: association.sourceName,
+      termCode: association.termCode,
+      courseCode: `${association.coursePrefix} ${association.courseNumber}`,
+      ...(uuid ? { uuid } : {}),
+    });
+    return resolution.status === "resolved" ? resolution.uuid : undefined;
+  };
+  const resolved = associations.map((association) => {
+    const corrected = resolveCandidate(registry.identityHistory, association);
+    if (corrected) return corrected;
+    const candidates = observedInstructorCandidateUuids(
+      registry,
+      association.sourceName,
+    );
+    return candidates.size === 1
+      ? resolveCandidate(
+          registry.identityHistory,
+          association,
+          [...candidates][0],
+        )
+      : undefined;
+  });
+  const ambiguous = associations.flatMap((association, index) =>
+    resolved[index] ? [] : [{ association, index }],
+  );
+  if (ambiguous.length === 0) return resolved;
+
+  const lease = await acquireGeneration();
+  try {
+    const parameters = Object.fromEntries(
+      ambiguous.flatMap(({ association, index }) => [
+        [`term${index}`, association.termCode],
+        [`prefix${index}`, association.coursePrefix],
+        [`number${index}`, association.courseNumber],
+      ]),
+    );
+    const where = ambiguous
+      .map(
+        ({ index }) =>
+          `(term_code = $term${index} AND subject = $prefix${index} AND code = $number${index})`,
+      )
+      .join(" OR ");
+    const rows = await queryRows(
+      lease.accepted.connection,
+      `SELECT uuid, term_code, subject, code FROM read_parquet('${sqlPath(lease.accepted.directory, "course-instructors.parquet")}') WHERE ${where}`,
+      parameters,
+    );
+    for (const { association, index } of ambiguous) {
+      const candidates = observedInstructorCandidateUuids(
+        lease.accepted,
+        association.sourceName,
+      );
+      const matches = new Set(
+        rows.flatMap((row) =>
+          String(row.term_code) === association.termCode &&
+          String(row.subject) === association.coursePrefix &&
+          String(row.code) === association.courseNumber &&
+          candidates.has(String(row.uuid))
+            ? [String(row.uuid)]
+            : [],
+        ),
+      );
+      if (matches.size === 1)
+        resolved[index] = resolveCandidate(
+          lease.accepted.identityHistory,
+          association,
+          [...matches][0],
+        );
+    }
+    return resolved;
+  } finally {
+    await lease.release();
+  }
+}
+
+export async function courseOfferingsForInstructorUuids(uuids: string[]) {
+  const unique = [...new Set(uuids.map((uuid) => uuid.toLowerCase()))];
+  if (unique.length === 0) return [];
+  const lease = await acquireGeneration();
+  try {
+    const wanted = new Set(
+      unique.flatMap((uuid) => {
+        const identity = lease.accepted.identitiesByUuid.get(uuid);
+        return identity
+          ? [resolvedInstructorIdentity(lease.accepted, identity).uuid]
+          : [];
+      }),
+    );
+    const mergeFamilyUuids = [
+      ...lease.accepted.identitiesByUuid.values(),
+    ].flatMap((identity) =>
+      wanted.has(resolvedInstructorIdentity(lease.accepted, identity).uuid)
+        ? [identity.uuid]
+        : [],
+    );
+    if (mergeFamilyUuids.length === 0) return [];
+    const parameters = Object.fromEntries(
+      mergeFamilyUuids.map((uuid, index) => [`uuid${index}`, uuid]),
+    );
+    const placeholders = mergeFamilyUuids
+      .map((_, index) => `$uuid${index}`)
+      .join(", ");
+    const rows = await queryRows(
+      lease.accepted.connection,
+      `SELECT DISTINCT uuid, term_code, subject, code FROM read_parquet('${sqlPath(lease.accepted.directory, "course-instructors.parquet")}') WHERE uuid IN (${placeholders})`,
+      parameters,
+    );
+    return rows.map((row) => ({
+      uuid: String(row.uuid),
+      termCode: String(row.term_code),
+      coursePrefix: String(row.subject),
+      courseNumber: String(row.code),
+    }));
+  } finally {
+    await lease.release();
+  }
+}
+
 export async function observedNamesForInstructorUuids(uuids: string[]) {
   const wanted = new Set(uuids);
   if (wanted.size === 0 || !rankingGenerationIsReady()) return [];
@@ -1518,10 +1607,21 @@ export async function observedNamesForInstructorUuids(uuids: string[]) {
     for (const identity of registry.identitiesByUuid.values()) {
       const resolved = resolvedInstructorIdentity(registry, identity);
       if (!wanted.has(resolved.uuid)) continue;
-      names.push(
+      for (const name of [
         identity.canonicalName,
         ...identity.aliases.map((alias) => alias.name),
-      );
+      ]) {
+        const owners = new Set(
+          (
+            registry.identitiesByObservedName.get(
+              normalizedInstructorName(name),
+            ) ?? []
+          ).map(
+            (candidate) => resolvedInstructorIdentity(registry, candidate).uuid,
+          ),
+        );
+        if (owners.size === 1) names.push(name);
+      }
     }
     return [...new Set(names)];
   } catch {
@@ -1541,11 +1641,12 @@ export async function resolveInstructorAssociations(
 ) {
   const registry = await instructorRegistry();
   return associations.map((association) => {
-    if (associationNeedsResolution(registry, association))
+    const resolution = registry.identityHistory.resolveAssociation(association);
+    if (resolution.status === "needs-resolution")
       return { ...association, status: "needs-resolution" as const };
-    const identity = registry.identitiesByUuid.get(
-      normalizeInstructorKey(association.uuid) ?? "",
-    );
+    if (resolution.status === "unresolved")
+      return { ...association, status: "unresolved" as const };
+    const identity = registry.identitiesByUuid.get(resolution.uuid);
     return identity
       ? {
           ...association,
@@ -2155,7 +2256,7 @@ async function queryRankingsWithGeneration(
   const catalogDigest = accepted.courseDigest;
   const linkRows = await queryRows(
     accepted.connection,
-    `SELECT links.uuid, links.name, links.subject, links.code, courses.title FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') links LEFT JOIN read_parquet('${coursesPath}') courses ON courses.prefix = links.subject AND courses.number = links.code WHERE links.term_code = $termCode`,
+    `SELECT links.uuid, links.subject, links.code, courses.title FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') links LEFT JOIN read_parquet('${coursesPath}') courses ON courses.prefix = links.subject AND courses.number = links.code WHERE links.term_code = $termCode`,
     { termCode },
   );
   const identitiesByCourse = new Map<string, InstructorIdentity[]>();
@@ -2164,12 +2265,7 @@ async function queryRankingsWithGeneration(
   for (const row of linkRows) {
     const courseKey = `${row.subject}${row.code}`;
     if (row.title) courseTitles.set(courseKey, String(row.title));
-    const identity = resolveInstructorAssociation(accepted, {
-      uuid: String(row.uuid),
-      sourceName: String(row.name),
-      termCode,
-      courseCode: `${row.subject} ${row.code}`,
-    });
+    const identity = resolveInstructorAssociation(accepted, String(row.uuid));
     if (identity) {
       const identities = identitiesByCourse.get(courseKey) ?? [];
       if (!identities.some((candidate) => candidate.uuid === identity.uuid))
@@ -2560,17 +2656,15 @@ export async function getRankings(
       }
       const links = await queryRows(
         accepted.connection,
-        `SELECT term_code, uuid, name FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE subject = $coursePrefix AND code = $courseNumber ORDER BY term_num, uuid`,
+        `SELECT term_code, uuid FROM read_parquet('${sqlPath(accepted.directory, "course-instructors.parquet")}') WHERE subject = $coursePrefix AND code = $courseNumber ORDER BY term_num, uuid`,
         { coursePrefix, courseNumber },
       );
       const instructors = links.flatMap((row) => {
         const termCode = String(row.term_code);
-        const instructor = resolveInstructorAssociation(accepted, {
-          uuid: String(row.uuid),
-          sourceName: String(row.name),
-          termCode,
-          courseCode,
-        });
+        const instructor = resolveInstructorAssociation(
+          accepted,
+          String(row.uuid),
+        );
         return instructor ? [{ termCode, instructor }] : [];
       });
       const commonCore = (commonCoreSchemes.get("CC25")?.categories ?? [])
@@ -2617,9 +2711,6 @@ export async function getRankings(
     const evidence = await Promise.all(
       identity.family.map(async (familyInstructor) => {
         const uuid = familyInstructor.uuid;
-        const name =
-          accepted.currentNameByUuid.get(uuid) ??
-          familyInstructor.canonicalName;
         const [ratings, courseRows] = await Promise.all([
           queryRows(
             accepted.connection,
@@ -2644,21 +2735,10 @@ export async function getRankings(
           };
           terms.set(termCode, term);
         }
-        const courses = courseRows.flatMap((row) => {
-          const association = {
-            sourceName: String(row.name ?? name),
-            termCode: String(row.term_code),
-            courseCode: String(row.course_code),
-          };
-          return associationNeedsResolution(accepted, association)
-            ? []
-            : [
-                {
-                  termCode: association.termCode,
-                  courseCode: association.courseCode,
-                },
-              ];
-        });
+        const courses = courseRows.map((row) => ({
+          termCode: String(row.term_code),
+          courseCode: String(row.course_code),
+        }));
         return {
           instructor: familyInstructor,
           terms: [...terms.values()],

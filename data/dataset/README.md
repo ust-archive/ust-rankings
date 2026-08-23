@@ -19,3 +19,5 @@ Daily course and instructor rating marts for UST Rankings, built from the
 
 The source pipeline and field documentation are maintained in
 [`ust-archive/ust-rankings`](https://github.com/ust-archive/ust-rankings/tree/master/data).
+
+The identity correction artifact uses typed Instructor Association Corrections (`correction_type`, `source_commit`, `target_uuid`, `source_name`, optional `term_code`, and `course_code`) while retaining its historical storage filename.

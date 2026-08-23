@@ -87,6 +87,7 @@ type Malformation =
   | "wrong-latest-term"
   | "failed-smoke-query"
   | "tba-alias"
+  | "ambiguous-canonical-name"
   | "legacy-name-keyed"
   | "missing-course-dimension"
   | "malformed-course-dimension"
@@ -105,6 +106,12 @@ export type FixtureIdentityEvent =
       retiredUuid: string;
       survivorUuid: string;
       sourceCommit: string;
+    }
+  | {
+      type: "split";
+      sourceUuid: string;
+      newUuid: string;
+      sourceCommit: string;
     };
 
 export async function makeRankingGeneration(
@@ -116,12 +123,38 @@ export async function makeRankingGeneration(
     includeScheduleCourse?: boolean;
     includePriorOnly?: boolean;
     identityEvents?: FixtureIdentityEvent[];
+    associationCorrections?: Array<{
+      correctionType: "split" | "calibration";
+      sourceCommit: string;
+      targetUuid: string;
+      sourceName: string;
+      termCode?: string;
+      courseCode: string;
+    }>;
+    sameNameAssociations?: boolean;
+    sameNameSplit?: boolean;
     firstCourseTitle?: string;
   } = {},
 ) {
   const directory = join(root, fixtureSha);
   await mkdir(directory, { recursive: true });
   const fixtureIdentities = structuredClone(identities);
+  if (
+    (malformation === "ambiguous-canonical-name" ||
+      options.sameNameAssociations ||
+      options.sameNameSplit) &&
+    fixtureIdentities[1]
+  ) {
+    fixtureIdentities[1].canonicalName =
+      fixtureIdentities[0]?.canonicalName ?? "";
+    if (
+      malformation === "ambiguous-canonical-name" ||
+      options.sameNameAssociations
+    )
+      fixtureIdentities[1].aliases = structuredClone(
+        fixtureIdentities[0]?.aliases ?? [],
+      );
+  }
   if (options.includePriorOnly) {
     fixtureIdentities.push({
       uuid: "00000000-0000-4000-8000-000000000006",
@@ -295,12 +328,28 @@ export async function makeRankingGeneration(
                 ? `SELECT * REPLACE (99::INTEGER AS term_num) FROM (${instructorRankings})`
                 : instructorRankings;
     await copy("instructor-rankings.parquet", malformedInstructorRankings);
+    const sameNameWithoutUniqueAlias =
+      malformation === "ambiguous-canonical-name" ||
+      options.sameNameAssociations;
+    const secondInstructorName =
+      sameNameWithoutUniqueAlias || options.sameNameSplit
+        ? "Alpha Instructor"
+        : "Beta Instructor";
+    const secondCoursePrefix =
+      malformation === "ambiguous-canonical-name" ? "COMP" : "MATH";
+    const secondCourseNumber =
+      malformation === "ambiguous-canonical-name" || options.sameNameSplit
+        ? "1000"
+        : "2000";
+    const additionalBetaAssociation = sameNameWithoutUniqueAlias
+      ? ""
+      : ", ('00000000-0000-4000-8000-000000000002', 'Beta Instructor', 100, '2510', 'COMP', '1029C')";
     await copy(
       "course-instructors.parquet",
       `SELECT ${malformation === "failed-smoke-query" ? "* REPLACE ('10000000-0000-4000-8000-000000000000' AS uuid)" : malformation === "legacy-name-keyed" ? "* EXCLUDE (uuid)" : "*"} FROM (VALUES
         ('00000000-0000-4000-8000-000000000001', 'Alpha Instructor', 100, '2510', 'COMP', '1000'),
-        ('00000000-0000-4000-8000-000000000002', 'Beta Instructor', 100, '2510', 'MATH', '2000'),
-        ('00000000-0000-4000-8000-000000000002', 'Beta Instructor', 100, '2510', 'COMP', '1029C'),
+        ('00000000-0000-4000-8000-000000000002', '${secondInstructorName}', 100, '2510', '${secondCoursePrefix}', '${secondCourseNumber}')
+        ${additionalBetaAssociation},
         ('00000000-0000-4000-8000-000000000003', 'Delta Instructor', 100, '2510', 'HIST', '3000'),
         ('00000000-0000-4000-8000-000000000004', 'Gamma Instructor', 100, '2510', 'MISS', '4000'),
         ('00000000-0000-4000-8000-000000000005', 'Historical Instructor', 100, '2510', 'COMP', '1000')
@@ -315,7 +364,7 @@ export async function makeRankingGeneration(
       ('COMP', '1029C', 'Special Topics in Computing', [
         {'label': 'CC25', 'value': '40', 'description': 'Technology'}
       ]),
-      ('MATH', '2000', 'Mathematical Thinking', [
+      ('MATH', '${options.sameNameSplit ? "1000" : "2000"}', 'Mathematical Thinking', [
         {'label': 'CC25', 'value': '39', 'description': 'Science'}
       ]),
       ('HIST', '3000', 'History and Society', [
@@ -367,7 +416,16 @@ export async function makeRankingGeneration(
       "instructor-aliases.parquet",
       `SELECT * FROM (VALUES ${aliasRows}) AS t(uuid, name, source, source_commit, source_file)`,
     );
-    const identityEvents = options.identityEvents ?? [];
+    const identityEvents = options.sameNameSplit
+      ? [
+          {
+            type: "split" as const,
+            sourceUuid: fixtureIdentities[0]?.uuid ?? "",
+            newUuid: fixtureIdentities[1]?.uuid ?? "",
+            sourceCommit: fixtureSha,
+          },
+        ]
+      : (options.identityEvents ?? []);
     await copy(
       "instructor-identity-events.parquet",
       identityEvents.length === 0
@@ -379,18 +437,41 @@ export async function makeRankingGeneration(
             .map((event) =>
               event.type === "itsc-added"
                 ? `('${event.type}', '${event.sourceCommit}', '${event.uuid}', '${event.itsc}', NULL, NULL, NULL, NULL)`
-                : `('${event.type}', '${event.sourceCommit}', NULL, NULL, '${event.retiredUuid}', '${event.survivorUuid}', NULL, NULL)`,
+                : event.type === "merge"
+                  ? `('${event.type}', '${event.sourceCommit}', NULL, NULL, '${event.retiredUuid}', '${event.survivorUuid}', NULL, NULL)`
+                  : `('${event.type}', '${event.sourceCommit}', NULL, NULL, NULL, NULL, '${event.sourceUuid}', '${event.newUuid}')`,
             )
             .join(
               ", ",
             )}) AS t(event_type, source_commit, uuid, itsc, retired_uuid, survivor_uuid, source_uuid, new_uuid)`,
     );
+    const associationCorrections = options.sameNameSplit
+      ? [
+          {
+            correctionType: "split" as const,
+            sourceCommit: fixtureSha,
+            targetUuid: fixtureIdentities[1]?.uuid ?? "",
+            sourceName: fixtureIdentities[1]?.canonicalName ?? "",
+            termCode: "2510",
+            courseCode: "MATH 1000",
+          },
+        ]
+      : (options.associationCorrections ?? []);
     await copy(
       "instructor-split-affected-associations.parquet",
-      `SELECT * FROM (VALUES
-        (NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR)
-      ) AS t(source_commit, new_uuid, source_name, term_code, course_code)
-      WHERE 1 = 0`,
+      associationCorrections.length === 0
+        ? `SELECT * FROM (VALUES
+          (NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR)
+        ) AS t(correction_type, source_commit, target_uuid, source_name, term_code, course_code)
+        WHERE 1 = 0`
+        : `SELECT * FROM (VALUES ${associationCorrections
+            .map(
+              (correction) =>
+                `('${correction.correctionType}', '${correction.sourceCommit}', '${correction.targetUuid}', '${correction.sourceName.replaceAll("'", "''")}', ${correction.termCode ? `'${correction.termCode}'` : "NULL"}, ${correction.courseCode ? `'${correction.courseCode}'` : "NULL"})`,
+            )
+            .join(
+              ", ",
+            )}) AS t(correction_type, source_commit, target_uuid, source_name, term_code, course_code)`,
     );
   } finally {
     connection.closeSync();

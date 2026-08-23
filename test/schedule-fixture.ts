@@ -20,7 +20,8 @@ export type ScheduleFixtureVariant =
   | "conflict"
   | "duplicate-event"
   | "invalid-meeting"
-  | "orphan-class";
+  | "orphan-class"
+  | "same-name";
 
 async function digest(path: string) {
   return createHash("sha256")
@@ -104,7 +105,7 @@ export async function makeScheduleGeneration(
     (100, '2510', '2025-26 Fall', 'c2', 'L1', 1001, 'E', 'LEC', 1, 'Bring a laptop', 80, 30, 0, false, true, ${latestSchedules}, 'ACTIVE', '2025-02-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c2', 'T1', 1002, 'N', 'TUT', 1, '', 20, 10, 0, false, true, [], 'ACTIVE', '2025-01-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c2', 'T1', 1002, 'N', 'TUT', 1, '', 20, 10, 0, false, false, [], 'INACTIVE', '2025-02-01T00:00:00Z'),
-    (100, '2510', '2025-26 Fall', '${malformation === "orphan-class" ? "missing" : "c3"}', 'L1', 2001, 'E', 'LEC', 1, '', 60, 40, 0, false, true, [{weekday:'${malformation === "conflict" ? "Wed" : "Fri"}', date_from:${malformation === "conflict" ? "'2025-09-01'" : "NULL"}::DATE, date_to:${malformation === "conflict" ? "'2025-11-30'" : "NULL"}::DATE, time_from:'${malformation === "conflict" ? "11:30" : "13:00"}'::TIME, time_to:'${malformation === "conflict" ? "12:20" : "13:50"}'::TIME, venue:'R202', venue_name:'Room 202', instructors:[' ', ' TBA ', ' Unresolved Teacher ']}], 'ACTIVE', '2025-01-01T00:00:00Z'),
+    (100, '2510', '2025-26 Fall', '${malformation === "orphan-class" ? "missing" : "c3"}', 'L1', 2001, 'E', 'LEC', 1, '', 60, 40, 0, false, true, [{weekday:'${malformation === "conflict" ? "Wed" : "Fri"}', date_from:${malformation === "conflict" ? "'2025-09-01'" : "NULL"}::DATE, date_to:${malformation === "conflict" ? "'2025-11-30'" : "NULL"}::DATE, time_from:'${malformation === "conflict" ? "11:30" : "13:00"}'::TIME, time_to:'${malformation === "conflict" ? "12:20" : "13:50"}'::TIME, venue:'R202', venue_name:'Room 202', instructors:${malformation === "same-name" ? "['Alpha Instructor']" : "[' ', ' TBA ', ' Unresolved Teacher ']"}}], 'ACTIVE', '2025-01-01T00:00:00Z'),
     (99, '2430', '2024-25 Spring', 'c4', 'L1', 3001, 'E', 'LEC', 1, '', 60, 40, 0, false, true, [], 'ACTIVE', '2024-01-01T00:00:00Z')
   ) t(term_num, term_code, term_name, course_id, section, number, role, type, association, remarks, capacity, enroll, wait, consent, open, schedules, status, timestamp)`;
 

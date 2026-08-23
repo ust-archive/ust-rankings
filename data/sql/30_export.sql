@@ -27,14 +27,12 @@ COPY (
 
 COPY (
   SELECT
-    identities.uuid,
+    ratings.uuid,
     ratings.name,
     ratings.term_num,
     terms.term_code,
-    ratings.* EXCLUDE (name, term_num)
+    ratings.* EXCLUDE (uuid, name, term_num)
   FROM instructor_ratings AS ratings
-  JOIN instructor_identities AS identities
-    ON identities.canonical_name = ratings.name
   JOIN terms USING (term_num)
   ORDER BY uuid, term_num, criterion
 ) TO (getvariable('instructor_ratings_parquet')) (FORMAT parquet, COMPRESSION zstd);
@@ -53,14 +51,12 @@ COPY (
 
 COPY (
   SELECT
-    identities.uuid,
+    rankings.uuid,
     rankings.name,
     rankings.term_num,
     terms.term_code,
-    rankings.* EXCLUDE (name, term_num)
+    rankings.* EXCLUDE (uuid, name, term_num)
   FROM instructor_rankings AS rankings
-  JOIN instructor_identities AS identities
-    ON identities.canonical_name = rankings.name
   JOIN terms USING (term_num)
   ORDER BY criterion, bayesian DESC, uuid
 ) TO (getvariable('instructor_rankings_parquet')) (FORMAT parquet, COMPRESSION zstd);
@@ -68,16 +64,15 @@ COPY (
 -- Course-instructor evidence is a normalized bridge. It includes historical
 -- associations inferred from ratings as well as current schedule assignments.
 COPY (
-  SELECT
-    identities.uuid,
-    links.name,
+  SELECT DISTINCT
+    links.uuid,
+    identities.canonical_name AS name,
     links.term_num,
     terms.term_code,
     links.subject,
     links.code
-  FROM course_term_instructors AS links
-  JOIN instructor_identities AS identities
-    ON identities.canonical_name = links.name
+  FROM instructor_identity_assignments AS links
+  JOIN instructor_identities AS identities USING (uuid)
   JOIN terms USING (term_num)
   ORDER BY term_num, subject, code, uuid
 ) TO (getvariable('course_instructors_parquet'))
@@ -112,9 +107,10 @@ COPY (
 ) TO (getvariable('instructor_identity_events_parquet'))
   (FORMAT parquet, COMPRESSION zstd);
 
+-- Storage keeps the historical filename; the relation is domain-named.
 COPY (
-  SELECT source_commit, new_uuid, source_name, term_code, course_code
-  FROM instructor_split_affected_associations
-  ORDER BY source_commit, new_uuid, source_name
+  SELECT correction_type, source_commit, target_uuid, source_name, term_code, course_code
+  FROM instructor_identity_association_corrections
+  ORDER BY source_commit, correction_type, target_uuid, source_name
 ) TO (getvariable('instructor_split_affected_associations_parquet'))
   (FORMAT parquet, COMPRESSION zstd);

@@ -146,9 +146,7 @@ try {
       `Course dimension has ${conflicting_courses} conflicting Course(s)`,
     );
 
-  for (const file of ["10_observations.sql", "20_ratings.sql"]) {
-    await executeFile(connection, file);
-  }
+  await executeFile(connection, "10_observations.sql");
 
   await assignInstructorIdentities(connection, {
     previousGenerationDir: process.env.RANKINGS_PREVIOUS_GENERATION_DIR,
@@ -157,13 +155,14 @@ try {
     correctionsPath: process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE,
   });
 
+  await executeFile(connection, "20_ratings.sql");
   await executeFile(connection, "30_export.sql");
 
   const summary = await connection.runAndReadAll(`
     SELECT
       (SELECT count(*) FROM observations) AS observations,
       (SELECT count(*) FROM course_entities) AS courses,
-      (SELECT count(*) FROM instructor_entities) AS instructors,
+      (SELECT count(*) FROM resolved_instructor_entities) AS instructors,
       (SELECT count(*) FROM course_ratings) AS course_rating_terms,
       (SELECT count(*) FROM instructor_ratings) AS instructor_rating_terms
   `);
