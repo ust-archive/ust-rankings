@@ -21,6 +21,14 @@
       "instructorUuid": "b0c68636-93ef-4245-b3ec-c201f151fcfb",
       "instructorName": "DENG, Yangfan",
       "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "sourceName": "ZHOU, Chao",
+      "courseCode": "ACCT 2010",
+      "termCode": "2040",
+      "instructorUuid": "c70c607f-52c2-4407-bf60-17567cc197ad",
+      "instructorName": "JIN, Chao",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
     }
   ],
   "events": [
