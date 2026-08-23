@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -640,6 +640,138 @@ test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () =
         `SELECT count(*)::INTEGER AS count FROM read_parquet('${aliases}') WHERE lower(name) = 'tba'`,
       ),
       [{ count: 0 }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("merge corrections preserve aliases and apply only once", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-merge-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    await writeFile(
+      corrections,
+      JSON.stringify({
+        events: [
+          {
+            type: "merge",
+            retiredUuid: "00000000-0000-4000-8000-000000000005",
+            survivorUuid: "00000000-0000-4000-8000-000000000003",
+            sourceCommit: "0123456789abcdef0123456789abcdef01234567",
+          },
+        ],
+      }),
+    );
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+
+    assert.deepEqual(
+      await rows(`
+        SELECT DISTINCT uuid
+        FROM read_parquet('${parquet(second, "course-instructors")}')
+        WHERE name IN ('Cara Gamma', 'Dora Delta')
+      `),
+      [{ uuid: "00000000-0000-4000-8000-000000000003" }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT count(*)::INTEGER AS count
+        FROM read_parquet('${parquet(second, "instructor-identity-events")}')
+        WHERE event_type = 'merge'
+      `),
+      [{ count: 1 }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT name
+        FROM read_parquet('${parquet(second, "instructor-aliases")}')
+        WHERE uuid = '00000000-0000-4000-8000-000000000003'
+          AND name IN ('Cara Gamma', 'Dora Delta')
+        ORDER BY name
+      `),
+      [{ name: "Cara Gamma" }, { name: "Dora Delta" }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("split corrections preserve their identity and association once", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-split-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    const sourceCommit = "0123456789abcdef0123456789abcdef01234567";
+    const newUuid = "00000000-0000-4000-8000-000000000099";
+    await writeFile(
+      corrections,
+      JSON.stringify({
+        events: [
+          {
+            type: "split",
+            sourceUuid: "00000000-0000-4000-8000-000000000003",
+            newUuid,
+            sourceCommit,
+            newIdentity: {
+              uuid: newUuid,
+              canonicalName: "Cara Gamma",
+              aliases: [
+                {
+                  name: "Cara Gamma",
+                  source: "ranking-generation",
+                  sourceCommit,
+                  sourceFile: "instructor-ratings.parquet",
+                },
+              ],
+            },
+            affectedAssociations: [
+              {
+                sourceName: "Cara Gamma",
+                termCode: "2510",
+                courseCode: "COMP 2000",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+
+    assert.deepEqual(
+      await rows(`
+        SELECT DISTINCT uuid
+        FROM read_parquet('${parquet(second, "course-instructors")}')
+        WHERE name = 'Cara Gamma'
+      `),
+      [{ uuid: newUuid }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-identity-events")}') WHERE event_type = 'split')::INTEGER AS events,
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}'))::INTEGER AS associations,
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-aliases")}') WHERE uuid = '${newUuid}')::INTEGER AS aliases
+      `),
+      [{ events: 1, associations: 1, aliases: 1 }],
     );
   } finally {
     await rm(temp, { recursive: true, force: true });

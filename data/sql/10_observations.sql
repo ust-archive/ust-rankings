@@ -205,8 +205,10 @@ SELECT DISTINCT
 FROM source_sfq_instructors
 WHERE valid_instructor_name(instructor_name);
 
--- Pairs observed together are definitely different people. Schedule classes,
--- review instructor lists, and SFQ sections all contribute to this guard.
+-- Pairs observed together block automatic aliasing. Schedule classes, review
+-- instructor lists, and SFQ sections contribute to this guard; an explicit
+-- merge event handles the rarer case where an upstream source duplicates one
+-- person.
 CREATE OR REPLACE TEMP TABLE instructor_coaliases AS
 WITH record_names AS (
   SELECT DISTINCT

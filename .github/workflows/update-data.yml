@@ -56,7 +56,7 @@ jobs:
         run: |
           npm run type-check
           RANKINGS_PREVIOUS_GENERATION_DIR= npm test
-          npm run run
+          RANKINGS_INSTRUCTOR_REGISTRY_FILE=instructor-identity-corrections.json npm run run
           cp dataset/README.md out/README.md
 
       - name: Create dataset if missing

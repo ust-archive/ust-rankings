@@ -162,7 +162,7 @@ try {
     SELECT
       (SELECT count(*) FROM observations) AS observations,
       (SELECT count(*) FROM course_entities) AS courses,
-      (SELECT count(*) FROM instructor_entities) AS instructors,
+      (SELECT count(*) FROM resolved_instructor_entities) AS instructors,
       (SELECT count(*) FROM course_ratings) AS course_rating_terms,
       (SELECT count(*) FROM instructor_ratings) AS instructor_rating_terms
   `);

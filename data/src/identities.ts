@@ -76,7 +76,9 @@ type SeedEvent =
   | {
       type: "merge";
       retiredUuid: string;
+      retiredName?: string;
       survivorUuid: string;
+      survivorName?: string;
       sourceCommit: string;
     }
   | {
@@ -279,21 +281,57 @@ export async function assignInstructorIdentities(
     }
   }
 
+  const normalized = (value: string) => value.trim().toLocaleLowerCase();
   const identities = new Map(previousIdentities.map((row) => [row.uuid, row]));
   const aliases = [...previousAliases];
-  let events = previousEvents;
-  let affected = previousAffected;
+  const events = previousEvents;
+  const affected = previousAffected;
   if (options.correctionsPath && (await exists(options.correctionsPath))) {
     const corrections = await loadBootstrapJson(options.correctionsPath);
-    for (const identity of corrections.identities) {
+    const correctionIdentities = [
+      ...corrections.identities,
+      ...corrections.events.flatMap((event) =>
+        event.type === "split" && event.newIdentity ? [event.newIdentity] : [],
+      ),
+    ];
+    const aliasKeys = new Set(
+      aliases.map((alias) => `${alias.uuid}\0${normalized(alias.name)}`),
+    );
+    for (const identity of correctionIdentities) {
       identities.set(identity.uuid, {
         uuid: identity.uuid,
         canonical_name: identity.canonicalName,
         itsc: identity.itsc ?? identities.get(identity.uuid)?.itsc ?? null,
       });
+      for (const alias of identity.aliases ?? []) {
+        const key = `${identity.uuid}\0${normalized(alias.name)}`;
+        if (aliasKeys.has(key)) continue;
+        aliasKeys.add(key);
+        aliases.push({
+          uuid: identity.uuid,
+          name: alias.name,
+          source: alias.source,
+          source_commit: alias.sourceCommit,
+          source_file: alias.sourceFile ?? null,
+        });
+      }
     }
-    events = [...events, ...eventRows(corrections.events)];
-    affected = [...affected, ...affectedRows(corrections.events)];
+    const eventKeys = new Set(events.map((event) => JSON.stringify(event)));
+    for (const event of eventRows(corrections.events)) {
+      const key = JSON.stringify(event);
+      if (eventKeys.has(key)) continue;
+      eventKeys.add(key);
+      events.push(event);
+    }
+    const affectedKeys = new Set(
+      affected.map((association) => JSON.stringify(association)),
+    );
+    for (const association of affectedRows(corrections.events)) {
+      const key = JSON.stringify(association);
+      if (affectedKeys.has(key)) continue;
+      affectedKeys.add(key);
+      affected.push(association);
+    }
     for (const event of corrections.events) {
       if (event.type === "itsc-added") {
         const current = identities.get(event.uuid);
@@ -303,7 +341,6 @@ export async function assignInstructorIdentities(
     }
   }
 
-  const normalized = (value: string) => value.trim().toLocaleLowerCase();
   const mergeRedirects = new Map(
     events.flatMap((event) =>
       event.event_type === "merge" &&
@@ -392,18 +429,29 @@ export async function assignInstructorIdentities(
     ...row,
     uuid: resolveAssociation(row),
   }));
-  const currentNameByUuid = new Map<string, string>();
+  const currentNamesByUuid = new Map<string, Set<string>>();
+  const mergedSurvivors = new Set(
+    [...mergeRedirects.keys()].map((uuid) => survivingUuid(uuid)),
+  );
   for (const { name, uuid } of assignments) {
     if (!identities.has(uuid))
       throw new Error(`Unknown Instructor UUID: ${uuid}`);
-    const claimedName = currentNameByUuid.get(uuid);
-    if (claimedName && claimedName !== name)
+    const names = currentNamesByUuid.get(uuid) ?? new Set<string>();
+    names.add(name);
+    currentNamesByUuid.set(uuid, names);
+  }
+  for (const [uuid, names] of currentNamesByUuid) {
+    if (names.size > 1 && !mergedSurvivors.has(uuid))
       throw new Error(
-        `Ambiguous Instructor identity ${uuid}: ${claimedName}, ${name}`,
+        `Ambiguous Instructor identity ${uuid}: ${[...names].join(", ")}`,
       );
-    currentNameByUuid.set(uuid, name);
-    const current = identities.get(uuid);
-    if (current) identities.set(uuid, { ...current, canonical_name: name });
+    const current = identities.get(uuid) as IdentityRow;
+    identities.set(uuid, {
+      ...current,
+      canonical_name: names.has(current.canonical_name)
+        ? current.canonical_name
+        : ([...names].sort()[0] as string),
+    });
   }
 
   const aliasKeys = new Set(
