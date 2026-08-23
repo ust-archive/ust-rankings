@@ -21,9 +21,10 @@ export function ReviewOrderSelect() {
 
   return (
     <label className="flex items-center gap-2 text-sm font-medium">
-      Order
+      Review Order
       <select
-        className="min-h-11 rounded-lg border border-input bg-background px-3 py-2"
+        className="min-h-11 rounded-lg border border-input bg-background px-3 py-2 text-foreground"
+        name="order"
         onChange={(event) => {
           const next = new URLSearchParams(searchParams);
           next.set("order", event.target.value);

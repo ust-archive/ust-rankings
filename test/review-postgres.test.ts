@@ -185,7 +185,7 @@ if (!connection) {
       ]);
 
       const formulaCourse = { coursePrefix: "TEST", courseNumber: "1000" };
-      const formulaUsers = Array.from({ length: 14 }, () =>
+      const formulaUsers = Array.from({ length: 19 }, () =>
         crypto.randomUUID(),
       );
       await sql`
@@ -319,6 +319,68 @@ if (!connection) {
         tiedDownId,
         editedOneUpId,
         busyNegativeId,
+      ]);
+
+      const halfLifeCourse = { coursePrefix: "TEST", courseNumber: "1500" };
+      const freshQualityId = "10500000-0000-4000-8000-000000000101";
+      const activityAt560DaysId = "10500000-0000-4000-8000-000000000102";
+      const activityAt600DaysId = "10500000-0000-4000-8000-000000000103";
+      await insertFormulaReview(
+        freshQualityId,
+        "20500000-0000-4000-8000-000000000101",
+        formulaUsers[14] as string,
+        0,
+        halfLifeCourse,
+      );
+      await insertFormulaReview(
+        activityAt560DaysId,
+        "20500000-0000-4000-8000-000000000102",
+        formulaUsers[15] as string,
+        560,
+        halfLifeCourse,
+      );
+      await insertFormulaReview(
+        activityAt600DaysId,
+        "20500000-0000-4000-8000-000000000103",
+        formulaUsers[16] as string,
+        600,
+        halfLifeCourse,
+      );
+      await sql`
+        INSERT INTO review_thumbs_votes (user_id, review_id, state)
+        VALUES
+          (${formulaUsers[17]}, ${freshQualityId}, 'up'),
+          (${formulaUsers[17]}, ${activityAt560DaysId}, 'down'),
+          (${formulaUsers[17]}, ${activityAt600DaysId}, 'down')
+      `;
+      await sql`
+        INSERT INTO review_emoji_reactions (user_id, review_id, code)
+        VALUES
+          (${formulaUsers[18]}, ${activityAt560DaysId}, 'fire'),
+          (${formulaUsers[18]}, ${activityAt600DaysId}, 'fire')
+      `;
+      const halfLifeOrder = async (order: "top" | "popular" | "recent") =>
+        (
+          await reviews.listReviews({
+            type: "course",
+            ...halfLifeCourse,
+            order,
+          })
+        ).map((review) => review.id);
+      expect(await halfLifeOrder("top")).toEqual([
+        activityAt560DaysId,
+        freshQualityId,
+        activityAt600DaysId,
+      ]);
+      expect(await halfLifeOrder("popular")).toEqual([
+        activityAt560DaysId,
+        activityAt600DaysId,
+        freshQualityId,
+      ]);
+      expect(await halfLifeOrder("recent")).toEqual([
+        freshQualityId,
+        activityAt560DaysId,
+        activityAt600DaysId,
       ]);
 
       const tiedCourse = { coursePrefix: "TEST", courseNumber: "2000" };

@@ -738,6 +738,17 @@ export function Reviews({
   editor?: ReviewEditorOptions;
   displayTermNames?: boolean;
 }) {
+  if (reviews.length === 0)
+    return (
+      <Empty className="border border-dashed">
+        <EmptyHeader>
+          <EmptyTitle>No reviews yet</EmptyTitle>
+          <EmptyDescription>
+            No Reviews have been published yet.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
   const names = new Map(
     (editor?.instructors ?? []).map((instructor) => [
       instructor.instructorUuid,
@@ -745,54 +756,41 @@ export function Reviews({
     ]),
   );
   return (
-    <div className="flex flex-col gap-5">
-      {reviews.length === 0 ? (
-        <Empty className="border border-dashed">
-          <EmptyHeader>
-            <EmptyTitle>No reviews yet</EmptyTitle>
-            <EmptyDescription>
-              No Reviews have been published yet.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <ul className="!m-0 flex !list-none flex-col gap-5">
-          {reviews.map((review, index) => (
-            <li className="flex flex-col gap-5" key={review.id}>
-              {index ? <Separator /> : null}
-              <ReviewCard
-                displayTermNames={displayTermNames}
-                instructorName={
-                  review.instructorUuid
-                    ? names.get(review.instructorUuid)
-                    : undefined
-                }
-                review={review}
-              >
-                {review.viewerCanEdit && editor ? (
-                  <>
-                    <ReviewComposer
-                      {...editor}
-                      displayTermNames={displayTermNames}
-                      review={review}
-                      trigger={
-                        <Button
-                          className="h-auto p-0 text-xs text-gray-500 underline underline-offset-4 hover:text-gray-900"
-                          type="button"
-                          variant="link"
-                        >
-                          Edit
-                        </Button>
-                      }
-                    />
-                    <WithdrawReviewDialog review={review} />
-                  </>
-                ) : null}
-              </ReviewCard>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <ul className="!m-0 flex !list-none flex-col gap-5">
+      {reviews.map((review, index) => (
+        <li className="flex flex-col gap-5" key={review.id}>
+          {index ? <Separator /> : null}
+          <ReviewCard
+            displayTermNames={displayTermNames}
+            instructorName={
+              review.instructorUuid
+                ? names.get(review.instructorUuid)
+                : undefined
+            }
+            review={review}
+          >
+            {review.viewerCanEdit && editor ? (
+              <>
+                <ReviewComposer
+                  {...editor}
+                  displayTermNames={displayTermNames}
+                  review={review}
+                  trigger={
+                    <Button
+                      className="h-auto p-0 text-xs text-gray-500 underline underline-offset-4 hover:text-gray-900"
+                      type="button"
+                      variant="link"
+                    >
+                      Edit
+                    </Button>
+                  }
+                />
+                <WithdrawReviewDialog review={review} />
+              </>
+            ) : null}
+          </ReviewCard>
+        </li>
+      ))}
+    </ul>
   );
 }
