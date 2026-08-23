@@ -378,6 +378,14 @@
     },
     {
       "type": "merge",
+      "retiredUuid": "0a4d6c0e-bdf0-4537-9d89-cf90535bca9d",
+      "retiredName": "SUNADA, Kohei",
+      "survivorUuid": "00f1ade8-8c8d-495f-ba5d-9a23abb225d1",
+      "survivorName": "KAWAGUCHI, Kohei",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
       "retiredUuid": "be911c84-d4c9-433a-91a3-51af059f062d",
       "retiredName": "KAPADIA, Chaitali",
       "survivorUuid": "110983ab-0692-4161-aa18-00cb341dacaf",
