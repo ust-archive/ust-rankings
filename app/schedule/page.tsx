@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { PathAdvisor } from "@/data/cq/path-advisor";
+import { PathAdvisor } from "@/lib/schedule/path-advisor";
 import {
   buildCalendarUrl,
   buildScheduleUrl,
@@ -18,7 +18,7 @@ import {
   type CourseOffering,
   InvalidScheduleQueryError,
   querySchedule,
-  resolveClasses,
+  resolvePlannerClasses,
   type ScheduleClass,
   ScheduleUnavailableError,
 } from "@/lib/schedule/server";
@@ -100,7 +100,7 @@ function CourseCard({
 }) {
   const selected = new Set(state.classNumbers);
   return (
-    <Card>
+    <Card className="[contain-intrinsic-size:auto_32rem] [content-visibility:auto]">
       <CardHeader>
         <CardTitle asChild>
           <h2 className="text-xl">
@@ -113,7 +113,12 @@ function CourseCard({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="max-w-full overflow-x-auto">
+        <section
+          aria-label={`${offering.courseCode} Classes`}
+          className="max-w-full overflow-x-auto rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users need to scroll the wide Class table.
+          tabIndex={0}
+        >
           <table className="w-full min-w-[46rem] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200">
@@ -228,7 +233,7 @@ function CourseCard({
               })}
             </tbody>
           </table>
-        </div>
+        </section>
       </CardContent>
     </Card>
   );
@@ -271,9 +276,15 @@ export default async function SchedulePage({
     view: parsed.view,
   };
   let plannerClasses: ScheduleClass[] = [];
+  let invalidClassNumbers: number[] = [];
   if (state.classNumbers.length)
     try {
-      plannerClasses = await resolveClasses(state.termCode, state.classNumbers);
+      const resolved = await resolvePlannerClasses(
+        state.termCode,
+        state.classNumbers,
+      );
+      plannerClasses = resolved.classes;
+      invalidClassNumbers = resolved.invalidClassNumbers;
     } catch (error) {
       messages.push(
         error instanceof InvalidScheduleQueryError
@@ -281,12 +292,15 @@ export default async function SchedulePage({
           : "Selected Classes could not be loaded.",
       );
     }
+  const plannerClassNumbers = plannerClasses.map(
+    (scheduleClass) => scheduleClass.classNumber,
+  );
   const conflicts = findPlannerConflicts(plannerClasses);
   const offerings =
     state.view === "cart"
       ? selectedOfferings(plannerClasses)
       : schedule.results;
-  const calendarUrl = buildCalendarUrl(state.termCode, state.classNumbers);
+  const calendarUrl = buildCalendarUrl(state.termCode, plannerClassNumbers);
 
   return (
     <div className="flex w-full max-w-5xl flex-col gap-6 text-left">
@@ -309,6 +323,22 @@ export default async function SchedulePage({
           <AlertDescription>{message}</AlertDescription>
         </Alert>
       ))}
+      {invalidClassNumbers.length ? (
+        <Alert variant="destructive">
+          <AlertTitle>Unknown Classes</AlertTitle>
+          <AlertDescription>
+            Class Number{invalidClassNumbers.length === 1 ? "" : "s"}{" "}
+            {invalidClassNumbers.join(", ")} could not be found in this Term.{" "}
+            <Link
+              className="font-semibold underline"
+              href={stateUrl(state, { classNumbers: plannerClassNumbers })}
+            >
+              Remove invalid Classes
+            </Link>
+            .
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {conflicts.length ? (
         <Alert variant="destructive">
           <AlertTitle>Planner conflicts</AlertTitle>
@@ -339,9 +369,10 @@ export default async function SchedulePage({
             ))}
             <Input
               aria-label="Search Schedule"
+              autoComplete="off"
               defaultValue={state.search}
               name="q"
-              placeholder="Search Course, Instructor, room, Section, or Class Number"
+              placeholder="Search Courses, Instructors, or rooms…"
               type="search"
             />
             <Button type="submit">Search</Button>
@@ -351,7 +382,7 @@ export default async function SchedulePage({
               Term
             </label>
             <select
-              className="rounded-md border border-slate-300 bg-white px-3 py-2"
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-950"
               defaultValue={state.termCode}
               id="schedule-term"
               name="term"
@@ -378,7 +409,8 @@ export default async function SchedulePage({
             </p>
           </details>
           <SisImportDialog state={state} />
-          {state.classNumbers.length ? (
+          {plannerClassNumbers.length > 0 &&
+          invalidClassNumbers.length === 0 ? (
             <>
               <Button asChild variant="outline">
                 <a href={`${calendarUrl}&download=1`}>
@@ -404,26 +436,23 @@ export default async function SchedulePage({
         </Button>
         <Button asChild variant={state.view === "cart" ? "default" : "outline"}>
           <Link href={stateUrl(state, { view: "cart" })}>
-            Planner ({state.classNumbers.length})
+            Planner ({plannerClassNumbers.length})
           </Link>
         </Button>
       </nav>
 
       <section className="flex flex-col gap-4" aria-live="polite">
-        <header className="flex items-end justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-bold">
-              {state.view === "cart"
-                ? "Selected Classes"
-                : schedule.term.termName}
-            </h2>
-            <p className="text-sm text-slate-600">
-              {state.view === "cart"
-                ? `${plannerClasses.length} selected`
-                : `${schedule.total} Course${schedule.total === 1 ? "" : "s"}${schedule.total > schedule.results.length ? ` · showing first ${schedule.results.length}` : ""}`}
-            </p>
-          </div>
-          <a href={stateUrl(state, {})}>Share this planner</a>
+        <header>
+          <h2 className="text-2xl font-bold">
+            {state.view === "cart"
+              ? "Selected Classes"
+              : schedule.term.termName}
+          </h2>
+          <p className="text-sm text-slate-600">
+            {state.view === "cart"
+              ? `${plannerClasses.length} selected`
+              : `${schedule.total} Course${schedule.total === 1 ? "" : "s"}${schedule.total > schedule.results.length ? ` · showing first ${schedule.results.length}` : ""}`}
+          </p>
         </header>
         {offerings.length ? (
           offerings.map((offering) => (

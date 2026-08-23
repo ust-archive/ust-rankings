@@ -13,7 +13,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import {
   buildScheduleUrl,
@@ -74,15 +79,23 @@ export function SisImportDialog({ state }: { state: PlannerState }) {
           <FieldLabel htmlFor="sis-text">SIS page text</FieldLabel>
           <Textarea
             aria-invalid={Boolean(message)}
+            autoComplete="off"
             id="sis-text"
-            onChange={(event) => setText(event.target.value)}
-            placeholder="Paste SIS page text"
+            onChange={(event) => {
+              setText(event.target.value);
+              setMessage(undefined);
+            }}
+            placeholder="Paste SIS page text…"
             rows={10}
             value={text}
           />
-          <FieldDescription>
-            {message ?? "Your pasted text is not uploaded or stored."}
-          </FieldDescription>
+          {message ? (
+            <FieldError>{message}</FieldError>
+          ) : (
+            <FieldDescription>
+              Your pasted text is not uploaded or stored.
+            </FieldDescription>
+          )}
         </Field>
         <DialogFooter>
           <Button onClick={submit} type="button">
