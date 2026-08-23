@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { browserContributionsUrl } from "./test/browser-contributions-fixture";
 import { browserFixtureEnvironment } from "./test/browser-fixture";
 
 const port = 17831;
@@ -18,7 +19,7 @@ export default defineConfig({
     env: {
       ...process.env,
       AUTH_SECRET: "",
-      CONTRIBUTIONS_POSTGRES_URL: "",
+      CONTRIBUTIONS_POSTGRES_URL: browserContributionsUrl(),
       NEXT_DIST_DIR: ".next-playwright",
       ...browserFixtureEnvironment,
     },
