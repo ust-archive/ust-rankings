@@ -4,6 +4,7 @@ import { InstructorDetails } from "@/app/instructors/instructor-details";
 import {
   BrowserInstructorIdentity,
   BrowserInstructorRankings,
+  BrowserInstructorReviewComposer,
 } from "@/app/instructors/instructor-details-client";
 import {
   type InstructorRouteSearchParams,
@@ -117,21 +118,35 @@ export async function renderInstructorPage(
           ),
       ),
   );
-  const selectedTermCode = selectedTerm ?? classes.at(-1)?.termCode;
+  const selectedTermCode = classes.at(-1)?.termCode;
   return (
     <InstructorDetails
       identity={identity}
       identityContent={
         <BrowserInstructorIdentity
+          expectedRankingRevision={identity.generation}
           fallbackIdentity={identity}
           instructorKey={identity.instructor.uuid}
           rankingConfiguration={rankingPreference}
+          requestedTermCode={selectedTerm}
         />
       }
       rankingsContent={
         <BrowserInstructorRankings
+          expectedRankingRevision={identity.generation}
           instructorKey={identity.instructor.uuid}
           rankingConfiguration={rankingPreference}
+          requestedTermCode={selectedTerm}
+        />
+      }
+      reviewComposerContent={
+        <BrowserInstructorReviewComposer
+          classes={classes}
+          expectedRankingRevision={identity.generation}
+          fallbackIdentity={identity}
+          instructorKey={identity.instructor.uuid}
+          rankingConfiguration={rankingPreference}
+          requestedTermCode={selectedTerm}
           selectedTermCode={selectedTermCode}
         />
       }

@@ -1022,6 +1022,18 @@ async function instructorRankings(
     evidence.set(uuid, values);
   }
   const currentEvidence = new Set(evidence.keys());
+  const familySearchValues = new Map<string, string[]>();
+  for (const identity of runtime.identities.values()) {
+    const uuid = runtime.identityHistory.resolveUuid(identity.uuid);
+    const values = familySearchValues.get(uuid) ?? [];
+    values.push(
+      identity.uuid,
+      identity.canonicalName,
+      ...(identity.itsc ? [identity.itsc] : []),
+      ...identity.aliases.map((alias) => alias.name),
+    );
+    familySearchValues.set(uuid, values);
+  }
   const candidates: Array<{
     key: string;
     active: boolean;
@@ -1055,10 +1067,7 @@ async function instructorRankings(
       score: retired ? undefined : rankingScore(values, configuration.weights),
       courseCodes,
       searchText: [
-        identity.uuid,
-        identity.canonicalName,
-        identity.itsc,
-        ...identity.aliases.map((alias) => alias.name),
+        ...(familySearchValues.get(identity.uuid) ?? []),
         ...[...courseCodes].flatMap((code) => [
           code,
           runtime.courses.get(code)?.title,
@@ -1089,14 +1098,13 @@ async function instructorRankings(
     (candidate) => candidate.active,
   );
   const eligible = activity === "current" ? currentEligible : allTimeEligible;
-  const filtered = eligible.filter(
-    (candidate) =>
-      (!coursePrefix ||
-        [...candidate.courseCodes].some((code) =>
-          code.startsWith(`${coursePrefix} `),
-        )) &&
-      (!course || candidate.courseCodes.has(course)),
-  );
+  const matchesFilters = (candidate: (typeof candidates)[number]) =>
+    (!coursePrefix ||
+      [...candidate.courseCodes].some((code) =>
+        code.startsWith(`${coursePrefix} `),
+      )) &&
+    (!course || candidate.courseCodes.has(course));
+  const filtered = eligible.filter(matchesFilters);
   const searched = search
     ? filtered.filter((candidate) => candidate.searchText.includes(search))
     : filtered;
@@ -1104,6 +1112,7 @@ async function instructorRankings(
     (candidate) =>
       candidate.score === undefined &&
       (activity === "all" || candidate.active) &&
+      matchesFilters(candidate) &&
       (!search || candidate.searchText.includes(search)),
   ).length;
   let start = 0;
@@ -1192,6 +1201,11 @@ async function instructorDetails(
   runtime: Runtime,
   input: CourseQueryOperations["instructorDetails"]["input"],
 ): Promise<Rankings> {
+  if (
+    input.expectedRankingRevision &&
+    input.expectedRankingRevision !== runtime.delivery.manifest.sources.rankings
+  )
+    throw new QueryError("unavailable", "Instructor generations do not match.");
   const identity = instructorIdentity(runtime, input.key);
   const query: RankingsQuery & { entity: "instructor" } = {
     entity: "instructor",

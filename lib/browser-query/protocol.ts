@@ -28,6 +28,7 @@ export type CourseQueryOperations = {
   instructorDetails: {
     input: {
       key: string;
+      expectedRankingRevision?: string;
       termCode?: string;
       activity?: "current" | "all";
       preset?: "learning" | "grade";

@@ -328,6 +328,7 @@ export function InstructorDetails({
   rankings,
   identityContent,
   rankingsContent,
+  reviewComposerContent,
   classes,
   scheduleUnavailable,
   selectedTermCode,
@@ -346,6 +347,7 @@ export function InstructorDetails({
   rankings?: Rankings;
   identityContent?: ReactNode;
   rankingsContent?: ReactNode;
+  reviewComposerContent?: ReactNode;
   classes: ScheduleClass[];
   scheduleUnavailable: boolean;
   selectedTermCode?: string;
@@ -448,12 +450,14 @@ export function InstructorDetails({
             error={reviewError}
             published={reviewPublished}
             reviewComposer={
-              <ReviewComposer
-                {...reviewEditor}
-                displayTermNames
-                initialInstructorUuid={identity.instructor.uuid}
-                initialTermCode={selectedTermCode}
-              />
+              reviewComposerContent ?? (
+                <ReviewComposer
+                  {...reviewEditor}
+                  displayTermNames
+                  initialInstructorUuid={identity.instructor.uuid}
+                  initialTermCode={selectedTermCode}
+                />
+              )
             }
             reviews={reviews}
             reviewsUnavailable={reviewsUnavailable}
