@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Browser Query Runtime Prototype</title>
+    <style>
+      :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #172033; background: #f5f7fb; }
+      body { margin: 0; }
+      main { width: min(1100px, calc(100% - 32px)); margin: 40px auto; }
+      h1, h2 { line-height: 1.15; }
+      h1 { margin-bottom: 8px; }
+      .lede { max-width: 80ch; color: #4b5568; }
+      .notice { padding: 12px 16px; border-left: 4px solid #2563eb; background: #eaf2ff; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 24px 0; }
+      .card, section { background: white; border: 1px solid #dce2ec; border-radius: 12px; padding: 18px; box-shadow: 0 4px 18px #1720330a; }
+      .metric { font-size: 1.65rem; font-weight: 750; display: block; }
+      .label { color: #667085; font-size: .85rem; }
+      section { margin: 16px 0; }
+      button { border: 0; border-radius: 8px; padding: 10px 14px; margin: 4px 4px 4px 0; background: #2563eb; color: white; font: inherit; font-weight: 650; cursor: pointer; }
+      button.secondary { background: #475467; }
+      button:disabled { cursor: wait; opacity: .55; }
+      progress { width: 100%; height: 14px; }
+      table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e7ebf1; }
+      th { color: #475467; }
+      pre { max-height: 360px; overflow: auto; background: #111827; color: #d1fae5; padding: 14px; border-radius: 8px; white-space: pre-wrap; }
+      .ok { color: #067647; }
+      .bad { color: #b42318; }
+      @media (max-width: 600px) { main { margin: 20px auto; } table { display: block; overflow-x: auto; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Browser Query Runtime Prototype</h1>
+      <p class="lede">Question: can an ordinary browser load the complete public Catalog, Ranking, identity, and Schedule datasets, then run representative UST Rankings queries quickly enough to remove DuckDB from the application service?</p>
+      <p class="notice"><strong>Throwaway prototype.</strong> It reads current public immutable-style artifacts from Hugging Face. No community data or credentials are involved.</p>
+
+      <div class="grid">
+        <div class="card"><span id="phase" class="metric">Idle</span><span class="label">Current phase</span></div>
+        <div class="card"><span id="declared" class="metric">26.6 MiB</span><span class="label">Current complete dataset</span></div>
+        <div class="card"><span class="metric">11.1 MiB</span><span class="label">Column-pruned delivery candidate</span></div>
+        <div class="card"><span id="elapsed" class="metric">—</span><span class="label">Last operation</span></div>
+        <div class="card"><span id="memory" class="metric">—</span><span class="label">DuckDB-managed memory</span></div>
+      </div>
+
+      <section>
+        <h2>Candidate split</h2>
+        <p>Keep the current complete Parquet history as the archival dataset. A delivery copy retaining every Term but omitting rating columns unused by the web experience reduces Rankings from 25.5 MiB to 10.0 MiB; with Schedule and Catalog, the complete browser delivery is 11.1 MiB. The sampled top-100 Instructor ranking remained exact.</p>
+      </section>
+
+      <section>
+        <h2>Guided experiment</h2>
+        <p>Run these in order. The realistic suite exercises the delivery path; the full scan deliberately touches every column in every artifact.</p>
+        <button id="initialize">1. Initialize DuckDB-Wasm</button>
+        <button id="register" disabled>2. Register full dataset</button>
+        <button id="realistic" disabled>3. Run realistic queries</button>
+        <button id="scan" class="secondary" disabled>4. Full scan all artifacts</button>
+        <button id="warm" class="secondary" disabled>Repeat warm suite</button>
+        <progress id="progress" max="12" value="0"></progress>
+      </section>
+
+      <section>
+        <h2>Artifacts</h2>
+        <table>
+          <thead><tr><th>Dataset</th><th>Artifact</th><th>Declared size</th><th>Full-scan rows</th></tr></thead>
+          <tbody id="files"></tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Results and timings</h2>
+        <table>
+          <thead><tr><th>Operation</th><th>Time</th><th>Result</th></tr></thead>
+          <tbody id="results"></tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Runtime state</h2>
+        <pre id="state">Open this file, then initialize the runtime.</pre>
+      </section>
+    </main>
+
+    <script type="module">
+      import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.30.0/+esm";
+
+      const rankingBase = "https://huggingface.co/datasets/ust-archive/ust-rankings/resolve/main/";
+      const scheduleBase = "https://huggingface.co/datasets/ust-archive/schedule/resolve/main/";
+      const files = [
+        ["Ranking", "course-instructors.parquet", 215600],
+        ["Ranking", "course-rankings.parquet", 606300],
+        ["Ranking", "course-ratings.parquet", 14300000],
+        ["Catalog", "courses.parquet", 55800],
+        ["Ranking", "instructor-aliases.parquet", 94400],
+        ["Ranking", "instructor-identities.parquet", 84500],
+        ["Ranking", "instructor-identity-events.parquet", 6400],
+        ["Ranking", "instructor-rankings.parquet", 527400],
+        ["Ranking", "instructor-ratings.parquet", 10800000],
+        ["Ranking", "instructor-split-affected-associations.parquet", 1400],
+        ["Schedule", "classes.parquet", 627100],
+        ["Schedule", "courses.parquet", 607300],
+      ].map(([dataset, filename, bytes]) => ({
+        dataset,
+        filename,
+        bytes,
+        name: `${dataset.toLowerCase()}/${filename}`,
+        url: `${dataset === "Schedule" ? scheduleBase : rankingBase}${filename}`,
+      }));
+
+      const state = { phase: "idle", initialized: false, registered: false, runs: [], scans: {} };
+      let db;
+      let connection;
+      const $ = (id) => document.getElementById(id);
+      const formatBytes = (bytes) => `${(Number(bytes) / 1024 / 1024).toFixed(1)} MiB`;
+      const formatMs = (ms) => `${Math.round(ms)} ms`;
+      const toRows = (result) => result.toArray().map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, typeof value === "bigint" ? Number(value) : value])));
+
+      function render() {
+        $("phase").textContent = state.phase;
+        $("state").textContent = JSON.stringify(state, null, 2);
+        $("register").disabled = !state.initialized || state.phase.endsWith("…");
+        $("realistic").disabled = !state.registered || state.phase.endsWith("…");
+        $("scan").disabled = !state.registered || state.phase.endsWith("…");
+        $("warm").disabled = !state.registered || state.phase.endsWith("…");
+        $("files").innerHTML = files.map((file) => `<tr><td>${file.dataset}</td><td>${file.filename}</td><td>${formatBytes(file.bytes)}</td><td>${state.scans[file.name] ?? "—"}</td></tr>`).join("");
+        $("results").innerHTML = state.runs.map((run) => `<tr><td>${run.name}</td><td>${formatMs(run.ms)}</td><td><code>${run.summary}</code></td></tr>`).join("");
+      }
+
+      async function timed(name, operation) {
+        state.phase = `${name}…`;
+        render();
+        const started = performance.now();
+        try {
+          const value = await operation();
+          const ms = performance.now() - started;
+          state.runs.unshift({ name, ms, summary: value });
+          $("elapsed").textContent = formatMs(ms);
+          state.phase = "Ready";
+          return value;
+        } catch (error) {
+          state.phase = "Failed";
+          state.runs.unshift({ name, ms: performance.now() - started, summary: error.message });
+          throw error;
+        } finally {
+          render();
+        }
+      }
+
+      async function updateMemory() {
+        const rows = toRows(await connection.query("SELECT coalesce(sum(memory_usage_bytes), 0) AS bytes FROM duckdb_memory()"));
+        $("memory").textContent = formatBytes(rows[0].bytes);
+      }
+
+      async function initialize() {
+        await timed("Initialize runtime", async () => {
+          const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+          const worker = await duckdb.createWorker(bundle.mainWorker);
+          db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
+          await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+          connection = await db.connect();
+          await connection.query("SET threads = 1");
+          state.initialized = true;
+          return bundle.mainModule.split("/").at(-1);
+        });
+      }
+
+      async function register() {
+        await timed("Register full dataset", async () => {
+          for (const [index, file] of files.entries()) {
+            await db.registerFileURL(file.name, file.url, duckdb.DuckDBDataProtocol.HTTP, false);
+            $("progress").value = index + 1;
+          }
+          state.registered = true;
+          return `${files.length} artifacts / ${formatBytes(files.reduce((sum, file) => sum + file.bytes, 0))}`;
+        });
+      }
+
+      const realisticQueries = [
+        ["Catalog lookup", `SELECT prefix, number, title FROM read_parquet('catalog/courses.parquet') WHERE prefix = 'COMP' ORDER BY number LIMIT 20`],
+        ["Latest Instructor ranking", `WITH latest AS (SELECT max(term_num) AS term_num FROM read_parquet('ranking/instructor-rankings.parquet')), scores AS (SELECT uuid, any_value(name) AS name, sum(CASE criterion WHEN 'content' THEN bayesian * 0.2667 WHEN 'teaching' THEN bayesian * 0.2667 WHEN 'grading' THEN bayesian * 0.1 WHEN 'workload' THEN bayesian * 0.0333 WHEN 'course' THEN bayesian * 0.0833 WHEN 'instructor' THEN bayesian * 0.25 ELSE 0 END) AS score FROM read_parquet('ranking/instructor-ratings.parquet') ratings, latest WHERE ratings.term_num = latest.term_num GROUP BY uuid) SELECT name, round(score, 4) AS score FROM scores ORDER BY score DESC LIMIT 100`],
+        ["Latest Schedule", `WITH latest_term AS (SELECT max(term_num) AS term_num FROM read_parquet('schedule/courses.parquet')) SELECT course.prefix, course.number, course.title, count(class.section) AS sections FROM read_parquet('schedule/courses.parquet') course JOIN read_parquet('schedule/classes.parquet') class ON course.term_num = class.term_num AND course.id = class.course_id, latest_term WHERE course.term_num = latest_term.term_num AND course.status = 'ACTIVE' AND class.status = 'ACTIVE' GROUP BY course.prefix, course.number, course.title ORDER BY course.prefix, course.number LIMIT 100`],
+        ["Identity registry", `SELECT count(*) AS identities, count(itsc) AS with_itsc FROM read_parquet('ranking/instructor-identities.parquet')`],
+      ];
+
+      async function realistic() {
+        for (const [name, sql] of realisticQueries) {
+          await timed(name, async () => {
+            const rows = toRows(await connection.query(sql));
+            return `${rows.length} rows; ${JSON.stringify(rows[0] ?? {})}`;
+          });
+        }
+        await updateMemory();
+      }
+
+      async function scan() {
+        for (const file of files) {
+          await timed(`Scan ${file.name}`, async () => {
+            const rows = toRows(await connection.query(`SELECT count(*) AS rows, sum(length(to_json(t))) AS logical_characters FROM read_parquet('${file.name}') t`));
+            state.scans[file.name] = rows[0].rows.toLocaleString();
+            return `${rows[0].rows.toLocaleString()} rows / ${Number(rows[0].logical_characters ?? 0).toLocaleString()} logical characters`;
+          });
+        }
+        await updateMemory();
+      }
+
+      async function act(action) {
+        document.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+        try { await action(); }
+        catch (error) { console.error(error); }
+        finally { render(); }
+      }
+
+      $("initialize").onclick = () => act(initialize);
+      $("register").onclick = () => act(register);
+      $("realistic").onclick = () => act(realistic);
+      $("warm").onclick = () => act(realistic);
+      $("scan").onclick = () => act(scan);
+      render();
+    </script>
+  </body>
+</html>
