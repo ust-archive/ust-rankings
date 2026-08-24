@@ -9,7 +9,9 @@ import { DetailsRankings } from "@/app/courses/details-sections";
 import { IdentityCard } from "@/app/instructors/instructor-details";
 import {
   cachedInstructorDetails,
+  cachedScheduleDetails,
   queryInstructorDetails,
+  queryScheduleDetails,
 } from "@/lib/browser-query/client";
 import { rankingTermName } from "@/lib/rankings/presentation";
 import type {
@@ -118,10 +120,31 @@ export function BrowserInstructorReviewComposer({
     };
   }, [input]);
   const identity = rankings ?? fallbackIdentity;
+  const scheduleInput = useMemo(
+    () => ({ type: "instructor" as const, uuids: identity.familyUuids }),
+    [identity.familyUuids],
+  );
+  const [schedule, setSchedule] = useState(
+    cachedScheduleDetails(scheduleInput),
+  );
+  useEffect(() => {
+    let current = true;
+    void queryScheduleDetails(scheduleInput).then(
+      (value) => {
+        if (current) setSchedule(value);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [scheduleInput]);
+  const effectiveClasses =
+    schedule?.type === "instructor" ? schedule.classes : classes;
   const courses = [
     ...new Set([
       ...(rankings?.courses.map((item) => item.courseCode) ?? []),
-      ...classes.map((item) => item.courseCode),
+      ...effectiveClasses.map((item) => item.courseCode),
     ]),
   ].map((courseCode) => {
     const [coursePrefix = "", courseNumber = ""] = courseCode.split(" ");
@@ -143,7 +166,7 @@ export function BrowserInstructorReviewComposer({
         termName: rankingTermName(association.termCode),
       };
     }) ?? []),
-    ...classes.flatMap((item) => [
+    ...effectiveClasses.flatMap((item) => [
       {
         course: {
           coursePrefix: item.coursePrefix,

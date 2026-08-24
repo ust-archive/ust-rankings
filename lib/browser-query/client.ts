@@ -83,7 +83,6 @@ function worker() {
           event.data.error.message,
         );
         request.reject(error);
-        if (error.code === "unavailable") failWorker(error);
       }
     },
   );

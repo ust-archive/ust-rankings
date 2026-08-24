@@ -1486,6 +1486,11 @@ function scheduleSearchText(offering: CourseOffering) {
     offering.courseCode,
     offering.title,
     offering.description,
+    offering.previousCourseCodes,
+    offering.prerequisite,
+    offering.corequisite,
+    offering.exclusion,
+    ...offering.attributes.flatMap((attribute) => Object.values(attribute)),
     ...offering.classes.flatMap((item) => [
       item.section,
       item.classNumber,

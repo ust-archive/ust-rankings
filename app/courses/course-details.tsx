@@ -125,6 +125,7 @@ export function CourseDetails({
   schedule,
   rankings,
   rankingsContent,
+  reviewComposerContent,
   scheduleContent,
   selectedTermCode,
   reviews = [],
@@ -142,6 +143,7 @@ export function CourseDetails({
   schedule?: Extract<ScheduleDetails, { type: "course" }>;
   rankings?: CourseRankings;
   rankingsContent?: ReactNode;
+  reviewComposerContent?: ReactNode;
   scheduleContent?: ReactNode;
   selectedTermCode?: string;
   reviews?: PublicReview[];
@@ -359,12 +361,14 @@ export function CourseDetails({
             error={reviewError}
             published={reviewPublished}
             reviewComposer={
-              <ReviewComposer
-                {...reviewEditor}
-                displayTermNames
-                initialCourse={{ coursePrefix, courseNumber }}
-                initialTermCode={evidenceTermCode}
-              />
+              reviewComposerContent ?? (
+                <ReviewComposer
+                  {...reviewEditor}
+                  displayTermNames
+                  initialCourse={{ coursePrefix, courseNumber }}
+                  initialTermCode={evidenceTermCode}
+                />
+              )
             }
             reviews={reviews}
             reviewsUnavailable={reviewsUnavailable}

@@ -5,7 +5,10 @@ import {
   normalizeCourseRoute,
   type RouteSearchParams,
 } from "@/app/courses/routes";
-import { BrowserScheduleDetails } from "@/app/courses/schedule-client";
+import {
+  BrowserScheduleDetails,
+  BrowserScheduleReviewComposer,
+} from "@/app/courses/schedule-client";
 import { loadSignals } from "@/app/signals/data";
 import { reviewOrder } from "@/lib/contributions/review-order";
 import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
@@ -60,6 +63,14 @@ export async function renderCoursePage(
         />
       }
       selectedTermCode={selectedTerm}
+      reviewComposerContent={
+        <BrowserScheduleReviewComposer
+          coursePrefix={coursePrefix}
+          courseNumber={courseNumber}
+          entity={{ type: "course", coursePrefix, courseNumber }}
+          initialTermCode={selectedTerm}
+        />
+      }
       reviews={community.reviews}
       reviewsUnavailable={community.unavailable}
       reviewPublished={query.review === "published"}

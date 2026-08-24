@@ -3,6 +3,17 @@ import { expect, test } from "@playwright/test";
 const dataOrigin = "http://127.0.0.1:17832";
 const alphaUuid = "00000000-0000-4000-8000-000000000001";
 
+test("Schedule lists Course Offerings from the browser Worker", async ({
+  page,
+}) => {
+  await page.goto("/schedule?term=2510&q=Updated");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Course Offerings" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: /COMP 2000/ })).toBeVisible();
+  await expect(page.getByText(/1 Course Offerings/)).toBeVisible();
+});
+
 test("Course Schedule details load lazily from the pinned generation", async ({
   page,
 }) => {
@@ -65,6 +76,10 @@ test("Schedule failure is explicit and does not disable Rankings or Community", 
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Rankings" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
+  await page.goto("/rankings/courses?term=2510&q=Bulk");
+  await expect(
+    page.getByRole("list", { name: "Course rankings" }).getByRole("link"),
+  ).toHaveCount(100);
 });
 
 test("calendar subscription routes are removed", async ({ request }) => {
