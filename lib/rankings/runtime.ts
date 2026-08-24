@@ -128,7 +128,9 @@ export class HuggingFaceRankingSource {
       throw new RankingSourceIntegrityError("Invalid upstream tree response");
     const parquet = (tree as TreeFile[]).filter(
       (entry) =>
-        typeof entry.path === "string" && entry.path.endsWith(".parquet"),
+        typeof entry.path === "string" &&
+        !entry.path.includes("/") &&
+        entry.path.endsWith(".parquet"),
     );
     if (
       JSON.stringify(parquet.map((entry) => entry.path).sort()) !==

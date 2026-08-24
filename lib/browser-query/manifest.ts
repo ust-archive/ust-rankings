@@ -2,6 +2,7 @@ import {
   DELIVERY_ARTIFACTS,
   DELIVERY_SCHEMA_VERSION,
   type DeliveryManifest,
+  deliveryGenerationIdentityInput,
 } from "@/lib/server-index-contract";
 
 const GENERATION = /^[0-9a-f]{64}$/;
@@ -40,13 +41,10 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 async function generationHash(manifest: DeliveryManifest) {
-  const input = JSON.stringify({
-    schemaVersion: DELIVERY_SCHEMA_VERSION,
+  const input = deliveryGenerationIdentityInput({
     sources: manifest.sources,
-    artifacts: DELIVERY_ARTIFACTS.map((name) => [
-      name,
-      manifest.artifacts[name].sha256,
-    ]),
+    artifacts: manifest.artifacts,
+    serverIndexIdentitySha256: manifest.serverIndex.identitySha256,
   });
   const hash = await crypto.subtle.digest(
     "SHA-256",
@@ -120,6 +118,16 @@ export async function resolveDeliveryManifest(
     )
       throw new Error(`Invalid dataset artifact: ${name}`);
   }
+  if (
+    manifest.serverIndex.name !== "server-index.json.gz" ||
+    manifest.serverIndex.url !== "server-index.json.gz" ||
+    manifest.serverIndex.generation !== manifest.generation ||
+    !SHA256.test(manifest.serverIndex.identitySha256) ||
+    !SHA256.test(manifest.serverIndex.sha256) ||
+    !Number.isSafeInteger(manifest.serverIndex.bytes) ||
+    manifest.serverIndex.bytes <= 0
+  )
+    throw new Error("Invalid Server Index declaration");
   if ((await generationHash(manifest)) !== manifest.generation)
     throw new Error("Dataset generation identity mismatch");
   return { baseUrl, generation: manifest.generation, manifest };

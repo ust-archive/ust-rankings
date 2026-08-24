@@ -44,6 +44,23 @@ test("authenticated activation accepts the staged generation contract", async ()
   expect(operation).toHaveBeenCalledWith(activation);
 });
 
+test("authenticated status reports the active generation", async () => {
+  process.env.RANKINGS_REFRESH_SECRET = secret;
+  const { createServerIndexStatusHandler } = await import(
+    "@/app/api/server-index/activate/route"
+  );
+  const GET = createServerIndexStatusHandler(async () => ({ generation }));
+  const authorized = new Request(
+    "https://example.test/api/server-index/activate",
+    { headers: { authorization: `Bearer ${secret}` } },
+  );
+  expect(await (await GET(authorized)).json()).toEqual({ generation });
+  expect(
+    (await GET(new Request("https://example.test/api/server-index/activate")))
+      .status,
+  ).toBe(401);
+});
+
 test("activation rejects unauthenticated, malformed, oversized, and invalid requests", async () => {
   process.env.RANKINGS_REFRESH_SECRET = secret;
   const operation = vi.fn(async () => {

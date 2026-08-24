@@ -127,11 +127,11 @@ and scoped Instructor Association Corrections.
 
 `manifest.json` records schema version, the pinned `rankings` and `schedule`
 revisions, every Delivery artifact's immutable Spaces CDN URL, byte size, and
-SHA-256, plus the Server Index's relative staged URL and declaration. The
-generation SHA is a SHA-256 of the schema version, pinned revisions, and ordered
-Delivery artifact hashes; the
-Server Index records that generation but is deliberately excluded from the
-input to avoid circular hashing. Output directories are generation-named and
+SHA-256, plus the Server Index's relative staged URL and declaration. The generation SHA is a SHA-256 of the schema version, pinned revisions,
+ordered Delivery artifact hashes, and the compressed Server Index with its
+embedded generation blanked. The manifest records that canonical Server Index
+identity hash so browser clients can verify the same non-circular identity.
+Output directories are generation-named and
 installed by atomic rename, so failed builds cannot promote partial data and
 older generations remain available for rollback.
 
@@ -192,3 +192,19 @@ reservations, and Instructor associations through `relation.parquet`. Failure
 shows an explicit Schedule-unavailable state while Rankings and Community stay
 usable. Calendar subscription UI and both `.ics` routes are removed; no
 server-side calendar query path remains.
+
+## Publication and rollback
+
+The `Update data` workflow resolves every source `main` pointer to a 40-hex
+revision before building. It publishes the unchanged full-fidelity Ranking
+archive at the Hugging Face repository root, derives the paired browser
+projection from that pinned commit and the pinned Schedule archive, and uploads
+the immutable generation under `browser/<generation>/` on Hugging Face.
+
+The publisher mirrors the generation to `ust-rankings-data`, confirms every
+object with `HEAD`, calls the authenticated Server Index activation operation,
+and only then writes `latest.json`. A failed upload or activation never changes
+latest. Immutable generation objects use year-long cache metadata and remain in
+both stores. The workflow's `rollback` action takes an existing generation,
+reactivates its Server Index first, repoints latest second, and verifies the
+manifest plus a real CDN Parquet byte range; it never deletes newer generations.
