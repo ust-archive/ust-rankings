@@ -1,17 +1,24 @@
-import {
-  RankingPage,
-  type RankingSearchParams,
-} from "@/app/rankings/rankings-page";
+import type { CourseRankingSearchParams } from "@/app/rankings/course-query";
+import { CourseRankingsPage } from "@/app/rankings/course-rankings-page";
+import { readRankingPreference } from "@/lib/rankings/preference-server";
+import { COMMON_CORE_SCHEMES } from "@/lib/rankings/server";
 
 export const dynamic = "force-dynamic";
 
 type Props = {
-  searchParams: Promise<RankingSearchParams>;
+  searchParams: Promise<CourseRankingSearchParams>;
 };
 
 export default async function CoursesPage({ searchParams }: Props) {
-  return RankingPage({
-    entity: "course",
-    searchParams: await searchParams,
-  });
+  const [preference, query] = await Promise.all([
+    readRankingPreference(),
+    searchParams,
+  ]);
+  return (
+    <CourseRankingsPage
+      preference={preference}
+      schemes={COMMON_CORE_SCHEMES}
+      searchParams={query}
+    />
+  );
 }

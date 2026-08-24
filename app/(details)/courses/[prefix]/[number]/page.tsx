@@ -1,6 +1,5 @@
-import { notFound } from "next/navigation";
 import { CourseDetails } from "@/app/courses/course-details";
-import { loadCourseRankings } from "@/app/courses/data";
+import { BrowserCourseRankings } from "@/app/courses/course-details-client";
 import { loadCourseReviews } from "@/app/courses/review-data";
 import {
   normalizeCourseRoute,
@@ -65,20 +64,21 @@ export async function renderCoursePage(
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
       : scheduleResult.schedule?.offerings.at(-1)?.termCode;
-  const rankings = await loadCourseRankings(
-    coursePrefix,
-    courseNumber,
-    selectedTerm,
-    rankingPreference,
-  );
-  if (!rankings && !scheduleResult.schedule && !scheduleResult.unavailable)
-    notFound();
-
   return (
     <CourseDetails
       coursePrefix={coursePrefix}
       courseNumber={courseNumber}
-      rankings={rankings}
+      rankingsContent={
+        <BrowserCourseRankings
+          coursePrefix={coursePrefix}
+          courseNumber={courseNumber}
+          rankingConfiguration={rankingPreference}
+          selectedTermCode={selectedTerm}
+          termNames={(scheduleResult.schedule?.offerings ?? []).map(
+            (offering) => [offering.termCode, offering.termName],
+          )}
+        />
+      }
       schedule={scheduleResult.schedule}
       selectedTermCode={selectedTerm}
       reviews={community.reviews}

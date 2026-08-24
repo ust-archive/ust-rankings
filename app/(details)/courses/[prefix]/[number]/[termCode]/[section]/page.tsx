@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ClassDetails, UnavailableDetail } from "@/app/courses/course-details";
-import { loadCourseRankings } from "@/app/courses/data";
+import { BrowserCourseRankings } from "@/app/courses/course-details-client";
 import { loadReviews } from "@/app/courses/review-data";
 import {
   normalizeCourseRoute,
@@ -32,7 +32,7 @@ export default async function ClassPage({
   if (!termCode || !section) notFound();
   const rankingPreference = await readRankingPreferenceQuery();
   try {
-    const [scheduleClass, rankings, community] = await Promise.all([
+    const [scheduleClass, community] = await Promise.all([
       getSchedule({
         type: "class",
         coursePrefix,
@@ -40,12 +40,6 @@ export default async function ClassPage({
         termCode,
         section,
       }),
-      loadCourseRankings(
-        coursePrefix,
-        courseNumber,
-        termCode,
-        rankingPreference,
-      ),
       loadReviews({
         type: "course",
         coursePrefix,
@@ -58,8 +52,16 @@ export default async function ClassPage({
     if (scheduleClass.type !== "class") notFound();
     return (
       <ClassDetails
+        rankingsContent={
+          <BrowserCourseRankings
+            coursePrefix={coursePrefix}
+            courseNumber={courseNumber}
+            rankingConfiguration={rankingPreference}
+            selectedTermCode={termCode}
+            termNames={[]}
+          />
+        }
         scheduleClass={scheduleClass}
-        rankings={rankings}
         reviews={community.reviews}
         reviewsUnavailable={community.unavailable}
         signedIn={community.signedIn}

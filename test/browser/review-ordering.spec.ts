@@ -39,6 +39,7 @@ test("Review Order appears on every list, persists in the URL, and works on a na
   await expectOrder("Popular");
 
   await order.press("Enter");
+  await expect(page.getByRole("option", { name: "Recent" })).toBeVisible();
   await page.keyboard.press("End");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/order=recent/);
