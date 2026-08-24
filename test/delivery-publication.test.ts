@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import type { DeliveryManifest } from "@/lib/server-index-contract";
 import {
   type PublicationDependencies,
@@ -38,15 +38,17 @@ function manifest(value = generation): DeliveryManifest {
 }
 
 function dependencies(events: string[]): PublicationDependencies {
+  let activeGeneration: string | undefined;
   return {
     async put(key) {
       events.push(`put:${key}`);
     },
     async activate(input) {
       events.push(`activate:${input.generation}`);
+      activeGeneration = input.generation;
     },
     async activeGeneration() {
-      return undefined;
+      return activeGeneration;
     },
     async verifyGeneration(value) {
       events.push(`verify-generation:${value}`);
@@ -88,6 +90,7 @@ async function fixture() {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   delete process.env.DATA_SPACES_CDN_BASE_URL;
   await Promise.all(
     directories
@@ -178,8 +181,7 @@ test("first publication confirms an ambiguous activation before promotion", asyn
   await expect(
     publishGeneration(await fixture(), deps, noCurrentPublication()),
   ).resolves.toBe(generation);
-  expect(events.slice(-4)).toEqual([
-    `activate:${generation}`,
+  expect(events.slice(-3)).toEqual([
     `activate:${generation}`,
     "put:latest.json",
     `verify-latest:${generation}`,
@@ -187,13 +189,21 @@ test("first publication confirms an ambiguous activation before promotion", asyn
 });
 
 test("unconfirmed activation restores the previous publication", async () => {
+  vi.spyOn(globalThis, "setTimeout").mockImplementation((callback) => {
+    queueMicrotask(callback as () => void);
+    return {} as NodeJS.Timeout;
+  });
   process.env.DATA_SPACES_CDN_BASE_URL = cdn;
   const events: string[] = [];
   const deps = dependencies(events);
+  let restored = false;
   deps.activate = async ({ generation: value }) => {
     events.push(`activate:${value}`);
     if (value === generation) throw new Error("activation response lost");
+    restored = true;
   };
+  deps.activeGeneration = async () =>
+    restored ? previousGeneration : undefined;
   await expect(
     publishGeneration(await fixture(), deps, publicationRequest()),
   ).rejects.toThrow("could not be confirmed");

@@ -720,6 +720,10 @@ export function initializeServerIndex(
   return initialization;
 }
 
+export function activeServerIndexGeneration() {
+  return activeIndex?.generation;
+}
+
 export async function currentServerIndex() {
   if (activeIndex) return activeIndex;
   try {
