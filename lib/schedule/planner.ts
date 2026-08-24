@@ -106,18 +106,6 @@ export function buildScheduleUrl(state: PlannerState) {
   return `/schedule?${parameters}`;
 }
 
-export function buildCalendarUrl(
-  termCode: string,
-  classNumbers: ReadonlyArray<number>,
-) {
-  const parameters = new URLSearchParams({ term: termCode });
-  for (const classNumber of [...new Set(classNumbers)].sort(
-    (left, right) => left - right,
-  ))
-    parameters.append("class", String(classNumber));
-  return `/schedule/calendar.ics?${parameters}`;
-}
-
 type ConflictClass = {
   classNumber: number;
   meetings: Array<{

@@ -27,6 +27,13 @@ import type {
   RankingsQuery,
   ScoreDistribution,
 } from "@/lib/rankings/server";
+import type {
+  CourseOffering,
+  ScheduleClass,
+  ScheduleDetails,
+  ScheduleMeeting,
+  SchedulePage,
+} from "@/lib/schedule/server";
 import { DELIVERY_CDN_BASE_URL } from "@/lib/server-index-contract";
 import { type PinnedDelivery, resolveDeliveryManifest } from "./manifest";
 import type { CourseQueryOperations } from "./protocol";
@@ -1301,6 +1308,325 @@ async function instructorDetails(
   };
 }
 
+const scheduleOfferingSql = `
+  WITH courses AS (
+    SELECT * EXCLUDE (rn) FROM (
+      SELECT *, row_number() OVER (PARTITION BY term_num, id ORDER BY timestamp DESC) rn
+      FROM read_parquet('schedule-courses.parquet')
+    ) WHERE rn = 1 AND status = 'ACTIVE'
+  ), classes AS (
+    SELECT * EXCLUDE (rn) FROM (
+      SELECT *, row_number() OVER (PARTITION BY term_num, course_id, section ORDER BY timestamp DESC) rn
+      FROM read_parquet('schedule-classes.parquet')
+    ) WHERE rn = 1 AND status = 'ACTIVE'
+  )
+  SELECT course.term_num, course.term_code, course.term_name, course.id course_id,
+    course.prefix, course.number course_number, course.career, course.title,
+    course.description, course.credits, course.previous, course.prerequisite,
+    course.corequisite, course.exclusion, course.attributes,
+    class.section, class.number class_number, class.role, class.type class_type,
+    class.association, class.remarks, class.capacity, class.enroll, class.wait,
+    class.consent, class.open, class.schedules, class.reservations
+  FROM courses course JOIN classes class
+    ON course.term_num = class.term_num AND course.id = class.course_id`;
+
+function scheduleText(value: unknown) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function scheduleDate(value: unknown) {
+  return value ? scheduleText(value).slice(0, 10) : undefined;
+}
+
+function scheduleTime(value: unknown) {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === "string") return value.slice(0, 5);
+  const minutes = Math.floor(number(value) / 60_000_000);
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+async function mapScheduleRows(runtime: Runtime, source: Row[]) {
+  const relationRows = await queryRows(
+    runtime,
+    "SELECT uuid, term_code, subject, code FROM read_parquet('relation.parquet')",
+  );
+  const relations = new Map<string, string[]>();
+  for (const row of relationRows) {
+    const key = `${row.term_code}\0${row.subject} ${row.code}`;
+    const values = relations.get(key) ?? [];
+    values.push(String(row.uuid));
+    relations.set(key, values);
+  }
+  const names = new Map<string, string[]>();
+  for (const identity of runtime.identities.values())
+    names.set(identity.uuid, [
+      identity.canonicalName,
+      ...identity.aliases.map((alias) => alias.name),
+    ]);
+  const resolveName = (sourceName: string, termCode: string, code: string) => {
+    const candidates = relations.get(`${termCode}\0${code}`) ?? [];
+    const correction = runtime.identityHistory.matchAssociation({
+      sourceName,
+      termCode,
+      courseCode: code,
+    });
+    if (correction && candidates.includes(correction.targetUuid))
+      return correction.targetUuid;
+    const matching = candidates.filter((uuid) =>
+      (names.get(uuid) ?? []).some(
+        (name) => name.trim().toLowerCase() === sourceName.trim().toLowerCase(),
+      ),
+    );
+    if (matching.length !== 1) return undefined;
+    const resolution = runtime.identityHistory.resolveAssociation({
+      sourceName,
+      termCode,
+      courseCode: code,
+      uuid: matching[0],
+    });
+    return resolution.status === "resolved" ? resolution.uuid : undefined;
+  };
+  const offerings = new Map<string, CourseOffering>();
+  for (const row of source) {
+    const key = `${row.term_num}\0${row.course_id}`;
+    let offering = offerings.get(key);
+    if (!offering) {
+      const coursePrefix = scheduleText(row.prefix);
+      const courseNumber = scheduleText(row.course_number);
+      offering = {
+        termNumber: number(row.term_num),
+        termCode: scheduleText(row.term_code),
+        termName: scheduleText(row.term_name),
+        courseId: scheduleText(row.course_id),
+        coursePrefix,
+        courseNumber,
+        courseCode: `${coursePrefix} ${courseNumber}`,
+        career: scheduleText(row.career) as CourseOffering["career"],
+        title: scheduleText(row.title),
+        description: scheduleText(row.description),
+        credits: number(row.credits),
+        previousCourseCodes: scheduleText(row.previous),
+        prerequisite: scheduleText(row.prerequisite),
+        corequisite: scheduleText(row.corequisite),
+        exclusion: scheduleText(row.exclusion),
+        attributes: ((row.attributes as Row[] | undefined) ?? []).map(
+          (attribute) => ({
+            label: scheduleText(attribute.label),
+            value: scheduleText(attribute.value),
+            description: scheduleText(attribute.description),
+          }),
+        ),
+        classes: [],
+      };
+      offerings.set(key, offering);
+    }
+    const meetings = ((row.schedules as Row[] | undefined) ?? []).map(
+      (meeting): ScheduleMeeting => ({
+        weekday: scheduleText(meeting.weekday) as ScheduleMeeting["weekday"],
+        dateFrom: scheduleDate(meeting.date_from),
+        dateTo: scheduleDate(meeting.date_to),
+        timeFrom: scheduleTime(meeting.time_from),
+        timeTo: scheduleTime(meeting.time_to),
+        room: scheduleText(meeting.venue_name) || scheduleText(meeting.venue),
+        roomCode: scheduleText(meeting.venue),
+        instructors: (
+          (meeting.instructors as unknown[] | undefined) ?? []
+        ).flatMap((value) => {
+          const sourceName = scheduleText(value).trim();
+          if (!sourceName || sourceName.toLowerCase() === "tba") return [];
+          const uuid = resolveName(
+            sourceName,
+            offering.termCode,
+            offering.courseCode,
+          );
+          return [uuid ? { sourceName, uuid } : { sourceName }];
+        }),
+      }),
+    );
+    offering.classes.push({
+      termCode: offering.termCode,
+      coursePrefix: offering.coursePrefix,
+      courseNumber: offering.courseNumber,
+      courseCode: offering.courseCode,
+      courseTitle: offering.title,
+      courseDescription: offering.description,
+      section: scheduleText(row.section),
+      classNumber: number(row.class_number),
+      role: scheduleText(row.role) as ScheduleClass["role"],
+      classType: scheduleText(row.class_type) as ScheduleClass["classType"],
+      association:
+        row.association === null || row.association === undefined
+          ? undefined
+          : number(row.association),
+      remarks: scheduleText(row.remarks),
+      capacity: number(row.capacity),
+      enrollment: number(row.enroll),
+      waitlist: number(row.wait),
+      consent: Boolean(row.consent),
+      open: Boolean(row.open),
+      meetings,
+      reservations: ((row.reservations as Row[] | undefined) ?? []).map(
+        (reservation) => ({
+          name: scheduleText(reservation.name),
+          quota: number(reservation.quota),
+          enrollment: number(reservation.enroll),
+        }),
+      ),
+    });
+  }
+  return [...offerings.values()].sort(
+    (left, right) =>
+      left.termNumber - right.termNumber ||
+      left.courseCode.localeCompare(right.courseCode),
+  );
+}
+
+function scheduleSearchText(offering: CourseOffering) {
+  return [
+    offering.courseCode,
+    offering.title,
+    offering.description,
+    ...offering.classes.flatMap((item) => [
+      item.section,
+      item.classNumber,
+      item.remarks,
+      ...item.meetings.flatMap((meeting) => [
+        meeting.room,
+        meeting.roomCode,
+        ...meeting.instructors.map((instructor) => instructor.sourceName),
+      ]),
+    ]),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+async function schedulePage(
+  runtime: Runtime,
+  input: CourseQueryOperations["schedulePage"]["input"],
+): Promise<SchedulePage> {
+  const termRows = await queryRows(
+    runtime,
+    "SELECT term_num, term_code, term_name FROM read_parquet('schedule-courses.parquet') GROUP BY ALL ORDER BY term_num",
+  );
+  const terms = termRows.map((row) => ({
+    termNumber: number(row.term_num),
+    termCode: scheduleText(row.term_code),
+    termName: scheduleText(row.term_name),
+  }));
+  const termCode = input.termCode?.trim() || terms.at(-1)?.termCode || "";
+  const term = terms.find((candidate) => candidate.termCode === termCode);
+  if (!term) throw new QueryError("invalid", "Unknown Term Code.");
+  const search = input.search?.trim();
+  if (search && search.length > 100)
+    throw new QueryError("invalid", "Search is limited to 100 characters.");
+  const limit = Math.min(Math.max(Math.floor(input.limit ?? 100), 1), 100);
+  const rows = await queryRows(
+    runtime,
+    `${scheduleOfferingSql} WHERE course.term_code = ? ORDER BY course.prefix, course.number, class.section`,
+    [termCode],
+  );
+  let offerings = await mapScheduleRows(runtime, rows);
+  if (search) {
+    const normalized = search.toLowerCase();
+    offerings = offerings.filter((offering) =>
+      scheduleSearchText(offering).includes(normalized),
+    );
+  }
+  return {
+    generation: runtime.delivery.generation,
+    terms,
+    term,
+    search,
+    total: offerings.length,
+    results: offerings.slice(0, limit),
+  };
+}
+
+async function scheduleDetails(
+  runtime: Runtime,
+  entity: CourseQueryOperations["scheduleDetails"]["input"],
+): Promise<ScheduleDetails> {
+  if (entity.type === "instructor") {
+    const wanted = new Set(
+      entity.uuids.map((uuid) => runtime.identityHistory.resolveUuid(uuid)),
+    );
+    const relationRows = await queryRows(
+      runtime,
+      "SELECT uuid, term_code, subject, code FROM read_parquet('relation.parquet')",
+    );
+    const associations = relationRows.filter((row) =>
+      wanted.has(runtime.identityHistory.resolveUuid(String(row.uuid))),
+    );
+    if (!associations.length)
+      return { type: "instructor", instructorUuids: [...wanted], classes: [] };
+    const where = associations
+      .map(
+        () =>
+          "(course.term_code = ? AND course.prefix = ? AND course.number = ?)",
+      )
+      .join(" OR ");
+    const parameters = associations.flatMap((row) => [
+      row.term_code,
+      row.subject,
+      row.code,
+    ]);
+    const rows = await queryRows(
+      runtime,
+      `${scheduleOfferingSql} WHERE ${where} ORDER BY course.term_num, course.prefix, course.number, class.section`,
+      parameters,
+    );
+    const classes = (await mapScheduleRows(runtime, rows))
+      .flatMap((offering) => offering.classes)
+      .filter((item) =>
+        item.meetings.some((meeting) =>
+          meeting.instructors.some(
+            (instructor) => instructor.uuid && wanted.has(instructor.uuid),
+          ),
+        ),
+      );
+    return { type: "instructor", instructorUuids: [...wanted], classes };
+  }
+  const coursePrefix = entity.coursePrefix.trim().toUpperCase();
+  const courseNumber = entity.courseNumber.trim().toUpperCase();
+  if (
+    !/^[A-Z]{2,8}$/.test(coursePrefix) ||
+    !/^[0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?$/.test(courseNumber)
+  )
+    throw new QueryError("invalid", "Invalid Course.");
+  const parameters: unknown[] = [coursePrefix, courseNumber];
+  let where = "course.prefix = ? AND course.number = ?";
+  if (entity.type !== "course") {
+    where += " AND course.term_code = ?";
+    parameters.push(entity.termCode);
+  }
+  const rows = await queryRows(
+    runtime,
+    `${scheduleOfferingSql} WHERE ${where} ORDER BY course.term_num, class.section`,
+    parameters,
+  );
+  const offerings = await mapScheduleRows(runtime, rows);
+  if (!offerings.length)
+    throw new QueryError("unknown", "Unknown Schedule entity.");
+  if (entity.type === "course")
+    return {
+      type: "course",
+      coursePrefix,
+      courseNumber,
+      courseCode: `${coursePrefix} ${courseNumber}`,
+      offerings,
+    };
+  const offering = offerings[0] as CourseOffering;
+  if (entity.type === "course-offering")
+    return { type: "course-offering", ...offering };
+  const section = entity.section.trim().toUpperCase();
+  const scheduleClass = offering.classes.find(
+    (item) => item.section === section,
+  );
+  if (!scheduleClass) throw new QueryError("unknown", "Unknown Class.");
+  return { type: "class", ...scheduleClass };
+}
+
 export function deliveryBaseUrl() {
   return (
     process.env.NEXT_PUBLIC_DELIVERY_BASE_URL ?? DELIVERY_CDN_BASE_URL
@@ -1353,6 +1679,30 @@ export async function queryInstructorDetails(
       "unavailable",
       "Public Instructor data is unavailable.",
     );
+  }
+}
+
+export async function querySchedulePage(
+  input: CourseQueryOperations["schedulePage"]["input"],
+  baseUrl = deliveryBaseUrl(),
+) {
+  try {
+    return await schedulePage(await runtime(baseUrl), input);
+  } catch (error) {
+    if (error instanceof QueryError) throw error;
+    throw new QueryError("unavailable", "Public Schedule data is unavailable.");
+  }
+}
+
+export async function queryScheduleDetails(
+  input: CourseQueryOperations["scheduleDetails"]["input"],
+  baseUrl = deliveryBaseUrl(),
+) {
+  try {
+    return await scheduleDetails(await runtime(baseUrl), input);
+  } catch (error) {
+    if (error instanceof QueryError) throw error;
+    throw new QueryError("unavailable", "Public Schedule data is unavailable.");
   }
 }
 

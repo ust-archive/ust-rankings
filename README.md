@@ -1,12 +1,12 @@
 # UST Rankings
 
 [UST Rankings](https://ust-rankings.com/) provides Course and Instructor
-rankings, teaching Details, calendar subscriptions, and authenticated community
+rankings, teaching Details, and authenticated community
 contributions for HKUST students.
 
 Ranking evidence is published as immutable Hugging Face generations. Schedule
-data resolves Course Offerings, Classes, and Instructor identities for Details
-and calendar subscriptions. See [`data/rankings.md`](data/rankings.md),
+data resolves Course Offerings, Classes, and Instructor identities for Details.
+See [`data/rankings.md`](data/rankings.md),
 [`data/schedule.md`](data/schedule.md), and
 [`contributions/README.md`](contributions/README.md) for each module's runtime
 contract.

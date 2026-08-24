@@ -5,14 +5,10 @@ import {
   normalizeCourseRoute,
   type RouteSearchParams,
 } from "@/app/courses/routes";
+import { BrowserScheduleDetails } from "@/app/courses/schedule-client";
 import { loadSignals } from "@/app/signals/data";
 import { reviewOrder } from "@/lib/contributions/review-order";
 import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
-import {
-  getSchedule,
-  InvalidScheduleQueryError,
-  ScheduleUnavailableError,
-} from "@/lib/schedule/server";
 
 export const dynamic = "force-dynamic";
 
@@ -31,39 +27,20 @@ export async function renderCoursePage(
 ) {
   const [query, route] = await Promise.all([searchParams, params]);
   const { coursePrefix, courseNumber } = normalizeCourseRoute(route, query);
-  const schedulePromise = getSchedule({
-    type: "course",
-    coursePrefix,
-    courseNumber,
-  }).then(
-    (schedule) => ({
-      schedule: schedule.type === "course" ? schedule : undefined,
-      unavailable: false as const,
-    }),
-    (error) => {
-      if (error instanceof ScheduleUnavailableError)
-        return { schedule: undefined, unavailable: true as const };
-      if (error instanceof InvalidScheduleQueryError)
-        return { schedule: undefined, unavailable: false as const };
-      throw error;
-    },
-  );
-  const [scheduleResult, rankingPreference, community, signalResult] =
-    await Promise.all([
-      schedulePromise,
-      readRankingPreferenceQuery(),
-      readReviews(
-        coursePrefix,
-        courseNumber,
-        undefined,
-        reviewOrder(query.order),
-      ),
-      loadSignals({ type: "course", coursePrefix, courseNumber }),
-    ]);
+  const [rankingPreference, community, signalResult] = await Promise.all([
+    readRankingPreferenceQuery(),
+    readReviews(
+      coursePrefix,
+      courseNumber,
+      undefined,
+      reviewOrder(query.order),
+    ),
+    loadSignals({ type: "course", coursePrefix, courseNumber }),
+  ]);
   const selectedTerm =
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
-      : scheduleResult.schedule?.offerings.at(-1)?.termCode;
+      : undefined;
   return (
     <CourseDetails
       coursePrefix={coursePrefix}
@@ -74,12 +51,14 @@ export async function renderCoursePage(
           courseNumber={courseNumber}
           rankingConfiguration={rankingPreference}
           selectedTermCode={selectedTerm}
-          termNames={(scheduleResult.schedule?.offerings ?? []).map(
-            (offering) => [offering.termCode, offering.termName],
-          )}
+          termNames={[]}
         />
       }
-      schedule={scheduleResult.schedule}
+      scheduleContent={
+        <BrowserScheduleDetails
+          entity={{ type: "course", coursePrefix, courseNumber }}
+        />
+      }
       selectedTermCode={selectedTerm}
       reviews={community.reviews}
       reviewsUnavailable={community.unavailable}
