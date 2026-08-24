@@ -1405,6 +1405,10 @@ function initializeRuntime() {
           `;
           return review ? target : undefined;
         }
+        const { currentServerIndex } = await import("@/lib/server-index");
+        const index = await currentServerIndex();
+        if (index) return index.resolveSignalTarget(target);
+
         const {
           getInstructorIdentity,
           getRankings,

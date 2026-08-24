@@ -8,6 +8,10 @@ import { ReviewWriteError } from "./reviews";
 export async function validateReviewAssociations(
   associations: ReviewAssociations,
 ): Promise<ReviewAssociations | undefined> {
+  const { currentServerIndex } = await import("@/lib/server-index");
+  const index = await currentServerIndex();
+  if (index) return index.validateReviewAssociations(associations);
+
   const {
     getInstructorIdentity,
     getRankings,
@@ -110,6 +114,10 @@ export async function resolveReviewInstructorAssociationStatus(
   review: PublicReview,
 ): Promise<InstructorAssociationStatus | undefined> {
   if (!review.instructorUuid) return undefined;
+  const { currentServerIndex } = await import("@/lib/server-index");
+  const index = await currentServerIndex();
+  if (index) return index.reviewInstructorAssociationStatus(review);
+
   const {
     getInstructorIdentity,
     RankingsUnavailableError,

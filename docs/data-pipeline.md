@@ -134,3 +134,20 @@ Server Index records that generation but is deliberately excluded from the
 input to avoid circular hashing. Output directories are generation-named and
 installed by atomic rename, so failed builds cannot promote partial data and
 older generations remain available for rollback.
+
+The application activates a staged Server Index through the authenticated
+`POST /api/server-index/activate` operation. The request declares the generation,
+commit-pinned canonical Hugging Face URL, compressed byte size, and SHA-256.
+The service bounds the download and decompression, verifies the complete index
+and its identity history, builds immutable lookup Sets/Maps, and only then swaps
+the active reference. Repeating the active generation is idempotent; any failed
+replacement leaves the previous reference active.
+
+At process startup the service resolves `latest.json`, verifies its matching
+Delivery manifest, and loads that manifest's canonical Server Index URL. Review
+and Signal writes await an in-progress startup load and use the active index for
+Course, Instructor, relation, Course Offering, Class, redirect, and scoped
+correction validation. Community reads continue querying PostgreSQL directly.
+Until the final native-DuckDB cutover, a process with no promoted Server Index
+retains the existing write validator; once an index is active, it is
+authoritative.
