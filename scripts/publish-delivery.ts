@@ -144,9 +144,17 @@ async function activateConfirmed(
     try {
       await dependencies.activate(input);
     } catch (secondError) {
-      if ((await dependencies.activeGeneration()) === input.generation) return;
+      let statusError: unknown;
+      try {
+        if ((await dependencies.activeGeneration()) === input.generation)
+          return;
+      } catch (error) {
+        statusError = error;
+      }
       throw new AggregateError(
-        [firstError, secondError],
+        [firstError, secondError, statusError].filter(
+          (error) => error !== undefined,
+        ),
         "Server Index activation could not be confirmed",
       );
     }
@@ -370,10 +378,18 @@ function productionDependencies(): PublicationDependencies {
         body: JSON.stringify(input),
         signal: AbortSignal.timeout(60_000),
       });
-      if (!response.ok)
+      if (!response.ok) {
+        const result = (await response.json().catch(() => undefined)) as
+          | { failureClass?: unknown }
+          | undefined;
+        const failure =
+          typeof result?.failureClass === "string"
+            ? ` (${result.failureClass})`
+            : "";
         throw new Error(
-          `Server Index activation returned HTTP ${response.status}`,
+          `Server Index activation returned HTTP ${response.status}${failure}`,
         );
+      }
       const result = (await response.json()) as { generation?: unknown };
       if (result.generation !== input.generation)
         throw new Error("Server Index activation generation mismatch");
@@ -384,7 +400,7 @@ function productionDependencies(): PublicationDependencies {
         cache: "no-store",
         signal: AbortSignal.timeout(15_000),
       });
-      if (response.status === 503) return undefined;
+      if (response.status === 405 || response.status === 503) return undefined;
       if (!response.ok)
         throw new Error(`Server Index status returned HTTP ${response.status}`);
       const result = (await response.json()) as { generation?: unknown };
