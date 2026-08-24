@@ -4,7 +4,7 @@ import type { ServerIndexActivation } from "@/lib/server-index";
 export const maxDuration = 60;
 
 type ActivationOperation = (request: ServerIndexActivation) => Promise<{
-  status: "activated" | "current";
+  status: "accepted" | "activated" | "current";
   generation: string;
 }>;
 
@@ -109,7 +109,7 @@ export function createServerIndexActivationHandler(
 }
 
 export function createServerIndexStatusHandler(
-  operation: () => Promise<{ generation: string }>,
+  operation: () => Promise<{ generation?: string }>,
 ) {
   return async function GET(request: Request) {
     if (!authenticated(request))
@@ -127,14 +127,17 @@ export function createServerIndexStatusHandler(
 
 async function productionActivation(request: ServerIndexActivation) {
   const { activateServerIndex } = await import("@/lib/server-index");
-  return activateServerIndex(request);
+  void activateServerIndex(request).catch((error) =>
+    console.error("server index background activation failed", {
+      error: error instanceof Error ? error.name : "unknown",
+    }),
+  );
+  return { status: "accepted" as const, generation: request.generation };
 }
 
 async function productionStatus() {
-  const { currentServerIndex } = await import("@/lib/server-index");
-  const index = await currentServerIndex();
-  if (!index) throw new Error("Server Index unavailable");
-  return { generation: index.generation };
+  const { activeServerIndexGeneration } = await import("@/lib/server-index");
+  return { generation: activeServerIndexGeneration() };
 }
 
 export const POST = createServerIndexActivationHandler(productionActivation);

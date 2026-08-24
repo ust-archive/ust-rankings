@@ -138,27 +138,27 @@ async function activateConfirmed(
   input: ReturnType<typeof activation>,
   dependencies: PublicationDependencies,
 ) {
-  try {
-    await dependencies.activate(input);
-  } catch (firstError) {
+  const errors: unknown[] = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       await dependencies.activate(input);
-    } catch (secondError) {
-      let statusError: unknown;
+    } catch (error) {
+      errors.push(error);
+    }
+    for (let poll = 0; poll < 30; poll += 1) {
       try {
         if ((await dependencies.activeGeneration()) === input.generation)
           return;
       } catch (error) {
-        statusError = error;
+        errors.push(error);
       }
-      throw new AggregateError(
-        [firstError, secondError, statusError].filter(
-          (error) => error !== undefined,
-        ),
-        "Server Index activation could not be confirmed",
-      );
+      await new Promise((done) => setTimeout(done, 500));
     }
   }
+  throw new AggregateError(
+    errors,
+    "Server Index activation could not be confirmed",
+  );
 }
 
 async function restorePublication(
