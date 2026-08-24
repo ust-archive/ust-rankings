@@ -295,27 +295,35 @@ function productionDependencies(): PublicationDependencies {
   }
   return {
     async prepare() {
-      await s3.send(
-        new PutBucketCorsCommand({
-          Bucket: bucket,
-          CORSConfiguration: {
-            CORSRules: [
-              {
-                AllowedHeaders: ["Range"],
-                AllowedMethods: ["GET", "HEAD"],
-                AllowedOrigins: ["*"],
-                ExposeHeaders: [
-                  "Accept-Ranges",
-                  "Content-Length",
-                  "Content-Range",
-                  "ETag",
-                ],
-                MaxAgeSeconds: 86_400,
-              },
-            ],
-          },
-        }),
-      );
+      try {
+        await s3.send(
+          new PutBucketCorsCommand({
+            Bucket: bucket,
+            CORSConfiguration: {
+              CORSRules: [
+                {
+                  AllowedHeaders: ["Range"],
+                  AllowedMethods: ["GET", "HEAD"],
+                  AllowedOrigins: ["*"],
+                  ExposeHeaders: [
+                    "Accept-Ranges",
+                    "Content-Length",
+                    "Content-Range",
+                    "ETag",
+                  ],
+                  MaxAgeSeconds: 86_400,
+                },
+              ],
+            },
+          }),
+        );
+      } catch (error) {
+        if (
+          (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+            ?.httpStatusCode !== 403
+        )
+          throw error;
+      }
     },
     async put(key, body, options) {
       if (options.immutable) {
