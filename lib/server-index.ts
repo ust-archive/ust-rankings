@@ -14,8 +14,10 @@ import {
   ITSC_PATTERN,
 } from "@/lib/instructor-identity";
 import {
+  DELIVERY_ARTIFACTS,
   DELIVERY_CDN_BASE_URL,
   DELIVERY_SCHEMA_VERSION,
+  type DeliveryArtifactName,
   type DeliveryManifest,
   SERVER_INDEX_FILENAME,
   type ServerIndex,
@@ -177,6 +179,50 @@ async function fetchJson(
   } catch (cause) {
     throw new ServerIndexActivationError("integrity", { cause });
   }
+}
+
+function validateLegacyManifest(
+  value: Record<string, unknown>,
+  generation: string,
+) {
+  const sources = object(value.sources, "Delivery sources");
+  const rankings = string(sources.rankings, "Ranking revision");
+  const schedule = string(sources.schedule, "Schedule revision");
+  if (
+    !SOURCE_COMMIT_PATTERN.test(rankings) ||
+    !SOURCE_COMMIT_PATTERN.test(schedule)
+  )
+    throw new ServerIndexActivationError("integrity");
+  const artifacts = object(value.artifacts, "Delivery artifacts");
+  if (
+    JSON.stringify(Object.keys(artifacts).sort()) !==
+    JSON.stringify([...DELIVERY_ARTIFACTS].sort())
+  )
+    throw new ServerIndexActivationError("integrity");
+  const hashes = {} as Record<DeliveryArtifactName, string>;
+  for (const name of DELIVERY_ARTIFACTS) {
+    const declaration = object(artifacts[name], `${name} declaration`);
+    if (
+      declaration.url !== `${DELIVERY_CDN_BASE_URL}/${generation}/${name}` ||
+      !Number.isSafeInteger(declaration.bytes) ||
+      Number(declaration.bytes) <= 0 ||
+      typeof declaration.sha256 !== "string" ||
+      !SHA256_PATTERN.test(declaration.sha256)
+    )
+      throw new ServerIndexActivationError("integrity");
+    hashes[name] = declaration.sha256;
+  }
+  const expectedGeneration = createHash("sha256")
+    .update(
+      JSON.stringify({
+        schemaVersion: DELIVERY_SCHEMA_VERSION,
+        sources: { rankings, schedule },
+        artifacts: DELIVERY_ARTIFACTS.map((name) => [name, hashes[name]]),
+      }),
+    )
+    .digest("hex");
+  if (expectedGeneration !== generation)
+    throw new ServerIndexActivationError("integrity");
 }
 
 function parseActivation(value: ServerIndexActivation): ServerIndexActivation {
@@ -541,7 +587,8 @@ let pendingActivation:
     }>
   | undefined;
 let initialization: Promise<ActiveServerIndex> | undefined;
-let promotedIndexRequired = false;
+let activationRequested = false;
+let startupState: "legacy" | "unresolved" | "required" = "legacy";
 
 async function withActivationLock<T>(operation: () => Promise<T>) {
   const previous = activationLock;
@@ -600,7 +647,7 @@ export function activateServerIndex(
   dependencies = productionServerIndexDependencies(),
 ) {
   const input = parseActivation(request);
-  promotedIndexRequired = true;
+  activationRequested = true;
   const activation = activateParsed(input, dependencies, true);
   pendingActivation = activation;
   void activation.then(
@@ -636,9 +683,11 @@ async function recoverServerIndex(dependencies: ServerIndexDependencies) {
   )
     throw new ServerIndexActivationError("integrity");
   if (!("serverIndex" in manifestValue)) {
-    promotedIndexRequired = false;
+    validateLegacyManifest(manifestValue, generation);
+    startupState = "legacy";
     throw new ServerIndexActivationError("upstream");
   }
+  startupState = "required";
   const manifest = manifestValue as unknown as DeliveryManifest;
   if (
     manifest.serverIndex?.generation !== generation ||
@@ -664,7 +713,7 @@ export function initializeServerIndex(
   dependencies = productionServerIndexDependencies(),
 ) {
   if (activeIndex) return Promise.resolve(activeIndex);
-  promotedIndexRequired = true;
+  startupState = "unresolved";
   initialization ??= recoverServerIndex(dependencies).finally(() => {
     initialization = undefined;
   });
@@ -680,7 +729,8 @@ export async function currentServerIndex() {
     // The required-state check below fails closed after a known promotion.
   }
   if (activeIndex) return activeIndex;
-  if (promotedIndexRequired) throw new ServerIndexUnavailableError();
+  if (activationRequested || startupState !== "legacy")
+    throw new ServerIndexUnavailableError();
   return undefined;
 }
 
@@ -693,6 +743,7 @@ export function resetServerIndexForTests() {
   activeIndex = undefined;
   pendingActivation = undefined;
   initialization = undefined;
-  promotedIndexRequired = false;
+  activationRequested = false;
+  startupState = "legacy";
   activationLock = Promise.resolve();
 }

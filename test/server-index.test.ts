@@ -11,7 +11,10 @@ import {
   createSignalService,
   type SignalRepository,
 } from "@/lib/contributions/signals";
-import type { ServerIndex } from "@/lib/server-index-contract";
+import {
+  DELIVERY_ARTIFACTS,
+  type ServerIndex,
+} from "@/lib/server-index-contract";
 
 vi.mock("server-only", () => ({}));
 
@@ -148,6 +151,43 @@ function serverIndex(generation = GENERATION): ServerIndex {
         sourceName: "Split Instructor",
       },
     ],
+  };
+}
+
+function legacyManifest() {
+  const sources = { rankings: SOURCE_COMMIT, schedule: SOURCE_COMMIT };
+  const hashes = Object.fromEntries(
+    DELIVERY_ARTIFACTS.map((name) => [
+      name,
+      createHash("sha256").update(name).digest("hex"),
+    ]),
+  ) as Record<(typeof DELIVERY_ARTIFACTS)[number], string>;
+  const generation = createHash("sha256")
+    .update(
+      JSON.stringify({
+        schemaVersion: 1,
+        sources,
+        artifacts: DELIVERY_ARTIFACTS.map((name) => [name, hashes[name]]),
+      }),
+    )
+    .digest("hex");
+  return {
+    generation,
+    manifest: {
+      schemaVersion: 1,
+      generation,
+      sources,
+      artifacts: Object.fromEntries(
+        DELIVERY_ARTIFACTS.map((name) => [
+          name,
+          {
+            url: `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${generation}/${name}`,
+            bytes: 1,
+            sha256: hashes[name],
+          },
+        ]),
+      ),
+    },
   };
 }
 
@@ -380,28 +420,50 @@ test("startup fails closed until a verified legacy manifest proves no index was 
   );
 
   resetServerIndexForTests();
-  const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/manifest.json`;
+  const verifiedLegacy = legacyManifest();
+  const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${verifiedLegacy.generation}/manifest.json`;
   const legacy = dependencies(
     new Map<string, BodyInit>([
       [
         "https://fixtures.test/latest.json",
-        JSON.stringify({ generation: GENERATION, manifest: manifestUrl }),
-      ],
-      [
-        manifestUrl,
         JSON.stringify({
-          schemaVersion: 1,
-          generation: GENERATION,
-          artifacts: {},
-          sources: { rankings: SOURCE_COMMIT, schedule: SOURCE_COMMIT },
+          generation: verifiedLegacy.generation,
+          manifest: manifestUrl,
         }),
       ],
+      [manifestUrl, JSON.stringify(verifiedLegacy.manifest)],
     ]),
   );
   await expect(initializeServerIndex(legacy)).rejects.toBeInstanceOf(
     ServerIndexActivationError,
   );
   await expect(currentServerIndex()).resolves.toBeUndefined();
+
+  resetServerIndexForTests();
+  const malformed = legacyManifest();
+  delete (malformed.manifest.artifacts as Record<string, unknown>)[
+    DELIVERY_ARTIFACTS[0]
+  ];
+  const malformedUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${malformed.generation}/manifest.json`;
+  await expect(
+    initializeServerIndex(
+      dependencies(
+        new Map<string, BodyInit>([
+          [
+            "https://fixtures.test/latest.json",
+            JSON.stringify({
+              generation: malformed.generation,
+              manifest: malformedUrl,
+            }),
+          ],
+          [malformedUrl, JSON.stringify(malformed.manifest)],
+        ]),
+      ),
+    ),
+  ).rejects.toBeTruthy();
+  await expect(currentServerIndex()).rejects.toBeInstanceOf(
+    ServerIndexUnavailableError,
+  );
 });
 
 test("startup recovery cannot replace a concurrently activated generation", async () => {
@@ -472,6 +534,61 @@ test("startup recovery cannot replace a concurrently activated generation", asyn
   expect(recoveryDependencies.request).not.toHaveBeenCalledWith(
     previousIndexUrl,
     expect.anything(),
+  );
+});
+
+test("verified legacy recovery cannot erase a concurrent failed activation", async () => {
+  const {
+    activateServerIndex,
+    currentServerIndex,
+    initializeServerIndex,
+    resetServerIndexForTests,
+    ServerIndexActivationError,
+    ServerIndexUnavailableError,
+  } = await import("@/lib/server-index");
+  resetServerIndexForTests();
+  const legacy = legacyManifest();
+  const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${legacy.generation}/manifest.json`;
+  let manifestRequested = () => {};
+  const requested = new Promise<void>((resolve) => {
+    manifestRequested = resolve;
+  });
+  let releaseManifest = () => {};
+  const heldManifest = new Promise<void>((resolve) => {
+    releaseManifest = resolve;
+  });
+  const recoveryDependencies = {
+    latestUrl: "https://fixtures.test/latest.json",
+    allowIndexUrl: () => true,
+    request: vi.fn(async (input: string | URL | Request) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url === "https://fixtures.test/latest.json")
+        return Response.json({
+          generation: legacy.generation,
+          manifest: manifestUrl,
+        });
+      manifestRequested();
+      await heldManifest;
+      return Response.json(legacy.manifest);
+    }),
+  };
+  const recovering = initializeServerIndex(recoveryDependencies);
+  await requested;
+  const candidate = artifact(serverIndex());
+  await expect(
+    activateServerIndex(
+      { ...candidate.declaration, sha256: "f".repeat(64) },
+      dependencies(
+        new Map<string, BodyInit>([
+          [candidate.declaration.indexUrl, candidate.bytes],
+        ]),
+      ),
+    ),
+  ).rejects.toBeInstanceOf(ServerIndexActivationError);
+  releaseManifest();
+  await expect(recovering).rejects.toBeInstanceOf(ServerIndexActivationError);
+  await expect(currentServerIndex()).rejects.toBeInstanceOf(
+    ServerIndexUnavailableError,
   );
 });
 
