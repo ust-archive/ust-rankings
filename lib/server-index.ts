@@ -68,6 +68,13 @@ export class InvalidServerIndexRequestError extends TypeError {
   }
 }
 
+export class ServerIndexUnavailableError extends Error {
+  constructor() {
+    super("Server Index is unavailable.");
+    this.name = "ServerIndexUnavailableError";
+  }
+}
+
 export class ServerIndexActivationError extends Error {
   constructor(
     public readonly failureClass: "upstream" | "integrity",
@@ -158,6 +165,7 @@ async function fetchJson(
   try {
     response = await dependencies.request(url, {
       cache: "no-store",
+      redirect: "error",
       signal: AbortSignal.timeout(10_000),
     });
   } catch (cause) {
@@ -498,6 +506,7 @@ async function loadCandidate(
   try {
     response = await dependencies.request(url, {
       cache: "no-store",
+      redirect: "error",
       signal: AbortSignal.timeout(30_000),
     });
   } catch (cause) {
@@ -525,7 +534,14 @@ async function loadCandidate(
 
 let activeIndex: ActiveServerIndex | undefined;
 let activationLock = Promise.resolve();
+let pendingActivation:
+  | Promise<{
+      status: "activated" | "current";
+      generation: string;
+    }>
+  | undefined;
 let initialization: Promise<ActiveServerIndex> | undefined;
+let promotedIndexRequired = false;
 
 async function withActivationLock<T>(operation: () => Promise<T>) {
   const previous = activationLock;
@@ -545,20 +561,20 @@ export function productionServerIndexDependencies(): ServerIndexDependencies {
   return {
     request: fetch,
     latestUrl: DEFAULT_LATEST_URL,
-    allowIndexUrl: isCanonicalServerIndexUrl,
+    allowIndexUrl: isImmutableServerIndexUrl,
   };
 }
 
-export function isCanonicalServerIndexUrl(url: URL) {
+export function isImmutableServerIndexUrl(url: URL) {
   return (
     url.protocol === "https:" &&
-    url.origin === "https://huggingface.co" &&
+    url.origin === DELIVERY_CDN_BASE_URL &&
     !url.username &&
     !url.password &&
     !url.search &&
     !url.hash &&
     new RegExp(
-      `^/datasets/ust-archive/ust-rankings/resolve/[0-9a-f]{40}/browser/[0-9a-f]{64}/${SERVER_INDEX_FILENAME.replaceAll(".", "\\.")}$`,
+      `^/[0-9a-f]{64}/${SERVER_INDEX_FILENAME.replaceAll(".", "\\.")}$`,
     ).test(url.pathname)
   );
 }
@@ -583,7 +599,19 @@ export function activateServerIndex(
   request: ServerIndexActivation,
   dependencies = productionServerIndexDependencies(),
 ) {
-  return activateParsed(parseActivation(request), dependencies, true);
+  const input = parseActivation(request);
+  promotedIndexRequired = true;
+  const activation = activateParsed(input, dependencies, true);
+  pendingActivation = activation;
+  void activation.then(
+    () => {
+      if (pendingActivation === activation) pendingActivation = undefined;
+    },
+    () => {
+      if (pendingActivation === activation) pendingActivation = undefined;
+    },
+  );
+  return activation;
 }
 
 async function recoverServerIndex(dependencies: ServerIndexDependencies) {
@@ -598,10 +626,12 @@ async function recoverServerIndex(dependencies: ServerIndexDependencies) {
   const expectedManifest = `${DELIVERY_CDN_BASE_URL}/${generation}/manifest.json`;
   if (manifestUrl !== expectedManifest)
     throw new ServerIndexActivationError("integrity");
-  const manifest = object(
+  const manifestValue = object(
     await fetchJson(dependencies, manifestUrl),
     "Delivery manifest",
-  ) as unknown as DeliveryManifest;
+  );
+  if ("serverIndex" in manifestValue) promotedIndexRequired = true;
+  const manifest = manifestValue as unknown as DeliveryManifest;
   if (
     manifest.schemaVersion !== DELIVERY_SCHEMA_VERSION ||
     manifest.generation !== generation ||
@@ -636,12 +666,15 @@ export function initializeServerIndex(
 
 export async function currentServerIndex() {
   if (activeIndex) return activeIndex;
-  if (!initialization) return undefined;
   try {
-    return await initialization;
+    if (pendingActivation) await pendingActivation;
+    else if (initialization) await initialization;
   } catch {
-    return undefined;
+    // The required-state check below fails closed after a known promotion.
   }
+  if (activeIndex) return activeIndex;
+  if (promotedIndexRequired) throw new ServerIndexUnavailableError();
+  return undefined;
 }
 
 export function installServerIndexForTests(index: ServerIndex) {
@@ -651,6 +684,8 @@ export function installServerIndexForTests(index: ServerIndex) {
 
 export function resetServerIndexForTests() {
   activeIndex = undefined;
+  pendingActivation = undefined;
   initialization = undefined;
+  promotedIndexRequired = false;
   activationLock = Promise.resolve();
 }

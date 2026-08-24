@@ -1405,9 +1405,19 @@ function initializeRuntime() {
           `;
           return review ? target : undefined;
         }
-        const { currentServerIndex } = await import("@/lib/server-index");
-        const index = await currentServerIndex();
-        if (index) return index.resolveSignalTarget(target);
+        const { currentServerIndex, ServerIndexUnavailableError } =
+          await import("@/lib/server-index");
+        try {
+          const index = await currentServerIndex();
+          if (index) return index.resolveSignalTarget(target);
+        } catch (error) {
+          if (error instanceof ServerIndexUnavailableError)
+            throw new SignalWriteError(
+              "rankings-unavailable",
+              "Signal target cannot be validated while the Server Index is unavailable",
+            );
+          throw error;
+        }
 
         const {
           getInstructorIdentity,

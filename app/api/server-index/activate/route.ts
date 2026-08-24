@@ -8,6 +8,33 @@ type ActivationOperation = (request: ServerIndexActivation) => Promise<{
   generation: string;
 }>;
 
+const MAX_REQUEST_BYTES = 4096;
+
+class RequestTooLargeError extends Error {}
+
+async function requestJson(request: Request) {
+  if (!request.body) throw new SyntaxError("Missing body");
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > MAX_REQUEST_BYTES) {
+      await reader.cancel();
+      throw new RequestTooLargeError();
+    }
+    chunks.push(value);
+  }
+  return JSON.parse(
+    Buffer.concat(
+      chunks.map((chunk) => Buffer.from(chunk)),
+      bytes,
+    ).toString("utf8"),
+  ) as unknown;
+}
+
 function authenticated(request: Request) {
   const secret = process.env.RANKINGS_REFRESH_SECRET;
   const authorization = request.headers.get("authorization");
@@ -25,13 +52,15 @@ export function createServerIndexActivationHandler(
   return async function POST(request: Request) {
     if (!authenticated(request))
       return Response.json({ error: "Unauthorized" }, { status: 401 });
-    if (Number(request.headers.get("content-length") ?? 0) > 4096)
+    if (Number(request.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES)
       return Response.json({ error: "Request is too large." }, { status: 413 });
     let body: unknown;
     try {
-      body = await request.json();
-    } catch {
-      return Response.json({ error: "Invalid JSON." }, { status: 400 });
+      body = await requestJson(request);
+    } catch (error) {
+      return error instanceof RequestTooLargeError
+        ? Response.json({ error: "Request is too large." }, { status: 413 })
+        : Response.json({ error: "Invalid JSON." }, { status: 400 });
     }
     if (!body || typeof body !== "object" || Array.isArray(body))
       return Response.json(

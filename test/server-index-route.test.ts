@@ -6,7 +6,7 @@ const secret = "correct-secret-with-enough-entropy";
 const generation = "a".repeat(64);
 const activation = {
   generation,
-  indexUrl: `https://huggingface.co/datasets/ust-archive/ust-rankings/resolve/${"1".repeat(40)}/browser/${generation}/server-index.json.gz`,
+  indexUrl: `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${generation}/server-index.json.gz`,
   bytes: 1024,
   sha256: "b".repeat(64),
 };
@@ -69,6 +69,16 @@ test("activation rejects unauthenticated, malformed, oversized, and invalid requ
             "content-length": "4097",
           },
           body: "{}",
+        }),
+      )
+    ).status,
+  ).toBe(413);
+  expect(
+    (
+      await POST(
+        request({
+          ...activation,
+          padding: "x".repeat(5000),
         }),
       )
     ).status,

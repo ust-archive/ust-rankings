@@ -169,7 +169,11 @@ function artifact(index: ServerIndex) {
 function dependencies(responses: Map<string, BodyInit>) {
   return {
     latestUrl: "https://fixtures.test/latest.json",
-    allowIndexUrl: (url: URL) => url.origin === "https://fixtures.test",
+    allowIndexUrl: (url: URL) =>
+      [
+        "https://fixtures.test",
+        "https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com",
+      ].includes(url.origin),
     request: vi.fn(async (input: string | URL | Request) => {
       const url = input instanceof Request ? input.url : input.toString();
       const body = responses.get(url);
@@ -254,6 +258,71 @@ test("activation validates a complete index, is idempotent, and failed replaceme
   expect((await currentServerIndex())?.generation).toBe(GENERATION);
 });
 
+test("first activation gates validators and fails closed when no previous index exists", async () => {
+  const {
+    activateServerIndex,
+    currentServerIndex,
+    resetServerIndexForTests,
+    ServerIndexActivationError,
+    ServerIndexUnavailableError,
+  } = await import("@/lib/server-index");
+  resetServerIndexForTests();
+  const current = artifact(serverIndex());
+  let requested = () => {};
+  const requestStarted = new Promise<void>((resolve) => {
+    requested = resolve;
+  });
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const request = {
+    latestUrl: "https://fixtures.test/latest.json",
+    allowIndexUrl: () => true,
+    request: vi.fn(async () => {
+      requested();
+      await held;
+      return new Response(current.bytes);
+    }),
+  };
+
+  const activating = activateServerIndex(current.declaration, request);
+  await requestStarted;
+  const reading = currentServerIndex();
+  let settled = false;
+  void reading.then(() => {
+    settled = true;
+  });
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  release();
+  await expect(activating).resolves.toMatchObject({ status: "activated" });
+  await expect(reading).resolves.toMatchObject({ generation: GENERATION });
+
+  resetServerIndexForTests();
+  await expect(
+    activateServerIndex(
+      { ...current.declaration, sha256: "f".repeat(64) },
+      dependencies(
+        new Map<string, BodyInit>([
+          [current.declaration.indexUrl, current.bytes],
+        ]),
+      ),
+    ),
+  ).rejects.toBeInstanceOf(ServerIndexActivationError);
+  await expect(currentServerIndex()).rejects.toBeInstanceOf(
+    ServerIndexUnavailableError,
+  );
+  const { validateReviewAssociations } = await import(
+    "@/lib/contributions/review-associations"
+  );
+  await expect(
+    validateReviewAssociations({
+      course: { coursePrefix: "COMP", courseNumber: "2000" },
+    }),
+  ).rejects.toMatchObject({ code: "rankings-unavailable" });
+});
+
 test("startup recovers the last promoted index through latest and its manifest", async () => {
   const { initializeServerIndex, resetServerIndexForTests } = await import(
     "@/lib/server-index"
@@ -261,6 +330,7 @@ test("startup recovers the last promoted index through latest and its manifest",
   resetServerIndexForTests();
   const current = artifact(serverIndex());
   const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/manifest.json`;
+  const indexUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/server-index.json.gz`;
   const request = dependencies(
     new Map<string, BodyInit>([
       [
@@ -276,14 +346,14 @@ test("startup recovers the last promoted index through latest and its manifest",
           sources: { rankings: SOURCE_COMMIT, schedule: SOURCE_COMMIT },
           serverIndex: {
             name: "server-index.json.gz",
-            url: current.declaration.indexUrl,
+            url: "server-index.json.gz",
             generation: GENERATION,
             bytes: current.declaration.bytes,
             sha256: current.declaration.sha256,
           },
         }),
       ],
-      [current.declaration.indexUrl, current.bytes],
+      [indexUrl, current.bytes],
     ]),
   );
 
@@ -304,6 +374,7 @@ test("startup recovery cannot replace a concurrently activated generation", asyn
   const previous = artifact(serverIndex());
   const next = artifact(serverIndex(NEXT_GENERATION));
   const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/manifest.json`;
+  const previousIndexUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/server-index.json.gz`;
   let manifestRequested = () => {};
   const requested = new Promise<void>((resolve) => {
     manifestRequested = resolve;
@@ -314,7 +385,11 @@ test("startup recovery cannot replace a concurrently activated generation", asyn
   });
   const recoveryDependencies = {
     latestUrl: "https://fixtures.test/latest.json",
-    allowIndexUrl: (url: URL) => url.origin === "https://fixtures.test",
+    allowIndexUrl: (url: URL) =>
+      [
+        "https://fixtures.test",
+        "https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com",
+      ].includes(url.origin),
     request: vi.fn(async (input: string | URL | Request) => {
       const url = input instanceof Request ? input.url : input.toString();
       if (url === "https://fixtures.test/latest.json")
@@ -327,15 +402,14 @@ test("startup recovery cannot replace a concurrently activated generation", asyn
           generation: GENERATION,
           serverIndex: {
             name: "server-index.json.gz",
-            url: previous.declaration.indexUrl,
+            url: "server-index.json.gz",
             generation: GENERATION,
             bytes: previous.declaration.bytes,
             sha256: previous.declaration.sha256,
           },
         });
       }
-      if (url === previous.declaration.indexUrl)
-        return new Response(previous.bytes);
+      if (url === previousIndexUrl) return new Response(previous.bytes);
       return new Response("missing", { status: 404 });
     }),
   };
@@ -355,7 +429,7 @@ test("startup recovery cannot replace a concurrently activated generation", asyn
   });
   expect((await currentServerIndex())?.generation).toBe(NEXT_GENERATION);
   expect(recoveryDependencies.request).not.toHaveBeenCalledWith(
-    previous.declaration.indexUrl,
+    previousIndexUrl,
     expect.anything(),
   );
 });
@@ -495,20 +569,16 @@ test("Review and Signal writes use the active index and preserve redirects and s
   ]);
 });
 
-test("production accepts only commit-pinned canonical Hugging Face Server Index URLs", async () => {
-  const { isCanonicalServerIndexUrl } = await import("@/lib/server-index");
-  expect(
-    isCanonicalServerIndexUrl(
-      new URL(
-        `https://huggingface.co/datasets/ust-archive/ust-rankings/resolve/${SOURCE_COMMIT}/browser/${GENERATION}/server-index.json.gz`,
-      ),
-    ),
-  ).toBe(true);
+test("production accepts only immutable Spaces Server Index URLs", async () => {
+  const { isImmutableServerIndexUrl } = await import("@/lib/server-index");
+  const valid = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/server-index.json.gz`;
+  expect(isImmutableServerIndexUrl(new URL(valid))).toBe(true);
   for (const value of [
-    `http://huggingface.co/datasets/ust-archive/ust-rankings/resolve/${SOURCE_COMMIT}/browser/${GENERATION}/server-index.json.gz`,
-    `https://example.com/datasets/ust-archive/ust-rankings/resolve/${SOURCE_COMMIT}/browser/${GENERATION}/server-index.json.gz`,
-    `https://huggingface.co/datasets/ust-archive/ust-rankings/resolve/main/browser/${GENERATION}/server-index.json.gz`,
-    `https://huggingface.co/datasets/ust-archive/ust-rankings/resolve/${SOURCE_COMMIT}/browser/${GENERATION}/other.json.gz`,
+    valid.replace("https:", "http:"),
+    `https://example.com/${GENERATION}/server-index.json.gz`,
+    "https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/latest/server-index.json.gz",
+    `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/other.json.gz`,
+    `${valid}?credential=secret`,
   ])
-    expect(isCanonicalServerIndexUrl(new URL(value))).toBe(false);
+    expect(isImmutableServerIndexUrl(new URL(value))).toBe(false);
 });
