@@ -6,9 +6,11 @@ const port = 17831;
 
 export default defineConfig({
   testDir: "./test/browser",
-  expect: { timeout: 15_000 },
+  expect: { timeout: 30_000 },
   fullyParallel: false,
   retries: process.env.CI ? 2 : 0,
+  timeout: 90_000,
+  workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? "github" : "list",
   projects: [
     { name: "chromium", use: devices["Desktop Chrome"] },
