@@ -19,30 +19,26 @@ import {
   type InstructorAssociationCorrection,
   type InstructorIdentityHistoryEvent,
 } from "../../lib/instructor-identity.ts";
+import {
+  DELIVERY_ARTIFACTS,
+  DELIVERY_CDN_BASE_URL,
+  DELIVERY_SCHEMA_VERSION,
+  type DeliveryArtifactDeclaration,
+  type DeliveryArtifactName,
+  type DeliveryManifest,
+  SERVER_INDEX_FILENAME,
+  type ServerIndex,
+} from "../../lib/server-index-contract.ts";
 
-export const DELIVERY_SCHEMA_VERSION = 1;
-export const DELIVERY_CDN_BASE_URL =
-  "https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com";
-export const SERVER_INDEX_FILENAME = "server-index.json.gz";
-
-/**
- * Keep this order stable: it is part of the content-derived generation id.
- * The names also match the browser prototype's public Delivery Dataset.
- */
-export const DELIVERY_ARTIFACTS = [
-  "course-ratings.parquet",
-  "courses.parquet",
-  "instructor-aliases.parquet",
-  "instructor-identity-events.parquet",
-  "instructor-ratings.parquet",
-  "instructor-split-associations.parquet",
-  "instructors.parquet",
-  "relation.parquet",
-  "schedule-classes.parquet",
-  "schedule-courses.parquet",
-] as const;
-
-type DeliveryArtifactName = (typeof DELIVERY_ARTIFACTS)[number];
+export {
+  DELIVERY_ARTIFACTS,
+  DELIVERY_CDN_BASE_URL,
+  DELIVERY_SCHEMA_VERSION,
+  type DeliveryArtifactDeclaration,
+  type DeliveryManifest,
+  SERVER_INDEX_FILENAME,
+  type ServerIndex,
+} from "../../lib/server-index-contract.ts";
 
 const RANKING_INPUTS = [
   "courses.parquet",
@@ -56,79 +52,6 @@ const RANKING_INPUTS = [
 ] as const;
 const SCHEDULE_INPUTS = ["courses.parquet", "classes.parquet"] as const;
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
-
-export type DeliveryArtifactDeclaration = {
-  url: string;
-  bytes: number;
-  sha256: string;
-};
-
-export type ServerIndex = {
-  schemaVersion: number;
-  generation: string;
-  courses: Array<{ prefix: string; number: string }>;
-  instructors: Array<{
-    uuid: string;
-    canonicalName: string;
-    itsc?: string;
-  }>;
-  instructorAliases: Array<{
-    uuid: string;
-    name: string;
-    source: string;
-    sourceCommit: string;
-    sourceFile?: string;
-  }>;
-  instructorIdentityEvents: InstructorIdentityHistoryEvent[];
-  instructorRedirects: Array<{ from: string; to: string }>;
-  associationCorrections: InstructorAssociationCorrection[];
-  relations: Array<{
-    uuid: string;
-    termNumber: number;
-    termCode: string;
-    courseCode: string;
-  }>;
-  courseOfferings: Array<{
-    termNumber: number;
-    termCode: string;
-    termName: string;
-    courseId: string;
-    courseCode: string;
-  }>;
-  classes: Array<{
-    termNumber: number;
-    termCode: string;
-    courseId: string;
-    section: string;
-    classNumber: number;
-    courseCode: string;
-  }>;
-  classInstructors: Array<{
-    termCode: string;
-    courseId: string;
-    section: string;
-    classNumber: number;
-    uuid: string;
-    sourceName: string;
-  }>;
-};
-
-export type DeliveryManifest = {
-  schemaVersion: number;
-  generation: string;
-  sources: {
-    rankings: string;
-    schedule: string;
-  };
-  artifacts: Record<DeliveryArtifactName, DeliveryArtifactDeclaration>;
-  serverIndex: {
-    name: typeof SERVER_INDEX_FILENAME;
-    url: string;
-    generation: string;
-    bytes: number;
-    sha256: string;
-  };
-};
 
 export type BuildDeliveryGenerationOptions = {
   rankingDirectory: string;

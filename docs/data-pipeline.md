@@ -128,9 +128,28 @@ and scoped Instructor Association Corrections.
 `manifest.json` records schema version, the pinned `rankings` and `schedule`
 revisions, every Delivery artifact's immutable Spaces CDN URL, byte size, and
 SHA-256, plus the Server Index's relative staged URL and declaration. The
-generation SHA is a SHA-256 of
-the schema version, pinned revisions, and ordered Delivery artifact hashes; the
+generation SHA is a SHA-256 of the schema version, pinned revisions, and ordered
+Delivery artifact hashes; the
 Server Index records that generation but is deliberately excluded from the
 input to avoid circular hashing. Output directories are generation-named and
 installed by atomic rename, so failed builds cannot promote partial data and
 older generations remain available for rollback.
+
+The application activates a staged Server Index through the authenticated
+`POST /api/server-index/activate` operation. The request declares the generation,
+immutable Spaces generation URL, compressed byte size, and SHA-256. The same
+artifact remains canonical on Hugging Face; the service reads its public mirror
+without credentials. The service bounds the download and decompression, verifies the complete index
+and its identity history, builds immutable lookup Sets/Maps, and only then swaps
+the active reference. Repeating the active generation is idempotent; any failed
+replacement leaves the previous reference active.
+
+At process startup the service resolves `latest.json`, verifies its matching
+Delivery manifest, and loads that manifest's immutable Server Index URL. Review
+and Signal writes await an in-progress startup load and use the active index for
+Course, Instructor, relation, Course Offering, Class, redirect, and scoped
+correction validation. Community reads continue querying PostgreSQL directly.
+Until the final native-DuckDB cutover, only a verified legacy Delivery manifest
+with no Server Index retains the existing write validator. Unresolved, failed,
+or in-progress activation fails closed when no previous index exists; once an
+index is active, it is authoritative.

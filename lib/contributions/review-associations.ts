@@ -8,6 +8,21 @@ import { ReviewWriteError } from "./reviews";
 export async function validateReviewAssociations(
   associations: ReviewAssociations,
 ): Promise<ReviewAssociations | undefined> {
+  const { currentServerIndex, ServerIndexUnavailableError } = await import(
+    "@/lib/server-index"
+  );
+  try {
+    const index = await currentServerIndex();
+    if (index) return index.validateReviewAssociations(associations);
+  } catch (error) {
+    if (error instanceof ServerIndexUnavailableError)
+      throw new ReviewWriteError(
+        "rankings-unavailable",
+        "Review Bases cannot be validated while the Server Index is unavailable",
+      );
+    throw error;
+  }
+
   const {
     getInstructorIdentity,
     getRankings,
@@ -110,6 +125,18 @@ export async function resolveReviewInstructorAssociationStatus(
   review: PublicReview,
 ): Promise<InstructorAssociationStatus | undefined> {
   if (!review.instructorUuid) return undefined;
+  const { currentServerIndex, ServerIndexUnavailableError } = await import(
+    "@/lib/server-index"
+  );
+  try {
+    const index = await currentServerIndex();
+    if (index) return index.reviewInstructorAssociationStatus(review);
+  } catch (error) {
+    if (error instanceof ServerIndexUnavailableError)
+      return review.instructorAssociationStatus;
+    throw error;
+  }
+
   const {
     getInstructorIdentity,
     RankingsUnavailableError,
