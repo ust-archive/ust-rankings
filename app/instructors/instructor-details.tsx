@@ -371,11 +371,17 @@ export function InstructorDetails({
     ...splitCourseCode(courseCode),
     label: courseCode,
   }));
-  const contexts = [
+  const contextRows: ReviewEditorOptions["contexts"] = [
     ...(rankings?.terms.map((term) => ({
       instructorUuid: identity.instructor.uuid,
       termCode: term.termCode,
       termName: rankingTermName(term.termCode),
+    })) ?? []),
+    ...(rankings?.courses.map((association) => ({
+      course: splitCourseCode(association.courseCode),
+      instructorUuid: identity.instructor.uuid,
+      termCode: association.termCode,
+      termName: rankingTermName(association.termCode),
     })) ?? []),
     ...classes.flatMap((item) => [
       {
@@ -398,6 +404,11 @@ export function InstructorDetails({
         section: item.section,
       },
     ]),
+  ];
+  const contexts = [
+    ...new Map(
+      contextRows.map((context) => [JSON.stringify(context), context]),
+    ).values(),
   ];
   const reviewEditor: ReviewEditorOptions = {
     courses,

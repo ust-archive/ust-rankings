@@ -127,12 +127,22 @@ export function BrowserInstructorReviewComposer({
     const [coursePrefix = "", courseNumber = ""] = courseCode.split(" ");
     return { coursePrefix, courseNumber, label: courseCode };
   });
-  const contexts: ReviewEditorOptions["contexts"] = [
+  const contextRows: ReviewEditorOptions["contexts"] = [
     ...(rankings?.terms.map((term) => ({
       instructorUuid: identity.instructor.uuid,
       termCode: term.termCode,
       termName: rankingTermName(term.termCode),
     })) ?? []),
+    ...(rankings?.courses.map((association) => {
+      const [coursePrefix = "", courseNumber = ""] =
+        association.courseCode.split(" ");
+      return {
+        course: { coursePrefix, courseNumber },
+        instructorUuid: identity.instructor.uuid,
+        termCode: association.termCode,
+        termName: rankingTermName(association.termCode),
+      };
+    }) ?? []),
     ...classes.flatMap((item) => [
       {
         course: {
@@ -155,6 +165,11 @@ export function BrowserInstructorReviewComposer({
       },
     ]),
   ];
+  const contexts = [
+    ...new Map(
+      contextRows.map((context) => [JSON.stringify(context), context]),
+    ).values(),
+  ];
   const editor: ReviewEditorOptions = {
     courses,
     contexts,
@@ -166,12 +181,19 @@ export function BrowserInstructorReviewComposer({
     ],
   };
   return (
-    <ReviewComposer
-      {...editor}
-      displayTermNames
-      initialInstructorUuid={identity.instructor.uuid}
-      initialTermCode={rankings?.population.termCode ?? selectedTermCode}
-    />
+    <>
+      <ReviewComposer
+        {...editor}
+        displayTermNames
+        initialInstructorUuid={identity.instructor.uuid}
+        initialTermCode={rankings?.population.termCode ?? selectedTermCode}
+      />
+      {rankings ? (
+        <span className="sr-only">
+          Ranking Course–Instructor Review contexts: {rankings.courses.length}
+        </span>
+      ) : null}
+    </>
   );
 }
 
