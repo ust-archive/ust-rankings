@@ -98,3 +98,39 @@ Course history taught by any Instructor in the current Course Term receives a 12
 For each criterion and output Term, DuckDB calculates the confidence-weighted population mean and standard deviation from observations available through that Term. Course and Instructor families are adjusted separately. Every entity in a family shrinks toward one inclusive population prior; zero-sample entities receive that prior without changing it.
 
 Outputs include standardized `rating`, posterior `bayesian`, confidence, current and cumulative samples, effective samples, reliability, and posterior standard deviation. Criteria remain separate. Deferred model validation is tracked in [#99](https://github.com/ust-archive/ust-rankings/issues/99).
+
+## Browser Delivery Dataset and Server Index
+
+`data/src/delivery.ts` exposes `buildDeliveryGeneration()`, and
+`data/src/build-delivery.ts` provides the `npm run build-delivery --workspace data -- ...`
+CLI. It accepts separate Ranking and Schedule archive directories plus their
+immutable 40-hex revisions and stages one generation under the configured
+output directory. Mutable revisions such as `main` are rejected. Each input
+directory must include the source manifest produced from the pinned Hugging
+Face tree, declaring the revision, byte size, and SHA-256 of every consumed
+artifact; the derivation verifies those declarations before reading data.
+
+The derivation leaves the full-fidelity archive inputs untouched. It writes the
+browser Delivery Dataset as the ten Parquet relations `courses.parquet`,
+`course-ratings.parquet`, `instructors.parquet`, `instructor-ratings.parquet`,
+`relation.parquet`, `instructor-aliases.parquet`,
+`instructor-identity-events.parquet`, `instructor-split-associations.parquet`,
+`schedule-courses.parquet`, and `schedule-classes.parquet`. Rating projections
+retain every historical row while keeping only the browser contract columns;
+Instructor names remain in `instructors.parquet` rather than the rating rows.
+
+The same generation writes a compressed `server-index.json.gz` containing the
+Course, Instructor identity/history, relation, active Course Offering, active
+Class, and resolvable Class–Instructor facts needed by community-write
+validation. It reuses the Instructor Identity History projection for redirects
+and scoped Instructor Association Corrections.
+
+`manifest.json` records schema version, the pinned `rankings` and `schedule`
+revisions, every Delivery artifact's immutable Spaces CDN URL, byte size, and
+SHA-256, plus the Server Index's relative staged URL and declaration. The
+generation SHA is a SHA-256 of
+the schema version, pinned revisions, and ordered Delivery artifact hashes; the
+Server Index records that generation but is deliberately excluded from the
+input to avoid circular hashing. Output directories are generation-named and
+installed by atomic rename, so failed builds cannot promote partial data and
+older generations remain available for rollback.
