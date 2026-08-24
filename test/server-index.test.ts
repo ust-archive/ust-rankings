@@ -33,6 +33,7 @@ function serverIndex(generation = GENERATION): ServerIndex {
     generation,
     courses: [
       { prefix: "COMP", number: "2000" },
+      { prefix: "LANG", number: "FR1" },
       { prefix: "MATH", number: "1000" },
     ],
     instructors: [
