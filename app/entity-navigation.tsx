@@ -54,7 +54,9 @@ export function EntityLink({
         if (
           typeof props.href !== "string" ||
           (!props.href.startsWith("/courses/") &&
-            !props.href.startsWith("/rankings/courses"))
+            !props.href.startsWith("/instructors/") &&
+            !props.href.startsWith("/rankings/courses") &&
+            !props.href.startsWith("/rankings/instructors"))
         )
           return;
         event.preventDefault();

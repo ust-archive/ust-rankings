@@ -1,17 +1,19 @@
-import {
-  RankingPage,
-  type RankingSearchParams,
-} from "@/app/rankings/rankings-page";
+import type { InstructorRankingSearchParams } from "@/app/rankings/instructor-query";
+import { InstructorRankingsPage } from "@/app/rankings/instructor-rankings-page";
+import { readRankingPreference } from "@/lib/rankings/preference-server";
 
 export const dynamic = "force-dynamic";
 
-type Props = {
-  searchParams: Promise<RankingSearchParams>;
-};
-
-export default async function InstructorsPage({ searchParams }: Props) {
-  return RankingPage({
-    entity: "instructor",
-    searchParams: await searchParams,
-  });
+export default async function InstructorsPage({
+  searchParams,
+}: {
+  searchParams: Promise<InstructorRankingSearchParams>;
+}) {
+  const [preference, query] = await Promise.all([
+    readRankingPreference(),
+    searchParams,
+  ]);
+  return (
+    <InstructorRankingsPage preference={preference} searchParams={query} />
+  );
 }

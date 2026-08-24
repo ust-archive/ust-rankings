@@ -2,6 +2,11 @@ import { notFound } from "next/navigation";
 import { loadReviews } from "@/app/courses/review-data";
 import { InstructorDetails } from "@/app/instructors/instructor-details";
 import {
+  BrowserInstructorIdentity,
+  BrowserInstructorRankings,
+  BrowserInstructorReviewComposer,
+} from "@/app/instructors/instructor-details-client";
+import {
   type InstructorRouteSearchParams,
   instructorRedirect,
   normalizeInstructorRoute,
@@ -11,8 +16,6 @@ import { reviewOrder } from "@/lib/contributions/review-order";
 import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
 import {
   getInstructorIdentity,
-  getRankings,
-  InvalidRankingsQueryError,
   RankingsUnavailableError,
   UnknownRankingsEntityError,
 } from "@/lib/rankings/server";
@@ -69,28 +72,6 @@ export async function renderInstructorPage(
   if (identity.route.redirect)
     instructorRedirect(identity.route.canonicalKey, query);
 
-  let invalidTermCode: string | undefined;
-  const rankingsPromise = getRankings(
-    { type: "instructor", uuid: identity.instructor.uuid },
-    { ...rankingPreference, termCode: selectedTerm },
-  ).catch(async (error) => {
-    if (error instanceof InvalidRankingsQueryError && selectedTerm) {
-      invalidTermCode = selectedTerm;
-      return getRankings(
-        {
-          type: "instructor",
-          uuid: identity.instructor.uuid,
-        },
-        rankingPreference,
-      );
-    }
-    if (
-      error instanceof RankingsUnavailableError ||
-      error instanceof UnknownRankingsEntityError
-    )
-      return undefined;
-    throw error;
-  });
   const schedulePromise = getSchedule({
     type: "instructor",
     uuids: identity.familyUuids,
@@ -107,20 +88,18 @@ export async function renderInstructorPage(
       throw error;
     },
   );
-  const [rankings, scheduleResult, signalResult, reviewResult] =
-    await Promise.all([
-      rankingsPromise,
-      schedulePromise,
-      loadSignals({
-        type: "instructor",
-        instructorUuid: identity.instructor.uuid,
-      }),
-      readReviews({
-        type: "instructor",
-        instructorUuids: identity.familyUuids,
-        order: reviewOrder(query.order),
-      }),
-    ]);
+  const [scheduleResult, signalResult, reviewResult] = await Promise.all([
+    schedulePromise,
+    loadSignals({
+      type: "instructor",
+      instructorUuid: identity.instructor.uuid,
+    }),
+    readReviews({
+      type: "instructor",
+      instructorUuids: identity.familyUuids,
+      order: reviewOrder(query.order),
+    }),
+  ]);
   const classes = scheduleResult.classes.filter(
     (scheduleClass) =>
       !identity.identityHistory.associationCorrections.some(
@@ -139,16 +118,41 @@ export async function renderInstructorPage(
           ),
       ),
   );
-  const selectedTermCode =
-    rankings?.population.termCode ?? selectedTerm ?? classes.at(-1)?.termCode;
+  const selectedTermCode = classes.at(-1)?.termCode;
   return (
     <InstructorDetails
       identity={identity}
-      rankings={rankings}
+      identityContent={
+        <BrowserInstructorIdentity
+          expectedRankingRevision={identity.generation}
+          fallbackIdentity={identity}
+          instructorKey={identity.instructor.uuid}
+          rankingConfiguration={rankingPreference}
+          requestedTermCode={selectedTerm}
+        />
+      }
+      rankingsContent={
+        <BrowserInstructorRankings
+          expectedRankingRevision={identity.generation}
+          instructorKey={identity.instructor.uuid}
+          rankingConfiguration={rankingPreference}
+          requestedTermCode={selectedTerm}
+        />
+      }
+      reviewComposerContent={
+        <BrowserInstructorReviewComposer
+          classes={classes}
+          expectedRankingRevision={identity.generation}
+          fallbackIdentity={identity}
+          instructorKey={identity.instructor.uuid}
+          rankingConfiguration={rankingPreference}
+          requestedTermCode={selectedTerm}
+          selectedTermCode={selectedTermCode}
+        />
+      }
       classes={classes}
       scheduleUnavailable={scheduleResult.unavailable}
       selectedTermCode={selectedTermCode}
-      invalidTermCode={invalidTermCode}
       signals={signalResult.summary}
       signalsUnavailable={signalResult.unavailable}
       signedIn={reviewResult.signedIn}

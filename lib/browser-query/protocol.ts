@@ -1,5 +1,6 @@
 import type {
   CourseRankings,
+  Rankings,
   RankingsPage,
   RankingsQuery,
 } from "@/lib/rankings/server";
@@ -19,6 +20,21 @@ export type CourseQueryOperations = {
   courseRankings: {
     input: RankingsQuery & { entity: "course" };
     output: RankingsPage<"course">;
+  };
+  instructorRankings: {
+    input: RankingsQuery & { entity: "instructor" };
+    output: RankingsPage<"instructor">;
+  };
+  instructorDetails: {
+    input: {
+      key: string;
+      expectedRankingRevision?: string;
+      termCode?: string;
+      activity?: "current" | "all";
+      preset?: "learning" | "grade";
+      weights?: RankingsQuery["weights"];
+    };
+    output: Rankings;
   };
   courseDetails: {
     input: {

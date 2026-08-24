@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   ReviewComposer,
   type ReviewEditorOptions,
@@ -202,7 +203,7 @@ function TeachingCards({
   );
 }
 
-function IdentityCard({
+export function IdentityCard({
   identity,
   rankings,
 }: {
@@ -325,6 +326,9 @@ function IdentityCard({
 export function InstructorDetails({
   identity,
   rankings,
+  identityContent,
+  rankingsContent,
+  reviewComposerContent,
   classes,
   scheduleUnavailable,
   selectedTermCode,
@@ -341,6 +345,9 @@ export function InstructorDetails({
 }: {
   identity: InstructorIdentityLookup;
   rankings?: Rankings;
+  identityContent?: ReactNode;
+  rankingsContent?: ReactNode;
+  reviewComposerContent?: ReactNode;
   classes: ScheduleClass[];
   scheduleUnavailable: boolean;
   selectedTermCode?: string;
@@ -364,11 +371,17 @@ export function InstructorDetails({
     ...splitCourseCode(courseCode),
     label: courseCode,
   }));
-  const contexts = [
+  const contextRows: ReviewEditorOptions["contexts"] = [
     ...(rankings?.terms.map((term) => ({
       instructorUuid: identity.instructor.uuid,
       termCode: term.termCode,
       termName: rankingTermName(term.termCode),
+    })) ?? []),
+    ...(rankings?.courses.map((association) => ({
+      course: splitCourseCode(association.courseCode),
+      instructorUuid: identity.instructor.uuid,
+      termCode: association.termCode,
+      termName: rankingTermName(association.termCode),
     })) ?? []),
     ...classes.flatMap((item) => [
       {
@@ -391,6 +404,11 @@ export function InstructorDetails({
         section: item.section,
       },
     ]),
+  ];
+  const contexts = [
+    ...new Map(
+      contextRows.map((context) => [JSON.stringify(context), context]),
+    ).values(),
   ];
   const reviewEditor: ReviewEditorOptions = {
     courses,
@@ -431,22 +449,26 @@ export function InstructorDetails({
           aria-label="Rankings and Community"
           className="flex min-w-0 flex-col gap-6"
         >
-          <DetailsRankings
-            rankings={rankings}
-            scoreDistribution={rankings?.scoreDistribution}
-            selectedTermCode={selectedTermCode}
-          />
+          {rankingsContent ?? (
+            <DetailsRankings
+              rankings={rankings}
+              scoreDistribution={rankings?.scoreDistribution}
+              selectedTermCode={selectedTermCode}
+            />
+          )}
           <DetailsCommunity
             editor={reviewEditor}
             error={reviewError}
             published={reviewPublished}
             reviewComposer={
-              <ReviewComposer
-                {...reviewEditor}
-                displayTermNames
-                initialInstructorUuid={identity.instructor.uuid}
-                initialTermCode={selectedTermCode}
-              />
+              reviewComposerContent ?? (
+                <ReviewComposer
+                  {...reviewEditor}
+                  displayTermNames
+                  initialInstructorUuid={identity.instructor.uuid}
+                  initialTermCode={selectedTermCode}
+                />
+              )
             }
             reviews={reviews}
             reviewsUnavailable={reviewsUnavailable}
@@ -473,7 +495,9 @@ export function InstructorDetails({
             scheduleUnavailable={scheduleUnavailable}
             selectedTermCode={selectedTermCode}
           />
-          <IdentityCard identity={identity} rankings={rankings} />
+          {identityContent ?? (
+            <IdentityCard identity={identity} rankings={rankings} />
+          )}
         </aside>
       </div>
     </div>

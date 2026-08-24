@@ -47,6 +47,14 @@ export async function generateBrowserFixtures() {
     makeRankingGeneration(rankingsRoot, undefined, {
       associationCorrections: [
         {
+          correctionType: "calibration",
+          sourceCommit: fixtureSha,
+          targetUuid: "00000000-0000-4000-8000-000000000001",
+          sourceName: "Calibrated Legacy Name",
+          termCode: "2510",
+          courseCode: "MATH 2000",
+        },
+        {
           correctionType: "split",
           sourceCommit: fixtureSha,
           targetUuid: "00000000-0000-4000-8000-000000000002",
@@ -59,13 +67,21 @@ export async function generateBrowserFixtures() {
       extraInstructors: 105,
       identityEvents: [
         {
+          type: "merge",
+          retiredUuid: "00000000-0000-4000-8000-000000000005",
+          survivorUuid: "00000000-0000-4000-8000-000000000001",
+          sourceCommit: fixtureSha,
+        },
+        {
           type: "split",
           sourceUuid: "00000000-0000-4000-8000-000000000001",
           newUuid: "00000000-0000-4000-8000-000000000002",
           sourceCommit: fixtureSha,
         },
       ],
+      includePriorOnly: true,
       includeScheduleCourse: true,
+      sameNameAssociations: true,
     }),
     makeScheduleGeneration(scheduleRoot),
   ]);
