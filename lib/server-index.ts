@@ -630,11 +630,17 @@ async function recoverServerIndex(dependencies: ServerIndexDependencies) {
     await fetchJson(dependencies, manifestUrl),
     "Delivery manifest",
   );
-  if ("serverIndex" in manifestValue) promotedIndexRequired = true;
+  if (
+    manifestValue.schemaVersion !== DELIVERY_SCHEMA_VERSION ||
+    manifestValue.generation !== generation
+  )
+    throw new ServerIndexActivationError("integrity");
+  if (!("serverIndex" in manifestValue)) {
+    promotedIndexRequired = false;
+    throw new ServerIndexActivationError("upstream");
+  }
   const manifest = manifestValue as unknown as DeliveryManifest;
   if (
-    manifest.schemaVersion !== DELIVERY_SCHEMA_VERSION ||
-    manifest.generation !== generation ||
     manifest.serverIndex?.generation !== generation ||
     manifest.serverIndex.name !== SERVER_INDEX_FILENAME
   )
@@ -658,6 +664,7 @@ export function initializeServerIndex(
   dependencies = productionServerIndexDependencies(),
 ) {
   if (activeIndex) return Promise.resolve(activeIndex);
+  promotedIndexRequired = true;
   initialization ??= recoverServerIndex(dependencies).finally(() => {
     initialization = undefined;
   });

@@ -363,6 +363,47 @@ test("startup recovers the last promoted index through latest and its manifest",
   expect(request.request).toHaveBeenCalledTimes(3);
 });
 
+test("startup fails closed until a verified legacy manifest proves no index was published", async () => {
+  const {
+    currentServerIndex,
+    initializeServerIndex,
+    resetServerIndexForTests,
+    ServerIndexActivationError,
+    ServerIndexUnavailableError,
+  } = await import("@/lib/server-index");
+  resetServerIndexForTests();
+  await expect(
+    initializeServerIndex(dependencies(new Map<string, BodyInit>())),
+  ).rejects.toBeInstanceOf(ServerIndexActivationError);
+  await expect(currentServerIndex()).rejects.toBeInstanceOf(
+    ServerIndexUnavailableError,
+  );
+
+  resetServerIndexForTests();
+  const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/manifest.json`;
+  const legacy = dependencies(
+    new Map<string, BodyInit>([
+      [
+        "https://fixtures.test/latest.json",
+        JSON.stringify({ generation: GENERATION, manifest: manifestUrl }),
+      ],
+      [
+        manifestUrl,
+        JSON.stringify({
+          schemaVersion: 1,
+          generation: GENERATION,
+          artifacts: {},
+          sources: { rankings: SOURCE_COMMIT, schedule: SOURCE_COMMIT },
+        }),
+      ],
+    ]),
+  );
+  await expect(initializeServerIndex(legacy)).rejects.toBeInstanceOf(
+    ServerIndexActivationError,
+  );
+  await expect(currentServerIndex()).resolves.toBeUndefined();
+});
+
 test("startup recovery cannot replace a concurrently activated generation", async () => {
   const {
     activateServerIndex,

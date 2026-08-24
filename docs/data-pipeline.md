@@ -149,6 +149,7 @@ Delivery manifest, and loads that manifest's immutable Server Index URL. Review
 and Signal writes await an in-progress startup load and use the active index for
 Course, Instructor, relation, Course Offering, Class, redirect, and scoped
 correction validation. Community reads continue querying PostgreSQL directly.
-Until the final native-DuckDB cutover, a process with no promoted Server Index
-retains the existing write validator; once an index is active, it is
-authoritative.
+Until the final native-DuckDB cutover, only a verified legacy Delivery manifest
+with no Server Index retains the existing write validator. Unresolved, failed,
+or in-progress activation fails closed when no previous index exists; once an
+index is active, it is authoritative.
