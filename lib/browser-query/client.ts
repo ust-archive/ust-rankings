@@ -10,35 +10,121 @@ import type {
   RankingsPage,
   RankingsQuery,
 } from "@/lib/rankings/server";
-import type { CourseQueryOperations } from "./protocol";
+import { DELIVERY_CDN_BASE_URL } from "@/lib/server-index-contract";
+import type {
+  CourseQueryOperations,
+  QueryRequest,
+  QueryResponse,
+} from "./protocol";
 
 type Operation = keyof CourseQueryOperations;
 type Entry = { promise: Promise<unknown>; value?: unknown };
+type Pending = {
+  reject(error: Error): void;
+  resolve(value: unknown): void;
+  timer: ReturnType<typeof setTimeout>;
+};
 const cache = new Map<string, Entry>();
+const pending = new Map<number, Pending>();
+let requestId = 0;
+let queryWorker: Worker | undefined;
+let workerFailure: Error | undefined;
+
+export class BrowserQueryError extends Error {
+  constructor(
+    readonly code: "invalid" | "stale" | "unavailable" | "unknown",
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 function key(operation: Operation, input: unknown) {
   return `${operation}:${JSON.stringify(input)}`;
 }
 
-async function execute<Selected extends Operation>(
+function failWorker(error: Error) {
+  workerFailure ??= error;
+  queryWorker?.terminate();
+  queryWorker = undefined;
+  for (const request of pending.values()) {
+    clearTimeout(request.timer);
+    request.reject(error);
+  }
+  pending.clear();
+}
+
+function worker() {
+  if (workerFailure) throw workerFailure;
+  if (queryWorker) return queryWorker;
+  queryWorker = new Worker(new URL("./worker.ts", import.meta.url), {
+    name: "public-course-query",
+    type: "module",
+  });
+  queryWorker.addEventListener("error", () => {
+    failWorker(
+      new BrowserQueryError(
+        "unavailable",
+        "Public Course data is unavailable.",
+      ),
+    );
+  });
+  queryWorker.addEventListener(
+    "message",
+    (event: MessageEvent<QueryResponse>) => {
+      const request = pending.get(event.data.id);
+      if (!request) return;
+      clearTimeout(request.timer);
+      pending.delete(event.data.id);
+      if (event.data.ok) request.resolve(event.data.output);
+      else {
+        const error = new BrowserQueryError(
+          event.data.error.code,
+          event.data.error.message,
+        );
+        request.reject(error);
+        if (error.code === "unavailable") failWorker(error);
+      }
+    },
+  );
+  return queryWorker;
+}
+
+function execute<Selected extends Operation>(
   operation: Selected,
   input: CourseQueryOperations[Selected]["input"],
 ): Promise<CourseQueryOperations[Selected]["output"]> {
-  const runtime = await import("./runtime");
-  let output: unknown;
-  if (operation === "catalog")
-    output = await runtime.queryCatalog(
-      input as CourseQueryOperations["catalog"]["input"],
-    );
-  else if (operation === "courseRankings")
-    output = await runtime.queryCourseRankings(
-      input as CourseQueryOperations["courseRankings"]["input"],
-    );
-  else
-    output = await runtime.queryCourseDetails(
-      input as CourseQueryOperations["courseDetails"]["input"],
-    );
-  return output as CourseQueryOperations[Selected]["output"];
+  const id = ++requestId;
+  const request = {
+    id,
+    baseUrl: (
+      process.env.NEXT_PUBLIC_DELIVERY_BASE_URL ?? DELIVERY_CDN_BASE_URL
+    ).replace(/\/+$/, ""),
+    operation,
+    input,
+  } as QueryRequest<Selected>;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error = new BrowserQueryError(
+        "unavailable",
+        "Public Course query timed out.",
+      );
+      failWorker(error);
+    }, 15_000);
+    pending.set(id, { reject, resolve, timer });
+    try {
+      worker().postMessage(request);
+    } catch (error) {
+      failWorker(
+        error instanceof Error
+          ? error
+          : new BrowserQueryError(
+              "unavailable",
+              "Public Course data is unavailable.",
+            ),
+      );
+    }
+  }) as Promise<CourseQueryOperations[Selected]["output"]>;
 }
 
 function cached<Selected extends Operation>(
@@ -53,9 +139,12 @@ function cached<Selected extends Operation>(
       (value) => {
         created.value = value;
       },
-      () => undefined,
+      () => {
+        if (cache.get(cacheKey) === created) cache.delete(cacheKey);
+      },
     );
     cache.set(cacheKey, created);
+    if (cache.size > 128) cache.delete(cache.keys().next().value as string);
     entry = created;
   }
   return entry as {

@@ -21,6 +21,12 @@ import {
   type RankingCriterion as Criterion,
 } from "@/lib/rankings/configuration";
 import { rankingTermName } from "@/lib/rankings/presentation";
+import {
+  normalizeRankingConfiguration,
+  type RankingPreset,
+  type RankingWeights,
+  rankingPositions,
+} from "@/lib/rankings/scoring";
 import { testGenerationDirectory } from "@/lib/test-generation";
 
 const ARTIFACTS = [
@@ -40,8 +46,7 @@ const IDENTITY_ARTIFACTS = [
 
 export { rankingTermName } from "@/lib/rankings/presentation";
 
-export type RankingPreset = "learning" | "grade";
-export type RankingWeights = Partial<Record<Criterion, number>>;
+export type { RankingPreset, RankingWeights } from "@/lib/rankings/scoring";
 export type CommonCoreScheme = "4Y" | "CC22" | "CC25" | "CC26";
 export type CommonCoreCategory =
   | "ssc-humanities"
@@ -261,48 +266,6 @@ export const COMMON_CORE_SCHEMES: ReadonlyArray<CommonCoreSchemeDefinition> = [
 const commonCoreSchemes = new Map(
   COMMON_CORE_SCHEMES.map((scheme) => [scheme.value, scheme]),
 );
-
-const PRESET_WEIGHTS: Record<
-  "course" | "instructor",
-  Record<RankingPreset, Record<Criterion, number>>
-> = {
-  course: {
-    learning: {
-      content: 0.2667,
-      teaching: 0.2667,
-      grading: 0.1,
-      workload: 0.0333,
-      course: 0.25,
-      instructor: 0.0833,
-    },
-    grade: {
-      content: 0.0667,
-      teaching: 0.0667,
-      grading: 0.4,
-      workload: 0.1333,
-      course: 0.25,
-      instructor: 0.0833,
-    },
-  },
-  instructor: {
-    learning: {
-      content: 0.2667,
-      teaching: 0.2667,
-      grading: 0.1,
-      workload: 0.0333,
-      course: 0.0833,
-      instructor: 0.25,
-    },
-    grade: {
-      content: 0.0667,
-      teaching: 0.0667,
-      grading: 0.4,
-      workload: 0.1333,
-      course: 0.0833,
-      instructor: 0.25,
-    },
-  },
-};
 
 const ratingColumns = [
   ["term_num", "INTEGER"],
@@ -2038,70 +2001,9 @@ type Candidate = {
 type RankedCandidate = Candidate & { score: number };
 
 function normalizedWeights(query: RankingsQuery) {
-  if (query.weights !== undefined) {
-    const entries = Object.entries(query.weights);
-    if (
-      entries.some(
-        ([criterion, value]) =>
-          !CRITERIA.includes(criterion as Criterion) ||
-          typeof value !== "number" ||
-          !Number.isFinite(value) ||
-          value < 0,
-      )
-    ) {
-      throw new InvalidRankingsQueryError(
-        "Custom ranking weights must be finite and non-negative.",
-      );
-    }
-    const positive = entries
-      .filter((entry) => entry[1] > 0)
-      .sort(
-        ([left], [right]) =>
-          CRITERIA.indexOf(left as Criterion) -
-          CRITERIA.indexOf(right as Criterion),
-      ) as Array<[Criterion, number]>;
-    const maximum = Math.max(...positive.map((entry) => entry[1]));
-    if (positive.length === 0)
-      throw new InvalidRankingsQueryError(
-        "Custom ranking weights need at least one non-zero criterion.",
-      );
-    const scaled = positive
-      .map(([criterion, value]) => [criterion, value / maximum] as const)
-      .filter((entry) => entry[1] > 0);
-    const total = scaled.reduce((sum, entry) => sum + entry[1], 0);
-    return {
-      preset: "custom" as const,
-      weights: Object.fromEntries(
-        scaled.map(([criterion, value]) => [criterion, value / total]),
-      ) as RankingWeights,
-    };
-  }
-  const preset = query.preset ?? "learning";
-  if (preset !== "learning" && preset !== "grade")
-    throw new InvalidRankingsQueryError("Unknown Ranking Preset.");
-  return { preset, weights: PRESET_WEIGHTS[query.entity][preset] };
-}
-
-function percentile(rank: number, population: number) {
-  return population === 1 ? 1 : (population - rank) / (population - 1);
-}
-
-function ranks(candidates: RankedCandidate[]) {
-  let rank = 0;
-  let previousScore: number | undefined;
-  return new Map(
-    candidates.map((candidate, index) => {
-      if (candidate.score !== previousScore) rank = index + 1;
-      previousScore = candidate.score;
-      return [
-        candidate.key,
-        {
-          rank,
-          population: candidates.length,
-          percentile: percentile(rank, candidates.length),
-        },
-      ];
-    }),
+  return normalizeRankingConfiguration(
+    query,
+    (message) => new InvalidRankingsQueryError(message),
   );
 }
 
@@ -2428,8 +2330,8 @@ async function queryRankingsWithGeneration(
       return false;
     return true;
   };
-  const rankByEntity = ranks(currentEligible);
-  const allTimeRankByEntity = ranks(allTimeEligible);
+  const rankByEntity = rankingPositions(currentEligible);
+  const allTimeRankByEntity = rankingPositions(allTimeEligible);
   const filtered = eligible.filter(matchesFilters);
   const searched = search
     ? filtered.filter((candidate) => candidate.searchText.includes(search))

@@ -7,6 +7,7 @@ import {
 } from "../browser-contributions-fixture";
 
 test("Review Order appears on every list, persists in the URL, and works on a narrow screen", async ({
+  browserName,
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -39,9 +40,13 @@ test("Review Order appears on every list, persists in the URL, and works on a na
   await expectOrder("Popular");
 
   await order.press("Enter");
-  await expect(page.getByRole("option", { name: "Recent" })).toBeVisible();
-  await page.keyboard.press("End");
-  await page.keyboard.press("Enter");
+  const recent = page.getByRole("option", { name: "Recent" });
+  await expect(recent).toBeVisible();
+  if (browserName === "webkit") await recent.click();
+  else {
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+  }
   await expect(page).toHaveURL(/order=recent/);
   await expectOrder("Recent");
   expect(

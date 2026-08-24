@@ -9,6 +9,10 @@ import {
   type RankingCriterion,
 } from "@/lib/rankings/configuration";
 import { rankingTermName } from "@/lib/rankings/presentation";
+import {
+  normalizeRankingConfiguration,
+  rankingPositions,
+} from "@/lib/rankings/scoring";
 import type {
   CommonCoreCategory,
   CommonCoreScheme,
@@ -17,33 +21,22 @@ import type {
   InstructorIdentity,
   RankingsPage,
   RankingsQuery,
-  RankingWeights,
   ScoreDistribution,
 } from "@/lib/rankings/server";
 import { DELIVERY_CDN_BASE_URL } from "@/lib/server-index-contract";
 import { type PinnedDelivery, resolveDeliveryManifest } from "./manifest";
 import type { CourseQueryOperations } from "./protocol";
 
-const bundles = duckdb.getJsDelivrBundles();
-const presetWeights: Record<
-  "learning" | "grade",
-  Record<RankingCriterion, number>
-> = {
-  learning: {
-    content: 0.2667,
-    teaching: 0.2667,
-    grading: 0.1,
-    workload: 0.0333,
-    course: 0.25,
-    instructor: 0.0833,
+const asset = (name: string) =>
+  new URL(`/duckdb/${name}`, self.location.origin).href;
+const bundles: duckdb.DuckDBBundles = {
+  mvp: {
+    mainModule: asset("duckdb-mvp.wasm"),
+    mainWorker: asset("duckdb-browser-mvp.worker.js"),
   },
-  grade: {
-    content: 0.0667,
-    teaching: 0.0667,
-    grading: 0.4,
-    workload: 0.1333,
-    course: 0.25,
-    instructor: 0.0833,
+  eh: {
+    mainModule: asset("duckdb-eh.wasm"),
+    mainWorker: asset("duckdb-browser-eh.worker.js"),
   },
 };
 const commonCoreValues: Record<
@@ -220,71 +213,9 @@ function number(value: unknown) {
 }
 
 function normalizedWeights(query: RankingsQuery) {
-  if (query.weights !== undefined) {
-    const entries = Object.entries(query.weights);
-    if (
-      entries.some(
-        ([criterion, value]) =>
-          !RANKING_CRITERIA.includes(criterion as RankingCriterion) ||
-          typeof value !== "number" ||
-          !Number.isFinite(value) ||
-          value < 0,
-      )
-    )
-      throw new QueryError(
-        "invalid",
-        "Custom ranking weights must be finite and non-negative.",
-      );
-    const positive = entries
-      .filter((entry) => entry[1] > 0)
-      .sort(
-        ([left], [right]) =>
-          RANKING_CRITERIA.indexOf(left as RankingCriterion) -
-          RANKING_CRITERIA.indexOf(right as RankingCriterion),
-      ) as Array<[RankingCriterion, number]>;
-    if (positive.length === 0)
-      throw new QueryError(
-        "invalid",
-        "Custom ranking weights need at least one non-zero criterion.",
-      );
-    const maximum = Math.max(...positive.map((entry) => entry[1]));
-    const scaled = positive
-      .map(([criterion, value]) => [criterion, value / maximum] as const)
-      .filter((entry) => entry[1] > 0);
-    const total = scaled.reduce((sum, entry) => sum + entry[1], 0);
-    return {
-      preset: "custom" as const,
-      weights: Object.fromEntries(
-        scaled.map(([criterion, value]) => [criterion, value / total]),
-      ) as RankingWeights,
-    };
-  }
-  const preset = query.preset ?? "learning";
-  if (preset !== "learning" && preset !== "grade")
-    throw new QueryError("invalid", "Unknown Ranking Preset.");
-  return { preset, weights: presetWeights[preset] };
-}
-
-function percentile(rank: number, population: number) {
-  return population === 1 ? 1 : (population - rank) / (population - 1);
-}
-
-function ranks(candidates: RankedCandidate[]) {
-  let rank = 0;
-  let previousScore: number | undefined;
-  return new Map(
-    candidates.map((candidate, index) => {
-      if (candidate.score !== previousScore) rank = index + 1;
-      previousScore = candidate.score;
-      return [
-        candidate.key,
-        {
-          rank,
-          population: candidates.length,
-          percentile: percentile(rank, candidates.length),
-        },
-      ] as const;
-    }),
+  return normalizeRankingConfiguration(
+    query,
+    (message) => new QueryError("invalid", message),
   );
 }
 
@@ -335,11 +266,20 @@ async function sha256Base64Url(value: string) {
     .replace(/=+$/, "");
 }
 
-async function createRuntime(baseUrl: string): Promise<Runtime> {
+async function createRuntimeCandidate(
+  baseUrl: string,
+  lifecycle: {
+    connection?: duckdb.AsyncDuckDBConnection;
+    db?: duckdb.AsyncDuckDB;
+    worker?: Worker;
+  },
+): Promise<Runtime> {
   const delivery = await resolveDeliveryManifest(baseUrl);
   const bundle = await duckdb.selectBundle(bundles);
   const worker = await duckdb.createWorker(bundle.mainWorker as string);
+  lifecycle.worker = worker;
   const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
+  lifecycle.db = db;
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
   for (const [name, artifact] of Object.entries(delivery.manifest.artifacts))
     await db.registerFileURL(
@@ -349,6 +289,7 @@ async function createRuntime(baseUrl: string): Promise<Runtime> {
       false,
     );
   const connection = await db.connect();
+  lifecycle.connection = connection;
   await connection.query("SET threads = 1");
 
   const [courseRows, identityRows, aliasRows, eventRows, correctionRows] =
@@ -489,6 +430,22 @@ async function createRuntime(baseUrl: string): Promise<Runtime> {
   };
 }
 
+async function createRuntime(baseUrl: string) {
+  const lifecycle: {
+    connection?: duckdb.AsyncDuckDBConnection;
+    db?: duckdb.AsyncDuckDB;
+    worker?: Worker;
+  } = {};
+  try {
+    return await createRuntimeCandidate(baseUrl, lifecycle);
+  } catch (error) {
+    await lifecycle.connection?.close().catch(() => undefined);
+    await lifecycle.db?.terminate().catch(() => undefined);
+    lifecycle.worker?.terminate();
+    throw error;
+  }
+}
+
 function runtime(baseUrl: string) {
   if (pinnedBaseUrl && pinnedBaseUrl !== baseUrl)
     throw new QueryError(
@@ -501,6 +458,8 @@ function runtime(baseUrl: string) {
 }
 
 function resolvedIdentity(runtime: Runtime, uuid: string) {
+  // Delivery relation UUIDs are accepted Ranking Generation evidence.
+  // Scoped corrections apply earlier when raw Schedule/Review names are resolved.
   return runtime.identities.get(runtime.identityHistory.resolveUuid(uuid));
 }
 
@@ -718,8 +677,8 @@ async function courseRankings(
     (!coursePrefix || candidate.coursePrefix === coursePrefix) &&
     (commonCore.length === 0 ||
       commonCore.some((category) => candidate.commonCore.includes(category)));
-  const rankByCourse = ranks(currentEligible);
-  const allTimeRankByCourse = ranks(allTimeEligible);
+  const rankByCourse = rankingPositions(currentEligible);
+  const allTimeRankByCourse = rankingPositions(allTimeEligible);
   const filtered = eligible.filter(matchesFilters);
   const searched = search
     ? filtered.filter((candidate) => candidate.searchText.includes(search))
@@ -917,6 +876,8 @@ async function courseDetails(
     instructors,
   };
   runtime.cache.set(cacheKey, result);
+  if (runtime.cache.size > 256)
+    runtime.cache.delete(runtime.cache.keys().next().value as string);
   return result;
 }
 
@@ -928,15 +889,17 @@ export function deliveryBaseUrl() {
 
 export async function queryCatalog(
   input: CourseQueryOperations["catalog"]["input"],
+  baseUrl = deliveryBaseUrl(),
 ) {
-  return catalog(await runtime(deliveryBaseUrl()), input);
+  return catalog(await runtime(baseUrl), input);
 }
 
 export async function queryCourseRankings(
   input: CourseQueryOperations["courseRankings"]["input"],
+  baseUrl = deliveryBaseUrl(),
 ) {
   try {
-    return await courseRankings(await runtime(deliveryBaseUrl()), input);
+    return await courseRankings(await runtime(baseUrl), input);
   } catch (error) {
     if (error instanceof QueryError) throw error;
     throw new QueryError("unavailable", "Public Course data is unavailable.");
@@ -945,9 +908,10 @@ export async function queryCourseRankings(
 
 export async function queryCourseDetails(
   input: CourseQueryOperations["courseDetails"]["input"],
+  baseUrl = deliveryBaseUrl(),
 ) {
   try {
-    return await courseDetails(await runtime(deliveryBaseUrl()), input);
+    return await courseDetails(await runtime(baseUrl), input);
   } catch (error) {
     if (error instanceof QueryError) throw error;
     throw new QueryError("unavailable", "Public Course data is unavailable.");

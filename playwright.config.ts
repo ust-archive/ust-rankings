@@ -6,13 +6,18 @@ const port = 17831;
 
 export default defineConfig({
   testDir: "./test/browser",
+  expect: { timeout: 15_000 },
   fullyParallel: false,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
+  projects: [
+    { name: "chromium", use: devices["Desktop Chrome"] },
+    { name: "firefox", use: devices["Desktop Firefox"] },
+    { name: "webkit", use: devices["Desktop Safari"] },
+  ],
   use: {
     baseURL: `http://localhost:${port}`,
     trace: "retain-on-failure",
-    ...devices["Desktop Chrome"],
   },
   webServer: [
     {

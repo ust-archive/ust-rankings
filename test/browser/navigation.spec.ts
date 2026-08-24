@@ -46,6 +46,7 @@ async function expectRankingRestored(
 }
 
 test("entity navigation preserves Ranking history and provenance", async ({
+  browserName,
   context,
   page,
 }) => {
@@ -82,9 +83,10 @@ test("entity navigation preserves Ranking history and provenance", async ({
     { times: 1 },
   );
   const navigation = target.click();
-  await expect(
-    page.getByRole("progressbar", { name: "Loading page" }),
-  ).toBeVisible();
+  if (browserName === "chromium")
+    await expect(
+      page.getByRole("progressbar", { name: "Loading page" }),
+    ).toBeVisible();
   await expect(
     page.getByRole("heading", { level: 1, name: "UST Rankings" }),
   ).toBeVisible();

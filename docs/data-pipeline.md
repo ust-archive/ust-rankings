@@ -158,8 +158,11 @@ index is active, it is authoritative.
 
 Each browser tab resolves `latest.json` once, verifies the content-derived
 Delivery manifest, and pins that immutable generation for the tab lifetime.
-One process-wide DuckDB-Wasm Worker is created outside React lifecycles. The
-runtime registers every immutable artifact immediately, preloads only Catalog
+One process-wide query Worker is created outside React lifecycles; it owns the
+DuckDB-Wasm worker and keeps ranking/filtering work off the main thread. Pinned
+Worker and Wasm assets are copied from the locked npm package into the
+application image and restricted to the same origin by CSP. The runtime
+registers every immutable artifact immediately, preloads only Catalog
 and Instructor identity data, and lets DuckDB fetch Course rating and
 `relation.parquet` ranges when typed Catalog, Course Ranking, or Course detail
 operations need them.

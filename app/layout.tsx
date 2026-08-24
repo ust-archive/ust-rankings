@@ -110,7 +110,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link crossOrigin="" href="https://cdn.jsdelivr.net" rel="preconnect" />
         <meta
           name="google-site-verification"
           content="Cdta5XjB-hvjrRL9nSemGyXDvt86xMZypNC5W08v-MA"

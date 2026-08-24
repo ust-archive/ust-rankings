@@ -15,6 +15,7 @@
 /.next-playwright/
 /out/
 /data/out/
+/public/duckdb/
 
 # production
 /build

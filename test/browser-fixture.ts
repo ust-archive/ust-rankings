@@ -45,8 +45,26 @@ export async function generateBrowserFixtures() {
   ]);
   const [rankingDirectory, scheduleDirectory] = await Promise.all([
     makeRankingGeneration(rankingsRoot, undefined, {
+      associationCorrections: [
+        {
+          correctionType: "split",
+          sourceCommit: fixtureSha,
+          targetUuid: "00000000-0000-4000-8000-000000000002",
+          sourceName: "Alpha Instructor",
+          termCode: "2510",
+          courseCode: "COMP 1000",
+        },
+      ],
       extraCourses: 105,
       extraInstructors: 105,
+      identityEvents: [
+        {
+          type: "split",
+          sourceUuid: "00000000-0000-4000-8000-000000000001",
+          newUuid: "00000000-0000-4000-8000-000000000002",
+          sourceCommit: fixtureSha,
+        },
+      ],
       includeScheduleCourse: true,
     }),
     makeScheduleGeneration(scheduleRoot),
