@@ -97,7 +97,11 @@ export async function makeScheduleGeneration(
     capacity::INTEGER AS capacity, enroll::INTEGER AS enroll,
     wait::INTEGER AS wait, consent::BOOLEAN AS consent, open::BOOLEAN AS open,
     schedules::STRUCT(weekday VARCHAR, date_from DATE, date_to DATE, time_from TIME, time_to TIME, venue VARCHAR, venue_name VARCHAR, instructors VARCHAR[])[] AS schedules,
-    []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[] AS reservations,
+    CASE
+      WHEN course_id = 'c2' AND section = 'L1' AND timestamp = TIMESTAMPTZ '2025-02-01T00:00:00Z'
+      THEN [{'name':'COMP majors', 'quota':40, 'enroll':20}]
+      ELSE []
+    END::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[] AS reservations,
     status::VARCHAR AS status, timestamp::TIMESTAMPTZ AS timestamp
   FROM (VALUES
     (100, '2510', '2025-26 Fall', 'c1', 'L1', 999, 'E', 'LEC', 1, '', 10, 5, 0, false, true, [{weekday:'Mon', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'09:00'::TIME, time_to:'09:50'::TIME, venue:'OLD', venue_name:'Old Room', instructors:['Old Instructor']}], 'ACTIVE', '2025-01-01T00:00:00Z'),

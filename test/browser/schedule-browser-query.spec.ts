@@ -47,6 +47,8 @@ test("direct Course Offering and Class URLs preserve Community while Schedule re
   ).toBeVisible();
   await expect(page.getByText(/waitlisted · LEC/)).toBeVisible();
   await expect(page.getByText(/Room 101|Room 102/).first()).toBeVisible();
+  await expect(page.getByText(/2025-09-01–2025-11-30/).first()).toBeVisible();
+  await expect(page.getByText("COMP majors: 20/40")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Alpha Instructor" }),
   ).toBeVisible();
@@ -59,6 +61,8 @@ test("direct Course Offering and Class URLs preserve Community while Schedule re
     page.getByRole("heading", { name: /COMP 2000 L1 \(1001\)/ }),
   ).toBeVisible();
   await expect(page.getByText(/Room 101|Room 102/).first()).toBeVisible();
+  await expect(page.getByText(/2025-09-01–2025-11-30/).first()).toBeVisible();
+  await expect(page.getByText("COMP majors: 20/40")).toBeVisible();
   await expect(page.getByText(/waitlisted · LEC/)).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Alpha Instructor" }),

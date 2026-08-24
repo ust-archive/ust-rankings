@@ -1335,7 +1335,17 @@ function scheduleText(value: unknown) {
 }
 
 function scheduleDate(value: unknown) {
-  return value ? scheduleText(value).slice(0, 10) : undefined;
+  if (!value) return undefined;
+  if (typeof value === "number") {
+    const milliseconds =
+      value > 1_000_000_000_000
+        ? value
+        : value > 1_000_000
+          ? value * 1000
+          : value * 86_400_000;
+    return new Date(milliseconds).toISOString().slice(0, 10);
+  }
+  return scheduleText(value).slice(0, 10);
 }
 
 function scheduleTime(value: unknown) {
