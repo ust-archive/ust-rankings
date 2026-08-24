@@ -45,6 +45,11 @@ test("direct Course Offering and Class URLs preserve Community while Schedule re
   await expect(
     page.getByRole("heading", { name: "Offerings & Classes" }),
   ).toBeVisible();
+  await expect(page.getByText(/waitlisted · LEC/)).toBeVisible();
+  await expect(page.getByText(/Room 101|Room 102/).first()).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Alpha Instructor" }),
+  ).toBeVisible();
 
   await page.goto("/courses/comp/2000/2510/l1");
   await expect(
@@ -54,6 +59,10 @@ test("direct Course Offering and Class URLs preserve Community while Schedule re
     page.getByRole("heading", { name: /COMP 2000 L1 \(1001\)/ }),
   ).toBeVisible();
   await expect(page.getByText(/Room 101|Room 102/).first()).toBeVisible();
+  await expect(page.getByText(/waitlisted · LEC/)).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Alpha Instructor" }),
+  ).toBeVisible();
 });
 
 test("Instructor Schedule Classes use the shared browser runtime", async ({

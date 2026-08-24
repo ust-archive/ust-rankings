@@ -254,8 +254,25 @@ export function BrowserScheduleDetails({ entity }: { entity: ScheduleEntity }) {
                     {item.courseCode} {item.section} ({item.classNumber})
                   </EntityLink>
                   <p className="text-slate-600">
-                    {item.enrollment}/{item.capacity} enrolled
+                    {item.enrollment}/{item.capacity} enrolled · {item.waitlist}{" "}
+                    waitlisted · {item.classType} ·{" "}
+                    {item.open ? "Open" : "Closed"}
                   </p>
+                  {item.meetings.map((meeting) => (
+                    <p className="text-slate-600" key={JSON.stringify(meeting)}>
+                      {meeting.weekday} {meeting.timeFrom ?? "TBA"}–
+                      {meeting.timeTo ?? "TBA"} · {meeting.room || "Room TBA"}
+                      {meeting.roomCode ? ` (${meeting.roomCode})` : ""} ·{" "}
+                      {meeting.dateFrom ?? "Dates TBA"}
+                      {meeting.dateTo ? `–${meeting.dateTo}` : ""}
+                    </p>
+                  ))}
+                  {item.reservations.map((reservation) => (
+                    <p className="text-slate-600" key={reservation.name}>
+                      {reservation.name}: {reservation.enrollment}/
+                      {reservation.quota}
+                    </p>
+                  ))}
                   {[
                     ...new Map(
                       item.meetings
@@ -309,11 +326,22 @@ export function BrowserScheduleDetails({ entity }: { entity: ScheduleEntity }) {
               {meeting.roomCode ? ` (${meeting.roomCode})` : ""} ·{" "}
               {meeting.dateFrom ?? "Dates TBA"}
               {meeting.dateTo ? `–${meeting.dateTo}` : ""}
-              {meeting.instructors.length
-                ? ` · ${meeting.instructors.map((item) => item.sourceName).join(", ")}`
-                : ""}
             </p>
           ))}
+          {state.schedule.meetings
+            .flatMap((meeting) => meeting.instructors)
+            .map((instructor) =>
+              instructor.uuid ? (
+                <EntityLink
+                  href={instructorPath(instructor.uuid)}
+                  key={`${instructor.uuid}-${instructor.sourceName}`}
+                >
+                  {instructor.sourceName}
+                </EntityLink>
+              ) : (
+                <span key={instructor.sourceName}>{instructor.sourceName}</span>
+              ),
+            )}
           {state.schedule.reservations.map((reservation) => (
             <p key={reservation.name}>
               {reservation.name}: {reservation.enrollment}/{reservation.quota}
