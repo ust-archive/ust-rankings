@@ -27,6 +27,17 @@ const eventRevision = "3".repeat(40);
 const correctionRevision = "4".repeat(40);
 const alphaUuid = "00000000-0000-4000-8000-000000000001";
 const betaUuid = "00000000-0000-4000-8000-000000000002";
+const rankingInputs = [
+  "courses.parquet",
+  "course-ratings.parquet",
+  "instructor-ratings.parquet",
+  "course-instructors.parquet",
+  "instructor-identities.parquet",
+  "instructor-aliases.parquet",
+  "instructor-identity-events.parquet",
+  "instructor-split-affected-associations.parquet",
+] as const;
+const scheduleInputs = ["courses.parquet", "classes.parquet"] as const;
 
 async function copy(
   connection: Awaited<ReturnType<DuckDBInstance["connect"]>>,
@@ -55,6 +66,7 @@ async function makeArchiveFixtures(root: string) {
       connection,
       rankingPath("courses.parquet"),
       `SELECT * FROM (VALUES
+        ('CAT', '5000', 'Catalog Only', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[]),
         ('COMP', '1000', 'Computing One', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[]),
         ('COMP', '2000', 'Computing Two', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[])
       ) AS t(prefix, number, title, attributes)`,
@@ -154,10 +166,26 @@ async function makeArchiveFixtures(root: string) {
     connection.closeSync();
     instance.closeSync();
   }
-  await writeFile(
-    join(scheduleDirectory, "manifest.json"),
-    `${JSON.stringify({ schemaMajor: 0, sourceCommit: scheduleRevision })}\n`,
-  );
+  for (const [directory, sourceCommit, filenames] of [
+    [rankingDirectory, rankingRevision, rankingInputs],
+    [scheduleDirectory, scheduleRevision, scheduleInputs],
+  ] as const) {
+    const artifacts = Object.fromEntries(
+      await Promise.all(
+        filenames.map(async (name) => [
+          name,
+          {
+            size: (await stat(join(directory, name))).size,
+            sha256: await digest(join(directory, name)),
+          },
+        ]),
+      ),
+    );
+    await writeFile(
+      join(directory, "manifest.json"),
+      `${JSON.stringify({ schemaMajor: 0, sourceCommit, artifacts })}\n`,
+    );
+  }
   return { rankingDirectory, scheduleDirectory };
 }
 
@@ -392,18 +420,8 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
     const { rankingDirectory, scheduleDirectory } =
       await makeArchiveFixtures(root);
     const sourceFiles = [
-      ...[
-        "courses.parquet",
-        "course-ratings.parquet",
-        "instructor-ratings.parquet",
-        "course-instructors.parquet",
-        "instructor-identities.parquet",
-        "instructor-aliases.parquet",
-        "instructor-identity-events.parquet",
-        "instructor-split-affected-associations.parquet",
-      ].map((name) => join(rankingDirectory, name)),
-      join(scheduleDirectory, "courses.parquet"),
-      join(scheduleDirectory, "classes.parquet"),
+      ...rankingInputs.map((name) => join(rankingDirectory, name)),
+      ...scheduleInputs.map((name) => join(scheduleDirectory, name)),
     ];
     const before = new Map<string, string>(
       await Promise.all(
@@ -475,7 +493,7 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
     }
     const expectedRowCounts: Record<string, number> = {
       "course-ratings.parquet": 3,
-      "courses.parquet": 2,
+      "courses.parquet": 3,
       "instructor-aliases.parquet": 2,
       "instructor-identity-events.parquet": 1,
       "instructor-ratings.parquet": 2,
@@ -603,6 +621,7 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
     assert.equal(serverIndex.schemaVersion, 1);
     assert.equal(serverIndex.generation, first.generation);
     assert.deepEqual(serverIndex.courses, [
+      { prefix: "CAT", number: "5000" },
       { prefix: "COMP", number: "1000" },
       { prefix: "COMP", number: "2000" },
       { prefix: "HIST", number: "3000" },
@@ -656,6 +675,7 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
         { courseId: "c2", sourceName: "Calibrated Name", uuid: betaUuid },
       ],
     );
+    assert.equal(first.manifest.serverIndex.url, SERVER_INDEX_FILENAME);
     assert.equal(first.manifest.serverIndex.generation, first.generation);
     assert.equal(
       first.manifest.serverIndex.bytes,
@@ -691,7 +711,7 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
   }
 });
 
-test("rejects mutable revisions before creating a staged generation", async () => {
+test("rejects mutable or unauthenticated source revisions", async () => {
   const root = await mkdtemp(join(tmpdir(), "ust-delivery-invalid-"));
   try {
     const { rankingDirectory, scheduleDirectory } =
@@ -708,6 +728,27 @@ test("rejects mutable revisions before creating a staged generation", async () =
     );
     await assert.rejects(access(join(root, "output")), /ENOENT/);
 
+    const rankingManifest = await readFile(
+      join(rankingDirectory, "manifest.json"),
+      "utf8",
+    );
+    await rm(join(rankingDirectory, "manifest.json"));
+    await assert.rejects(
+      buildDeliveryGeneration({
+        rankingDirectory,
+        scheduleDirectory,
+        rankingRevision,
+        scheduleRevision,
+        outputDirectory: join(root, "missing-manifest"),
+      }),
+      /Ranking archive is missing manifest.json/,
+    );
+    await writeFile(join(rankingDirectory, "manifest.json"), rankingManifest);
+
+    const scheduleManifest = await readFile(
+      join(scheduleDirectory, "manifest.json"),
+      "utf8",
+    );
     await writeFile(
       join(scheduleDirectory, "manifest.json"),
       `${JSON.stringify({ schemaMajor: 0, sourceCommit: "f".repeat(40) })}\n`,
@@ -724,6 +765,19 @@ test("rejects mutable revisions before creating a staged generation", async () =
       /Schedule archive manifest revision does not match its pinned revision/,
     );
     assert.deepEqual(await readdir(output), []);
+
+    await writeFile(join(scheduleDirectory, "manifest.json"), scheduleManifest);
+    await writeFile(join(rankingDirectory, "courses.parquet"), "corrupt");
+    await assert.rejects(
+      buildDeliveryGeneration({
+        rankingDirectory,
+        scheduleDirectory,
+        rankingRevision,
+        scheduleRevision,
+        outputDirectory: join(root, "corrupt-source"),
+      }),
+      /Ranking archive artifact does not match courses.parquet/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

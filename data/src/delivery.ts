@@ -123,6 +123,7 @@ export type DeliveryManifest = {
   artifacts: Record<DeliveryArtifactName, DeliveryArtifactDeclaration>;
   serverIndex: {
     name: typeof SERVER_INDEX_FILENAME;
+    url: string;
     generation: string;
     bytes: number;
     sha256: string;
@@ -281,23 +282,40 @@ async function requireColumns(
       throw new Error(`${path} is missing required column ${column}`);
 }
 
-async function validateOptionalManifest(
+async function validateSourceManifest(
   directory: string,
   expectedRevision: string,
+  filenames: readonly string[],
   label: string,
 ): Promise<void> {
   const path = join(directory, "manifest.json");
-  if (!(await fileExists(path))) return;
+  if (!(await fileExists(path)))
+    throw new Error(`${label} is missing manifest.json`);
   const parsed = JSON.parse(await readFile(path, "utf8")) as {
     sourceCommit?: unknown;
+    artifacts?: Record<
+      string,
+      { size?: unknown; bytes?: unknown; sha256?: unknown }
+    >;
   };
-  if (
-    parsed.sourceCommit !== undefined &&
-    parsed.sourceCommit !== expectedRevision
-  )
+  if (parsed.sourceCommit !== expectedRevision)
     throw new Error(
       `${label} manifest revision does not match its pinned revision`,
     );
+  for (const filename of filenames) {
+    const expected = parsed.artifacts?.[filename];
+    const bytes = expected?.size ?? expected?.bytes;
+    if (
+      !Number.isSafeInteger(bytes) ||
+      Number(bytes) <= 0 ||
+      typeof expected?.sha256 !== "string" ||
+      !/^[0-9a-f]{64}$/.test(expected.sha256)
+    )
+      throw new Error(`${label} manifest does not declare ${filename}`);
+    const actual = await declaration(join(directory, filename));
+    if (actual.bytes !== bytes || actual.sha256 !== expected.sha256)
+      throw new Error(`${label} artifact does not match ${filename}`);
+  }
 }
 
 async function validateInputs(
@@ -306,17 +324,6 @@ async function validateInputs(
 ): Promise<void> {
   const rankingDirectory = resolve(options.rankingDirectory);
   const scheduleDirectory = resolve(options.scheduleDirectory);
-  await validateOptionalManifest(
-    rankingDirectory,
-    options.rankingRevision,
-    "Ranking archive",
-  );
-  await validateOptionalManifest(
-    scheduleDirectory,
-    options.scheduleRevision,
-    "Schedule archive",
-  );
-
   for (const filename of RANKING_INPUTS) {
     const path = join(rankingDirectory, filename);
     if (!(await fileExists(path)))
@@ -327,6 +334,18 @@ async function validateInputs(
     if (!(await fileExists(path)))
       throw new Error(`Schedule archive is missing ${filename}`);
   }
+  await validateSourceManifest(
+    rankingDirectory,
+    options.rankingRevision,
+    RANKING_INPUTS,
+    "Ranking archive",
+  );
+  await validateSourceManifest(
+    scheduleDirectory,
+    options.scheduleRevision,
+    SCHEDULE_INPUTS,
+    "Schedule archive",
+  );
 
   const rankingColumns: Record<string, readonly string[]> = {
     "courses.parquet": ["prefix", "number", "title", "attributes"],
@@ -620,7 +639,9 @@ async function buildServerIndex(
 
   const courseRows = await readRows(
     connection,
-    `SELECT DISTINCT subject AS prefix, code AS number
+    `SELECT prefix, number FROM read_parquet('${ranking("courses.parquet")}')
+     UNION
+     SELECT subject AS prefix, code AS number
      FROM read_parquet('${ranking("course-ratings.parquet")}')
      ORDER BY prefix, number`,
   );
@@ -969,7 +990,9 @@ export async function buildDeliveryGeneration(
     await copyParquet(
       connection,
       join(staging, "schedule-classes.parquet"),
-      `SELECT *
+      `SELECT term_num, term_code, term_name, course_id, section, number,
+          role, type, association, remarks, capacity, enroll, wait, consent,
+          open, schedules, reservations, status, timestamp
        FROM read_parquet('${schedule("classes.parquet")}')
        ORDER BY term_num, course_id, section, timestamp`,
     );
@@ -1028,6 +1051,7 @@ export async function buildDeliveryGeneration(
       artifacts,
       serverIndex: {
         name: SERVER_INDEX_FILENAME,
+        url: SERVER_INDEX_FILENAME,
         generation,
         bytes: serverIndexDeclaration.bytes,
         sha256: serverIndexDeclaration.sha256,

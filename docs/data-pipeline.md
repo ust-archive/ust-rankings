@@ -105,7 +105,10 @@ Outputs include standardized `rating`, posterior `bayesian`, confidence, current
 `data/src/build-delivery.ts` provides the `npm run build-delivery --workspace data -- ...`
 CLI. It accepts separate Ranking and Schedule archive directories plus their
 immutable 40-hex revisions and stages one generation under the configured
-output directory. Mutable revisions such as `main` are rejected.
+output directory. Mutable revisions such as `main` are rejected. Each input
+directory must include the source manifest produced from the pinned Hugging
+Face tree, declaring the revision, byte size, and SHA-256 of every consumed
+artifact; the derivation verifies those declarations before reading data.
 
 The derivation leaves the full-fidelity archive inputs untouched. It writes the
 browser Delivery Dataset as the ten Parquet relations `courses.parquet`,
@@ -124,7 +127,8 @@ and scoped Instructor Association Corrections.
 
 `manifest.json` records schema version, the pinned `rankings` and `schedule`
 revisions, every Delivery artifact's immutable Spaces CDN URL, byte size, and
-SHA-256, plus the Server Index declaration. The generation SHA is a SHA-256 of
+SHA-256, plus the Server Index's relative staged URL and declaration. The
+generation SHA is a SHA-256 of
 the schema version, pinned revisions, and ordered Delivery artifact hashes; the
 Server Index records that generation but is deliberately excluded from the
 input to avoid circular hashing. Output directories are generation-named and
