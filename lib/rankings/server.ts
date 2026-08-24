@@ -3,11 +3,8 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import {
-  type DuckDBConnection,
-  DuckDBInstance,
-  type DuckDBValue,
-} from "@duckdb/node-api";
+import type { DuckDBConnection, DuckDBValue } from "@duckdb/node-api";
+import { connectDuckDB } from "@/lib/duckdb";
 import {
   buildInstructorIdentityHistory,
   INSTRUCTOR_UUID_PATTERN,
@@ -18,6 +15,7 @@ import {
   ITSC_PATTERN,
   normalizeInstructorKey,
 } from "@/lib/instructor-identity";
+import { parquetFileMatches } from "@/lib/parquet";
 import {
   RANKING_CRITERIA as CRITERIA,
   type RankingCriterion as Criterion,
@@ -411,7 +409,6 @@ type Generation = {
   sha: string;
   courseDigest: string;
   directory: string;
-  instance: DuckDBInstance;
   connection: DuckDBConnection;
   identitiesByCurrentName: Map<string, InstructorIdentity[]>;
   identitiesByObservedName: Map<string, InstructorIdentity[]>;
@@ -741,31 +738,14 @@ async function validateFiles(directory: string, manifest: Manifest) {
     throw new Error("Manifest does not declare the complete generation");
   }
 
-  await Promise.all(
-    ARTIFACTS.map(async (filename) => {
-      const path = resolve(directory, filename);
-      const declaration = manifest.artifacts[filename];
-      const bytes = await readFile(/* turbopackIgnore: true */ path);
-      if (
-        !declaration ||
-        bytes.length !== declaration.size ||
-        (await stat(/* turbopackIgnore: true */ path)).size !== declaration.size
-      ) {
-        throw new Error(`${filename} size mismatch`);
-      }
-      if (
-        bytes.subarray(0, 4).toString() !== "PAR1" ||
-        bytes.subarray(-4).toString() !== "PAR1"
-      ) {
-        throw new Error(`${filename} is not framed as Parquet`);
-      }
-      if (
-        createHash("sha256").update(bytes).digest("hex") !== declaration.sha256
-      ) {
-        throw new Error(`${filename} checksum mismatch`);
-      }
-    }),
-  );
+  for (const filename of ARTIFACTS) {
+    const declaration = manifest.artifacts[filename];
+    if (
+      !declaration ||
+      !(await parquetFileMatches(resolve(directory, filename), declaration))
+    )
+      throw new Error(`${filename} does not match its declaration`);
+  }
 }
 
 async function validateRelations(
@@ -1273,10 +1253,7 @@ async function loadGeneration(
       await readFile(resolve(directory, "manifest.json"), "utf8"),
     ) as Manifest;
     await validateFiles(directory, manifest);
-    const instance = await DuckDBInstance.create(":memory:");
-    const connection = await instance.connect();
-    await connection.run("SET threads = 1");
-    await connection.run("SET memory_limit = '384MB'");
+    const connection = await connectDuckDB();
     try {
       await validateRelations(connection, directory);
       await applyIdentityParquet(connection, directory, manifest);
@@ -1297,7 +1274,6 @@ async function loadGeneration(
         sha: manifest.sourceCommit,
         courseDigest: manifest.artifacts["courses.parquet"].sha256,
         directory,
-        instance,
         connection,
         identitiesByCurrentName: identityNames.currentNames,
         identitiesByObservedName: identityNames.observedNames,
@@ -1312,7 +1288,6 @@ async function loadGeneration(
       };
     } catch (error) {
       connection.closeSync();
-      instance.closeSync();
       throw error;
     }
   } catch (error) {
@@ -1334,8 +1309,7 @@ async function loadInstructorRegistry(
       basename(resolve(directory)) !== manifest.sourceCommit
     )
       throw new Error("Invalid Instructor registry manifest");
-    const instance = await DuckDBInstance.create(":memory:");
-    const connection = await instance.connect();
+    const connection = await connectDuckDB();
     let identities: ReturnType<typeof validateIdentities>;
     try {
       await applyIdentityParquet(connection, directory, manifest);
@@ -1346,7 +1320,6 @@ async function loadInstructorRegistry(
       );
     } finally {
       connection.closeSync();
-      instance.closeSync();
     }
     return {
       sha: manifest.sourceCommit,
@@ -1662,7 +1635,6 @@ async function closeRetiredGeneration(generation: Generation) {
     return;
   generation.closed = true;
   generation.connection.closeSync();
-  generation.instance.closeSync();
   openGenerationCount -= 1;
   await generation.cleanup?.().catch(() => undefined);
 }

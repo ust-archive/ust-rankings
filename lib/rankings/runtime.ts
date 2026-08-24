@@ -343,12 +343,11 @@ export class LocalRankingStore {
     let installed = false;
     try {
       for (const filename of ["manifest.json", ...ARTIFACTS]) {
-        const body = await readFile(join(directory, filename));
         const maximum =
           filename === "manifest.json"
             ? MAX_MANIFEST_BYTES
             : MAX_ARTIFACT_BYTES;
-        if (body.length > maximum)
+        if ((await stat(join(directory, filename))).size > maximum)
           throw new Error("Ranking generation object exceeds its size bound");
         await copyFile(join(directory, filename), join(staging, filename));
       }
