@@ -21,6 +21,7 @@ function request(body: unknown, authorization = `Bearer ${secret}`) {
 
 afterEach(() => {
   delete process.env.RANKINGS_REFRESH_SECRET;
+  delete process.env.CRON_SECRET;
 });
 
 test("authenticated activation accepts the staged generation contract", async () => {
@@ -45,7 +46,7 @@ test("authenticated activation accepts the staged generation contract", async ()
 });
 
 test("authenticated status reports the active generation", async () => {
-  process.env.RANKINGS_REFRESH_SECRET = secret;
+  process.env.CRON_SECRET = secret;
   const { createServerIndexStatusHandler } = await import(
     "@/app/api/server-index/activate/route"
   );
