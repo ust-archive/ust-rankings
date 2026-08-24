@@ -153,3 +153,24 @@ Until the final native-DuckDB cutover, only a verified legacy Delivery manifest
 with no Server Index retains the existing write validator. Unresolved, failed,
 or in-progress activation fails closed when no previous index exists; once an
 index is active, it is authoritative.
+
+## Browser Course queries
+
+Each browser tab resolves `latest.json` once, verifies the content-derived
+Delivery manifest, and pins that immutable generation for the tab lifetime.
+One process-wide query Worker is created outside React lifecycles; it owns the
+DuckDB-Wasm worker and keeps ranking/filtering work off the main thread. Pinned
+Worker and Wasm assets are copied from the locked npm package into the
+application image and restricted to the same origin by CSP. The runtime
+registers every immutable artifact immediately, preloads only Catalog
+and Instructor identity data, and lets DuckDB fetch Course rating and
+`relation.parquet` ranges when typed Catalog, Course Ranking, or Course detail
+operations need them.
+
+Course Ranking controls, pagination, search, presets, structured filters,
+historical evidence, and Course–Instructor relations call that typed browser
+interface; UI modules contain no SQL. Course routes server-render Course Code,
+Schedule identity when available, Reviews, and Signals independently, then
+fill the Ranking section from the pinned generation. Manifest, Worker,
+WebAssembly, CDN, or query failure produces an explicit unavailable state and
+never calls a server Course-query fallback.

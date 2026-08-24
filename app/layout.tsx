@@ -9,6 +9,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import Link from "next/link";
 import type React from "react";
+import { EntityLink } from "@/app/entity-navigation";
 import { Toaster } from "@/components/ui/sonner";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { getAccountService } from "@/lib/contributions/postgres";
@@ -44,18 +45,29 @@ function FooterLinks({
       <h2 className="text-sm font-semibold text-slate-950" id={id}>
         {heading}
       </h2>
-      {links.map(([label, href]) => (
-        <Link
-          className="w-fit text-sm underline-offset-4 hover:text-slate-950"
-          href={href}
-          key={href}
-          transitionTypes={
-            href.startsWith("/rankings/") ? forwardTransition : undefined
-          }
-        >
-          {label}
-        </Link>
-      ))}
+      {links.map(([label, href]) =>
+        href === "/rankings/courses" ? (
+          <EntityLink
+            className="w-fit text-sm underline-offset-4 hover:text-slate-950"
+            href={href}
+            key={href}
+            transitionTypes={forwardTransition}
+          >
+            {label}
+          </EntityLink>
+        ) : (
+          <Link
+            className="w-fit text-sm underline-offset-4 hover:text-slate-950"
+            href={href}
+            key={href}
+            transitionTypes={
+              href.startsWith("/rankings/") ? forwardTransition : undefined
+            }
+          >
+            {label}
+          </Link>
+        ),
+      )}
     </nav>
   );
 }
@@ -141,13 +153,13 @@ export default function RootLayout({
               >
                 Instructors
               </Link>
-              <Link
+              <EntityLink
                 className="no-underline underline-offset-4 hover:underline"
                 href="/rankings/courses"
                 transitionTypes={forwardTransition}
               >
                 Courses
-              </Link>
+              </EntityLink>
               <HeaderAuth />
             </nav>
           </div>

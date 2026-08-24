@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { EntityLink } from "@/app/entity-navigation";
 import { instructorPath } from "@/app/instructors/routes";
 import { SignalControls } from "@/app/signals/signal-controls";
@@ -34,13 +35,7 @@ function uniqueInstructors(
   for (const offering of offerings)
     for (const meeting of offering.classes.flatMap((item) => item.meetings))
       for (const instructor of meeting.instructors) {
-        const resolvedUuid = rankings?.instructors.some(
-          (association) =>
-            association.termCode === offering.termCode &&
-            association.instructor.uuid === instructor.uuid,
-        )
-          ? instructor.uuid
-          : undefined;
+        const resolvedUuid = instructor.uuid;
         const key = resolvedUuid ?? instructor.sourceName;
         const current = instructors.get(key) ?? {
           name: instructor.sourceName,
@@ -129,6 +124,7 @@ export function CourseDetails({
   courseNumber,
   schedule,
   rankings,
+  rankingsContent,
   selectedTermCode,
   reviews = [],
   reviewsUnavailable = true,
@@ -144,6 +140,7 @@ export function CourseDetails({
   courseNumber: string;
   schedule?: Extract<ScheduleDetails, { type: "course" }>;
   rankings?: CourseRankings;
+  rankingsContent?: ReactNode;
   selectedTermCode?: string;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
@@ -346,12 +343,14 @@ export function CourseDetails({
           aria-label="Rankings and Community"
           className="flex min-w-0 flex-col gap-6"
         >
-          <DetailsRankings
-            rankings={rankings}
-            scoreDistribution={rankings?.scoreDistribution}
-            selectedTermCode={evidenceTermCode}
-            termNames={termNames}
-          />
+          {rankingsContent ?? (
+            <DetailsRankings
+              rankings={rankings}
+              scoreDistribution={rankings?.scoreDistribution}
+              selectedTermCode={evidenceTermCode}
+              termNames={termNames}
+            />
+          )}
           <DetailsCommunity
             description="Published experiences and signals for this Course."
             editor={reviewEditor}
@@ -448,12 +447,14 @@ export function CourseDetails({
 export function CourseOfferingDetails({
   offering,
   rankings,
+  rankingsContent,
   reviews = [],
   reviewsUnavailable = true,
   signedIn = false,
 }: {
   offering: Extract<ScheduleDetails, { type: "course-offering" }>;
   rankings?: CourseRankings;
+  rankingsContent?: ReactNode;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
   signedIn?: boolean;
@@ -511,12 +512,14 @@ export function CourseOfferingDetails({
           aria-label="Rankings and Community"
           className="flex min-w-0 flex-col gap-6"
         >
-          <DetailsRankings
-            rankings={rankings}
-            scoreDistribution={rankings?.scoreDistribution}
-            selectedTermCode={offering.termCode}
-            termNames={new Map([[offering.termCode, offering.termName]])}
-          />
+          {rankingsContent ?? (
+            <DetailsRankings
+              rankings={rankings}
+              scoreDistribution={rankings?.scoreDistribution}
+              selectedTermCode={offering.termCode}
+              termNames={new Map([[offering.termCode, offering.termName]])}
+            />
+          )}
           <DetailsCommunity
             description="Published experiences for this Course Offering and its Review Bases."
             editor={reviewEditor}
@@ -627,12 +630,14 @@ function meetingLabel(meeting: ScheduleMeeting) {
 export function ClassDetails({
   scheduleClass,
   rankings,
+  rankingsContent,
   reviews = [],
   reviewsUnavailable = true,
   signedIn = false,
 }: {
   scheduleClass: Extract<ScheduleDetails, { type: "class" }>;
   rankings?: CourseRankings;
+  rankingsContent?: ReactNode;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
   signedIn?: boolean;
@@ -640,13 +645,7 @@ export function ClassDetails({
   const instructors = new Map<string, { name: string; uuid?: string }>();
   for (const meeting of scheduleClass.meetings)
     for (const instructor of meeting.instructors) {
-      const resolvedUuid = rankings?.instructors.some(
-        (association) =>
-          association.termCode === scheduleClass.termCode &&
-          association.instructor.uuid === instructor.uuid,
-      )
-        ? instructor.uuid
-        : undefined;
+      const resolvedUuid = instructor.uuid;
       instructors.set(resolvedUuid ?? instructor.sourceName, {
         name: instructor.sourceName,
         uuid: resolvedUuid,
@@ -696,12 +695,14 @@ export function ClassDetails({
           aria-label="Rankings and Community"
           className="flex min-w-0 flex-col gap-6"
         >
-          <DetailsRankings
-            rankings={rankings}
-            scoreDistribution={rankings?.scoreDistribution}
-            selectedTermCode={scheduleClass.termCode}
-            termNames={new Map([[scheduleClass.termCode, termName]])}
-          />
+          {rankingsContent ?? (
+            <DetailsRankings
+              rankings={rankings}
+              scoreDistribution={rankings?.scoreDistribution}
+              selectedTermCode={scheduleClass.termCode}
+              termNames={new Map([[scheduleClass.termCode, termName]])}
+            />
+          )}
           <DetailsCommunity
             description="Published experiences for this Class context and its Review Bases."
             editor={reviewEditor}

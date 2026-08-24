@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { loadMoreRankings } from "@/app/rankings/actions";
+import { loadMoreInstructorRankings } from "@/app/rankings/actions";
 import { RankingResultCard } from "@/app/rankings/ranking-result-card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
@@ -45,10 +45,26 @@ export function RankingPagination({
         loadingCursor.current = nextCursor;
         startTransition(async () => {
           try {
-            const page = await loadMoreRankings({
-              ...query,
-              cursor: nextCursor,
-            });
+            const nextQuery = { ...query, cursor: nextCursor };
+            const page =
+              query.entity === "course"
+                ? await import("@/lib/browser-query/client").then(
+                    async ({ queryCourseRankings }) => {
+                      const result = await queryCourseRankings({
+                        ...nextQuery,
+                        entity: "course",
+                      });
+                      return {
+                        nextCursor: result.nextCursor,
+                        results: result.results,
+                        termCode: result.population.termCode,
+                      };
+                    },
+                  )
+                : await loadMoreInstructorRankings({
+                    ...nextQuery,
+                    entity: "instructor",
+                  });
             setAdditionalResults((current) => [...current, ...page.results]);
             setResultCount((current) => current + page.results.length);
             setError(false);

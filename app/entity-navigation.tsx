@@ -2,8 +2,13 @@
 
 import { ArrowLeft } from "lucide-react";
 import Link, { useLinkStatus } from "next/link";
-import { usePathname } from "next/navigation";
-import { type ComponentProps, useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  type ComponentProps,
+  startTransition,
+  useEffect,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 
@@ -13,9 +18,9 @@ let pendingEntityNavigation = false;
 
 type EntityLinkProps = ComponentProps<typeof Link>;
 
-function NavigationProgress() {
+function NavigationProgress({ preloading = false }: { preloading?: boolean }) {
   const { pending } = useLinkStatus();
-  if (!pending || typeof document === "undefined") return null;
+  if ((!pending && !preloading) || typeof document === "undefined") return null;
   const target = document.getElementById("navigation-progress");
   if (!target) return null;
   return createPortal(
@@ -37,18 +42,43 @@ export function EntityLink({
   transitionTypes,
   ...props
 }: EntityLinkProps) {
+  const router = useRouter();
+  const [preloading, setPreloading] = useState(false);
+  const types = transitionTypes ?? ["nav-forward"];
   return (
     <Link
       {...props}
       onNavigate={(event) => {
         onNavigate?.(event);
         pendingEntityNavigation = true;
+        if (
+          typeof props.href !== "string" ||
+          (!props.href.startsWith("/courses/") &&
+            !props.href.startsWith("/rankings/courses"))
+        )
+          return;
+        event.preventDefault();
+        setPreloading(true);
+        void import("@/lib/browser-query/client")
+          .then(({ preloadPublicQuery }) =>
+            preloadPublicQuery(props.href as string),
+          )
+          .catch(() => undefined)
+          .finally(() => {
+            setPreloading(false);
+            startTransition(() => {
+              router.push(props.href as string, {
+                scroll: props.scroll,
+                transitionTypes: [...types],
+              });
+            });
+          });
       }}
       ref={ref}
-      transitionTypes={transitionTypes ?? ["nav-forward"]}
+      transitionTypes={types}
     >
       {children}
-      <NavigationProgress />
+      <NavigationProgress preloading={preloading} />
     </Link>
   );
 }

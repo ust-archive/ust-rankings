@@ -201,11 +201,13 @@ function RankMetric({
 }
 
 export function DetailsRankings({
+  loading = false,
   rankings,
   selectedTermCode,
   scoreDistribution,
   termNames = new Map(),
 }: {
+  loading?: boolean;
   rankings?: DetailRankings;
   selectedTermCode?: string;
   scoreDistribution?: ScoreDistribution;
@@ -224,7 +226,10 @@ export function DetailsRankings({
       )
     : undefined;
   return (
-    <details className="group overflow-hidden rounded-lg border border-gray-200 bg-white text-gray-950 shadow-sm">
+    <details
+      aria-busy={loading}
+      className="group overflow-hidden rounded-lg border border-gray-200 bg-white text-gray-950 shadow-sm"
+    >
       <summary className="relative cursor-pointer list-none p-5 focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[#003366] sm:p-6">
         <h2 className={`block pr-24 text-2xl text-slate-900 ${styles.heading}`}>
           Rankings
@@ -293,7 +298,9 @@ export function DetailsRankings({
           >
             {rankings
               ? "Rank and score are unavailable for this population."
-              : "Rankings are unavailable. Other Details remain available."}
+              : loading
+                ? "Loading Rankings… Other Details remain available."
+                : "Rankings are unavailable. Other Details remain available."}
           </span>
         )}
         <span className="absolute right-4 top-4 inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium text-slate-700 sm:right-5 sm:top-5">
