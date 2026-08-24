@@ -46,7 +46,7 @@ function FooterLinks({
         {heading}
       </h2>
       {links.map(([label, href]) =>
-        href === "/rankings/courses" ? (
+        href.startsWith("/rankings/") ? (
           <EntityLink
             className="w-fit text-sm underline-offset-4 hover:text-slate-950"
             href={href}
@@ -146,13 +146,13 @@ export default function RootLayout({
               aria-label="Primary navigation"
               className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm font-semibold sm:gap-6 sm:text-base"
             >
-              <Link
+              <EntityLink
                 className="no-underline underline-offset-4 hover:underline"
                 href="/rankings/instructors"
                 transitionTypes={forwardTransition}
               >
                 Instructors
-              </Link>
+              </EntityLink>
               <EntityLink
                 className="no-underline underline-offset-4 hover:underline"
                 href="/rankings/courses"

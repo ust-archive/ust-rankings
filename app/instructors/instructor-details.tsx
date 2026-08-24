@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   ReviewComposer,
   type ReviewEditorOptions,
@@ -202,7 +203,7 @@ function TeachingCards({
   );
 }
 
-function IdentityCard({
+export function IdentityCard({
   identity,
   rankings,
 }: {
@@ -325,6 +326,8 @@ function IdentityCard({
 export function InstructorDetails({
   identity,
   rankings,
+  identityContent,
+  rankingsContent,
   classes,
   scheduleUnavailable,
   selectedTermCode,
@@ -341,6 +344,8 @@ export function InstructorDetails({
 }: {
   identity: InstructorIdentityLookup;
   rankings?: Rankings;
+  identityContent?: ReactNode;
+  rankingsContent?: ReactNode;
   classes: ScheduleClass[];
   scheduleUnavailable: boolean;
   selectedTermCode?: string;
@@ -431,11 +436,13 @@ export function InstructorDetails({
           aria-label="Rankings and Community"
           className="flex min-w-0 flex-col gap-6"
         >
-          <DetailsRankings
-            rankings={rankings}
-            scoreDistribution={rankings?.scoreDistribution}
-            selectedTermCode={selectedTermCode}
-          />
+          {rankingsContent ?? (
+            <DetailsRankings
+              rankings={rankings}
+              scoreDistribution={rankings?.scoreDistribution}
+              selectedTermCode={selectedTermCode}
+            />
+          )}
           <DetailsCommunity
             editor={reviewEditor}
             error={reviewError}
@@ -473,7 +480,9 @@ export function InstructorDetails({
             scheduleUnavailable={scheduleUnavailable}
             selectedTermCode={selectedTermCode}
           />
-          <IdentityCard identity={identity} rankings={rankings} />
+          {identityContent ?? (
+            <IdentityCard identity={identity} rankings={rankings} />
+          )}
         </aside>
       </div>
     </div>

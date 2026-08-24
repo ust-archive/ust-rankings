@@ -174,3 +174,12 @@ Schedule identity when available, Reviews, and Signals independently, then
 fill the Ranking section from the pinned generation. Manifest, Worker,
 WebAssembly, CDN, or query failure produces an explicit unavailable state and
 never calls a server Course-query fallback.
+
+Instructor Ranking and detail operations use the same tab-pinned Worker. They
+load `instructor-ratings.parquet` and the shared `relation.parquet` lazily,
+resolve UUID merge families and scoped correction history from the preloaded
+identity relations, and preserve zero-sample Rank behavior. Instructor list
+pagination, filters, presets, alias/ITSC search, identity history, historical
+rating evidence, and Course relations have no server Ranking-query fallback.
+Static identity and Community content remain server-rendered while the Worker
+section loads or reports unavailable.

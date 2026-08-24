@@ -165,6 +165,30 @@ export function cachedCourseRankings(
   return cached("courseRankings", input).value;
 }
 
+export function queryInstructorRankings(
+  input: RankingsQuery & { entity: "instructor" },
+) {
+  return cached("instructorRankings", input).promise;
+}
+
+export function cachedInstructorRankings(
+  input: RankingsQuery & { entity: "instructor" },
+) {
+  return cached("instructorRankings", input).value;
+}
+
+export function queryInstructorDetails(
+  input: CourseQueryOperations["instructorDetails"]["input"],
+) {
+  return cached("instructorDetails", input).promise;
+}
+
+export function cachedInstructorDetails(
+  input: CourseQueryOperations["instructorDetails"]["input"],
+) {
+  return cached("instructorDetails", input).value;
+}
+
 export function queryCourseDetails(
   input: CourseQueryOperations["courseDetails"]["input"],
 ) {
@@ -213,6 +237,42 @@ export async function queryCourseRankingPages(
   return combined;
 }
 
+export async function queryInstructorRankingPages(
+  query: RankingsQuery & { entity: "instructor" },
+  pages: number,
+): Promise<RankingsPage<"instructor">> {
+  if (pages === 1) return queryInstructorRankings(query);
+  const expectedCursor = query.cursor;
+  const discoverCursor = pages === 0;
+  const first = await queryInstructorRankings({ ...query, cursor: undefined });
+  let combined = first;
+  for (let page = 2; discoverCursor || page <= pages; page += 1) {
+    const cursor = combined.nextCursor;
+    if (!cursor) throw new Error("Ranking page expired.");
+    if (
+      expectedCursor &&
+      ((discoverCursor && cursor === expectedCursor) ||
+        (!discoverCursor && page === pages && cursor === expectedCursor))
+    ) {
+      const next = await queryInstructorRankings({ ...query, cursor });
+      return {
+        ...combined,
+        nextCursor: next.nextCursor,
+        results: [...combined.results, ...next.results],
+      };
+    }
+    if (!discoverCursor && page === pages)
+      throw new Error("Ranking page expired.");
+    const next = await queryInstructorRankings({ ...query, cursor });
+    combined = {
+      ...combined,
+      nextCursor: next.nextCursor,
+      results: [...combined.results, ...next.results],
+    };
+  }
+  return combined;
+}
+
 function rankingPreference() {
   const prefix = `${RANKING_PREFERENCE_COOKIE}=`;
   const value = document.cookie
@@ -239,6 +299,16 @@ function searchParams(url: URL) {
 export async function preloadPublicQuery(href: string) {
   const url = new URL(href, window.location.href);
   if (url.origin !== window.location.origin) return;
+  if (url.pathname === "/rankings/instructors") {
+    const { instructorRankingPages, instructorRankingQuery } = await import(
+      "@/app/rankings/instructor-query"
+    );
+    const params = searchParams(url);
+    return queryInstructorRankingPages(
+      instructorRankingQuery(params, rankingPreference()),
+      instructorRankingPages(params),
+    );
+  }
   if (url.pathname === "/rankings/courses") {
     const { courseRankingPages, courseRankingQuery } = await import(
       "@/app/rankings/course-query"
@@ -249,6 +319,13 @@ export async function preloadPublicQuery(href: string) {
       courseRankingPages(params),
     );
   }
+  const instructor = url.pathname.match(/^\/instructors\/([^/]+)$/);
+  if (instructor?.[1])
+    return queryInstructorDetails({
+      key: decodeURIComponent(instructor[1]),
+      termCode: url.searchParams.get("term") ?? undefined,
+      ...rankingPreferenceQuery(rankingPreference()),
+    });
   const match = url.pathname.match(
     /^\/courses\/([^/]+)\/([^/]+)(?:\/([0-9]{4}))?(?:\/[^/]+)?$/,
   );

@@ -65,6 +65,7 @@ export async function generateBrowserFixtures() {
           sourceCommit: fixtureSha,
         },
       ],
+      includePriorOnly: true,
       includeScheduleCourse: true,
     }),
     makeScheduleGeneration(scheduleRoot),

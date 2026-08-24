@@ -20,6 +20,9 @@ import type {
   CourseRanking,
   CourseRankings,
   InstructorIdentity,
+  InstructorIdentityLookup,
+  InstructorRanking,
+  Rankings,
   RankingsPage,
   RankingsQuery,
   ScoreDistribution,
@@ -137,6 +140,9 @@ type Candidate = {
 };
 type RankedCandidate = Candidate & { score: number };
 type PageWithDistribution = RankingsPage<"course"> & {
+  scoreDistribution: ScoreDistribution;
+};
+type InstructorPageWithDistribution = RankingsPage<"instructor"> & {
   scoreDistribution: ScoreDistribution;
 };
 type Runtime = {
@@ -869,6 +875,418 @@ async function courseDetails(
   return result;
 }
 
+function instructorIdentity(runtime: Runtime, inputKey: string) {
+  const key = inputKey.trim().toLowerCase();
+  const requestedUuid = runtime.identities.has(key)
+    ? key
+    : runtime.identityHistory.uuidByItsc.get(key);
+  if (!requestedUuid) throw new QueryError("unknown", "Unknown Instructor");
+  const uuid = runtime.identityHistory.resolveUuid(requestedUuid);
+  const instructor = runtime.identities.get(uuid);
+  if (!instructor) throw new QueryError("unknown", "Unknown Instructor");
+  const family = [...runtime.identities.values()].filter(
+    (candidate) => runtime.identityHistory.resolveUuid(candidate.uuid) === uuid,
+  );
+  const familyUuids = family.map((candidate) => candidate.uuid);
+  const familySet = new Set(familyUuids);
+  const canonicalKey = instructor.itsc ?? instructor.uuid;
+  return {
+    generation: runtime.delivery.generation,
+    instructor,
+    family,
+    familyUuids,
+    route: { canonicalKey, redirect: key !== canonicalKey },
+    identityHistory: {
+      identifiers: family.flatMap(
+        (candidate) =>
+          runtime.identityHistory.identifiersByUuid.get(candidate.uuid) ?? [],
+      ),
+      events: runtime.identityHistory.events.filter((event) => {
+        if (event.type === "itsc-added") return familySet.has(event.uuid);
+        if (event.type === "merge")
+          return (
+            familySet.has(event.retiredUuid) ||
+            familySet.has(event.survivorUuid)
+          );
+        return familySet.has(event.sourceUuid) || familySet.has(event.newUuid);
+      }),
+      associationCorrections: runtime.identityHistory
+        .correctionsForUuids(familySet)
+        .map((correction) => {
+          if (correction.correctionType === "split")
+            return {
+              ...correction,
+              correctionType: "split" as const,
+              status: "needs-resolution" as const,
+            };
+          return {
+            ...correction,
+            correctionType: "calibration" as const,
+            status: "resolved" as const,
+          };
+        }),
+    },
+  } satisfies InstructorIdentityLookup;
+}
+
+async function instructorRankings(
+  runtime: Runtime,
+  query: RankingsQuery & { entity: "instructor" },
+): Promise<InstructorPageWithDistribution> {
+  const activity = query.activity ?? "current";
+  if (activity !== "current" && activity !== "all")
+    throw new QueryError("invalid", "Invalid activity mode.");
+  if (query.commonCore?.length || query.commonCoreScheme)
+    throw new QueryError("invalid", "Filter does not apply to this entity.");
+  const search = query.search?.trim().toLocaleLowerCase() || undefined;
+  if (search && search.length > 100)
+    throw new QueryError("invalid", "Search is limited to 100 characters.");
+  const coursePrefix = query.coursePrefix?.trim().toUpperCase() || undefined;
+  if (coursePrefix && !/^[A-Z]{2,8}$/.test(coursePrefix))
+    throw new QueryError("invalid", "Invalid Course Prefix.");
+  const course = query.course?.trim().toUpperCase() || undefined;
+  if (course && !/^[A-Z]{2,8} [0-9]{3,5}[A-Z]?$/.test(course))
+    throw new QueryError("invalid", "Invalid Course Code.");
+  const limit = Math.min(Math.max(Math.floor(query.limit ?? 100), 1), 100);
+  if (!Number.isFinite(limit))
+    throw new QueryError("invalid", "Invalid ranking page size.");
+  const configuration = normalizeRankingConfiguration(
+    query,
+    (message) => new QueryError("invalid", message),
+  );
+  const termRows = await queryRows(
+    runtime,
+    "SELECT term_num, term_code FROM read_parquet('instructor-ratings.parquet') GROUP BY ALL ORDER BY term_num DESC",
+  );
+  const terms = termRows.map((row) => ({
+    termCode: String(row.term_code),
+    termName: rankingTermName(String(row.term_code)),
+  }));
+  const termCode = query.termCode?.trim() || terms[0]?.termCode || "";
+  if (
+    !/^\d{4}$/.test(termCode) ||
+    !terms.some((term) => term.termCode === termCode)
+  )
+    throw new QueryError("invalid", "Unknown Term Code.");
+  const normalizedQuery = JSON.stringify({
+    entity: "instructor",
+    termCode,
+    activity,
+    search,
+    coursePrefix,
+    course,
+    configuration,
+    limit,
+  });
+  const fingerprint = await sha256Base64Url(normalizedQuery);
+  const cacheKey = `instructorRankings:${fingerprint}:${query.cursor ?? ""}`;
+  const cached = runtime.cache.get(cacheKey);
+  if (cached) return cached as InstructorPageWithDistribution;
+  const [ratingRows, relationRows] = await Promise.all([
+    queryRows(
+      runtime,
+      `SELECT uuid, criterion, bayesian, cumulative_samples, is_teaching
+       FROM read_parquet('instructor-ratings.parquet') WHERE term_code = ?
+       ORDER BY uuid, criterion`,
+      [termCode],
+    ),
+    queryRows(
+      runtime,
+      `SELECT uuid, subject, code FROM read_parquet('relation.parquet')
+       WHERE term_code = ? ORDER BY uuid, subject, code`,
+      [termCode],
+    ),
+  ]);
+  const coursesByInstructor = new Map<string, Set<string>>();
+  for (const row of relationRows) {
+    const uuid = runtime.identityHistory.resolveUuid(String(row.uuid));
+    const courses = coursesByInstructor.get(uuid) ?? new Set<string>();
+    courses.add(`${row.subject} ${row.code}`);
+    coursesByInstructor.set(uuid, courses);
+  }
+  const evidence = new Map<
+    string,
+    Partial<Record<RankingCriterion, { bayesian: number; samples: number }>>
+  >();
+  const active = new Set<string>();
+  for (const row of ratingRows) {
+    const criterion = String(row.criterion) as RankingCriterion;
+    if (!RANKING_CRITERIA.includes(criterion)) continue;
+    const uuid = String(row.uuid);
+    if (row.is_teaching) active.add(uuid);
+    const values = evidence.get(uuid) ?? {};
+    values[criterion] = {
+      bayesian: number(row.bayesian),
+      samples: number(row.cumulative_samples),
+    };
+    evidence.set(uuid, values);
+  }
+  const currentEvidence = new Set(evidence.keys());
+  const candidates: Array<{
+    key: string;
+    active: boolean;
+    score?: number;
+    searchText: string;
+    courseCodes: Set<string>;
+    result: Omit<
+      InstructorRanking,
+      | "score"
+      | "rank"
+      | "rankPopulation"
+      | "percentile"
+      | "allTimeRank"
+      | "allTimePopulation"
+      | "allTimePercentile"
+      | "ustSpaceSamples"
+      | "sfqSamples"
+    >;
+    ustSpaceSamples: number;
+    sfqSamples: number;
+  }> = [];
+  for (const [observedUuid, values] of evidence) {
+    const identity = resolvedIdentity(runtime, observedUuid);
+    if (!identity) continue;
+    const retired = identity.uuid !== observedUuid;
+    if (retired && currentEvidence.has(identity.uuid)) continue;
+    const courseCodes = coursesByInstructor.get(identity.uuid) ?? new Set();
+    candidates.push({
+      key: identity.uuid,
+      active: active.has(observedUuid),
+      score: retired ? undefined : rankingScore(values, configuration.weights),
+      courseCodes,
+      searchText: [
+        identity.uuid,
+        identity.canonicalName,
+        identity.itsc,
+        ...identity.aliases.map((alias) => alias.name),
+        ...[...courseCodes].flatMap((code) => [
+          code,
+          runtime.courses.get(code)?.title,
+        ]),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase(),
+      result: {
+        entity: "instructor",
+        uuid: identity.uuid,
+        canonicalName: identity.canonicalName,
+        itsc: identity.itsc,
+      },
+      ustSpaceSamples: values.content?.samples ?? 0,
+      sfqSamples: values.instructor?.samples ?? 0,
+    });
+  }
+  const allTimeEligible = candidates.filter(
+    (candidate): candidate is (typeof candidates)[number] & { score: number } =>
+      candidate.score !== undefined,
+  );
+  allTimeEligible.sort(
+    (left, right) =>
+      right.score - left.score || left.key.localeCompare(right.key),
+  );
+  const currentEligible = allTimeEligible.filter(
+    (candidate) => candidate.active,
+  );
+  const eligible = activity === "current" ? currentEligible : allTimeEligible;
+  const filtered = eligible.filter(
+    (candidate) =>
+      (!coursePrefix ||
+        [...candidate.courseCodes].some((code) =>
+          code.startsWith(`${coursePrefix} `),
+        )) &&
+      (!course || candidate.courseCodes.has(course)),
+  );
+  const searched = search
+    ? filtered.filter((candidate) => candidate.searchText.includes(search))
+    : filtered;
+  const unrankedMatchCount = candidates.filter(
+    (candidate) =>
+      candidate.score === undefined &&
+      (activity === "all" || candidate.active) &&
+      (!search || candidate.searchText.includes(search)),
+  ).length;
+  let start = 0;
+  if (query.cursor) {
+    const cursor = decodeCursor(query.cursor);
+    if (
+      cursor.g !== runtime.delivery.generation ||
+      cursor.c !==
+        runtime.delivery.manifest.artifacts["instructors.parquet"].sha256
+    )
+      throw new QueryError("stale", "Ranking page expired.");
+    if (cursor.q !== fingerprint)
+      throw new QueryError(
+        "invalid",
+        "The cursor belongs to a different ranking query.",
+      );
+    const position = searched.findIndex(
+      (candidate) => candidate.key === cursor.p,
+    );
+    if (position < 0)
+      throw new QueryError("invalid", "Invalid ranking cursor position.");
+    start = position + 1;
+  }
+  const rankByInstructor = rankingPositions(currentEligible);
+  const allTimeRanks = rankingPositions(allTimeEligible);
+  const page = searched.slice(start, start + limit);
+  const results = page.map((candidate): InstructorRanking => {
+    const rank = rankByInstructor.get(candidate.key);
+    const allTime = allTimeRanks.get(candidate.key) as NonNullable<
+      ReturnType<typeof allTimeRanks.get>
+    >;
+    return {
+      ...candidate.result,
+      score: candidate.score,
+      rank: rank?.rank,
+      rankPopulation: currentEligible.length,
+      percentile: rank?.percentile,
+      allTimeRank: allTime.rank,
+      allTimePopulation: allTime.population,
+      allTimePercentile: allTime.percentile,
+      ustSpaceSamples: candidate.ustSpaceSamples,
+      sfqSamples: candidate.sfqSamples,
+    };
+  });
+  const hasMore = start + page.length < searched.length;
+  const nextCursor = hasMore
+    ? base64Url(
+        JSON.stringify({
+          g: runtime.delivery.generation,
+          c: runtime.delivery.manifest.artifacts["instructors.parquet"].sha256,
+          q: fingerprint,
+          p: page.at(-1)?.key,
+        }),
+      )
+    : undefined;
+  const scores = eligible.map((candidate) => candidate.score);
+  const minimum = scores.length ? Math.min(...scores) : 0;
+  const maximum = scores.length ? Math.max(...scores) : 0;
+  const bins = Array.from({ length: 20 }, () => 0);
+  const range = maximum - minimum || 1;
+  for (const score of scores)
+    bins[Math.min(19, Math.floor(((score - minimum) / range) * 20))] += 1;
+  const response: InstructorPageWithDistribution = {
+    generation: runtime.delivery.generation,
+    population: {
+      entity: "instructor",
+      termCode,
+      activity,
+      size: eligible.length,
+      filteredSize: filtered.length,
+    },
+    configuration,
+    terms,
+    results,
+    nextCursor,
+    unrankedMatchCount,
+    scoreDistribution: { bins, count: scores.length, minimum, maximum },
+  };
+  runtime.cache.set(cacheKey, response);
+  if (runtime.cache.size > 256)
+    runtime.cache.delete(runtime.cache.keys().next().value as string);
+  return response;
+}
+
+async function instructorDetails(
+  runtime: Runtime,
+  input: CourseQueryOperations["instructorDetails"]["input"],
+): Promise<Rankings> {
+  const identity = instructorIdentity(runtime, input.key);
+  const query: RankingsQuery & { entity: "instructor" } = {
+    entity: "instructor",
+    activity: input.activity ?? "all",
+    termCode: input.termCode,
+    preset: input.preset,
+    weights: input.weights,
+    search: identity.instructor.uuid,
+  };
+  let page: InstructorPageWithDistribution;
+  try {
+    page = await instructorRankings(runtime, query);
+  } catch (error) {
+    if (
+      !(error instanceof QueryError) ||
+      error.code !== "invalid" ||
+      !input.termCode
+    )
+      throw error;
+    page = await instructorRankings(runtime, { ...query, termCode: undefined });
+  }
+  const evidence = await Promise.all(
+    identity.family.map(async (familyInstructor) => {
+      const [ratings, relations] = await Promise.all([
+        queryRows(
+          runtime,
+          `SELECT term_code, criterion, bayesian, confidence, samples, cumulative_samples
+           FROM read_parquet('instructor-ratings.parquet') WHERE uuid = ?
+           ORDER BY term_num, criterion`,
+          [familyInstructor.uuid],
+        ),
+        queryRows(
+          runtime,
+          `SELECT term_code, subject || ' ' || code AS course_code
+           FROM read_parquet('relation.parquet') WHERE uuid = ?
+           ORDER BY term_num, subject, code`,
+          [familyInstructor.uuid],
+        ),
+      ]);
+      const terms = new Map<
+        string,
+        { termCode: string; criteria: Record<string, unknown> }
+      >();
+      for (const row of ratings) {
+        const termCode = String(row.term_code);
+        const term = terms.get(termCode) ?? { termCode, criteria: {} };
+        term.criteria[String(row.criterion)] = {
+          bayesian: number(row.bayesian),
+          confidence: number(row.confidence),
+          samples: number(row.samples),
+          cumulativeSamples: number(row.cumulative_samples),
+        };
+        terms.set(termCode, term);
+      }
+      return {
+        instructor: familyInstructor,
+        terms: [...terms.values()] as Rankings["terms"],
+        courses: relations.map((row) => ({
+          termCode: String(row.term_code),
+          courseCode: String(row.course_code),
+        })),
+      };
+    }),
+  );
+  const current = evidence.find(
+    (item) => item.instructor.uuid === identity.instructor.uuid,
+  ) ?? { instructor: identity.instructor, terms: [], courses: [] };
+  const courses = [
+    ...new Map(
+      evidence
+        .flatMap((item) => item.courses)
+        .map((association) => [
+          `${association.termCode}\0${association.courseCode}`,
+          association,
+        ]),
+    ).values(),
+  ];
+  return {
+    ...identity,
+    population: page.population,
+    configuration: page.configuration,
+    scoreDistribution: page.scoreDistribution,
+    ranking: page.results.find(
+      (candidate) => candidate.uuid === identity.instructor.uuid,
+    ),
+    terms: current.terms,
+    courses,
+    historicalEvidence: evidence.filter(
+      (item) =>
+        item.instructor.uuid !== identity.instructor.uuid &&
+        (item.terms.length > 0 || item.courses.length > 0),
+    ),
+  };
+}
+
 export function deliveryBaseUrl() {
   return (
     process.env.NEXT_PUBLIC_DELIVERY_BASE_URL ?? DELIVERY_CDN_BASE_URL
@@ -891,6 +1309,36 @@ export async function queryCourseRankings(
   } catch (error) {
     if (error instanceof QueryError) throw error;
     throw new QueryError("unavailable", "Public Course data is unavailable.");
+  }
+}
+
+export async function queryInstructorRankings(
+  input: CourseQueryOperations["instructorRankings"]["input"],
+  baseUrl = deliveryBaseUrl(),
+) {
+  try {
+    return await instructorRankings(await runtime(baseUrl), input);
+  } catch (error) {
+    if (error instanceof QueryError) throw error;
+    throw new QueryError(
+      "unavailable",
+      "Public Instructor data is unavailable.",
+    );
+  }
+}
+
+export async function queryInstructorDetails(
+  input: CourseQueryOperations["instructorDetails"]["input"],
+  baseUrl = deliveryBaseUrl(),
+) {
+  try {
+    return await instructorDetails(await runtime(baseUrl), input);
+  } catch (error) {
+    if (error instanceof QueryError) throw error;
+    throw new QueryError(
+      "unavailable",
+      "Public Instructor data is unavailable.",
+    );
   }
 }
 
