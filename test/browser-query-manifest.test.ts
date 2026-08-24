@@ -73,6 +73,12 @@ test("resolves and verifies one immutable Delivery manifest", async () => {
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 
+test("rejects non-loopback HTTP delivery", async () => {
+  await expect(
+    resolveDeliveryManifest("http://data.example.test", request(fixture())),
+  ).rejects.toThrow("Invalid dataset origin");
+});
+
 test.each([
   [
     "generation",

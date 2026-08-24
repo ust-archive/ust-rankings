@@ -97,6 +97,22 @@ export function normalizeRankingConfiguration(
   return { preset, weights: RANKING_PRESET_WEIGHTS[query.entity][preset] };
 }
 
+export function rankingScore(
+  evidence: Partial<Record<RankingCriterion, { bayesian: number }>>,
+  weights: RankingWeights,
+) {
+  const criteria = Object.keys(weights) as RankingCriterion[];
+  if (criteria.some((criterion) => evidence[criterion] === undefined))
+    return undefined;
+  return criteria.reduce(
+    (sum, criterion) =>
+      sum +
+      (evidence[criterion]?.bayesian as number) *
+        (weights[criterion] as number),
+    0,
+  );
+}
+
 function percentile(rank: number, population: number) {
   return population === 1 ? 1 : (population - rank) / (population - 1);
 }

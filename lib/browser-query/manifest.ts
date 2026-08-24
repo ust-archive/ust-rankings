@@ -69,7 +69,12 @@ export async function resolveDeliveryManifest(
 ): Promise<PinnedDelivery> {
   const baseUrl = inputBaseUrl.replace(/\/+$/, "");
   const base = new URL(`${baseUrl}/`);
-  if (!/^https?:$/.test(base.protocol) || base.username || base.password)
+  const loopback = ["127.0.0.1", "::1", "localhost"].includes(base.hostname);
+  if (
+    (base.protocol !== "https:" && !(base.protocol === "http:" && loopback)) ||
+    base.username ||
+    base.password
+  )
     throw new Error("Invalid dataset origin");
   const latest = record(
     await responseJson(

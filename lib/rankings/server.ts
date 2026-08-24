@@ -26,6 +26,7 @@ import {
   type RankingPreset,
   type RankingWeights,
   rankingPositions,
+  rankingScore,
 } from "@/lib/rankings/scoring";
 import { testGenerationDirectory } from "@/lib/test-generation";
 
@@ -2186,7 +2187,6 @@ async function queryRankingsWithGeneration(
     evidence.set(key, values);
   }
 
-  const weightedCriteria = Object.keys(configuration.weights) as Criterion[];
   const identitySearchValues = new Map<string, string[]>();
   for (const identity of accepted.identitiesByUuid.values()) {
     const resolved = resolvedInstructorIdentity(accepted, identity);
@@ -2204,17 +2204,7 @@ async function queryRankingsWithGeneration(
   );
   const candidates: Candidate[] = [];
   for (const [key, values] of evidence) {
-    const score = weightedCriteria.some(
-      (criterion) => values[criterion] === undefined,
-    )
-      ? undefined
-      : weightedCriteria.reduce(
-          (sum, criterion) =>
-            sum +
-            (values[criterion]?.bayesian as number) *
-              (configuration.weights[criterion] as number),
-          0,
-        );
+    const score = rankingScore(values, configuration.weights);
     const evidenceSummary = {
       ustSpaceSamples: values.content?.samples ?? 0,
       sfqSamples:

@@ -201,6 +201,22 @@ test("blocked Worker creation preserves static Course identity and Community", a
   await expect(page.getByText("Rankings are unavailable.")).toBeVisible();
 });
 
+test("manifest integrity mismatch fails explicitly", async ({ page }) => {
+  await page.route(`${dataOrigin}/**/manifest.json`, async (route) => {
+    const response = await route.fetch();
+    const manifest = (await response.json()) as {
+      artifacts: Record<string, { sha256: string }>;
+    };
+    const courses = manifest.artifacts["courses.parquet"];
+    if (courses) courses.sha256 = "a".repeat(64);
+    await route.fulfill({ json: manifest, response });
+  });
+  await page.goto("/rankings/courses?term=2510");
+  await expect(
+    page.getByRole("heading", { name: "Course rankings are unavailable" }),
+  ).toBeVisible();
+});
+
 test("corrupt Course Parquet fails explicitly", async ({ page }) => {
   await page.route(`${dataOrigin}/**/course-ratings.parquet`, (route) =>
     route.fulfill({

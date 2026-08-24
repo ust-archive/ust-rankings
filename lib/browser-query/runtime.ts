@@ -12,6 +12,7 @@ import { rankingTermName } from "@/lib/rankings/presentation";
 import {
   normalizeRankingConfiguration,
   rankingPositions,
+  rankingScore,
 } from "@/lib/rankings/scoring";
 import type {
   CommonCoreCategory,
@@ -597,24 +598,11 @@ async function courseRankings(
     };
     evidence.set(code, values);
   }
-  const weightedCriteria = Object.keys(
-    configuration.weights,
-  ) as RankingCriterion[];
   const candidates: Candidate[] = [];
   for (const [code, values] of evidence) {
     const [prefix = "", courseNumber = ""] = code.split(" ");
     if (!prefix || !courseNumber) continue;
-    const score = weightedCriteria.some(
-      (criterion) => values[criterion] === undefined,
-    )
-      ? undefined
-      : weightedCriteria.reduce(
-          (sum, criterion) =>
-            sum +
-            (values[criterion]?.bayesian as number) *
-              (configuration.weights[criterion] as number),
-          0,
-        );
+    const score = rankingScore(values, configuration.weights);
     const courseMetadata = metadata.get(code);
     const categories = (
       Object.entries(scheme) as Array<[CommonCoreCategory, string]>
