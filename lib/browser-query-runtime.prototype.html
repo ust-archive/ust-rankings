@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Browser Query Runtime Prototype</title>
+    <title>Browser CDN Query Runtime Prototype</title>
     <style>
       :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #172033; background: #f5f7fb; }
       body { margin: 0; }
@@ -32,32 +32,31 @@
   </head>
   <body>
     <main>
-      <h1>Browser Query Runtime Prototype</h1>
-      <p class="lede">Question: can an ordinary browser load the complete public Catalog, Ranking, identity, and Schedule datasets, then run representative UST Rankings queries quickly enough to remove DuckDB from the application service?</p>
-      <p class="notice"><strong>Throwaway prototype.</strong> It reads current public immutable-style artifacts from Hugging Face. No community data or credentials are involved.</p>
+      <h1>Browser CDN Query Runtime Prototype</h1>
+      <p class="lede">Question: can an ordinary browser load an optimized public Catalog, Ranking, identity, and Schedule generation from DigitalOcean Spaces CDN, then run representative UST Rankings queries quickly enough to remove DuckDB from the application service?</p>
+      <p class="notice"><strong>Throwaway prototype.</strong> It reads one pinned immutable generation from the public CDN. No community data or credentials are involved.</p>
 
       <div class="grid">
         <div class="card"><span id="phase" class="metric">Idle</span><span class="label">Current phase</span></div>
-        <div class="card"><span id="declared" class="metric">26.6 MiB</span><span class="label">Current complete dataset</span></div>
-        <div class="card"><span class="metric">11.1 MiB</span><span class="label">Column-pruned delivery candidate</span></div>
+        <div class="card"><span id="declared" class="metric">9.8 MiB</span><span class="label">Complete CDN generation</span></div>
         <div class="card"><span id="elapsed" class="metric">—</span><span class="label">Last operation</span></div>
         <div class="card"><span id="memory" class="metric">—</span><span class="label">DuckDB-managed memory</span></div>
       </div>
 
       <section>
         <h2>Candidate split</h2>
-        <p>Keep the current complete Parquet history as the archival dataset. A delivery copy retaining every Term but omitting rating columns unused by the web experience reduces Rankings from 25.5 MiB to 10.0 MiB; with Schedule and Catalog, the complete browser delivery is 11.1 MiB. The sampled top-100 Instructor ranking remained exact.</p>
+        <p>Keep the current 26.6 MiB full-fidelity Parquet history as the archive. This 9.8 MiB delivery generation retains every row needed by the web experience, omits unused rating columns and duplicate names, and preserves the sampled top-100 Course and Instructor rankings exactly.</p>
       </section>
 
       <section>
         <h2>Guided experiment</h2>
         <p>Run these in order. The realistic suite exercises the delivery path; the full scan deliberately touches every column in every artifact.</p>
         <button id="initialize">1. Initialize DuckDB-Wasm</button>
-        <button id="register" disabled>2. Register full dataset</button>
+        <button id="register" disabled>2. Register CDN generation</button>
         <button id="realistic" disabled>3. Run realistic queries</button>
         <button id="scan" class="secondary" disabled>4. Full scan all artifacts</button>
         <button id="warm" class="secondary" disabled>Repeat warm suite</button>
-        <progress id="progress" max="12" value="0"></progress>
+        <progress id="progress" max="10" value="0"></progress>
       </section>
 
       <section>
@@ -85,28 +84,19 @@
     <script type="module">
       import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.30.0/+esm";
 
-      const rankingBase = "https://huggingface.co/datasets/ust-archive/ust-rankings/resolve/main/";
-      const scheduleBase = "https://huggingface.co/datasets/ust-archive/schedule/resolve/main/";
+      const dataBase = "https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/a228b6dc7f0770da3ea3bb0c33b1304bf86f54c2510be0d20dd3fd8faf5b2873/";
       const files = [
-        ["Ranking", "course-instructors.parquet", 215600],
-        ["Ranking", "course-rankings.parquet", 606300],
-        ["Ranking", "course-ratings.parquet", 14300000],
-        ["Catalog", "courses.parquet", 55800],
-        ["Ranking", "instructor-aliases.parquet", 94400],
-        ["Ranking", "instructor-identities.parquet", 84500],
-        ["Ranking", "instructor-identity-events.parquet", 6400],
-        ["Ranking", "instructor-rankings.parquet", 527400],
-        ["Ranking", "instructor-ratings.parquet", 10800000],
-        ["Ranking", "instructor-split-affected-associations.parquet", 1400],
-        ["Schedule", "classes.parquet", 627100],
-        ["Schedule", "courses.parquet", 607300],
-      ].map(([dataset, filename, bytes]) => ({
-        dataset,
-        filename,
-        bytes,
-        name: `${dataset.toLowerCase()}/${filename}`,
-        url: `${dataset === "Schedule" ? scheduleBase : rankingBase}${filename}`,
-      }));
+        ["Ranking", "course-ratings.parquet", 5006924],
+        ["Catalog", "courses.parquet", 55830],
+        ["Identity", "instructor-aliases.parquet", 94424],
+        ["Identity", "instructor-identity-events.parquet", 6373],
+        ["Ranking", "instructor-ratings.parquet", 3843396],
+        ["Identity", "instructor-split-associations.parquet", 1450],
+        ["Catalog", "instructors.parquet", 84525],
+        ["Relation", "relation.parquet", 148365],
+        ["Schedule", "schedule-classes.parquet", 396393],
+        ["Schedule", "schedule-courses.parquet", 622981],
+      ].map(([dataset, filename, bytes]) => ({ dataset, filename, bytes, name: filename, url: dataBase + filename }));
 
       const state = { phase: "idle", initialized: false, registered: false, runs: [], scans: {} };
       let db;
@@ -166,7 +156,7 @@
       }
 
       async function register() {
-        await timed("Register full dataset", async () => {
+        await timed("Register CDN generation", async () => {
           for (const [index, file] of files.entries()) {
             await db.registerFileURL(file.name, file.url, duckdb.DuckDBDataProtocol.HTTP, false);
             $("progress").value = index + 1;
@@ -177,10 +167,10 @@
       }
 
       const realisticQueries = [
-        ["Catalog lookup", `SELECT prefix, number, title FROM read_parquet('catalog/courses.parquet') WHERE prefix = 'COMP' ORDER BY number LIMIT 20`],
-        ["Latest Instructor ranking", `WITH latest AS (SELECT max(term_num) AS term_num FROM read_parquet('ranking/instructor-rankings.parquet')), scores AS (SELECT uuid, any_value(name) AS name, sum(CASE criterion WHEN 'content' THEN bayesian * 0.2667 WHEN 'teaching' THEN bayesian * 0.2667 WHEN 'grading' THEN bayesian * 0.1 WHEN 'workload' THEN bayesian * 0.0333 WHEN 'course' THEN bayesian * 0.0833 WHEN 'instructor' THEN bayesian * 0.25 ELSE 0 END) AS score FROM read_parquet('ranking/instructor-ratings.parquet') ratings, latest WHERE ratings.term_num = latest.term_num GROUP BY uuid) SELECT name, round(score, 4) AS score FROM scores ORDER BY score DESC LIMIT 100`],
-        ["Latest Schedule", `WITH latest_term AS (SELECT max(term_num) AS term_num FROM read_parquet('schedule/courses.parquet')) SELECT course.prefix, course.number, course.title, count(class.section) AS sections FROM read_parquet('schedule/courses.parquet') course JOIN read_parquet('schedule/classes.parquet') class ON course.term_num = class.term_num AND course.id = class.course_id, latest_term WHERE course.term_num = latest_term.term_num AND course.status = 'ACTIVE' AND class.status = 'ACTIVE' GROUP BY course.prefix, course.number, course.title ORDER BY course.prefix, course.number LIMIT 100`],
-        ["Identity registry", `SELECT count(*) AS identities, count(itsc) AS with_itsc FROM read_parquet('ranking/instructor-identities.parquet')`],
+        ["Catalog lookup", `SELECT prefix, number, title FROM read_parquet('courses.parquet') WHERE prefix = 'COMP' ORDER BY number LIMIT 20`],
+        ["Latest Instructor ranking", `WITH latest AS (SELECT max(term_num) AS term_num FROM read_parquet('instructor-ratings.parquet')), scores AS (SELECT uuid, sum(CASE criterion WHEN 'content' THEN bayesian * 0.2667 WHEN 'teaching' THEN bayesian * 0.2667 WHEN 'grading' THEN bayesian * 0.1 WHEN 'workload' THEN bayesian * 0.0333 WHEN 'course' THEN bayesian * 0.0833 WHEN 'instructor' THEN bayesian * 0.25 ELSE 0 END) AS score FROM read_parquet('instructor-ratings.parquet') ratings, latest WHERE ratings.term_num = latest.term_num GROUP BY uuid) SELECT identities.canonical_name AS name, round(scores.score, 4) AS score FROM scores JOIN read_parquet('instructors.parquet') identities USING (uuid) ORDER BY score DESC LIMIT 100`],
+        ["Latest Schedule", `WITH latest_term AS (SELECT max(term_num) AS term_num FROM read_parquet('schedule-courses.parquet')) SELECT course.prefix, course.number, course.title, count(class.section) AS sections FROM read_parquet('schedule-courses.parquet') course JOIN read_parquet('schedule-classes.parquet') class ON course.term_num = class.term_num AND course.id = class.course_id, latest_term WHERE course.term_num = latest_term.term_num AND course.status = 'ACTIVE' AND class.status = 'ACTIVE' GROUP BY course.prefix, course.number, course.title ORDER BY course.prefix, course.number LIMIT 100`],
+        ["Identity registry", `SELECT count(*) AS identities, count(itsc) AS with_itsc FROM read_parquet('instructors.parquet')`],
       ];
 
       async function realistic() {
