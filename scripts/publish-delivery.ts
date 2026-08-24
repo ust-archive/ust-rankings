@@ -116,6 +116,7 @@ async function currentPublication(request: typeof fetch) {
   if (!response.ok) throw new Error("Current Delivery pointer is unavailable");
   const latest = (await response.json()) as LatestPointer;
   const manifest = await fetchManifest(latest.generation, request);
+  if (!manifest.serverIndex) return undefined;
   return { latest, manifest };
 }
 
@@ -279,10 +280,7 @@ function productionDependencies(): PublicationDependencies {
   const refreshUrl = required("RANKINGS_REFRESH_URL");
   const activationUrl =
     process.env.SERVER_INDEX_ACTIVATION_URL?.trim() ||
-    refreshUrl.replace(
-      /\/api\/rankings\/refresh\/?$/,
-      "/api/server-index/activate",
-    );
+    new URL("/api/server-index/activate", refreshUrl).href;
   const activationSecret = required("RANKINGS_REFRESH_SECRET");
   const s3 = new S3Client({
     endpoint,
