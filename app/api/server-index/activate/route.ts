@@ -36,7 +36,7 @@ async function requestJson(request: Request) {
 }
 
 function authenticated(request: Request) {
-  const secret = process.env.RANKINGS_REFRESH_SECRET;
+  const secret = process.env.RANKINGS_REFRESH_SECRET ?? process.env.CRON_SECRET;
   const authorization = request.headers.get("authorization");
   if (!secret || secret.length < 32 || !authorization?.startsWith("Bearer "))
     return false;
