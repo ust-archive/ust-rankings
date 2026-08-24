@@ -114,6 +114,27 @@ test("publication verifies immutable files before activating and promoting", asy
   ]);
 });
 
+test("first paired publication supersedes a legacy browser-only pointer", async () => {
+  process.env.DATA_SPACES_CDN_BASE_URL = cdn;
+  const events: string[] = [];
+  const request = async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.endsWith("latest.json"))
+      return Response.json({
+        schemaVersion: 1,
+        generation: previousGeneration,
+        manifest: `${cdn}/${previousGeneration}/manifest.json`,
+      });
+    const { serverIndex: _, ...legacy } = manifest(previousGeneration);
+    return Response.json(legacy);
+  };
+  await expect(
+    publishGeneration(await fixture(), dependencies(events), request),
+  ).resolves.toBe(generation);
+  expect(events).toContain(`activate:${generation}`);
+  expect(events).toContain(`verify-latest:${generation}`);
+});
+
 test("rollback verifies, activates the old index, then repoints latest", async () => {
   process.env.DATA_SPACES_CDN_BASE_URL = cdn;
   const events: string[] = [];
