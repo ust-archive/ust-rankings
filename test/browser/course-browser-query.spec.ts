@@ -249,9 +249,6 @@ test("public query failure preserves static Course identity and Community withou
     page.getByRole("heading", { level: 1, name: "COMP 2000" }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "Alpha Instructor" }).first(),
-  ).toBeVisible();
   await expect(page.getByText("Rankings are unavailable.")).toBeVisible();
   expect(
     applicationRequests.some((url) =>

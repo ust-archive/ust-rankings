@@ -59,24 +59,6 @@ test("public ranking queries cache by accepted generation and omit session field
   expect(second.generation).toBe("aaaabbbbccccddddeeeeffff0000111122223333");
 });
 
-test("calendar ETags are bound to the accepted Schedule generation", async () => {
-  const firstRoot = await mkdtemp(join(tmpdir(), "cache-cal-first-"));
-  const secondRoot = await mkdtemp(join(tmpdir(), "cache-cal-second-"));
-  temporaryDirectories.push(firstRoot, secondRoot);
-  await installScheduleGeneration(await makeScheduleGeneration(firstRoot));
-  const { generateScheduleCalendar } = await import("@/lib/schedule/calendar");
-  const first = await generateScheduleCalendar("2510", [1001]);
-  await installScheduleGeneration(
-    await makeScheduleGeneration(
-      secondRoot,
-      undefined,
-      "aaaabbbbccccddddeeeeffff0000111122223333",
-    ),
-  );
-  const second = await generateScheduleCalendar("2510", [1001]);
-  expect(first.etag).not.toBe(second.etag);
-});
-
 test("ranking failure leaves Schedule and public identity routes usable", async () => {
   const rankingRoot = await mkdtemp(join(tmpdir(), "fail-rank-"));
   const scheduleRoot = await mkdtemp(join(tmpdir(), "fail-rank-schedule-"));

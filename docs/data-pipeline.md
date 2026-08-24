@@ -183,3 +183,12 @@ pagination, filters, presets, alias/ITSC search, identity history, historical
 rating evidence, and Course relations have no server Ranking-query fallback.
 Static identity and Community content remain server-rendered while the Worker
 section loads or reports unavailable.
+
+Schedule Course, Course Offering, Class, and Instructor-Class operations also
+use the tab-pinned Worker. `schedule-courses.parquet` and
+`schedule-classes.parquet` stay unrequested until a Schedule view needs them;
+latest active events are projected into typed meetings, venues, enrollment,
+reservations, and Instructor associations through `relation.parquet`. Failure
+shows an explicit Schedule-unavailable state while Rankings and Community stay
+usable. Calendar subscription UI and both `.ics` routes are removed; no
+server-side calendar query path remains.

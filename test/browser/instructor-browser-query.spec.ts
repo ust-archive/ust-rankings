@@ -80,7 +80,8 @@ test("unknown Instructor Terms fall back consistently", async ({ page }) => {
       "The requested Term has no ranking evidence. Showing the latest available Term instead.",
     ),
   ).toBeVisible();
-  await expect(page.getByText("2025-26 Fall").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rankings" })).toBeVisible();
+  await expect(page.getByText("Learning-focused")).toBeVisible();
 });
 
 test("Instructor navigation retains the current page until a cold query resolves", async ({

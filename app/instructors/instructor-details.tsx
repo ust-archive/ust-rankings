@@ -329,6 +329,7 @@ export function InstructorDetails({
   identityContent,
   rankingsContent,
   reviewComposerContent,
+  teachingContent,
   classes,
   scheduleUnavailable,
   selectedTermCode,
@@ -348,6 +349,7 @@ export function InstructorDetails({
   identityContent?: ReactNode;
   rankingsContent?: ReactNode;
   reviewComposerContent?: ReactNode;
+  teachingContent?: ReactNode;
   classes: ScheduleClass[];
   scheduleUnavailable: boolean;
   selectedTermCode?: string;
@@ -489,12 +491,14 @@ export function InstructorDetails({
           />
         </section>
         <aside className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-6">
-          <TeachingCards
-            classes={classes}
-            rankings={rankings}
-            scheduleUnavailable={scheduleUnavailable}
-            selectedTermCode={selectedTermCode}
-          />
+          {teachingContent ?? (
+            <TeachingCards
+              classes={classes}
+              rankings={rankings}
+              scheduleUnavailable={scheduleUnavailable}
+              selectedTermCode={selectedTermCode}
+            />
+          )}
           {identityContent ?? (
             <IdentityCard identity={identity} rankings={rankings} />
           )}

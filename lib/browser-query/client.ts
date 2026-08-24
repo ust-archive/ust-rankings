@@ -83,7 +83,6 @@ function worker() {
           event.data.error.message,
         );
         request.reject(error);
-        if (error.code === "unavailable") failWorker(error);
       }
     },
   );
@@ -187,6 +186,24 @@ export function cachedInstructorDetails(
   input: CourseQueryOperations["instructorDetails"]["input"],
 ) {
   return cached("instructorDetails", input).value;
+}
+
+export function querySchedulePage(
+  input: CourseQueryOperations["schedulePage"]["input"],
+) {
+  return cached("schedulePage", input).promise;
+}
+
+export function queryScheduleDetails(
+  input: CourseQueryOperations["scheduleDetails"]["input"],
+) {
+  return cached("scheduleDetails", input).promise;
+}
+
+export function cachedScheduleDetails(
+  input: CourseQueryOperations["scheduleDetails"]["input"],
+) {
+  return cached("scheduleDetails", input).value;
 }
 
 export function queryCourseDetails(
@@ -320,24 +337,55 @@ export async function preloadPublicQuery(href: string) {
     );
   }
   const instructor = url.pathname.match(/^\/instructors\/([^/]+)$/);
-  if (instructor?.[1])
-    return queryInstructorDetails({
+  if (instructor?.[1]) {
+    const details = await queryInstructorDetails({
       key: decodeURIComponent(instructor[1]),
       termCode: url.searchParams.get("term") ?? undefined,
       ...rankingPreferenceQuery(rankingPreference()),
     });
+    return Promise.all([
+      details,
+      queryScheduleDetails({
+        type: "instructor",
+        uuids: details.familyUuids,
+      }),
+    ]);
+  }
   const match = url.pathname.match(
     /^\/courses\/([^/]+)\/([^/]+)(?:\/([0-9]{4}))?(?:\/[^/]+)?$/,
   );
   if (!match) return;
   const [, prefix = "", number = "", pathTerm] = match;
   const preference = rankingPreferenceQuery(rankingPreference());
-  return queryCourseDetails({
-    coursePrefix: decodeURIComponent(prefix),
-    courseNumber: decodeURIComponent(number),
-    termCode: url.searchParams.get("term") ?? pathTerm,
-    ...preference,
-  });
+  const coursePrefix = decodeURIComponent(prefix);
+  const courseNumber = decodeURIComponent(number);
+  const termCode = url.searchParams.get("term") ?? pathTerm;
+  const section = url.pathname.split("/")[5];
+  const schedule = section
+    ? queryScheduleDetails({
+        type: "class",
+        coursePrefix,
+        courseNumber,
+        termCode: termCode as string,
+        section: decodeURIComponent(section),
+      })
+    : termCode
+      ? queryScheduleDetails({
+          type: "course-offering",
+          coursePrefix,
+          courseNumber,
+          termCode,
+        })
+      : queryScheduleDetails({ type: "course", coursePrefix, courseNumber });
+  return Promise.all([
+    queryCourseDetails({
+      coursePrefix,
+      courseNumber,
+      termCode,
+      ...preference,
+    }),
+    schedule,
+  ]);
 }
 
 export type { CourseRankings };

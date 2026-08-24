@@ -125,6 +125,8 @@ export function CourseDetails({
   schedule,
   rankings,
   rankingsContent,
+  reviewComposerContent,
+  scheduleContent,
   selectedTermCode,
   reviews = [],
   reviewsUnavailable = true,
@@ -141,6 +143,8 @@ export function CourseDetails({
   schedule?: Extract<ScheduleDetails, { type: "course" }>;
   rankings?: CourseRankings;
   rankingsContent?: ReactNode;
+  reviewComposerContent?: ReactNode;
+  scheduleContent?: ReactNode;
   selectedTermCode?: string;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
@@ -357,12 +361,14 @@ export function CourseDetails({
             error={reviewError}
             published={reviewPublished}
             reviewComposer={
-              <ReviewComposer
-                {...reviewEditor}
-                displayTermNames
-                initialCourse={{ coursePrefix, courseNumber }}
-                initialTermCode={evidenceTermCode}
-              />
+              reviewComposerContent ?? (
+                <ReviewComposer
+                  {...reviewEditor}
+                  displayTermNames
+                  initialCourse={{ coursePrefix, courseNumber }}
+                  initialTermCode={evidenceTermCode}
+                />
+              )
             }
             reviews={reviews}
             reviewsUnavailable={reviewsUnavailable}
@@ -380,64 +386,69 @@ export function CourseDetails({
           />
         </section>
         <aside className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-6">
-          <Collapsible className="group">
-            <Card>
-              <CardHeader className="flex-row items-center justify-between gap-3">
-                <CardTitle asChild className={styles.heading}>
-                  <h2>Teachings</h2>
-                </CardTitle>
-                <ExpandCardTrigger
-                  count={earlierTeachings.length}
-                  label="Teachings"
-                />
-              </CardHeader>
-              <CardContent className="flex flex-col gap-5">
-                {currentInstructors.length ? (
-                  currentInstructors.map((instructor) =>
-                    instructorEntry(
-                      instructor,
-                      evidenceTermCode ? [evidenceTermCode] : [],
-                    ),
-                  )
-                ) : (
-                  <p className="text-sm text-slate-700">
-                    No teaching is reported for this Term.
-                  </p>
-                )}
-                <CollapsibleContent className="flex flex-col gap-5">
-                  {earlierTeachings.map(({ instructor, terms }) =>
-                    instructorEntry(instructor, terms),
-                  )}
-                </CollapsibleContent>
-              </CardContent>
-            </Card>
-          </Collapsible>
-          <Collapsible className="group">
-            <Card>
-              <CardHeader className="flex-row items-center justify-between gap-3">
-                <CardTitle asChild className={styles.heading}>
-                  <h2>Offerings</h2>
-                </CardTitle>
-                <ExpandCardTrigger
-                  count={earlierOfferings.length}
-                  label="Offerings"
-                />
-              </CardHeader>
-              <CardContent className="flex flex-col gap-6">
-                {currentOffering ? (
-                  offeringEntry(currentOffering)
-                ) : (
-                  <p className="text-sm text-amber-900">
-                    Offerings are unavailable. Rankings and Community remain
-                    available.
-                  </p>
-                )}
-                <CollapsibleContent className="flex flex-col gap-6">
-                  {[...earlierOfferings].reverse().map(offeringEntry)}
-                </CollapsibleContent>
-              </CardContent>
-            </Card>
-          </Collapsible>
+          {scheduleContent}
+          {!scheduleContent ? (
+            <>
+              <Collapsible className="group">
+                <Card>
+                  <CardHeader className="flex-row items-center justify-between gap-3">
+                    <CardTitle asChild className={styles.heading}>
+                      <h2>Teachings</h2>
+                    </CardTitle>
+                    <ExpandCardTrigger
+                      count={earlierTeachings.length}
+                      label="Teachings"
+                    />
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-5">
+                    {currentInstructors.length ? (
+                      currentInstructors.map((instructor) =>
+                        instructorEntry(
+                          instructor,
+                          evidenceTermCode ? [evidenceTermCode] : [],
+                        ),
+                      )
+                    ) : (
+                      <p className="text-sm text-slate-700">
+                        No teaching is reported for this Term.
+                      </p>
+                    )}
+                    <CollapsibleContent className="flex flex-col gap-5">
+                      {earlierTeachings.map(({ instructor, terms }) =>
+                        instructorEntry(instructor, terms),
+                      )}
+                    </CollapsibleContent>
+                  </CardContent>
+                </Card>
+              </Collapsible>
+              <Collapsible className="group">
+                <Card>
+                  <CardHeader className="flex-row items-center justify-between gap-3">
+                    <CardTitle asChild className={styles.heading}>
+                      <h2>Offerings</h2>
+                    </CardTitle>
+                    <ExpandCardTrigger
+                      count={earlierOfferings.length}
+                      label="Offerings"
+                    />
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-6">
+                    {currentOffering ? (
+                      offeringEntry(currentOffering)
+                    ) : (
+                      <p className="text-sm text-amber-900">
+                        Offerings are unavailable. Rankings and Community remain
+                        available.
+                      </p>
+                    )}
+                    <CollapsibleContent className="flex flex-col gap-6">
+                      {[...earlierOfferings].reverse().map(offeringEntry)}
+                    </CollapsibleContent>
+                  </CardContent>
+                </Card>
+              </Collapsible>
+            </>
+          ) : null}
         </aside>
       </div>
     </div>

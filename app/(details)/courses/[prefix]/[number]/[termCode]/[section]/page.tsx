@@ -1,18 +1,17 @@
 import { notFound } from "next/navigation";
-import { ClassDetails, UnavailableDetail } from "@/app/courses/course-details";
+import { CourseDetails } from "@/app/courses/course-details";
 import { BrowserCourseRankings } from "@/app/courses/course-details-client";
 import { loadReviews } from "@/app/courses/review-data";
 import {
   normalizeCourseRoute,
   type RouteSearchParams,
 } from "@/app/courses/routes";
+import {
+  BrowserScheduleDetails,
+  BrowserScheduleReviewComposer,
+} from "@/app/courses/schedule-client";
 import { reviewOrder } from "@/lib/contributions/review-order";
 import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
-import {
-  getSchedule,
-  InvalidScheduleQueryError,
-  ScheduleUnavailableError,
-} from "@/lib/schedule/server";
 
 export default async function ClassPage({
   params,
@@ -30,52 +29,60 @@ export default async function ClassPage({
   const { coursePrefix, courseNumber, termCode, section } =
     normalizeCourseRoute(route, query);
   if (!termCode || !section) notFound();
-  const rankingPreference = await readRankingPreferenceQuery();
-  try {
-    const [scheduleClass, community] = await Promise.all([
-      getSchedule({
-        type: "class",
-        coursePrefix,
-        courseNumber,
-        termCode,
-        section,
-      }),
-      loadReviews({
-        type: "course",
-        coursePrefix,
-        courseNumber,
-        termCode,
-        section,
-        order: reviewOrder(query.order),
-      }),
-    ]);
-    if (scheduleClass.type !== "class") notFound();
-    return (
-      <ClassDetails
-        rankingsContent={
-          <BrowserCourseRankings
-            coursePrefix={coursePrefix}
-            courseNumber={courseNumber}
-            rankingConfiguration={rankingPreference}
-            selectedTermCode={termCode}
-            termNames={[]}
-          />
-        }
-        scheduleClass={scheduleClass}
-        reviews={community.reviews}
-        reviewsUnavailable={community.unavailable}
-        signedIn={community.signedIn}
-      />
-    );
-  } catch (error) {
-    if (error instanceof InvalidScheduleQueryError) notFound();
-    if (error instanceof ScheduleUnavailableError)
-      return (
-        <UnavailableDetail
-          entity="Class"
-          title={`${coursePrefix} ${courseNumber} · ${section}`}
+  const [rankingPreference, community] = await Promise.all([
+    readRankingPreferenceQuery(),
+    loadReviews({
+      type: "course",
+      coursePrefix,
+      courseNumber,
+      termCode,
+      section,
+      order: reviewOrder(query.order),
+    }),
+  ]);
+  return (
+    <CourseDetails
+      coursePrefix={coursePrefix}
+      courseNumber={courseNumber}
+      rankingsContent={
+        <BrowserCourseRankings
+          coursePrefix={coursePrefix}
+          courseNumber={courseNumber}
+          rankingConfiguration={rankingPreference}
+          selectedTermCode={termCode}
+          termNames={[]}
         />
-      );
-    throw error;
-  }
+      }
+      reviewComposerContent={
+        <BrowserScheduleReviewComposer
+          coursePrefix={coursePrefix}
+          courseNumber={courseNumber}
+          entity={{
+            type: "class",
+            coursePrefix,
+            courseNumber,
+            termCode,
+            section,
+          }}
+          initialSection={section}
+          initialTermCode={termCode}
+        />
+      }
+      reviews={community.reviews}
+      reviewsUnavailable={community.unavailable}
+      scheduleContent={
+        <BrowserScheduleDetails
+          entity={{
+            type: "class",
+            coursePrefix,
+            courseNumber,
+            termCode,
+            section,
+          }}
+        />
+      }
+      selectedTermCode={termCode}
+      signedIn={community.signedIn}
+    />
+  );
 }

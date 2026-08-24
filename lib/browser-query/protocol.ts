@@ -4,6 +4,11 @@ import type {
   RankingsPage,
   RankingsQuery,
 } from "@/lib/rankings/server";
+import type {
+  ScheduleDetails,
+  ScheduleEntity,
+  SchedulePage,
+} from "@/lib/schedule/server";
 
 export type CatalogCourse = {
   coursePrefix: string;
@@ -35,6 +40,14 @@ export type CourseQueryOperations = {
       weights?: RankingsQuery["weights"];
     };
     output: Rankings;
+  };
+  schedulePage: {
+    input: { termCode?: string; search?: string; limit?: number };
+    output: SchedulePage;
+  };
+  scheduleDetails: {
+    input: ScheduleEntity;
+    output: ScheduleDetails;
   };
   courseDetails: {
     input: {

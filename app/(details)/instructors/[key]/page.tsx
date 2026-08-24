@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { loadReviews } from "@/app/courses/review-data";
+import { BrowserScheduleDetails } from "@/app/courses/schedule-client";
 import { InstructorDetails } from "@/app/instructors/instructor-details";
 import {
   BrowserInstructorIdentity,
@@ -19,11 +20,6 @@ import {
   RankingsUnavailableError,
   UnknownRankingsEntityError,
 } from "@/lib/rankings/server";
-import {
-  getSchedule,
-  InvalidScheduleQueryError,
-  ScheduleUnavailableError,
-} from "@/lib/schedule/server";
 
 export const dynamic = "force-dynamic";
 
@@ -72,24 +68,7 @@ export async function renderInstructorPage(
   if (identity.route.redirect)
     instructorRedirect(identity.route.canonicalKey, query);
 
-  const schedulePromise = getSchedule({
-    type: "instructor",
-    uuids: identity.familyUuids,
-  }).then(
-    (schedule) => ({
-      classes: schedule.type === "instructor" ? schedule.classes : [],
-      unavailable: false,
-    }),
-    (error) => {
-      if (error instanceof ScheduleUnavailableError)
-        return { classes: [], unavailable: true };
-      if (error instanceof InvalidScheduleQueryError)
-        return { classes: [], unavailable: false };
-      throw error;
-    },
-  );
-  const [scheduleResult, signalResult, reviewResult] = await Promise.all([
-    schedulePromise,
+  const [signalResult, reviewResult] = await Promise.all([
     loadSignals({
       type: "instructor",
       instructorUuid: identity.instructor.uuid,
@@ -100,25 +79,8 @@ export async function renderInstructorPage(
       order: reviewOrder(query.order),
     }),
   ]);
-  const classes = scheduleResult.classes.filter(
-    (scheduleClass) =>
-      !identity.identityHistory.associationCorrections.some(
-        (correction) =>
-          correction.correctionType === "split" &&
-          correction.status === "needs-resolution" &&
-          (correction.termCode === undefined ||
-            correction.termCode === scheduleClass.termCode) &&
-          correction.courseCode === scheduleClass.courseCode &&
-          scheduleClass.meetings.some((meeting) =>
-            meeting.instructors.some(
-              (instructor) =>
-                instructor.sourceName.trim().toLowerCase() ===
-                correction.sourceName.trim().toLowerCase(),
-            ),
-          ),
-      ),
-  );
-  const selectedTermCode = classes.at(-1)?.termCode;
+  const classes = [];
+  const selectedTermCode = undefined;
   return (
     <InstructorDetails
       identity={identity}
@@ -151,8 +113,13 @@ export async function renderInstructorPage(
         />
       }
       classes={classes}
-      scheduleUnavailable={scheduleResult.unavailable}
+      scheduleUnavailable={false}
       selectedTermCode={selectedTermCode}
+      teachingContent={
+        <BrowserScheduleDetails
+          entity={{ type: "instructor", uuids: identity.familyUuids }}
+        />
+      }
       signals={signalResult.summary}
       signalsUnavailable={signalResult.unavailable}
       signedIn={reviewResult.signedIn}
