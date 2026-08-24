@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { Reviews } from "@/app/courses/course-reviews";
 import { loadReview } from "@/app/reviews/review-data";
 import { Separator } from "@/components/ui/separator";
-import { instructorNamesForUuids } from "@/lib/rankings/server";
+import { instructorNamesForUuids } from "@/lib/server-index";
 
 export const dynamic = "force-dynamic";
 

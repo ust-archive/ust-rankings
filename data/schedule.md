@@ -1,40 +1,19 @@
-# Schedule runtime generation
+# Schedule generations
 
-Development and production lazily download the immutable
-`ust-archive/schedule` Hugging Face generation into the operating system's
-temporary directory. Tests install generated fixture generations through the
-Schedule runtime reset helper and remain offline.
+The immutable `ust-archive/schedule` Hugging Face archive contains the complete
+Course Offering and Class event relations. Native DuckDB validation and browser
+artifact derivation belong to the `data` workspace; the application service
+does not download or query Schedule Parquet.
 
-The manifest records the two required Parquet files' LFS SHA-256 digests and
-sizes. Schedule data keeps Instructor source names only; the server resolves
-exact matches against the accepted Ranking Generation at read time and leaves
-all other source names unresolved plain text. The server-only Schedule module
-revalidates framing, hashes, schemas, source event grains, Term relationships,
-and representative queries before serving the generation.
+The publisher derives `schedule-courses.parquet` and
+`schedule-classes.parquet` into the paired immutable Delivery Dataset. Schedule
+pages and Details query them through the same tab-pinned DuckDB-Wasm Worker used
+for Rankings. Instructor source names resolve through the paired identity
+relations and scoped corrections. There is no server Schedule fallback.
 
-## Refresh and retention
-
-`GET /api/schedule/refresh` performs the authenticated daily refresh. A manual
-or upstream-triggered `POST` may supply one full commit SHA. Both files are
-resolved from that single immutable `ust-archive/schedule` commit, bounded,
-checked against their LFS declarations, validated together, written under the
-operating system's temporary directory, and only then made active.
-PostgreSQL advisory lock `(1431520338, 40)` excludes concurrent Schedule
-refreshes independently of the ranking lock.
-
-The local `active.json` pointer retains the previous accepted SHA. A failed
-refresh records only a bounded failure class, leaves that pointer unchanged,
-and keeps the in-memory generation if one is already accepted. There is no
-repository generation or shared last-known-good across instances: Hugging Face
-is the source of truth. The process warms from Hugging Face on `next start` and again
-daily. Schedule stays unavailable until a generation is accepted. The temporary
-generation directory is only a disposable per-instance cache. Schedule cache
-identities, freshness, and failure records never reuse ranking keys.
-
-Configure `POSTGRES_URL`, `CRON_SECRET`, and optional `SCHEDULE_REFRESH_SECRET`
-as shown in `.env.example`. Public `GET /api/health/schedule` reports
-non-sensitive freshness and bounded failure classes without exposing storage
-paths or credentials.
+If Schedule delivery fails, the Schedule section reports an unavailable state
+without disabling Rankings or Community. Calendar subscription routes remain
+removed because calendar clients cannot execute the browser runtime.
 
 ## Public planner state
 
@@ -45,3 +24,6 @@ server-side User state. Incoming state is replaced with its canonical URL after
 validation, and the cart is capped at 50 Classes without discarding an existing
 valid selection. Changing or supplying an invalid Term clears selected Classes
 so a Class Number reused in another Term cannot select a different Class.
+
+See [`../docs/data-pipeline.md`](../docs/data-pipeline.md) for publication and
+paired rollback.

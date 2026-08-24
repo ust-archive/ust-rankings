@@ -48,6 +48,7 @@ export function EntityLink({
   return (
     <Link
       {...props}
+      prefetch={props.prefetch ?? false}
       onNavigate={(event) => {
         onNavigate?.(event);
         pendingEntityNavigation = true;
@@ -61,15 +62,17 @@ export function EntityLink({
           return;
         event.preventDefault();
         setPreloading(true);
+        let destination = props.href as string;
         void import("@/lib/browser-query/client")
-          .then(({ preloadPublicQuery }) =>
-            preloadPublicQuery(props.href as string),
-          )
+          .then(({ preloadPublicQuery }) => preloadPublicQuery(destination))
+          .then((href) => {
+            destination = href;
+          })
           .catch(() => undefined)
           .finally(() => {
             setPreloading(false);
             startTransition(() => {
-              router.push(props.href as string, {
+              router.push(destination, {
                 scroll: props.scroll,
                 transitionTypes: [...types],
               });

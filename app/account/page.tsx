@@ -27,7 +27,7 @@ import type {
 } from "@/lib/contributions/accounts";
 import { getAccountService } from "@/lib/contributions/postgres";
 import { privacyContactMailto } from "@/lib/privacy/contact";
-import { instructorNamesForUuids } from "@/lib/rankings/server";
+import { instructorNamesForUuids } from "@/lib/server-index";
 
 export const dynamic = "force-dynamic";
 

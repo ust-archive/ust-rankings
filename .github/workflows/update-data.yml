@@ -60,7 +60,6 @@ jobs:
           DATA_SPACES_ENDPOINT: ${{ vars.DATA_SPACES_ENDPOINT }}
           DATA_SPACES_REGION: ${{ vars.DATA_SPACES_REGION }}
           RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
-          RANKINGS_REFRESH_URL: ${{ secrets.RANKINGS_REFRESH_URL }}
           SERVER_INDEX_ACTIVATION_URL: ${{ vars.SERVER_INDEX_ACTIVATION_URL }}
           ROLLBACK_GENERATION: ${{ inputs.generation }}
         run: node scripts/publish-delivery.ts rollback "$ROLLBACK_GENERATION"
@@ -118,8 +117,6 @@ jobs:
           sha="$(curl --fail --silent --show-error --header "Authorization: Bearer $HF_TOKEN" https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main | jq -r .sha)"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           echo "RANKING_GENERATION_SHA=$sha" >> "$GITHUB_ENV"
-          mkdir -p .deploy
-          echo "$sha" > .deploy/ranking-generation-sha.txt
 
       - name: Download pinned canonical archives
         if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
@@ -157,23 +154,5 @@ jobs:
           DATA_SPACES_ENDPOINT: ${{ vars.DATA_SPACES_ENDPOINT }}
           DATA_SPACES_REGION: ${{ vars.DATA_SPACES_REGION }}
           RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
-          RANKINGS_REFRESH_URL: ${{ secrets.RANKINGS_REFRESH_URL }}
           SERVER_INDEX_ACTIVATION_URL: ${{ vars.SERVER_INDEX_ACTIVATION_URL }}
         run: node scripts/publish-delivery.ts publish "$DELIVERY_DIRECTORY"
-
-      - if: github.event_name == 'workflow_run'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ranking-generation-sha
-          path: .deploy/ranking-generation-sha.txt
-          retention-days: 1
-
-      - name: Refresh transitional native Ranking runtime
-        if: (github.event_name != 'workflow_dispatch' || inputs.action != 'rollback') && github.event_name != 'workflow_run'
-        env:
-          RANKINGS_REFRESH_URL: ${{ secrets.RANKINGS_REFRESH_URL }}
-          RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
-        run: |
-          if [[ -n "$RANKINGS_REFRESH_URL" && -n "$RANKINGS_REFRESH_SECRET" ]]; then
-            node scripts/refresh-rankings-runtime.ts "$RANKING_GENERATION_SHA"
-          fi

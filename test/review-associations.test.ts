@@ -1,70 +1,22 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import type { PublicReview } from "@/lib/contributions/reviews";
 import {
-  fixtureSha,
-  installRankingGeneration,
-  makeRankingGeneration,
-} from "./rankings-fixture";
-import {
-  installScheduleGeneration,
-  makeScheduleGeneration,
-} from "./schedule-fixture";
+  ALPHA_INSTRUCTOR_UUID,
+  RETIRED_INSTRUCTOR_UUID,
+  SPLIT_INSTRUCTOR_UUID,
+  serverIndexFixture,
+} from "./server-index-fixture";
 
 vi.mock("server-only", () => ({}));
 
-const ALPHA_UUID = "00000000-0000-4000-8000-000000000001";
-const BETA_UUID = "00000000-0000-4000-8000-000000000002";
-const temporaryDirectories: string[] = [];
-let rankingDirectory: string | undefined;
-
-async function configureAssociations() {
-  const rankingRoot = await mkdtemp(join(tmpdir(), "review-rankings-"));
-  const scheduleRoot = await mkdtemp(join(tmpdir(), "review-schedule-"));
-  temporaryDirectories.push(rankingRoot, scheduleRoot);
-  rankingDirectory = await makeRankingGeneration(rankingRoot, undefined, {
-    includeScheduleCourse: true,
-  });
-  await Promise.all([
-    installRankingGeneration(rankingDirectory),
-    installScheduleGeneration(await makeScheduleGeneration(scheduleRoot)),
-  ]);
-}
-
-async function updateManifest(
-  update: (manifest: {
-    identities: Array<Record<string, unknown>>;
-    identityEvents?: unknown[];
-    associationCorrections?: unknown[];
-  }) => void,
-) {
-  if (!rankingDirectory) throw new Error("Ranking fixture was not configured");
-  const path = join(rankingDirectory, "manifest.json");
-  const manifest = JSON.parse(await readFile(path, "utf8"));
-  update(manifest);
-  await writeFile(path, JSON.stringify(manifest));
-}
-
 afterEach(async () => {
-  rankingDirectory = undefined;
-  const [{ resetRankingsRuntimeForTests }, { resetScheduleRuntimeForTests }] =
-    await Promise.all([
-      import("@/lib/rankings/server"),
-      import("@/lib/schedule/server"),
-    ]);
-  await Promise.all([
-    resetRankingsRuntimeForTests(),
-    resetScheduleRuntimeForTests(),
-    ...temporaryDirectories
-      .splice(0)
-      .map((path) => rm(path, { recursive: true, force: true })),
-  ]);
+  const { resetServerIndexForTests } = await import("@/lib/server-index");
+  resetServerIndexForTests();
 });
 
-test("the production Review validator uses accepted Rankings and Schedule associations", async () => {
-  await configureAssociations();
+test("the production Review validator uses the active Server Index", async () => {
+  const { installServerIndexForTests } = await import("@/lib/server-index");
+  installServerIndexForTests(serverIndexFixture());
   const { validateReviewAssociations } = await import(
     "@/lib/contributions/review-associations"
   );
@@ -72,15 +24,14 @@ test("the production Review validator uses accepted Rankings and Schedule associ
 
   for (const associations of [
     { course },
-    { instructorUuid: ALPHA_UUID },
-    { instructorUuid: ALPHA_UUID, termCode: "2510" },
-    { course, instructorUuid: ALPHA_UUID },
-    { course, instructorUuid: ALPHA_UUID, termCode: "2510" },
-    { course, instructorUuid: ALPHA_UUID, termCode: "2430" },
+    { instructorUuid: ALPHA_INSTRUCTOR_UUID },
+    { instructorUuid: ALPHA_INSTRUCTOR_UUID, termCode: "2510" },
+    { course, instructorUuid: ALPHA_INSTRUCTOR_UUID },
+    { course, instructorUuid: ALPHA_INSTRUCTOR_UUID, termCode: "2510" },
     { course, termCode: "2510", section: "L1" },
     {
       course,
-      instructorUuid: ALPHA_UUID,
+      instructorUuid: ALPHA_INSTRUCTOR_UUID,
       termCode: "2510",
       section: "L1",
     },
@@ -90,13 +41,13 @@ test("the production Review validator uses accepted Rankings and Schedule associ
     );
 
   for (const associations of [
-    { instructorUuid: ALPHA_UUID, termCode: "2430" },
-    { course, instructorUuid: BETA_UUID },
+    { instructorUuid: ALPHA_INSTRUCTOR_UUID, termCode: "2430" },
+    { course, instructorUuid: SPLIT_INSTRUCTOR_UUID },
     { course, termCode: "2420" },
     { course, termCode: "2510", section: "L2" },
     {
       course,
-      instructorUuid: BETA_UUID,
+      instructorUuid: SPLIT_INSTRUCTOR_UUID,
       termCode: "2510",
       section: "L1",
     },
@@ -104,54 +55,16 @@ test("the production Review validator uses accepted Rankings and Schedule associ
     expect(await validateReviewAssociations(associations)).toBeUndefined();
 });
 
-test("production identity correction matching flags overlapping Reviews and preserves unrelated snapshots", async () => {
-  await configureAssociations();
-  const splitUuid = "00000000-0000-4000-8000-00000000000a";
-  const splitIdentity = {
-    uuid: splitUuid,
-    canonicalName: "Split Instructor",
-    aliases: [
-      {
-        name: "Split Source Name",
-        source: "schedule",
-        sourceCommit: fixtureSha,
-      },
-    ],
-  };
-  await updateManifest((manifest) => {
-    manifest.identities.push(splitIdentity);
-    manifest.identityEvents = [
-      {
-        type: "merge",
-        retiredUuid: BETA_UUID,
-        survivorUuid: ALPHA_UUID,
-        sourceCommit: fixtureSha,
-      },
-      {
-        type: "split",
-        sourceUuid: ALPHA_UUID,
-        newUuid: splitUuid,
-        sourceCommit: fixtureSha,
-      },
-    ];
-    manifest.associationCorrections = [
-      {
-        correctionType: "split",
-        targetUuid: splitUuid,
-        sourceCommit: fixtureSha,
-        sourceName: "Alpha Instructor",
-        termCode: "2510",
-        courseCode: "COMP 2000",
-      },
-    ];
-  });
+test("Instructor correction matching flags overlapping Reviews and preserves unrelated snapshots", async () => {
+  const { installServerIndexForTests } = await import("@/lib/server-index");
+  installServerIndexForTests(serverIndexFixture());
   const { resolveReviewInstructorAssociationStatus } = await import(
     "@/lib/contributions/review-associations"
   );
   const review = (associations: Partial<PublicReview>): PublicReview => ({
     id: crypto.randomUUID(),
     revisionId: crypto.randomUUID(),
-    instructorUuid: ALPHA_UUID,
+    instructorUuid: ALPHA_INSTRUCTOR_UUID,
     markdown: "Durable Review.",
     attribution: "attributed",
     attributionCredit: "Captured Student",
@@ -162,33 +75,23 @@ test("production identity correction matching flags overlapping Reviews and pres
     ...associations,
   });
 
-  for (const associations of [
-    {},
-    { course: { coursePrefix: "COMP", courseNumber: "2000" } },
-    { termCode: "2510" },
-    {
-      course: { coursePrefix: "COMP", courseNumber: "2000" },
-      termCode: "2510",
-    },
-  ])
-    expect(
-      await resolveReviewInstructorAssociationStatus(review(associations)),
-    ).toBe("needs-resolution");
-
   expect(
     await resolveReviewInstructorAssociationStatus(
-      review({ course: { coursePrefix: "COMP", courseNumber: "1000" } }),
+      review({
+        course: { coursePrefix: "COMP", courseNumber: "2000" },
+        termCode: "2510",
+      }),
     ),
-  ).toBe("resolved");
+  ).toBe("needs-resolution");
   expect(
     await resolveReviewInstructorAssociationStatus(
-      review({ termCode: "2430" }),
+      review({ course: { coursePrefix: "MATH", courseNumber: "1000" } }),
     ),
   ).toBe("resolved");
   expect(
     await resolveReviewInstructorAssociationStatus(
       review({
-        instructorUuid: splitUuid,
+        instructorUuid: SPLIT_INSTRUCTOR_UUID,
         course: { coursePrefix: "COMP", courseNumber: "2000" },
         termCode: "2510",
       }),
@@ -197,9 +100,8 @@ test("production identity correction matching flags overlapping Reviews and pres
   expect(
     await resolveReviewInstructorAssociationStatus(
       review({
-        instructorUuid: BETA_UUID,
-        course: { coursePrefix: "MATH", courseNumber: "2000" },
-        termCode: "2510",
+        instructorUuid: RETIRED_INSTRUCTOR_UUID,
+        course: { coursePrefix: "MATH", courseNumber: "1000" },
       }),
     ),
   ).toBe("historical");

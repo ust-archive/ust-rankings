@@ -5,13 +5,6 @@ import { DuckDBInstance } from "@duckdb/node-api";
 
 export const scheduleFixtureSha = "1234567890abcdef1234567890abcdef12345678";
 
-export async function installScheduleGeneration(directory: string) {
-  const { installScheduleGenerationForTests } = await import(
-    "@/lib/schedule/server"
-  );
-  await installScheduleGenerationForTests(directory);
-}
-
 export type ScheduleFixtureVariant =
   | "calendar-base"
   | "calendar-inserted"

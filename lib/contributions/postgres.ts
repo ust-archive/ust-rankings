@@ -1408,39 +1408,12 @@ function initializeRuntime() {
         const { currentServerIndex, ServerIndexUnavailableError } =
           await import("@/lib/server-index");
         try {
-          const index = await currentServerIndex();
-          if (index) return index.resolveSignalTarget(target);
+          return (await currentServerIndex()).resolveSignalTarget(target);
         } catch (error) {
           if (error instanceof ServerIndexUnavailableError)
             throw new SignalWriteError(
               "rankings-unavailable",
               "Signal target cannot be validated while the Server Index is unavailable",
-            );
-          throw error;
-        }
-
-        const {
-          getInstructorIdentity,
-          getRankings,
-          RankingsUnavailableError,
-          UnknownRankingsEntityError,
-        } = await import("@/lib/rankings/server");
-        try {
-          if (target.type === "course") {
-            await getRankings(target);
-            return target;
-          }
-          const identity = await getInstructorIdentity(target.instructorUuid);
-          return {
-            type: "instructor" as const,
-            instructorUuid: identity.instructor.uuid,
-          };
-        } catch (error) {
-          if (error instanceof UnknownRankingsEntityError) return undefined;
-          if (error instanceof RankingsUnavailableError)
-            throw new SignalWriteError(
-              "rankings-unavailable",
-              "Signal target cannot be validated while the Ranking Generation is unavailable",
             );
           throw error;
         }
