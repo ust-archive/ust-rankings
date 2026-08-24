@@ -108,9 +108,34 @@ export function createServerIndexActivationHandler(
   };
 }
 
+export function createServerIndexStatusHandler(
+  operation: () => Promise<{ generation: string }>,
+) {
+  return async function GET(request: Request) {
+    if (!authenticated(request))
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    try {
+      return Response.json(await operation());
+    } catch {
+      return Response.json(
+        { error: "Server Index unavailable." },
+        { status: 503 },
+      );
+    }
+  };
+}
+
 async function productionActivation(request: ServerIndexActivation) {
   const { activateServerIndex } = await import("@/lib/server-index");
   return activateServerIndex(request);
 }
 
+async function productionStatus() {
+  const { currentServerIndex } = await import("@/lib/server-index");
+  const index = await currentServerIndex();
+  if (!index) throw new Error("Server Index unavailable");
+  return { generation: index.generation };
+}
+
 export const POST = createServerIndexActivationHandler(productionActivation);
+export const GET = createServerIndexStatusHandler(productionStatus);

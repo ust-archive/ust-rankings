@@ -26,6 +26,7 @@ import {
   type DeliveryArtifactDeclaration,
   type DeliveryArtifactName,
   type DeliveryManifest,
+  deliveryGenerationIdentityInput,
   SERVER_INDEX_FILENAME,
   type ServerIndex,
 } from "../../lib/server-index-contract.ts";
@@ -783,13 +784,17 @@ function generationHash(
   rankingRevision: string,
   scheduleRevision: string,
   artifacts: Record<DeliveryArtifactName, { sha256: string }>,
+  serverIndexIdentitySha256: string,
 ): string {
-  const input = JSON.stringify({
-    schemaVersion: DELIVERY_SCHEMA_VERSION,
-    sources: { rankings: rankingRevision, schedule: scheduleRevision },
-    artifacts: DELIVERY_ARTIFACTS.map((name) => [name, artifacts[name].sha256]),
-  });
-  return createHash("sha256").update(input).digest("hex");
+  return createHash("sha256")
+    .update(
+      deliveryGenerationIdentityInput({
+        sources: { rankings: rankingRevision, schedule: scheduleRevision },
+        artifacts,
+        serverIndexIdentitySha256,
+      }),
+    )
+    .digest("hex");
 }
 
 async function existingGeneration(
@@ -935,18 +940,30 @@ export async function buildDeliveryGeneration(
     >;
     for (const filename of DELIVERY_ARTIFACTS)
       declarations[filename] = await declaration(join(staging, filename));
-    const generation = generationHash(
-      options.rankingRevision,
-      options.scheduleRevision,
-      declarations,
-    );
-    const serverIndex = await buildServerIndex(
+    const serverIndexContent = await buildServerIndex(
       connection,
       options.rankingDirectory,
       options.scheduleDirectory,
       options.rankingRevision,
-      generation,
+      "",
     );
+    const serverIndexIdentitySha256 = createHash("sha256")
+      .update(
+        gzipSync(
+          Buffer.from(
+            `${JSON.stringify({ ...serverIndexContent, generation: "" })}\n`,
+          ),
+          { level: 9 },
+        ),
+      )
+      .digest("hex");
+    const generation = generationHash(
+      options.rankingRevision,
+      options.scheduleRevision,
+      declarations,
+      serverIndexIdentitySha256,
+    );
+    const serverIndex = { ...serverIndexContent, generation };
     const serverIndexPath = join(staging, SERVER_INDEX_FILENAME);
     await writeFile(
       serverIndexPath,
@@ -978,6 +995,7 @@ export async function buildDeliveryGeneration(
         generation,
         bytes: serverIndexDeclaration.bytes,
         sha256: serverIndexDeclaration.sha256,
+        identitySha256: serverIndexIdentitySha256,
       },
     };
     await writeFile(

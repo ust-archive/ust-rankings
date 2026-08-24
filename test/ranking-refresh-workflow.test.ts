@@ -123,7 +123,12 @@ test("master deploy waits for the rebuilt Ranking Generation", async () => {
   ]);
 
   expect(updateData).toContain("workflows: [CI]");
-  expect(updateData).toContain("if: github.event_name != 'workflow_run'");
+  expect(updateData).toContain("github.event_name != 'workflow_run' ||");
+  expect(updateData).toContain("Resolve immutable source revisions");
+  expect(updateData).toContain("Publish derived generation canonically");
+  expect(updateData).toContain(
+    "Mirror, activate, and promote Delivery generation",
+  );
   expect(updateData).toContain("name: ranking-generation-sha");
   expect(deploy).toContain("workflows: [Update data]");
   expect(deploy).toContain("uses: actions/setup-node@v6");

@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { expect, test, vi } from "vitest";
 import { resolveDeliveryManifest } from "@/lib/browser-query/manifest";
-import { DELIVERY_ARTIFACTS } from "@/lib/server-index-contract";
+import {
+  DELIVERY_ARTIFACTS,
+  deliveryGenerationIdentityInput,
+} from "@/lib/server-index-contract";
 
 const baseUrl = "https://data.example.test";
 const revision = "1".repeat(40);
@@ -14,12 +17,15 @@ function fixture() {
       createHash("sha256").update(name).digest("hex"),
     ]),
   ) as Record<(typeof DELIVERY_ARTIFACTS)[number], string>;
+  const serverIndexIdentitySha256 = "e".repeat(64);
   const generation = createHash("sha256")
     .update(
-      JSON.stringify({
-        schemaVersion: 1,
+      deliveryGenerationIdentityInput({
         sources,
-        artifacts: DELIVERY_ARTIFACTS.map((name) => [name, hashes[name]]),
+        artifacts: Object.fromEntries(
+          DELIVERY_ARTIFACTS.map((name) => [name, { sha256: hashes[name] }]),
+        ) as Record<(typeof DELIVERY_ARTIFACTS)[number], { sha256: string }>,
+        serverIndexIdentitySha256,
       }),
     )
     .digest("hex");
@@ -43,6 +49,7 @@ function fixture() {
       generation,
       bytes: 1,
       sha256: "f".repeat(64),
+      identitySha256: serverIndexIdentitySha256,
     },
   };
   return { generation, manifest };

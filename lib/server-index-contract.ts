@@ -29,6 +29,22 @@ export type DeliveryArtifactDeclaration = {
   sha256: string;
 };
 
+export function deliveryGenerationIdentityInput(input: {
+  sources: { rankings: string; schedule: string };
+  artifacts: Record<DeliveryArtifactName, { sha256: string }>;
+  serverIndexIdentitySha256: string;
+}) {
+  return JSON.stringify({
+    schemaVersion: DELIVERY_SCHEMA_VERSION,
+    sources: input.sources,
+    artifacts: DELIVERY_ARTIFACTS.map((name) => [
+      name,
+      input.artifacts[name].sha256,
+    ]),
+    serverIndex: input.serverIndexIdentitySha256,
+  });
+}
+
 export type ServerIndex = {
   schemaVersion: number;
   generation: string;
@@ -93,5 +109,6 @@ export type DeliveryManifest = {
     generation: string;
     bytes: number;
     sha256: string;
+    identitySha256: string;
   };
 };
