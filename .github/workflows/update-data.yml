@@ -61,6 +61,7 @@ jobs:
           DATA_SPACES_REGION: ${{ vars.DATA_SPACES_REGION }}
           RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
           RANKINGS_REFRESH_URL: ${{ secrets.RANKINGS_REFRESH_URL }}
+          SERVER_INDEX_ACTIVATION_URL: ${{ vars.SERVER_INDEX_ACTIVATION_URL }}
           ROLLBACK_GENERATION: ${{ inputs.generation }}
         run: node scripts/publish-delivery.ts rollback "$ROLLBACK_GENERATION"
 
@@ -157,6 +158,7 @@ jobs:
           DATA_SPACES_REGION: ${{ vars.DATA_SPACES_REGION }}
           RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
           RANKINGS_REFRESH_URL: ${{ secrets.RANKINGS_REFRESH_URL }}
+          SERVER_INDEX_ACTIVATION_URL: ${{ vars.SERVER_INDEX_ACTIVATION_URL }}
         run: node scripts/publish-delivery.ts publish "$DELIVERY_DIRECTORY"
 
       - if: github.event_name == 'workflow_run'
