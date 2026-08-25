@@ -49,8 +49,18 @@ function sampleCount(value: number, source: string) {
   return `${countFormat.format(value)} ${value === 1 ? "sample" : "samples"} from ${source}`;
 }
 
-export function RankingResultCard({ result }: { result: Ranking }) {
+export function RankingResultCard({
+  generation,
+  result,
+}: {
+  generation?: string;
+  result: Ranking;
+}) {
   const cardPresentation = presentation(result);
+  const navigationHref =
+    result.entity === "instructor" && generation
+      ? `${cardPresentation.href}?_generation=${generation}&_instructor=${result.uuid}`
+      : undefined;
   const percentile = result.percentile ?? result.allTimePercentile;
   const grade = letterGrade(percentile);
   const score = scoreFormat.format(result.score * 100);
@@ -62,6 +72,8 @@ export function RankingResultCard({ result }: { result: Ranking }) {
       <EntityLink
         className="group block touch-manipulation rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950"
         href={cardPresentation.href}
+        navigationHref={navigationHref}
+        prefetch={false}
         style={{ textDecoration: "none" }}
       >
         <Card className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 bg-white p-4 transition-shadow motion-reduce:transition-none hover:border-slate-300 hover:shadow-md group-focus-visible:border-slate-400 sm:gap-5 sm:p-6">

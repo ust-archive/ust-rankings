@@ -6,6 +6,15 @@ const nextConfig = {
   async headers() {
     return [
       {
+        source: "/duckdb/1.32.0/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      {
         source: "/:path*",
         headers: [
           {

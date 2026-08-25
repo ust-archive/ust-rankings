@@ -2,7 +2,10 @@ import { expect, type Page, test } from "@playwright/test";
 
 declare global {
   interface Window {
+    navigationClickAt: number;
+    navigationFeedbackDelay: number;
     viewTransitionCount: number;
+    viewTransitionDelay: number;
   }
 }
 
@@ -44,6 +47,62 @@ async function expectRankingRestored(
     .poll(() => page.evaluate(() => scrollY))
     .toBeGreaterThan(rankingScroll - 300);
 }
+
+test("entity navigation does not wait for destination browser data", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const startViewTransition = document.startViewTransition.bind(document);
+    window.viewTransitionDelay = Number.POSITIVE_INFINITY;
+    document.startViewTransition = (...args) => {
+      window.viewTransitionDelay = performance.now() - window.navigationClickAt;
+      return startViewTransition(...args);
+    };
+  });
+  await page.route("**/courses/**", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    await route.continue();
+  });
+  await page.route("**/schedule-courses.parquet", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    await route.continue();
+  });
+  await page.goto(rankingsUrl);
+  const target = rankingLinks(page).first();
+  await expect(target).toBeVisible();
+  const href = await target.getAttribute("href");
+
+  await target.evaluate((link) => {
+    window.navigationClickAt = performance.now();
+    window.navigationFeedbackDelay = Number.POSITIVE_INFINITY;
+    const progress = document.getElementById("navigation-progress");
+    new MutationObserver((_, observer) => {
+      if (!progress?.querySelector('[role="progressbar"]')) return;
+      window.navigationFeedbackDelay =
+        performance.now() - window.navigationClickAt;
+      observer.disconnect();
+    }).observe(progress as HTMLElement, { childList: true, subtree: true });
+    (link as HTMLElement).click();
+  });
+
+  await expect
+    .poll(() => page.evaluate(() => window.navigationFeedbackDelay), {
+      timeout: 1_000,
+    })
+    .not.toBe(Number.POSITIVE_INFINITY);
+  expect(
+    await page.evaluate(() => window.navigationFeedbackDelay),
+  ).toBeLessThan(100);
+  await expect
+    .poll(() => page.evaluate(() => window.viewTransitionDelay), {
+      timeout: 5_000,
+    })
+    .not.toBe(Number.POSITIVE_INFINITY);
+  expect(await page.evaluate(() => window.viewTransitionDelay)).toBeLessThan(
+    2_500,
+  );
+  await expect(page).toHaveURL(href ?? "");
+});
 
 test("entity navigation preserves Ranking history and provenance", async ({
   browserName,

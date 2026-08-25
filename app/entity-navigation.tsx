@@ -3,13 +3,7 @@
 import { ArrowLeft } from "lucide-react";
 import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  type ComponentProps,
-  startTransition,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 
@@ -17,7 +11,9 @@ const provenanceKey = "__ustEntityNavigation";
 let documentProvenance: string | undefined;
 let pendingEntityNavigation = false;
 
-type EntityLinkProps = ComponentProps<typeof Link>;
+type EntityLinkProps = ComponentProps<typeof Link> & {
+  navigationHref?: string;
+};
 
 function NavigationProgress({ preloading = false }: { preloading?: boolean }) {
   const { pending } = useLinkStatus();
@@ -27,7 +23,7 @@ function NavigationProgress({ preloading = false }: { preloading?: boolean }) {
   return createPortal(
     <div
       aria-label="Loading page"
-      className="absolute inset-x-0 top-0 h-0.5 overflow-hidden"
+      className="absolute inset-x-0 top-0 h-1 overflow-hidden"
       role="progressbar"
     >
       <span className="navigation-progress block h-full w-2/5 bg-[#CC9900]" />
@@ -39,6 +35,7 @@ function NavigationProgress({ preloading = false }: { preloading?: boolean }) {
 export function EntityLink({
   children,
   onFocus,
+  navigationHref,
   onMouseEnter,
   onNavigate,
   onPointerDown,
@@ -92,27 +89,20 @@ export function EntityLink({
       onNavigate={(event) => {
         onNavigate?.(event);
         pendingEntityNavigation = true;
-        const prepared = prepare();
-        if (!prepared) return;
+        void prepare()?.catch(() => undefined);
+        if (!navigationHref) return;
         event.preventDefault();
         setPreloading(true);
-        void prepared
-          .catch(() => props.href as string)
-          .then((destination) => {
-            setPreloading(false);
-            startTransition(() => {
-              router.push(destination, {
-                scroll: props.scroll,
-                transitionTypes: [...types],
-              });
-            });
-          });
+        router.push(navigationHref, {
+          scroll: props.scroll,
+          transitionTypes: [...types],
+        });
       }}
       onPointerDown={(event) => {
         onPointerDown?.(event);
         void prepare()?.catch(() => undefined);
       }}
-      prefetch={false}
+      prefetch={props.prefetch === undefined ? false : props.prefetch}
       ref={ref}
       transitionTypes={types}
     >
