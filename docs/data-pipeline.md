@@ -145,14 +145,14 @@ the active reference. Repeating the active generation is idempotent; any failed
 replacement leaves the previous reference active.
 
 At process startup the service resolves `latest.json`, verifies its matching
-Delivery manifest, and loads that manifest's immutable Server Index URL. Review
-and Signal writes await an in-progress startup load and use the active index for
+Delivery manifest, and loads that manifest's immutable Server Index URL. Static
+Instructor identity and Review and Signal writes use the active index for
 Course, Instructor, relation, Course Offering, Class, redirect, and scoped
-correction validation. Community reads continue querying PostgreSQL directly.
-Until the final native-DuckDB cutover, only a verified legacy Delivery manifest
-with no Server Index retains the existing write validator. Unresolved, failed,
-or in-progress activation fails closed when no previous index exists; once an
-index is active, it is authoritative.
+correction lookup or validation. Community reads continue querying PostgreSQL
+directly. A manifest without a Server Index is rejected. Unresolved, failed, or
+in-progress activation fails closed when no previous index exists; once an
+index is active, it is authoritative. The service has no native-DuckDB or
+public-query fallback.
 
 ## Browser Course queries
 
@@ -205,6 +205,16 @@ The publisher mirrors the generation to `ust-rankings-data`, confirms every
 object with `HEAD`, calls the authenticated Server Index activation operation,
 and only then writes `latest.json`. A failed upload or activation never changes
 latest. Immutable generation objects use year-long cache metadata and remain in
-both stores. The workflow's `rollback` action takes an existing generation,
-reactivates its Server Index first, repoints latest second, and verifies the
-manifest plus a real CDN Parquet byte range; it never deletes newer generations.
+both stores.
+
+Rollback accepts only an existing paired 64-hex Delivery generation. Dispatch
+`Update data` with `action=rollback` and that generation:
+
+```sh
+gh workflow run update-data.yml --ref master \
+  -f action=rollback -f generation=<generation>
+```
+
+The workflow reactivates its immutable Server Index first, repoints
+`latest.json` second, and verifies the manifest plus a real CDN Parquet byte
+range. It never restores server query compute or deletes newer generations.

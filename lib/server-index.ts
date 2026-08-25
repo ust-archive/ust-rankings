@@ -12,12 +12,16 @@ import {
   INSTRUCTOR_UUID_PATTERN,
   type InstructorIdentityHistory,
   ITSC_PATTERN,
+  normalizeInstructorKey,
 } from "@/lib/instructor-identity";
+import type {
+  InstructorAssociationCorrectionRecord,
+  InstructorIdentity,
+  InstructorIdentityLookup,
+} from "@/lib/rankings/server";
 import {
-  DELIVERY_ARTIFACTS,
   DELIVERY_CDN_BASE_URL,
   DELIVERY_SCHEMA_VERSION,
-  type DeliveryArtifactName,
   type DeliveryManifest,
   SERVER_INDEX_FILENAME,
   type ServerIndex,
@@ -61,6 +65,8 @@ export type ActiveServerIndex = {
     review: PublicReview,
   ): "resolved" | "historical" | "needs-resolution" | undefined;
   resolveSignalTarget(target: SignalTarget): SignalTarget | undefined;
+  instructorIdentity(key: string): InstructorIdentityLookup | undefined;
+  instructorNamesForUuids(uuids: string[]): Map<string, string>;
 };
 
 export class InvalidServerIndexRequestError extends TypeError {
@@ -181,50 +187,6 @@ async function fetchJson(
   }
 }
 
-function validateLegacyManifest(
-  value: Record<string, unknown>,
-  generation: string,
-) {
-  const sources = object(value.sources, "Delivery sources");
-  const rankings = string(sources.rankings, "Ranking revision");
-  const schedule = string(sources.schedule, "Schedule revision");
-  if (
-    !SOURCE_COMMIT_PATTERN.test(rankings) ||
-    !SOURCE_COMMIT_PATTERN.test(schedule)
-  )
-    throw new ServerIndexActivationError("integrity");
-  const artifacts = object(value.artifacts, "Delivery artifacts");
-  if (
-    JSON.stringify(Object.keys(artifacts).sort()) !==
-    JSON.stringify([...DELIVERY_ARTIFACTS].sort())
-  )
-    throw new ServerIndexActivationError("integrity");
-  const hashes = {} as Record<DeliveryArtifactName, string>;
-  for (const name of DELIVERY_ARTIFACTS) {
-    const declaration = object(artifacts[name], `${name} declaration`);
-    if (
-      declaration.url !== `${DELIVERY_CDN_BASE_URL}/${generation}/${name}` ||
-      !Number.isSafeInteger(declaration.bytes) ||
-      Number(declaration.bytes) <= 0 ||
-      typeof declaration.sha256 !== "string" ||
-      !SHA256_PATTERN.test(declaration.sha256)
-    )
-      throw new ServerIndexActivationError("integrity");
-    hashes[name] = declaration.sha256;
-  }
-  const expectedGeneration = createHash("sha256")
-    .update(
-      JSON.stringify({
-        schemaVersion: DELIVERY_SCHEMA_VERSION,
-        sources: { rankings, schedule },
-        artifacts: DELIVERY_ARTIFACTS.map((name) => [name, hashes[name]]),
-      }),
-    )
-    .digest("hex");
-  if (expectedGeneration !== generation)
-    throw new ServerIndexActivationError("integrity");
-}
-
 function parseActivation(value: ServerIndexActivation): ServerIndexActivation {
   if (!GENERATION_PATTERN.test(value?.generation ?? ""))
     throw new InvalidServerIndexRequestError("Invalid generation");
@@ -276,36 +238,62 @@ function createActiveServerIndex(value: unknown, generation: string) {
 
   const instructorUuids = new Set<string>();
   const itscs = new Set<string>();
+  const identitiesByUuid = new Map<string, InstructorIdentity>();
   for (const row of instructorRows) {
     const uuid = string(row?.uuid, "Instructor UUID").toLowerCase();
     if (!INSTRUCTOR_UUID_PATTERN.test(uuid))
       throw new Error("Invalid Instructor UUID");
     addUnique(instructorUuids, uuid, "Instructor UUID");
-    string(row.canonicalName, "Canonical Instructor Name");
-    if (row.itsc !== undefined) {
-      const itsc = string(row.itsc, "ITSC").toLowerCase();
+    const canonicalName = string(
+      row.canonicalName,
+      "Canonical Instructor Name",
+    );
+    const itsc =
+      row.itsc === undefined
+        ? undefined
+        : string(row.itsc, "ITSC").toLowerCase();
+    if (itsc !== undefined) {
       if (!ITSC_PATTERN.test(itsc)) throw new Error("Invalid ITSC");
       addUnique(itscs, itsc, "ITSC");
     }
+    identitiesByUuid.set(uuid, {
+      uuid,
+      canonicalName,
+      ...(itsc ? { itsc } : {}),
+      aliases: [],
+    });
   }
 
   const aliasSourceCommitsByUuid = new Map<string, string[]>();
   const aliasKeys = new Set<string>();
   for (const row of aliasRows) {
     const uuid = string(row?.uuid, "Instructor Alias UUID").toLowerCase();
-    if (!instructorUuids.has(uuid))
-      throw new Error("Unknown Instructor Alias UUID");
+    const identity = identitiesByUuid.get(uuid);
+    if (!identity) throw new Error("Unknown Instructor Alias UUID");
     const name = string(row.name, "Instructor Alias");
-    string(row.source, "Instructor Alias source");
+    const source = string(row.source, "Instructor Alias source");
     if (!SOURCE_COMMIT_PATTERN.test(row.sourceCommit))
       throw new Error("Invalid Instructor Alias source commit");
-    if (row.sourceFile !== undefined)
-      string(row.sourceFile, "Instructor Alias source file");
+    const sourceFile =
+      row.sourceFile === undefined
+        ? undefined
+        : string(row.sourceFile, "Instructor Alias source file");
     addUnique(
       aliasKeys,
       `${uuid}\0${name.toLocaleLowerCase()}`,
       "Instructor Alias",
     );
+    identity.aliases.push({
+      name,
+      source: source as InstructorIdentity["aliases"][number]["source"],
+      sourceCommit: row.sourceCommit,
+      ...(sourceFile
+        ? {
+            sourceFile:
+              sourceFile as InstructorIdentity["aliases"][number]["sourceFile"],
+          }
+        : {}),
+    });
     const commits = aliasSourceCommitsByUuid.get(uuid) ?? [];
     commits.push(row.sourceCommit);
     aliasSourceCommitsByUuid.set(uuid, commits);
@@ -537,6 +525,78 @@ function createActiveServerIndex(value: unknown, generation: string) {
       }
       return undefined;
     },
+    instructorIdentity(key) {
+      const normalizedKey = normalizeInstructorKey(key);
+      const requestedUuid = normalizedKey
+        ? identitiesByUuid.has(normalizedKey)
+          ? normalizedKey
+          : history.uuidByItsc.get(normalizedKey)
+        : undefined;
+      if (!requestedUuid) return undefined;
+      const uuid = history.resolveUuid(requestedUuid);
+      const instructor = identitiesByUuid.get(uuid);
+      if (!instructor) return undefined;
+      const family = [...identitiesByUuid.values()].filter(
+        (candidate) => history.resolveUuid(candidate.uuid) === uuid,
+      );
+      const familyUuids = family.map((candidate) => candidate.uuid);
+      const familySet = new Set(familyUuids);
+      const canonicalKey = instructor.itsc ?? instructor.uuid;
+      return {
+        generation,
+        instructor,
+        family,
+        familyUuids,
+        route: {
+          canonicalKey,
+          redirect: normalizedKey !== canonicalKey,
+        },
+        identityHistory: {
+          identifiers: familyUuids.flatMap(
+            (familyUuid) => history.identifiersByUuid.get(familyUuid) ?? [],
+          ),
+          events: history.events.filter((event) => {
+            if (event.type === "itsc-added") return familySet.has(event.uuid);
+            if (event.type === "merge")
+              return (
+                familySet.has(event.retiredUuid) ||
+                familySet.has(event.survivorUuid)
+              );
+            return (
+              familySet.has(event.sourceUuid) || familySet.has(event.newUuid)
+            );
+          }),
+          associationCorrections: history.correctionsForUuids(familySet).map(
+            (correction): InstructorAssociationCorrectionRecord =>
+              correction.correctionType === "split"
+                ? {
+                    ...correction,
+                    correctionType: "split",
+                    status: "needs-resolution",
+                  }
+                : {
+                    ...correction,
+                    correctionType: "calibration",
+                    status: "resolved",
+                  },
+          ),
+        },
+      };
+    },
+    instructorNamesForUuids(uuids) {
+      const names = new Map<string, string>();
+      for (const requestedUuid of new Set(
+        uuids.map((uuid) => uuid.toLowerCase()),
+      )) {
+        const identity = identitiesByUuid.get(requestedUuid);
+        if (!identity) continue;
+        const instructor = identitiesByUuid.get(
+          history.resolveUuid(identity.uuid),
+        );
+        if (instructor) names.set(requestedUuid, instructor.canonicalName);
+      }
+      return names;
+    },
   };
   return active;
 }
@@ -578,22 +638,28 @@ async function loadCandidate(
   }
 }
 
-let activeIndex: ActiveServerIndex | undefined;
-let activationLock = Promise.resolve();
-let pendingActivation:
-  | Promise<{
-      status: "activated" | "current";
-      generation: string;
-    }>
-  | undefined;
-let initialization: Promise<ActiveServerIndex> | undefined;
-let activationRequested = false;
-let startupState: "legacy" | "unresolved" | "required" = "legacy";
+type ServerIndexRuntimeState = {
+  activeIndex?: ActiveServerIndex;
+  activationLock: Promise<void>;
+  pendingActivation?: Promise<{
+    status: "activated" | "current";
+    generation: string;
+  }>;
+  initialization?: Promise<ActiveServerIndex>;
+};
+
+const serverIndexGlobal = globalThis as typeof globalThis & {
+  __ustRankingsServerIndex?: ServerIndexRuntimeState;
+};
+serverIndexGlobal.__ustRankingsServerIndex ??= {
+  activationLock: Promise.resolve(),
+};
+const serverIndexState = serverIndexGlobal.__ustRankingsServerIndex;
 
 async function withActivationLock<T>(operation: () => Promise<T>) {
-  const previous = activationLock;
+  const previous = serverIndexState.activationLock;
   let release = () => {};
-  activationLock = new Promise<void>((resolve) => {
+  serverIndexState.activationLock = new Promise<void>((resolve) => {
     release = resolve;
   });
   await previous;
@@ -605,10 +671,25 @@ async function withActivationLock<T>(operation: () => Promise<T>) {
 }
 
 export function productionServerIndexDependencies(): ServerIndexDependencies {
+  const developmentBase =
+    process.env.NODE_ENV === "production"
+      ? undefined
+      : process.env.NEXT_PUBLIC_DELIVERY_BASE_URL?.replace(/\/$/, "");
+  const developmentOrigin = developmentBase
+    ? new URL(developmentBase).origin
+    : undefined;
   return {
     request: fetch,
-    latestUrl: DEFAULT_LATEST_URL,
-    allowIndexUrl: isImmutableServerIndexUrl,
+    latestUrl: developmentBase
+      ? `${developmentBase}/latest.json`
+      : DEFAULT_LATEST_URL,
+    allowIndexUrl: developmentOrigin
+      ? (url) =>
+          url.origin === developmentOrigin &&
+          new RegExp(
+            `^/[0-9a-f]{64}/${SERVER_INDEX_FILENAME.replaceAll(".", "\\.")}$`,
+          ).test(url.pathname)
+      : isImmutableServerIndexUrl,
   };
 }
 
@@ -632,12 +713,15 @@ async function activateParsed(
   replace: boolean,
 ) {
   return withActivationLock(async () => {
-    if (activeIndex?.generation === input.generation)
+    if (serverIndexState.activeIndex?.generation === input.generation)
       return { status: "current" as const, generation: input.generation };
-    if (!replace && activeIndex)
-      return { status: "current" as const, generation: activeIndex.generation };
+    if (!replace && serverIndexState.activeIndex)
+      return {
+        status: "current" as const,
+        generation: serverIndexState.activeIndex.generation,
+      };
     const candidate = await loadCandidate(input, dependencies);
-    activeIndex = candidate;
+    serverIndexState.activeIndex = candidate;
     return { status: "activated" as const, generation: input.generation };
   });
 }
@@ -647,15 +731,16 @@ export function activateServerIndex(
   dependencies = productionServerIndexDependencies(),
 ) {
   const input = parseActivation(request);
-  activationRequested = true;
   const activation = activateParsed(input, dependencies, true);
-  pendingActivation = activation;
+  serverIndexState.pendingActivation = activation;
   void activation.then(
     () => {
-      if (pendingActivation === activation) pendingActivation = undefined;
+      if (serverIndexState.pendingActivation === activation)
+        serverIndexState.pendingActivation = undefined;
     },
     () => {
-      if (pendingActivation === activation) pendingActivation = undefined;
+      if (serverIndexState.pendingActivation === activation)
+        serverIndexState.pendingActivation = undefined;
     },
   );
   return activation;
@@ -670,7 +755,10 @@ async function recoverServerIndex(dependencies: ServerIndexDependencies) {
   const manifestUrl = string(latest.manifest, "Delivery manifest URL");
   if (!GENERATION_PATTERN.test(generation))
     throw new ServerIndexActivationError("integrity");
-  const expectedManifest = `${DELIVERY_CDN_BASE_URL}/${generation}/manifest.json`;
+  const expectedManifest = new URL(
+    `${generation}/manifest.json`,
+    dependencies.latestUrl,
+  ).href;
   if (manifestUrl !== expectedManifest)
     throw new ServerIndexActivationError("integrity");
   const manifestValue = object(
@@ -682,12 +770,8 @@ async function recoverServerIndex(dependencies: ServerIndexDependencies) {
     manifestValue.generation !== generation
   )
     throw new ServerIndexActivationError("integrity");
-  if (!("serverIndex" in manifestValue)) {
-    validateLegacyManifest(manifestValue, generation);
-    startupState = "legacy";
-    throw new ServerIndexActivationError("upstream");
-  }
-  startupState = "required";
+  if (!("serverIndex" in manifestValue))
+    throw new ServerIndexActivationError("integrity");
   const manifest = manifestValue as unknown as DeliveryManifest;
   if (
     manifest.serverIndex?.generation !== generation ||
@@ -705,49 +789,65 @@ async function recoverServerIndex(dependencies: ServerIndexDependencies) {
     dependencies,
     false,
   );
-  if (!activeIndex) throw new ServerIndexActivationError("integrity");
-  return activeIndex;
+  if (!serverIndexState.activeIndex)
+    throw new ServerIndexActivationError("integrity");
+  return serverIndexState.activeIndex;
 }
 
 export function initializeServerIndex(
   dependencies = productionServerIndexDependencies(),
 ) {
-  if (activeIndex) return Promise.resolve(activeIndex);
-  startupState = "unresolved";
-  initialization ??= recoverServerIndex(dependencies).finally(() => {
-    initialization = undefined;
-  });
-  return initialization;
+  if (serverIndexState.activeIndex)
+    return Promise.resolve(serverIndexState.activeIndex);
+  serverIndexState.initialization ??= recoverServerIndex(dependencies).finally(
+    () => {
+      serverIndexState.initialization = undefined;
+    },
+  );
+  return serverIndexState.initialization;
 }
 
 export function activeServerIndexGeneration() {
-  return activeIndex?.generation;
+  return serverIndexState.activeIndex?.generation;
 }
 
 export async function currentServerIndex() {
-  if (activeIndex) return activeIndex;
+  if (serverIndexState.activeIndex) return serverIndexState.activeIndex;
   try {
-    if (pendingActivation) await pendingActivation;
-    else if (initialization) await initialization;
+    if (serverIndexState.pendingActivation)
+      await serverIndexState.pendingActivation;
+    else if (serverIndexState.initialization)
+      await serverIndexState.initialization;
+    else if (process.env.NODE_ENV !== "test") await initializeServerIndex();
   } catch {
-    // The required-state check below fails closed after a known promotion.
+    // Writes fail closed below while static Community reads remain independent.
   }
-  if (activeIndex) return activeIndex;
-  if (activationRequested || startupState !== "legacy")
-    throw new ServerIndexUnavailableError();
-  return undefined;
+  if (serverIndexState.activeIndex) return serverIndexState.activeIndex;
+  throw new ServerIndexUnavailableError();
+}
+
+export async function instructorNamesForUuids(uuids: string[]) {
+  if (uuids.length === 0) return new Map<string, string>();
+  try {
+    return (await currentServerIndex()).instructorNamesForUuids(uuids);
+  } catch (error) {
+    if (error instanceof ServerIndexUnavailableError)
+      return new Map<string, string>();
+    throw error;
+  }
 }
 
 export function installServerIndexForTests(index: ServerIndex) {
-  activeIndex = createActiveServerIndex(index, index.generation);
-  return activeIndex;
+  serverIndexState.activeIndex = createActiveServerIndex(
+    index,
+    index.generation,
+  );
+  return serverIndexState.activeIndex;
 }
 
 export function resetServerIndexForTests() {
-  activeIndex = undefined;
-  pendingActivation = undefined;
-  initialization = undefined;
-  activationRequested = false;
-  startupState = "legacy";
-  activationLock = Promise.resolve();
+  serverIndexState.activeIndex = undefined;
+  serverIndexState.pendingActivation = undefined;
+  serverIndexState.initialization = undefined;
+  serverIndexState.activationLock = Promise.resolve();
 }

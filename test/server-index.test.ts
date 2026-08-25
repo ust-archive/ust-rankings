@@ -11,186 +11,20 @@ import {
   createSignalService,
   type SignalRepository,
 } from "@/lib/contributions/signals";
+import type { ServerIndex } from "@/lib/server-index-contract";
 import {
-  DELIVERY_ARTIFACTS,
-  type ServerIndex,
-} from "@/lib/server-index-contract";
+  ALPHA_INSTRUCTOR_UUID as ALPHA_UUID,
+  SERVER_INDEX_GENERATION as GENERATION,
+  NEXT_SERVER_INDEX_GENERATION as NEXT_GENERATION,
+  RETIRED_INSTRUCTOR_UUID as RETIRED_UUID,
+  SERVER_INDEX_SOURCE_COMMIT as SOURCE_COMMIT,
+  SPLIT_INSTRUCTOR_UUID as SPLIT_UUID,
+  serverIndexFixture as serverIndex,
+} from "./server-index-fixture";
 
 vi.mock("server-only", () => ({}));
 
-const GENERATION = "a".repeat(64);
-const NEXT_GENERATION = "b".repeat(64);
-const SOURCE_COMMIT = "1".repeat(40);
-const SPLIT_COMMIT = "2".repeat(40);
-const ALPHA_UUID = "00000000-0000-4000-8000-000000000001";
-const RETIRED_UUID = "00000000-0000-4000-8000-000000000002";
-const SPLIT_UUID = "00000000-0000-4000-8000-000000000003";
 const USER_ID = "00000000-0000-4000-8000-000000000047";
-
-function serverIndex(generation = GENERATION): ServerIndex {
-  return {
-    schemaVersion: 1,
-    generation,
-    courses: [
-      { prefix: "COMP", number: "2000" },
-      { prefix: "LANG", number: "FR1" },
-      { prefix: "MATH", number: "1000" },
-    ],
-    instructors: [
-      { uuid: ALPHA_UUID, canonicalName: "Alpha Instructor", itsc: "alpha" },
-      { uuid: RETIRED_UUID, canonicalName: "Retired Instructor" },
-      { uuid: SPLIT_UUID, canonicalName: "Split Instructor" },
-    ],
-    instructorAliases: [
-      {
-        uuid: ALPHA_UUID,
-        name: "Alpha Instructor",
-        source: "schedule",
-        sourceCommit: SOURCE_COMMIT,
-      },
-      {
-        uuid: RETIRED_UUID,
-        name: "Retired Instructor",
-        source: "ranking-generation",
-        sourceCommit: SOURCE_COMMIT,
-      },
-      {
-        uuid: SPLIT_UUID,
-        name: "Split Instructor",
-        source: "schedule",
-        sourceCommit: SPLIT_COMMIT,
-      },
-    ],
-    instructorIdentityEvents: [
-      {
-        type: "merge",
-        retiredUuid: RETIRED_UUID,
-        survivorUuid: ALPHA_UUID,
-        sourceCommit: SOURCE_COMMIT,
-      },
-      {
-        type: "split",
-        sourceUuid: ALPHA_UUID,
-        newUuid: SPLIT_UUID,
-        sourceCommit: SPLIT_COMMIT,
-      },
-    ],
-    instructorRedirects: [{ from: RETIRED_UUID, to: ALPHA_UUID }],
-    associationCorrections: [
-      {
-        correctionType: "split",
-        sourceCommit: SPLIT_COMMIT,
-        targetUuid: SPLIT_UUID,
-        sourceName: "Split Instructor",
-        termCode: "2510",
-        courseCode: "COMP 2000",
-      },
-    ],
-    relations: [
-      {
-        uuid: ALPHA_UUID,
-        termNumber: 100,
-        termCode: "2510",
-        courseCode: "COMP 2000",
-      },
-      {
-        uuid: SPLIT_UUID,
-        termNumber: 100,
-        termCode: "2510",
-        courseCode: "MATH 1000",
-      },
-    ],
-    courseOfferings: [
-      {
-        termNumber: 100,
-        termCode: "2510",
-        termName: "2025-26 Fall",
-        courseId: "comp-2000",
-        courseCode: "COMP 2000",
-      },
-      {
-        termNumber: 100,
-        termCode: "2510",
-        termName: "2025-26 Fall",
-        courseId: "math-1000",
-        courseCode: "MATH 1000",
-      },
-    ],
-    classes: [
-      {
-        termNumber: 100,
-        termCode: "2510",
-        courseId: "comp-2000",
-        section: "L1",
-        classNumber: 1001,
-        courseCode: "COMP 2000",
-      },
-      {
-        termNumber: 100,
-        termCode: "2510",
-        courseId: "math-1000",
-        section: "L1",
-        classNumber: 2001,
-        courseCode: "MATH 1000",
-      },
-    ],
-    classInstructors: [
-      {
-        termCode: "2510",
-        courseId: "comp-2000",
-        section: "L1",
-        classNumber: 1001,
-        uuid: ALPHA_UUID,
-        sourceName: "Alpha Instructor",
-      },
-      {
-        termCode: "2510",
-        courseId: "math-1000",
-        section: "L1",
-        classNumber: 2001,
-        uuid: SPLIT_UUID,
-        sourceName: "Split Instructor",
-      },
-    ],
-  };
-}
-
-function legacyManifest() {
-  const sources = { rankings: SOURCE_COMMIT, schedule: SOURCE_COMMIT };
-  const hashes = Object.fromEntries(
-    DELIVERY_ARTIFACTS.map((name) => [
-      name,
-      createHash("sha256").update(name).digest("hex"),
-    ]),
-  ) as Record<(typeof DELIVERY_ARTIFACTS)[number], string>;
-  const generation = createHash("sha256")
-    .update(
-      JSON.stringify({
-        schemaVersion: 1,
-        sources,
-        artifacts: DELIVERY_ARTIFACTS.map((name) => [name, hashes[name]]),
-      }),
-    )
-    .digest("hex");
-  return {
-    generation,
-    manifest: {
-      schemaVersion: 1,
-      generation,
-      sources,
-      artifacts: Object.fromEntries(
-        DELIVERY_ARTIFACTS.map((name) => [
-          name,
-          {
-            url: `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${generation}/${name}`,
-            bytes: 1,
-            sha256: hashes[name],
-          },
-        ]),
-      ),
-    },
-  };
-}
 
 function artifact(index: ServerIndex) {
   const bytes = Uint8Array.from(
@@ -299,6 +133,41 @@ test("activation validates a complete index, is idempotent, and failed replaceme
   expect((await currentServerIndex())?.generation).toBe(GENERATION);
 });
 
+test("the active index serves static Instructor identity and names", async () => {
+  const { installServerIndexForTests } = await import("@/lib/server-index");
+  const index = installServerIndexForTests(serverIndex());
+
+  expect(index.instructorIdentity(RETIRED_UUID)).toMatchObject({
+    generation: GENERATION,
+    instructor: { uuid: ALPHA_UUID, canonicalName: "Alpha Instructor" },
+    familyUuids: [ALPHA_UUID, RETIRED_UUID],
+    route: { canonicalKey: "alpha", redirect: true },
+  });
+  expect(index.instructorIdentity("ALPHA")?.route.redirect).toBe(false);
+  expect(index.instructorIdentity(SPLIT_UUID)?.identityHistory).toMatchObject({
+    associationCorrections: [
+      { correctionType: "split", status: "needs-resolution" },
+    ],
+  });
+  expect(index.instructorIdentity("unknown")).toBeUndefined();
+  expect(
+    index.instructorNamesForUuids([RETIRED_UUID, SPLIT_UUID, "unknown"]),
+  ).toEqual(
+    new Map([
+      [RETIRED_UUID, "Alpha Instructor"],
+      [SPLIT_UUID, "Split Instructor"],
+    ]),
+  );
+});
+
+test("static contribution pages keep UUID labels while the index is unavailable", async () => {
+  const { instructorNamesForUuids } = await import("@/lib/server-index");
+
+  await expect(instructorNamesForUuids([ALPHA_UUID])).resolves.toEqual(
+    new Map(),
+  );
+});
+
 test("first activation gates validators and fails closed when no previous index exists", async () => {
   const {
     activateServerIndex,
@@ -370,8 +239,8 @@ test("startup recovers the last promoted index through latest and its manifest",
   );
   resetServerIndexForTests();
   const current = artifact(serverIndex());
-  const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/manifest.json`;
-  const indexUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/server-index.json.gz`;
+  const manifestUrl = `https://fixtures.test/${GENERATION}/manifest.json`;
+  const indexUrl = current.declaration.indexUrl;
   const request = dependencies(
     new Map<string, BodyInit>([
       [
@@ -404,7 +273,7 @@ test("startup recovers the last promoted index through latest and its manifest",
   expect(request.request).toHaveBeenCalledTimes(3);
 });
 
-test("startup fails closed until a verified legacy manifest proves no index was published", async () => {
+test("startup requires a paired manifest with a Server Index", async () => {
   const {
     currentServerIndex,
     initializeServerIndex,
@@ -413,55 +282,28 @@ test("startup fails closed until a verified legacy manifest proves no index was 
     ServerIndexUnavailableError,
   } = await import("@/lib/server-index");
   resetServerIndexForTests();
-  await expect(
-    initializeServerIndex(dependencies(new Map<string, BodyInit>())),
-  ).rejects.toBeInstanceOf(ServerIndexActivationError);
-  await expect(currentServerIndex()).rejects.toBeInstanceOf(
-    ServerIndexUnavailableError,
-  );
-
-  resetServerIndexForTests();
-  const verifiedLegacy = legacyManifest();
-  const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${verifiedLegacy.generation}/manifest.json`;
-  const legacy = dependencies(
-    new Map<string, BodyInit>([
-      [
-        "https://fixtures.test/latest.json",
-        JSON.stringify({
-          generation: verifiedLegacy.generation,
-          manifest: manifestUrl,
-        }),
-      ],
-      [manifestUrl, JSON.stringify(verifiedLegacy.manifest)],
-    ]),
-  );
-  await expect(initializeServerIndex(legacy)).rejects.toBeInstanceOf(
-    ServerIndexActivationError,
-  );
-  await expect(currentServerIndex()).resolves.toBeUndefined();
-
-  resetServerIndexForTests();
-  const malformed = legacyManifest();
-  delete (malformed.manifest.artifacts as Record<string, unknown>)[
-    DELIVERY_ARTIFACTS[0]
-  ];
-  const malformedUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${malformed.generation}/manifest.json`;
+  const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/manifest.json`;
   await expect(
     initializeServerIndex(
       dependencies(
         new Map<string, BodyInit>([
           [
             "https://fixtures.test/latest.json",
+            JSON.stringify({ generation: GENERATION, manifest: manifestUrl }),
+          ],
+          [
+            manifestUrl,
             JSON.stringify({
-              generation: malformed.generation,
-              manifest: malformedUrl,
+              schemaVersion: 1,
+              generation: GENERATION,
+              sources: { rankings: SOURCE_COMMIT, schedule: SOURCE_COMMIT },
+              artifacts: {},
             }),
           ],
-          [malformedUrl, JSON.stringify(malformed.manifest)],
         ]),
       ),
     ),
-  ).rejects.toBeTruthy();
+  ).rejects.toBeInstanceOf(ServerIndexActivationError);
   await expect(currentServerIndex()).rejects.toBeInstanceOf(
     ServerIndexUnavailableError,
   );
@@ -477,8 +319,8 @@ test("startup recovery cannot replace a concurrently activated generation", asyn
   resetServerIndexForTests();
   const previous = artifact(serverIndex());
   const next = artifact(serverIndex(NEXT_GENERATION));
-  const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/manifest.json`;
-  const previousIndexUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${GENERATION}/server-index.json.gz`;
+  const manifestUrl = `https://fixtures.test/${GENERATION}/manifest.json`;
+  const previousIndexUrl = previous.declaration.indexUrl;
   let manifestRequested = () => {};
   const requested = new Promise<void>((resolve) => {
     manifestRequested = resolve;
@@ -535,61 +377,6 @@ test("startup recovery cannot replace a concurrently activated generation", asyn
   expect(recoveryDependencies.request).not.toHaveBeenCalledWith(
     previousIndexUrl,
     expect.anything(),
-  );
-});
-
-test("verified legacy recovery cannot erase a concurrent failed activation", async () => {
-  const {
-    activateServerIndex,
-    currentServerIndex,
-    initializeServerIndex,
-    resetServerIndexForTests,
-    ServerIndexActivationError,
-    ServerIndexUnavailableError,
-  } = await import("@/lib/server-index");
-  resetServerIndexForTests();
-  const legacy = legacyManifest();
-  const manifestUrl = `https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com/${legacy.generation}/manifest.json`;
-  let manifestRequested = () => {};
-  const requested = new Promise<void>((resolve) => {
-    manifestRequested = resolve;
-  });
-  let releaseManifest = () => {};
-  const heldManifest = new Promise<void>((resolve) => {
-    releaseManifest = resolve;
-  });
-  const recoveryDependencies = {
-    latestUrl: "https://fixtures.test/latest.json",
-    allowIndexUrl: () => true,
-    request: vi.fn(async (input: string | URL | Request) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      if (url === "https://fixtures.test/latest.json")
-        return Response.json({
-          generation: legacy.generation,
-          manifest: manifestUrl,
-        });
-      manifestRequested();
-      await heldManifest;
-      return Response.json(legacy.manifest);
-    }),
-  };
-  const recovering = initializeServerIndex(recoveryDependencies);
-  await requested;
-  const candidate = artifact(serverIndex());
-  await expect(
-    activateServerIndex(
-      { ...candidate.declaration, sha256: "f".repeat(64) },
-      dependencies(
-        new Map<string, BodyInit>([
-          [candidate.declaration.indexUrl, candidate.bytes],
-        ]),
-      ),
-    ),
-  ).rejects.toBeInstanceOf(ServerIndexActivationError);
-  releaseManifest();
-  await expect(recovering).rejects.toBeInstanceOf(ServerIndexActivationError);
-  await expect(currentServerIndex()).rejects.toBeInstanceOf(
-    ServerIndexUnavailableError,
   );
 });
 

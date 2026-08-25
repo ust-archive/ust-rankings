@@ -1,14 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import postgres from "postgres";
 import { expect, test, vi } from "vitest";
 import { createSignalService, EMOJI_CODES } from "@/lib/contributions/signals";
-import {
-  installRankingGeneration,
-  makeRankingGeneration,
-} from "./rankings-fixture";
 
 vi.mock("server-only", () => ({}));
 
@@ -59,8 +54,6 @@ if (!connection) {
       connection: { search_path: schema },
       onnotice: () => {},
     });
-    const rankingRoot = await mkdtemp(join(tmpdir(), "signal-rankings-"));
-    await installRankingGeneration(await makeRankingGeneration(rankingRoot));
     try {
       for (const name of (
         await readdir(join(process.cwd(), "contributions", "migrations"))
@@ -79,11 +72,6 @@ if (!connection) {
         async resolveTarget(target) {
           return target;
         },
-      });
-      const { queryRankings } = await import("@/lib/rankings/server");
-      const rankingBeforeSignals = await queryRankings({
-        entity: "course",
-        termCode: "2510",
       });
       const activeId = crypto.randomUUID();
       const otherId = crypto.randomUUID();
@@ -440,19 +428,11 @@ if (!connection) {
         emoji: { confused: 1 },
         mine: { emoji: ["confused"] },
       });
-      expect(
-        await queryRankings({ entity: "course", termCode: "2510" }),
-      ).toEqual(rankingBeforeSignals);
     } finally {
       await sql.end({ timeout: 1 });
       const cleanup = postgres(connection, { max: 1, onnotice: () => {} });
       await cleanup.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       await cleanup.end();
-      const { resetRankingsRuntimeForTests } = await import(
-        "@/lib/rankings/server"
-      );
-      await resetRankingsRuntimeForTests();
-      await rm(rankingRoot, { recursive: true, force: true });
     }
   }, 30_000);
 }

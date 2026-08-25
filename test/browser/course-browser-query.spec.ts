@@ -203,6 +203,47 @@ test("blocked Worker creation preserves static Course identity and Community", a
   await expect(page.getByText("Rankings are unavailable.")).toBeVisible();
 });
 
+test("unavailable WebAssembly preserves static Course identity and Community", async ({
+  page,
+}) => {
+  await page.route("**/duckdb/*.wasm", (route) => route.abort());
+  await page.goto("/courses/comp/2000");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "COMP 2000" }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
+  await expect(page.getByText("Rankings are unavailable.")).toBeVisible();
+});
+
+test("Delivery CORS failure is explicit", async ({ page }) => {
+  await page.route(`${dataOrigin}/**/courses.parquet`, (route) =>
+    route.continue({
+      headers: {
+        ...route.request().headers(),
+        "x-test-no-cors": "1",
+      },
+    }),
+  );
+  await page.goto("/rankings/courses?term=2510");
+  await expect(
+    page.getByRole("heading", { name: "Course rankings are unavailable" }),
+  ).toBeVisible();
+});
+
+test("failed Parquet range delivery is explicit", async ({ page }) => {
+  await page.route(`${dataOrigin}/**/course-ratings.parquet`, (route) =>
+    route.fulfill({
+      body: "range unavailable",
+      headers: { "access-control-allow-origin": "*" },
+      status: 416,
+    }),
+  );
+  await page.goto("/rankings/courses?term=2510");
+  await expect(
+    page.getByRole("heading", { name: "Course rankings are unavailable" }),
+  ).toBeVisible();
+});
+
 test("manifest integrity mismatch fails explicitly", async ({ page }) => {
   await page.route(`${dataOrigin}/**/manifest.json`, async (route) => {
     const response = await route.fetch();

@@ -16,10 +16,6 @@ const nextConfig = {
       },
     ];
   },
-  outputFileTracingIncludes: {
-    "/*": ["./node_modules/@duckdb/node-bindings-linux-x64-musl/**/*"],
-  },
-  serverExternalPackages: ["@duckdb/node-api"],
   typescript: { tsconfigPath: "tsconfig.runtime.json" },
 };
 

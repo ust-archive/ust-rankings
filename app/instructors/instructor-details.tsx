@@ -323,30 +323,11 @@ export function IdentityCard({
   );
 }
 
-export function InstructorDetails({
-  identity,
-  rankings,
-  identityContent,
-  rankingsContent,
-  reviewComposerContent,
-  teachingContent,
-  classes,
-  scheduleUnavailable,
-  selectedTermCode,
-  invalidTermCode,
-  signals,
-  signalsUnavailable = true,
-  signedIn = false,
-  signalError,
-  reviews = [],
-  reviewsUnavailable = true,
-  reviewPublished,
-  reviewWithdrawn,
-  reviewError,
-}: {
+export type InstructorDetailsProps = {
   identity: InstructorIdentityLookup;
   rankings?: Rankings;
   identityContent?: ReactNode;
+  communityInstructorUuid?: string;
   rankingsContent?: ReactNode;
   reviewComposerContent?: ReactNode;
   teachingContent?: ReactNode;
@@ -363,7 +344,30 @@ export function InstructorDetails({
   reviewPublished?: boolean;
   reviewWithdrawn?: boolean;
   reviewError?: string;
-}) {
+};
+
+export function InstructorDetails({
+  identity,
+  rankings,
+  identityContent,
+  communityInstructorUuid = identity.instructor.uuid,
+  rankingsContent,
+  reviewComposerContent,
+  teachingContent,
+  classes,
+  scheduleUnavailable,
+  selectedTermCode,
+  invalidTermCode,
+  signals,
+  signalsUnavailable = true,
+  signedIn = false,
+  signalError,
+  reviews = [],
+  reviewsUnavailable = true,
+  reviewPublished,
+  reviewWithdrawn,
+  reviewError,
+}: InstructorDetailsProps) {
   const courses = [
     ...new Set([
       ...(rankings?.courses.map((item) => item.courseCode) ?? []),
@@ -482,7 +486,7 @@ export function InstructorDetails({
                 summary={signals}
                 target={{
                   type: "instructor",
-                  instructorUuid: identity.instructor.uuid,
+                  instructorUuid: communityInstructorUuid,
                 }}
                 unavailable={signalsUnavailable}
               />

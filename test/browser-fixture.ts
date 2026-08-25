@@ -1,12 +1,16 @@
 import { createHash } from "node:crypto";
-import { cp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { buildDeliveryGeneration } from "../data/src/delivery.ts";
-import { fixtureSha, makeRankingGeneration } from "./rankings-fixture.ts";
+import {
+  fixtureSha,
+  makeRankingGeneration,
+} from "../data/test/rankings-fixture.ts";
 import {
   makeScheduleGeneration,
   scheduleFixtureSha,
-} from "./schedule-fixture.ts";
+} from "../data/test/schedule-fixture.ts";
 
 const rankingsRoot = resolve(".playwright/rankings");
 const rankingDeliveryRoot = resolve(".playwright/ranking-delivery");
@@ -24,10 +28,13 @@ const rankingInputs = [
   "instructor-split-affected-associations.parquet",
 ] as const;
 
+export const browserRolloverGeneration = "f".repeat(64);
+export const browserServerIndexSecret =
+  "browser-server-index-activation-secret";
+
 export const browserFixtureEnvironment = {
+  CRON_SECRET: browserServerIndexSecret,
   NEXT_PUBLIC_DELIVERY_BASE_URL: deliveryBaseUrl,
-  TEST_RANKING_GENERATION: resolve(rankingsRoot, fixtureSha),
-  TEST_SCHEDULE_GENERATION: resolve(scheduleRoot, scheduleFixtureSha),
 };
 
 async function sha256(path: string) {
@@ -114,6 +121,26 @@ export async function generateBrowserFixtures() {
   await writeFile(
     resolve(delivery.directory, "manifest.json"),
     `${JSON.stringify(delivery.manifest, null, 2)}\n`,
+  );
+  const rolloverDirectory = resolve(deliveryRoot, browserRolloverGeneration);
+  await mkdir(rolloverDirectory);
+  const serverIndex = JSON.parse(
+    gunzipSync(
+      await readFile(resolve(delivery.directory, "server-index.json.gz")),
+    ).toString("utf8"),
+  ) as Record<string, unknown>;
+  serverIndex.generation = browserRolloverGeneration;
+  const rolloverInstructor = (
+    serverIndex.instructors as Array<Record<string, unknown>>
+  ).find(
+    (instructor) => instructor.uuid === "00000000-0000-4000-8000-000000000001",
+  );
+  if (!rolloverInstructor) throw new Error("Missing rollover Instructor");
+  rolloverInstructor.canonicalName = "Rollover Instructor";
+  rolloverInstructor.itsc = "alpha";
+  await writeFile(
+    resolve(rolloverDirectory, "server-index.json.gz"),
+    gzipSync(Buffer.from(`${JSON.stringify(serverIndex)}\n`), { level: 9 }),
   );
   await writeFile(
     resolve(deliveryRoot, "latest.json"),

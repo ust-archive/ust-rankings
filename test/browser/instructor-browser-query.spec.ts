@@ -1,7 +1,51 @@
-import { expect, test } from "@playwright/test";
+import { createHash } from "node:crypto";
+import { type APIRequestContext, expect, test } from "@playwright/test";
+import {
+  browserRolloverGeneration,
+  browserServerIndexSecret,
+} from "../browser-fixture";
 
 const dataOrigin = "http://127.0.0.1:17832";
 const alphaUuid = "00000000-0000-4000-8000-000000000001";
+const authorization = `Bearer ${browserServerIndexSecret}`;
+let restoreGeneration: string | undefined;
+
+async function activateFixtureServerIndex(
+  request: APIRequestContext,
+  generation: string,
+) {
+  const indexUrl = `${dataOrigin}/${generation}/server-index.json.gz`;
+  const indexResponse = await request.get(indexUrl);
+  expect(indexResponse.ok()).toBe(true);
+  const compressed = await indexResponse.body();
+  const activation = await request.post("/api/server-index/activate", {
+    data: {
+      generation,
+      indexUrl,
+      bytes: compressed.byteLength,
+      sha256: createHash("sha256").update(compressed).digest("hex"),
+    },
+    headers: { authorization },
+  });
+  expect(activation.status()).toBe(200);
+  await expect
+    .poll(async () => {
+      const response = await request.get("/api/server-index/activate", {
+        headers: { authorization },
+      });
+      return (await response.json()).generation;
+    })
+    .toBe(generation);
+}
+
+test.afterEach(async ({ request }) => {
+  if (!restoreGeneration) return;
+  try {
+    await activateFixtureServerIndex(request, restoreGeneration);
+  } finally {
+    restoreGeneration = undefined;
+  }
+});
 
 test("Instructor Rankings use the pinned worker and lazy Instructor artifacts", async ({
   page,
@@ -71,6 +115,48 @@ test("Instructor details retain identity history, corrections, relations, and ze
   await expect(
     page.getByRole("list", { name: "Instructor rankings" }).getByRole("link"),
   ).toHaveCount(2);
+});
+
+test("Instructor navigation keeps the tab-pinned generation across Server Index activation", async ({
+  page,
+  request,
+}) => {
+  const latest = await request.get(`${dataOrigin}/latest.json`);
+  const pinnedGeneration = (await latest.json()).generation as string;
+  await page.goto("/rankings/instructors?term=2510&q=Alpha%20Instructor");
+  const instructor = page
+    .getByRole("list", { name: "Instructor rankings" })
+    .getByRole("link")
+    .filter({ hasText: "Alpha Instructor" })
+    .first();
+  await expect(instructor).toBeVisible();
+
+  restoreGeneration = pinnedGeneration;
+  await activateFixtureServerIndex(request, browserRolloverGeneration);
+  const redirect = await request.get(
+    `/instructors/${alphaUuid}?_generation=${pinnedGeneration}&_instructor=${alphaUuid}`,
+    { maxRedirects: 0 },
+  );
+  expect(redirect.status()).toBe(308);
+  expect(redirect.headers().location).toContain("/instructors/alpha?");
+
+  await instructor.click();
+  await expect(page).toHaveURL(
+    /\/instructors\/alpha\?.*_generation=[0-9a-f]{64}/,
+  );
+  expect(new URL(page.url()).searchParams.get("_generation")).toBe(
+    pinnedGeneration,
+  );
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Alpha Instructor" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Rollover Instructor" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(/Pinned Instructor identity family:/),
+  ).toBeAttached();
+  await expect(page.getByText("Rankings are unavailable.")).toHaveCount(0);
 });
 
 test("unknown Instructor Terms fall back consistently", async ({ page }) => {

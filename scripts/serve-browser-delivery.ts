@@ -25,7 +25,9 @@ createServer(async (request, response) => {
       "accept-ranges": "bytes",
       "access-control-allow-headers": "range",
       "access-control-allow-methods": "GET, HEAD",
-      "access-control-allow-origin": "*",
+      ...(request.headers["x-test-no-cors"]
+        ? {}
+        : { "access-control-allow-origin": "*" }),
       "access-control-expose-headers":
         "accept-ranges, content-length, content-range",
       "cache-control":

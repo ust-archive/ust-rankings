@@ -1208,11 +1208,6 @@ async function instructorDetails(
   runtime: Runtime,
   input: CourseQueryOperations["instructorDetails"]["input"],
 ): Promise<Rankings> {
-  if (
-    input.expectedRankingRevision &&
-    input.expectedRankingRevision !== runtime.delivery.manifest.sources.rankings
-  )
-    throw new QueryError("unavailable", "Instructor generations do not match.");
   const identity = instructorIdentity(runtime, input.key);
   const query: RankingsQuery & { entity: "instructor" } = {
     entity: "instructor",

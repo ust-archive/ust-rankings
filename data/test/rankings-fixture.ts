@@ -5,13 +5,6 @@ import { DuckDBInstance } from "@duckdb/node-api";
 
 export const fixtureSha = "0123456789abcdef0123456789abcdef01234567";
 
-export async function installRankingGeneration(directory: string) {
-  const { installRankingGenerationForTests } = await import(
-    "@/lib/rankings/server"
-  );
-  await installRankingGenerationForTests(directory);
-}
-
 const identities = [
   {
     uuid: "00000000-0000-4000-8000-000000000001",

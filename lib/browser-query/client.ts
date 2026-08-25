@@ -315,26 +315,28 @@ function searchParams(url: URL) {
 
 export async function preloadPublicQuery(href: string) {
   const url = new URL(href, window.location.href);
-  if (url.origin !== window.location.origin) return;
+  if (url.origin !== window.location.origin) return href;
   if (url.pathname === "/rankings/instructors") {
     const { instructorRankingPages, instructorRankingQuery } = await import(
       "@/app/rankings/instructor-query"
     );
     const params = searchParams(url);
-    return queryInstructorRankingPages(
+    await queryInstructorRankingPages(
       instructorRankingQuery(params, rankingPreference()),
       instructorRankingPages(params),
     );
+    return href;
   }
   if (url.pathname === "/rankings/courses") {
     const { courseRankingPages, courseRankingQuery } = await import(
       "@/app/rankings/course-query"
     );
     const params = searchParams(url);
-    return queryCourseRankingPages(
+    await queryCourseRankingPages(
       courseRankingQuery(params, rankingPreference()),
       courseRankingPages(params),
     );
+    return href;
   }
   const instructor = url.pathname.match(/^\/instructors\/([^/]+)$/);
   if (instructor?.[1]) {
@@ -343,18 +345,18 @@ export async function preloadPublicQuery(href: string) {
       termCode: url.searchParams.get("term") ?? undefined,
       ...rankingPreferenceQuery(rankingPreference()),
     });
-    return Promise.all([
-      details,
-      queryScheduleDetails({
-        type: "instructor",
-        uuids: details.familyUuids,
-      }),
-    ]);
+    await queryScheduleDetails({
+      type: "instructor",
+      uuids: details.familyUuids,
+    });
+    url.searchParams.set("_generation", details.generation);
+    url.searchParams.set("_instructor", details.instructor.uuid);
+    return `${url.pathname}${url.search}${url.hash}`;
   }
   const match = url.pathname.match(
     /^\/courses\/([^/]+)\/([^/]+)(?:\/([0-9]{4}))?(?:\/[^/]+)?$/,
   );
-  if (!match) return;
+  if (!match) return href;
   const [, prefix = "", number = "", pathTerm] = match;
   const preference = rankingPreferenceQuery(rankingPreference());
   const coursePrefix = decodeURIComponent(prefix);
@@ -377,7 +379,7 @@ export async function preloadPublicQuery(href: string) {
           termCode,
         })
       : queryScheduleDetails({ type: "course", coursePrefix, courseNumber });
-  return Promise.all([
+  await Promise.all([
     queryCourseDetails({
       coursePrefix,
       courseNumber,
@@ -386,6 +388,7 @@ export async function preloadPublicQuery(href: string) {
     }),
     schedule,
   ]);
+  return href;
 }
 
 export type { CourseRankings };

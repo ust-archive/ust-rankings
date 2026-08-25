@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import { loadReviews } from "@/app/courses/review-data";
-import { BrowserScheduleDetails } from "@/app/courses/schedule-client";
-import { InstructorDetails } from "@/app/instructors/instructor-details";
 import {
+  BrowserInstructorDetails,
   BrowserInstructorIdentity,
   BrowserInstructorRankings,
   BrowserInstructorReviewComposer,
+  BrowserInstructorTeaching,
 } from "@/app/instructors/instructor-details-client";
 import {
   type InstructorRouteSearchParams,
@@ -14,12 +14,12 @@ import {
 } from "@/app/instructors/routes";
 import { loadSignals } from "@/app/signals/data";
 import { reviewOrder } from "@/lib/contributions/review-order";
+import { normalizeInstructorUuid } from "@/lib/instructor-identity";
 import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
 import {
-  getInstructorIdentity,
-  RankingsUnavailableError,
-  UnknownRankingsEntityError,
-} from "@/lib/rankings/server";
+  currentServerIndex,
+  ServerIndexUnavailableError,
+} from "@/lib/server-index";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +27,19 @@ type InstructorPageProps = {
   params: Promise<{ key: string }>;
   searchParams: Promise<InstructorRouteSearchParams>;
 };
+
+function pinnedInstructor(searchParams: InstructorRouteSearchParams) {
+  const generation = searchParams._generation;
+  const instructorUuid =
+    typeof searchParams._instructor === "string"
+      ? normalizeInstructorUuid(searchParams._instructor)
+      : undefined;
+  return typeof generation === "string" &&
+    /^[0-9a-f]{64}$/.test(generation) &&
+    instructorUuid
+    ? { generation, instructorUuid }
+    : undefined;
+}
 
 export default function InstructorPage(props: InstructorPageProps) {
   return renderInstructorPage(props);
@@ -42,12 +55,14 @@ export async function renderInstructorPage(
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
       : undefined;
+  const requestedPin = pinnedInstructor(query);
   const [identity, rankingPreference] = await Promise.all([
-    getInstructorIdentity(key).catch((error) => {
-      if (error instanceof UnknownRankingsEntityError) notFound();
-      if (!(error instanceof RankingsUnavailableError)) throw error;
-      return undefined;
-    }),
+    currentServerIndex()
+      .then((index) => index.instructorIdentity(key) ?? notFound())
+      .catch((error) => {
+        if (!(error instanceof ServerIndexUnavailableError)) throw error;
+        return undefined;
+      }),
     readRankingPreferenceQuery(),
   ]);
   if (!identity)
@@ -65,9 +80,15 @@ export async function renderInstructorPage(
         </p>
       </section>
     );
+  const pinned =
+    requestedPin && identity.familyUuids.includes(requestedPin.instructorUuid)
+      ? requestedPin
+      : undefined;
   if (identity.route.redirect)
     instructorRedirect(identity.route.canonicalKey, query);
 
+  const browserInstructorKey =
+    pinned?.instructorUuid ?? identity.instructor.uuid;
   const [signalResult, reviewResult] = await Promise.all([
     loadSignals({
       type: "instructor",
@@ -82,21 +103,23 @@ export async function renderInstructorPage(
   const classes = [];
   const selectedTermCode = undefined;
   return (
-    <InstructorDetails
+    <BrowserInstructorDetails
+      communityInstructorUuid={identity.instructor.uuid}
       identity={identity}
+      instructorKey={browserInstructorKey}
+      rankingConfiguration={rankingPreference}
+      requestedTermCode={selectedTerm}
       identityContent={
         <BrowserInstructorIdentity
-          expectedRankingRevision={identity.generation}
           fallbackIdentity={identity}
-          instructorKey={identity.instructor.uuid}
+          instructorKey={browserInstructorKey}
           rankingConfiguration={rankingPreference}
           requestedTermCode={selectedTerm}
         />
       }
       rankingsContent={
         <BrowserInstructorRankings
-          expectedRankingRevision={identity.generation}
-          instructorKey={identity.instructor.uuid}
+          instructorKey={browserInstructorKey}
           rankingConfiguration={rankingPreference}
           requestedTermCode={selectedTerm}
         />
@@ -104,9 +127,8 @@ export async function renderInstructorPage(
       reviewComposerContent={
         <BrowserInstructorReviewComposer
           classes={classes}
-          expectedRankingRevision={identity.generation}
           fallbackIdentity={identity}
-          instructorKey={identity.instructor.uuid}
+          instructorKey={browserInstructorKey}
           rankingConfiguration={rankingPreference}
           requestedTermCode={selectedTerm}
           selectedTermCode={selectedTermCode}
@@ -116,8 +138,11 @@ export async function renderInstructorPage(
       scheduleUnavailable={false}
       selectedTermCode={selectedTermCode}
       teachingContent={
-        <BrowserScheduleDetails
-          entity={{ type: "instructor", uuids: identity.familyUuids }}
+        <BrowserInstructorTeaching
+          fallbackIdentity={identity}
+          instructorKey={browserInstructorKey}
+          rankingConfiguration={rankingPreference}
+          requestedTermCode={selectedTerm}
         />
       }
       signals={signalResult.summary}

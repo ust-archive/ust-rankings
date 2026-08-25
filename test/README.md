@@ -9,9 +9,9 @@ working:
 | `test:accounts` | User establishment, policy, and authenticated session |
 | `test:attachments` | Attachment service and HTTP route handlers |
 | `test:moderation` | Moderation service and server actions |
-| `test:rankings` | Ranking query, Details lookup, refresh, and health |
+| `test:rankings` | Delivery manifest and Server Index activation/validation |
 | `test:reviews` | Review service, associations, reads, and server actions |
-| `test:schedule` | Schedule query, Details lookup, calendar, and refresh |
+| `test:schedule` | Schedule planner URL validation |
 | `test:signals` | Thumbs Vote and Emoji Reaction service and server actions |
 | `test:browser` | Rendered navigation, history, loading feedback, and progressive enhancement in Chromium |
 

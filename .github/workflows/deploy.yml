@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   workflow_run:
-    workflows: [Update data]
+    workflows: [CI]
     types: [completed]
 
 permissions:
@@ -17,7 +17,7 @@ jobs:
   deploy:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'master'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -47,20 +47,10 @@ jobs:
           node-version: 26.7.0
 
       - if: steps.latest.outputs.deploy == 'true'
-        name: Download image digest from the successful CI run
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          ci_run_id="$(gh run list --workflow CI --commit "$TESTED_SHA" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
-          test -n "$ci_run_id"
-          gh run download "$ci_run_id" --name production-image-digest --dir .deploy
-
-      - if: steps.latest.outputs.deploy == 'true'
-        name: Download published Ranking Generation SHA
+        name: Download image digest from CI
         uses: actions/download-artifact@v4
         with:
-          name: ranking-generation-sha
+          name: production-image-digest
           path: .deploy
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
@@ -84,18 +74,14 @@ jobs:
           if doctl apps update "$DIGITALOCEAN_APP_ID" --spec .do/app.json --wait; then
             exit 0
           fi
+          digest="$(tr -d '\r\n' < .deploy/image-digest.txt)"
+          doctl apps list-deployments "$DIGITALOCEAN_APP_ID" --output json > .deploy/deployments.json
+          if jq -e --arg digest "$digest" \
+            '(sort_by(.created_at) | last) as $deployment | $deployment.phase == "ACTIVE" and any($deployment.spec.services[]; .name == "web" and .image.digest == $digest)' \
+            .deploy/deployments.json > /dev/null; then
+            echo "Deployment became active after doctl wait exited unexpectedly."
+            exit 0
+          fi
           deployment_id="$(doctl apps list-deployments "$DIGITALOCEAN_APP_ID" --format ID --no-header | head -1)"
           doctl apps logs "$DIGITALOCEAN_APP_ID" web --deployment "$deployment_id" --type deploy --tail 100 || true
           exit 1
-
-      - name: Activate published Ranking Generation
-        if: steps.latest.outputs.deploy == 'true'
-        env:
-          RANKINGS_REFRESH_URL: ${{ secrets.RANKINGS_REFRESH_URL }}
-          RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
-        run: |
-          if [[ -z "$RANKINGS_REFRESH_URL" || -z "$RANKINGS_REFRESH_SECRET" ]]; then
-            echo "Runtime refresh secrets are not configured; the daily fallback remains active."
-            exit 0
-          fi
-          node scripts/refresh-rankings-runtime.ts "$(<.deploy/ranking-generation-sha.txt)"

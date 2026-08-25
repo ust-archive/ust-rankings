@@ -6,7 +6,12 @@ import {
   type ReviewEditorOptions,
 } from "@/app/courses/course-reviews";
 import { DetailsRankings } from "@/app/courses/details-sections";
-import { IdentityCard } from "@/app/instructors/instructor-details";
+import { BrowserScheduleDetails } from "@/app/courses/schedule-client";
+import {
+  IdentityCard,
+  InstructorDetails,
+  type InstructorDetailsProps,
+} from "@/app/instructors/instructor-details";
 import {
   cachedInstructorDetails,
   cachedScheduleDetails,
@@ -21,15 +26,12 @@ import type {
 } from "@/lib/rankings/server";
 import type { ScheduleClass } from "@/lib/schedule/server";
 
-export function BrowserInstructorIdentity({
-  fallbackIdentity,
-  expectedRankingRevision,
+export function BrowserInstructorDetails({
   instructorKey,
   rankingConfiguration,
   requestedTermCode,
-}: {
-  fallbackIdentity: InstructorIdentityLookup;
-  expectedRankingRevision: string;
+  ...props
+}: InstructorDetailsProps & {
   instructorKey: string;
   rankingConfiguration: {
     preset?: "learning" | "grade";
@@ -40,16 +42,108 @@ export function BrowserInstructorIdentity({
   const input = useMemo(
     () => ({
       key: instructorKey,
-      expectedRankingRevision,
       termCode: requestedTermCode,
       ...rankingConfiguration,
     }),
-    [
-      expectedRankingRevision,
-      instructorKey,
-      rankingConfiguration,
-      requestedTermCode,
-    ],
+    [instructorKey, rankingConfiguration, requestedTermCode],
+  );
+  const inputKey = JSON.stringify(input);
+  const cached = cachedInstructorDetails(input);
+  const [state, setState] = useState<{
+    key: string;
+    rankings?: Rankings;
+  }>(() => ({ key: inputKey, rankings: cached }));
+  useEffect(() => {
+    let current = true;
+    void queryInstructorDetails(input).then(
+      (rankings) => {
+        if (current)
+          startTransition(() => setState({ key: inputKey, rankings }));
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [input, inputKey]);
+  const rankings =
+    cached ?? (state.key === inputKey ? state.rankings : undefined);
+  return (
+    <InstructorDetails
+      {...props}
+      identity={rankings ?? props.identity}
+      rankings={rankings ?? props.rankings}
+    />
+  );
+}
+
+export function BrowserInstructorTeaching({
+  fallbackIdentity,
+  instructorKey,
+  rankingConfiguration,
+  requestedTermCode,
+}: {
+  fallbackIdentity: InstructorIdentityLookup;
+  instructorKey: string;
+  rankingConfiguration: {
+    preset?: "learning" | "grade";
+    weights?: RankingsQuery["weights"];
+  };
+  requestedTermCode?: string;
+}) {
+  const input = useMemo(
+    () => ({
+      key: instructorKey,
+      termCode: requestedTermCode,
+      ...rankingConfiguration,
+    }),
+    [instructorKey, rankingConfiguration, requestedTermCode],
+  );
+  const cached = cachedInstructorDetails(input);
+  const [rankings, setRankings] = useState<Rankings | undefined>(cached);
+  useEffect(() => {
+    let current = true;
+    void queryInstructorDetails(input).then(
+      (value) => {
+        if (current) startTransition(() => setRankings(value));
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [input]);
+  return (
+    <BrowserScheduleDetails
+      entity={{
+        type: "instructor",
+        uuids: (rankings ?? fallbackIdentity).familyUuids,
+      }}
+    />
+  );
+}
+
+export function BrowserInstructorIdentity({
+  fallbackIdentity,
+  instructorKey,
+  rankingConfiguration,
+  requestedTermCode,
+}: {
+  fallbackIdentity: InstructorIdentityLookup;
+  instructorKey: string;
+  rankingConfiguration: {
+    preset?: "learning" | "grade";
+    weights?: RankingsQuery["weights"];
+  };
+  requestedTermCode?: string;
+}) {
+  const input = useMemo(
+    () => ({
+      key: instructorKey,
+      termCode: requestedTermCode,
+      ...rankingConfiguration,
+    }),
+    [instructorKey, rankingConfiguration, requestedTermCode],
   );
   const cached = cachedInstructorDetails(input);
   const [rankings, setRankings] = useState<Rankings | undefined>(cached);
@@ -72,7 +166,6 @@ export function BrowserInstructorIdentity({
 
 export function BrowserInstructorReviewComposer({
   classes,
-  expectedRankingRevision,
   fallbackIdentity,
   instructorKey,
   rankingConfiguration,
@@ -80,7 +173,6 @@ export function BrowserInstructorReviewComposer({
   selectedTermCode,
 }: {
   classes: ScheduleClass[];
-  expectedRankingRevision: string;
   fallbackIdentity: InstructorIdentityLookup;
   instructorKey: string;
   rankingConfiguration: {
@@ -93,16 +185,10 @@ export function BrowserInstructorReviewComposer({
   const input = useMemo(
     () => ({
       key: instructorKey,
-      expectedRankingRevision,
       termCode: requestedTermCode,
       ...rankingConfiguration,
     }),
-    [
-      expectedRankingRevision,
-      instructorKey,
-      rankingConfiguration,
-      requestedTermCode,
-    ],
+    [instructorKey, rankingConfiguration, requestedTermCode],
   );
   const [rankings, setRankings] = useState<Rankings | undefined>(
     cachedInstructorDetails(input),
@@ -221,12 +307,10 @@ export function BrowserInstructorReviewComposer({
 }
 
 export function BrowserInstructorRankings({
-  expectedRankingRevision,
   instructorKey,
   rankingConfiguration,
   requestedTermCode,
 }: {
-  expectedRankingRevision: string;
   instructorKey: string;
   rankingConfiguration: {
     preset?: "learning" | "grade";
@@ -237,16 +321,10 @@ export function BrowserInstructorRankings({
   const input = useMemo(
     () => ({
       key: instructorKey,
-      expectedRankingRevision,
       termCode: requestedTermCode,
       ...rankingConfiguration,
     }),
-    [
-      expectedRankingRevision,
-      instructorKey,
-      rankingConfiguration,
-      requestedTermCode,
-    ],
+    [instructorKey, rankingConfiguration, requestedTermCode],
   );
   const inputKey = JSON.stringify(input);
   const cached = cachedInstructorDetails(input);
