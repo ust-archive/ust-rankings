@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DuckDBConnection } from "@duckdb/node-api";
@@ -109,6 +110,15 @@ type SeedEvent =
         courseCode: string;
       }>;
     };
+
+function generatedIdentityUuid(normalizedName: string): string {
+  const hash = createHash("sha1")
+    .update(Buffer.from("6ba7b8119dad11d180b400c04fd430c8", "hex"))
+    .update(`https://ust-rankings.com/instructors/${normalizedName}`)
+    .digest("hex");
+  const variant = ((Number.parseInt(hash.charAt(16), 16) & 3) | 8).toString(16);
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-${variant}${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+}
 
 function sqlLiteral(value: string | null): string {
   if (value === null) return "NULL";
@@ -495,10 +505,11 @@ export async function assignInstructorIdentities(
     sourceAliasesByCanonical.set(normalized(row.name), aliases);
   }
 
-  function resolveAssociation(row: AssociationRow): {
-    uuid: string;
-    corrected: boolean;
-  } {
+  const generatedUuids = new Set<string>();
+
+  function resolveAssociation(
+    row: AssociationRow,
+  ): { uuid: string; corrected: boolean } | { error: string } {
     const courseCode = `${row.prefix} ${row.courseNumber}`;
     const query = {
       sourceName: row.name,
@@ -515,9 +526,26 @@ export async function assignInstructorIdentities(
         corrected: Boolean(directResolution.correction),
       };
 
-    const candidates = candidatesByName.get(normalized(row.name));
-    if (!candidates?.size)
-      throw new Error(`Unmatched Instructor identity: ${row.name}`);
+    const nameKey = normalized(row.name);
+    const candidates = candidatesByName.get(nameKey);
+    if (!candidates?.size) {
+      const uuid = generatedIdentityUuid(nameKey);
+      identities.set(uuid, {
+        uuid,
+        canonical_name: row.name,
+        itsc: null,
+      });
+      aliases.push({
+        uuid,
+        name: row.name,
+        source: "ranking-generation",
+        source_commit: options.sourceCommit,
+        source_file: null,
+      });
+      candidatesByName.set(nameKey, new Set([uuid]));
+      generatedUuids.add(uuid);
+      return { uuid, corrected: false };
+    }
 
     let candidateUuid =
       candidates.size === 1 ? ([...candidates][0] as string) : undefined;
@@ -547,6 +575,8 @@ export async function assignInstructorIdentities(
     }
 
     if (candidateUuid) {
+      if (generatedUuids.has(candidateUuid))
+        return { uuid: candidateUuid, corrected: false };
       const resolution = identityHistory.resolveAssociation({
         ...query,
         uuid: candidateUuid,
@@ -557,15 +587,27 @@ export async function assignInstructorIdentities(
           corrected: Boolean(resolution.correction),
         };
     }
-    throw new Error(
-      `Ambiguous Instructor identity: ${row.name}, ${row.term_code}, ${courseCode}`,
-    );
+    return {
+      error: `Ambiguous Instructor identity: ${row.name}, ${row.term_code}, ${courseCode}`,
+    };
   }
 
-  const assignments = associations.map((row) => ({
-    ...row,
-    ...resolveAssociation(row),
+  const associationResolutions = associations.map((row) => ({
+    row,
+    resolution: resolveAssociation(row),
   }));
+  const observedResolutions = observed.map((row) => ({
+    row,
+    resolution: resolveAssociation(row),
+  }));
+  const errors = new Set(
+    [...associationResolutions, ...observedResolutions].flatMap(
+      ({ resolution }) => ("error" in resolution ? [resolution.error] : []),
+    ),
+  );
+  const assignments = associationResolutions.flatMap(({ row, resolution }) =>
+    "error" in resolution ? [] : [{ ...row, ...resolution }],
+  );
   const currentNamesByUuid = new Map<string, Set<string>>();
   const mergedSurvivors = new Set(
     [...identityHistory.redirectByUuid.keys()].map((uuid) =>
@@ -573,8 +615,10 @@ export async function assignInstructorIdentities(
     ),
   );
   for (const { name, uuid, corrected } of assignments) {
-    if (!identities.has(uuid))
-      throw new Error(`Unknown Instructor UUID: ${uuid}`);
+    if (!identities.has(uuid)) {
+      errors.add(`Unknown Instructor UUID: ${uuid}`);
+      continue;
+    }
     if (corrected) continue;
     const names = currentNamesByUuid.get(uuid) ?? new Set<string>();
     names.add(name);
@@ -582,9 +626,16 @@ export async function assignInstructorIdentities(
   }
   for (const [uuid, names] of currentNamesByUuid) {
     if (names.size > 1 && !mergedSurvivors.has(uuid))
-      throw new Error(
+      errors.add(
         `Ambiguous Instructor identity ${uuid}: ${[...names].join(", ")}`,
       );
+  }
+  if (errors.size)
+    throw new Error(
+      `Instructor identity validation failed with ${errors.size} ${errors.size === 1 ? "error" : "errors"}:\n${[...errors].map((error) => `- ${error}`).join("\n")}`,
+    );
+
+  for (const [uuid, names] of currentNamesByUuid) {
     const current = identities.get(uuid) as IdentityRow;
     identities.set(uuid, {
       ...current,
@@ -597,8 +648,9 @@ export async function assignInstructorIdentities(
   const aliasKeys = new Set(
     aliases.map((alias) => `${alias.uuid}\0${normalized(alias.name)}`),
   );
-  for (const row of observed) {
-    const { uuid } = resolveAssociation(row);
+  for (const { row, resolution } of observedResolutions) {
+    if ("error" in resolution) throw new Error(resolution.error);
+    const { uuid } = resolution;
     const key = `${uuid}\0${normalized(row.alias)}`;
     if (aliasKeys.has(key)) continue;
     aliasKeys.add(key);
