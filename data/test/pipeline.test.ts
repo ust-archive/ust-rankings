@@ -30,6 +30,7 @@ async function makeFixtures(
     conflictingCatalog = false,
     sameName = false,
     extraSameName = false,
+    falseReview = false,
     lowInstructor = "Cara Gamma",
   } = {},
 ): Promise<void> {
@@ -112,6 +113,12 @@ async function makeFixtures(
           5.0, 5.0, 5.0, 5.0, 'GONE', '9999', [{'name': 'TBA'}]),
         ('deleted-review', TIMESTAMP '2025-02-01', 'INACTIVE', '2025-26 Fall', 1, 1,
           5.0, 5.0, 5.0, 5.0, 'GONE', '9999', [{'name': 'TBA'}])
+        ${
+          falseReview
+            ? `,('PfqhaZDjE3u5fJvqPS0Gd1u5FNsJ8lnc', TIMESTAMP '2025-08-01', 'ACTIVE', '2025-26 Fall', 0, 0,
+          1.0, 1.0, 1.0, 1.0, 'LANG', '1402', [{'name': 'LAI, Priscilla'}])`
+            : ""
+        }
       ) AS reviews(
         hash, "timestamp", status, semester, upvote_count, vote_count,
         content_rating, teaching_rating, grading_rating, workload_rating,
@@ -1194,6 +1201,24 @@ test("the pipeline rejects conflicting cross-campus Course metadata", async () =
     });
     assert.notEqual(result.status, 0);
     assert.match(`${result.stderr}${result.stdout}`, /conflicting Course/i);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("the pipeline excludes the roster-disproved UST Space review", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-false-review-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { falseReview: true });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const outputDir = runPipeline(dataDir, temp, {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    const associations = await rows(
+      `SELECT * FROM read_parquet('${parquet(outputDir, "course-instructors")}') WHERE name = 'LAI, Priscilla'`,
+    );
+    assert.deepEqual(associations, []);
   } finally {
     await rm(temp, { recursive: true, force: true });
   }

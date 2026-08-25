@@ -10,6 +10,7 @@ import type {
   RankingsPage,
   RankingsQuery,
 } from "@/lib/rankings/server";
+import { rankingSearchParams } from "@/lib/rankings/url";
 import { DELIVERY_CDN_BASE_URL } from "@/lib/server-index-contract";
 import type {
   CourseQueryOperations,
@@ -300,19 +301,6 @@ function rankingPreference() {
   return parseRankingPreference(value);
 }
 
-function searchParams(url: URL) {
-  const result: Record<string, string | string[]> = {};
-  for (const [name, value] of url.searchParams) {
-    const current = result[name];
-    result[name] = current
-      ? Array.isArray(current)
-        ? [...current, value]
-        : [current, value]
-      : value;
-  }
-  return result;
-}
-
 export async function preloadPublicQuery(href: string) {
   const url = new URL(href, window.location.href);
   if (url.origin !== window.location.origin) return href;
@@ -320,7 +308,7 @@ export async function preloadPublicQuery(href: string) {
     const { instructorRankingPages, instructorRankingQuery } = await import(
       "@/app/rankings/instructor-query"
     );
-    const params = searchParams(url);
+    const params = rankingSearchParams(url.searchParams);
     await queryInstructorRankingPages(
       instructorRankingQuery(params, rankingPreference()),
       instructorRankingPages(params),
@@ -331,7 +319,7 @@ export async function preloadPublicQuery(href: string) {
     const { courseRankingPages, courseRankingQuery } = await import(
       "@/app/rankings/course-query"
     );
-    const params = searchParams(url);
+    const params = rankingSearchParams(url.searchParams);
     await queryCourseRankingPages(
       courseRankingQuery(params, rankingPreference()),
       courseRankingPages(params),

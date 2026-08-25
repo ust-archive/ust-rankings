@@ -1,8 +1,8 @@
 "use client";
 
 import { Target } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useState } from "react";
 import { RankingSearch } from "@/app/rankings/ranking-search";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,10 +80,8 @@ export function RankingControls({
   terms: Array<{ termCode: string; termName: string }>;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(searchParams.get("settings") === "open");
-  const [isPending, startTransition] = useTransition();
   const [settings, setSettings] = useState<Settings>({
     activity: initial.activity,
     commonCore: initial.commonCore,
@@ -96,7 +94,6 @@ export function RankingControls({
       ]),
     ),
   });
-  const weightTimer = useRef<number | undefined>(undefined);
   const selectedScheme =
     schemes.find((scheme) => scheme.value === settings.commonCoreScheme) ??
     schemes[0];
@@ -133,9 +130,7 @@ export function RankingControls({
         next.set(name, nextSettings.weights[criterion] ?? "0");
       else next.delete(name);
     }
-    startTransition(() => {
-      router.replace(`${pathname}?${next}`, { scroll: false });
-    });
+    window.history.replaceState(null, "", `${pathname}?${next}`);
   }
 
   function update(patch: Partial<Settings>) {
@@ -147,11 +142,7 @@ export function RankingControls({
   function updateWeight(criterion: string, value: string) {
     const weights = { ...settings.weights, [criterion]: value };
     setSettings((current) => ({ ...current, weights }));
-    window.clearTimeout(weightTimer.current);
-    weightTimer.current = window.setTimeout(
-      () => navigate({ ...settings, weights }),
-      300,
-    );
+    navigate({ ...settings, weights });
   }
 
   function changeTerm(termCode: string) {
@@ -159,9 +150,7 @@ export function RankingControls({
     next.delete("prefix");
     next.delete("course");
     next.set("term", termCode);
-    startTransition(() => {
-      router.replace(`${pathname}?${next}`, { scroll: false });
-    });
+    window.history.replaceState(null, "", `${pathname}?${next}`);
   }
 
   function changeOpen(open: boolean) {
@@ -443,10 +432,6 @@ export function RankingControls({
                   </FieldSet>
                 ) : null}
               </FieldSet>
-
-              <p aria-live="polite" className="sr-only">
-                {isPending ? "Updating rankings…" : "Rankings updated."}
-              </p>
             </CardContent>
           </CollapsibleContent>
         </Collapsible>

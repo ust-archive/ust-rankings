@@ -141,6 +141,25 @@ test("direct, modified, reloaded, and restored Details visits have truthful prov
   await expect(page.getByRole("button", { name: "Back" })).toHaveCount(0);
 });
 
+test("authentication links do not prefetch sign-in routes", async ({
+  page,
+}) => {
+  const authenticationPrefetches: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (
+      request.headers()["next-router-prefetch"] === "1" &&
+      ["/account", "/auth/login"].includes(path)
+    )
+      authenticationPrefetches.push(request.url());
+  });
+  await page.goto("/courses/comp/2000");
+  await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
+  await page.getByRole("link", { name: "Account" }).hover();
+  await page.waitForTimeout(500);
+  expect(authenticationPrefetches).toEqual([]);
+});
+
 test("Details hierarchy receives a vertical transition", async ({ page }) => {
   await page.goto("/courses/comp/2000");
   await page.addStyleTag({

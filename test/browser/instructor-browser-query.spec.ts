@@ -82,6 +82,8 @@ test("Instructor details retain identity history, corrections, relations, and ze
   await expect(
     page.getByRole("heading", { name: "Identity History" }),
   ).toBeVisible();
+  await expect(page.getByText("Term name unavailable")).toHaveCount(0);
+  await expect(page.getByText("2025-26 Fall").first()).toBeVisible();
   await expect(page.getByText("Split scope needs resolution")).toBeVisible();
   await expect(page.getByText("Calibration applied")).toBeVisible();
   await expect(

@@ -60,6 +60,7 @@ function FooterLinks({
             className="w-fit text-sm underline-offset-4 hover:text-slate-950"
             href={href}
             key={href}
+            prefetch={href === "/account" ? false : undefined}
             transitionTypes={
               href.startsWith("/rankings/") ? forwardTransition : undefined
             }
@@ -85,7 +86,7 @@ async function HeaderAuth() {
   const userId = await authenticatedUserId();
   if (!userId)
     return (
-      <Link className={pill} href="/auth/login?r=%2Faccount">
+      <Link className={pill} href="/auth/login?r=%2Faccount" prefetch={false}>
         Login
       </Link>
     );
@@ -98,7 +99,7 @@ async function HeaderAuth() {
       // Keep public pages independent from contribution storage.
     }
   return (
-    <Link className={pill} href="/account">
+    <Link className={pill} href="/account" prefetch={false}>
       {label}
     </Link>
   );

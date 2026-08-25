@@ -126,8 +126,10 @@ export function CourseDetails({
   rankings,
   rankingsContent,
   reviewComposerContent,
+  communityContent,
   scheduleContent,
   selectedTermCode,
+  detailsLoading = false,
   reviews = [],
   reviewsUnavailable = true,
   reviewPublished,
@@ -144,8 +146,10 @@ export function CourseDetails({
   rankings?: CourseRankings;
   rankingsContent?: ReactNode;
   reviewComposerContent?: ReactNode;
+  communityContent?: ReactNode;
   scheduleContent?: ReactNode;
   selectedTermCode?: string;
+  detailsLoading?: boolean;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
   reviewPublished?: boolean;
@@ -168,7 +172,9 @@ export function CourseDetails({
   const title =
     currentOffering?.title ??
     rankings?.course.title ??
-    "Catalog details unavailable";
+    (detailsLoading
+      ? "Loading Catalog details…"
+      : "Catalog details unavailable");
   const termNames = new Map(
     offerings.map((offering) => [offering.termCode, offering.termName]),
   );
@@ -337,7 +343,11 @@ export function CourseDetails({
         subtitle={title}
         termName={
           termNames.get(evidenceTermCode ?? "") ??
-          rankingTermName(evidenceTermCode)
+          (evidenceTermCode
+            ? rankingTermName(evidenceTermCode)
+            : detailsLoading
+              ? "Loading Term…"
+              : rankingTermName())
         }
         title={`${coursePrefix} ${courseNumber}`}
         transitionName={courseTitleTransitionName(coursePrefix, courseNumber)}
@@ -355,35 +365,37 @@ export function CourseDetails({
               termNames={termNames}
             />
           )}
-          <DetailsCommunity
-            description="Published experiences and signals for this Course."
-            editor={reviewEditor}
-            error={reviewError}
-            published={reviewPublished}
-            reviewComposer={
-              reviewComposerContent ?? (
-                <ReviewComposer
-                  {...reviewEditor}
-                  displayTermNames
-                  initialCourse={{ coursePrefix, courseNumber }}
-                  initialTermCode={evidenceTermCode}
+          {communityContent ?? (
+            <DetailsCommunity
+              description="Published experiences and signals for this Course."
+              editor={reviewEditor}
+              error={reviewError}
+              published={reviewPublished}
+              reviewComposer={
+                reviewComposerContent ?? (
+                  <ReviewComposer
+                    {...reviewEditor}
+                    displayTermNames
+                    initialCourse={{ coursePrefix, courseNumber }}
+                    initialTermCode={evidenceTermCode}
+                  />
+                )
+              }
+              reviews={reviews}
+              reviewsUnavailable={reviewsUnavailable}
+              signedIn={signedIn}
+              signalControls={
+                <SignalControls
+                  error={signalError}
+                  signedIn={signedIn}
+                  summary={signals}
+                  target={{ type: "course", coursePrefix, courseNumber }}
+                  unavailable={signalsUnavailable}
                 />
-              )
-            }
-            reviews={reviews}
-            reviewsUnavailable={reviewsUnavailable}
-            signedIn={signedIn}
-            signalControls={
-              <SignalControls
-                error={signalError}
-                signedIn={signedIn}
-                summary={signals}
-                target={{ type: "course", coursePrefix, courseNumber }}
-                unavailable={signalsUnavailable}
-              />
-            }
-            withdrawn={reviewWithdrawn}
-          />
+              }
+              withdrawn={reviewWithdrawn}
+            />
+          )}
         </section>
         <aside className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-6">
           {scheduleContent}

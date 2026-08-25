@@ -50,6 +50,7 @@ export function BrowserInstructorDetails({
   const inputKey = JSON.stringify(input);
   const cached = cachedInstructorDetails(input);
   const [state, setState] = useState<{
+    failed?: boolean;
     key: string;
     rankings?: Rankings;
   }>(() => ({ key: inputKey, rankings: cached }));
@@ -60,7 +61,9 @@ export function BrowserInstructorDetails({
         if (current)
           startTransition(() => setState({ key: inputKey, rankings }));
       },
-      () => undefined,
+      () => {
+        if (current) setState({ failed: true, key: inputKey });
+      },
     );
     return () => {
       current = false;
@@ -73,6 +76,8 @@ export function BrowserInstructorDetails({
       {...props}
       identity={rankings ?? props.identity}
       rankings={rankings ?? props.rankings}
+      selectedTermCode={rankings?.population.termCode ?? props.selectedTermCode}
+      termLoading={!rankings && !state.failed}
     />
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   type CourseRankingSearchParams,
@@ -31,6 +32,7 @@ import type {
   RankingsPage,
   RankingsQuery,
 } from "@/lib/rankings/server";
+import { rankingSearchParams } from "@/lib/rankings/url";
 
 function nextPageHref(
   searchParams: CourseRankingSearchParams,
@@ -95,12 +97,15 @@ function selectedPreset(
 export function CourseRankingsPage({
   preference,
   schemes,
-  searchParams,
 }: {
   preference: RankingPreference;
   schemes: ReadonlyArray<CommonCoreSchemeDefinition>;
-  searchParams: CourseRankingSearchParams;
 }) {
+  const currentSearchParams = useSearchParams();
+  const searchParams = useMemo(
+    () => rankingSearchParams(currentSearchParams) as CourseRankingSearchParams,
+    [currentSearchParams],
+  );
   const parsed = useMemo(() => {
     try {
       const query = courseRankingQuery(searchParams, preference);
