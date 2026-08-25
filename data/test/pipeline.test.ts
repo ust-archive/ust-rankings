@@ -625,12 +625,15 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
   }
 });
 
-test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () => {
+test("new Instructor UUIDs are stable across pipeline runs and omit TBA", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      "Cara Gamma",
+    );
     const first = runPipeline(dataDir, join(temp, "first"), {
       RANKINGS_PREVIOUS_GENERATION_DIR: previous,
     });
@@ -1224,14 +1227,16 @@ test("the pipeline excludes the roster-disproved UST Space review", async () => 
   }
 });
 
-test("the pipeline rejects unmatched Instructor names", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-unmatched-"));
+test("the pipeline reports all ambiguous Instructor associations", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-report-"));
   try {
     const dataDir = join(temp, "data");
-    await makeFixtures(dataDir);
+    await makeFixtures(dataDir, { sameName: true });
     const previous = await makePreviousGeneration(
       join(temp, "previous"),
       "Cara Gamma",
+      undefined,
+      "ambiguous",
     );
     const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
       cwd: root,
@@ -1243,10 +1248,19 @@ test("the pipeline rejects unmatched Instructor names", async () => {
         RANKINGS_PREVIOUS_GENERATION_DIR: previous,
       },
     });
+    const output = `${result.stderr}${result.stdout}`;
     assert.notEqual(result.status, 0);
     assert.match(
-      `${result.stderr}${result.stdout}`,
-      /Unmatched Instructor identity/,
+      output,
+      /Instructor identity validation failed with 2 errors:/,
+    );
+    assert.match(
+      output,
+      /Ambiguous Instructor identity: Alex Lee, 2510, COMP 1000/,
+    );
+    assert.match(
+      output,
+      /Ambiguous Instructor identity: Alex Lee, 2510, COMP 2000/,
     );
   } finally {
     await rm(temp, { recursive: true, force: true });
