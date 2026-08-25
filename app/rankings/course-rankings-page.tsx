@@ -23,7 +23,6 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import {
   cachedCourseRankings,
-  preloadPublicQuery,
   queryCourseRankingPages,
 } from "@/lib/browser-query/client";
 import type { RankingPreference } from "@/lib/rankings/preference";
@@ -175,9 +174,7 @@ export function CourseRankingsPage({
   const current = state.key === queryKey ? state : { ...state, loading: true };
   const rankings = current.rankings;
   useEffect(() => {
-    if (!rankings) return;
-    router.prefetch("/rankings/instructors");
-    void preloadPublicQuery("/rankings/instructors").catch(() => undefined);
+    if (rankings) router.prefetch("/rankings/instructors");
   }, [rankings, router]);
   const preset = selectedPreset(
     rankings,

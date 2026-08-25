@@ -47,7 +47,7 @@ test.afterEach(async ({ request }) => {
   }
 });
 
-test("Instructor Rankings use the pinned worker and prefetch Course Rankings", async ({
+test("Instructor Rankings use the pinned worker and lazy Course artifacts", async ({
   page,
 }) => {
   const requests: string[] = [];
@@ -68,7 +68,7 @@ test("Instructor Rankings use the pinned worker and prefetch Course Rankings", a
   expect(names).toContain("instructor-ratings.parquet");
   expect(names).toContain("instructors.parquet");
   expect(names).toContain("relation.parquet");
-  expect(names).toContain("course-ratings.parquet");
+  expect(names).not.toContain("course-ratings.parquet");
   expect([...names].some((name) => name?.startsWith("schedule-"))).toBe(false);
 });
 
@@ -142,7 +142,11 @@ test("Instructor navigation keeps the tab-pinned generation across Server Index 
   expect(redirect.status()).toBe(308);
   expect(redirect.headers().location).toContain("/instructors/alpha?");
 
-  await instructor.click();
+  const navigation = instructor.click();
+  await expect(
+    page.getByRole("progressbar", { name: "Loading page" }),
+  ).toBeVisible();
+  await navigation;
   await expect(page).toHaveURL(
     /\/instructors\/alpha\?.*_generation=[0-9a-f]{64}/,
   );

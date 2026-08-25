@@ -7,11 +7,27 @@ const dataOrigin = "http://127.0.0.1:17832";
 declare global {
   interface Window {
     duckdbWorkerCount: number;
+    navigationClickAt: number;
     publicQueryWorkerCount: number;
+    viewTransitionDelay: number;
   }
 }
 
-test("Course Rankings use one pinned worker generation and prefetch Instructor Rankings", async ({
+test("DuckDB browser assets are versioned and immutable", async ({ page }) => {
+  const wasm = page.waitForRequest(
+    /\/duckdb\/1\.32\.0\/duckdb-(?:eh|mvp)\.wasm$/,
+    { timeout: 5_000 },
+  );
+  await page.goto("/rankings/courses");
+  const request = await wasm;
+  const response = await page.request.head(request.url());
+  expect(response.ok()).toBe(true);
+  expect(response.headers()["cache-control"]).toBe(
+    "public, max-age=31536000, immutable",
+  );
+});
+
+test("Course Rankings use one pinned worker generation and lazy Instructor artifacts", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -74,7 +90,7 @@ test("Course Rankings use one pinned worker generation and prefetch Instructor R
     "relation.parquet",
   ])
     expect(requested).toContain(name);
-  expect(requested).toContain("instructor-ratings.parquet");
+  expect(requested).not.toContain("instructor-ratings.parquet");
   expect([...requested].some((name) => name?.startsWith("schedule-"))).toBe(
     false,
   );
@@ -182,52 +198,46 @@ test("Course details retain historical evidence and relation parity", async ({
   await expect(page.getByText("Rankings are unavailable.")).toHaveCount(0);
 });
 
-test("Course Rankings prefetch after Instructor Rankings become ready", async ({
+test("counterpart Ranking navigation does not wait for cold browser data", async ({
   page,
 }) => {
-  const prefetched = page.waitForRequest((request) =>
-    request.url().endsWith("/course-ratings.parquet"),
-  );
+  await page.addInitScript(() => {
+    const startViewTransition = document.startViewTransition.bind(document);
+    window.viewTransitionDelay = Number.POSITIVE_INFINITY;
+    document.startViewTransition = (...args) => {
+      window.viewTransitionDelay = performance.now() - window.navigationClickAt;
+      return startViewTransition(...args);
+    };
+  });
+  await page.route(`${dataOrigin}/**/course-ratings.parquet`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await route.continue();
+  });
+  await page.route("**/rankings/courses?*", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    await route.continue();
+  });
   await page.goto("/rankings/instructors");
   await expect(
     page.getByRole("list", { name: "Instructor rankings" }),
   ).toBeVisible();
-  await prefetched;
-  await expect(page).toHaveURL(/\/rankings\/instructors/);
-});
-
-test("Course navigation prefetches without leaving an empty destination", async ({
-  browserName,
-  page,
-}) => {
-  await page.route(`${dataOrigin}/**/course-ratings.parquet`, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 750));
-    await route.continue();
-  });
-  const prefetched = page.waitForRequest((request) =>
-    request.url().endsWith("/course-ratings.parquet"),
-  );
-  await page.goto("/rankings/instructors");
-  const instructorList = page.getByRole("list", {
-    name: "Instructor rankings",
-  });
-  await expect(instructorList).toBeVisible();
   const link = page
     .getByRole("navigation", { name: "Primary navigation" })
     .getByRole("link", { name: "Courses" });
-  await prefetched;
-  await link.hover();
-  await expect(page).toHaveURL(/\/rankings\/instructors/);
-  await expect(instructorList).toBeVisible();
 
-  const navigation = link.click();
-  if (browserName === "chromium")
-    await expect(
-      page.getByRole("progressbar", { name: "Loading page" }),
-    ).toBeVisible();
-  await expect(page).toHaveURL(/\/rankings\/instructors/);
-  await expect(instructorList).toBeVisible();
-  await navigation;
+  await link.evaluate((element) => {
+    window.navigationClickAt = performance.now();
+    (element as HTMLElement).click();
+  });
+
+  await expect
+    .poll(() => page.evaluate(() => window.viewTransitionDelay), {
+      timeout: 5_000,
+    })
+    .not.toBe(Number.POSITIVE_INFINITY);
+  expect(await page.evaluate(() => window.viewTransitionDelay)).toBeLessThan(
+    1_000,
+  );
   await expect(page).toHaveURL(/\/rankings\/courses/);
   await expect(
     page.getByRole("list", { name: "Course rankings" }),
@@ -295,7 +305,7 @@ test("blocked Worker creation preserves static Course identity and Community", a
 test("unavailable WebAssembly preserves static Course identity and Community", async ({
   page,
 }) => {
-  await page.route("**/duckdb/*.wasm", (route) => route.abort());
+  await page.route("**/duckdb/**/*.wasm", (route) => route.abort());
   await page.goto("/courses/comp/2000");
   await expect(
     page.getByRole("heading", { level: 1, name: "COMP 2000" }),

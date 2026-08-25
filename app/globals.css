@@ -36,7 +36,7 @@
 }
 
 .navigation-progress {
-  animation: navigation-progress 800ms ease-in-out 100ms infinite backwards;
+  animation: navigation-progress 800ms ease-in-out infinite;
 }
 
 ::view-transition {

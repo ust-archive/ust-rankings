@@ -39,7 +39,7 @@ import { type PinnedDelivery, resolveDeliveryManifest } from "./manifest";
 import type { CourseQueryOperations } from "./protocol";
 
 const asset = (name: string) =>
-  new URL(`/duckdb/${name}`, self.location.origin).href;
+  new URL(`/duckdb/1.32.0/${name}`, self.location.origin).href;
 const bundles: duckdb.DuckDBBundles = {
   mvp: {
     mainModule: asset("duckdb-mvp.wasm"),

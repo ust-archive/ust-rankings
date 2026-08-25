@@ -22,7 +22,6 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import {
   cachedInstructorRankings,
-  preloadPublicQuery,
   queryInstructorRankingPages,
 } from "@/lib/browser-query/client";
 import type { RankingPreference } from "@/lib/rankings/preference";
@@ -158,9 +157,7 @@ export function InstructorRankingsPage({
   const current = state.key === queryKey ? state : { ...state, loading: true };
   const rankings = current.rankings;
   useEffect(() => {
-    if (!rankings) return;
-    router.prefetch("/rankings/courses");
-    void preloadPublicQuery("/rankings/courses").catch(() => undefined);
+    if (rankings) router.prefetch("/rankings/courses");
   }, [rankings, router]);
   const preset =
     rankings?.configuration.preset ??
@@ -224,7 +221,11 @@ export function InstructorRankingsPage({
           style={{ listStyle: "none", marginInlineStart: 0 }}
         >
           {rankings.results.map((result) => (
-            <RankingResultCard key={result.uuid} result={result} />
+            <RankingResultCard
+              generation={rankings.generation}
+              key={result.uuid}
+              result={result}
+            />
           ))}
           <RankingPagination
             fallbackHref={
