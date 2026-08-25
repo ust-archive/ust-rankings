@@ -58,6 +58,7 @@ export type ServerIndexDependencies = {
 
 export type ActiveServerIndex = {
   readonly generation: string;
+  canonicalDetailPaths(): string[];
   validateReviewAssociations(
     associations: ReviewAssociations,
   ): ReviewAssociations | undefined;
@@ -441,6 +442,19 @@ function createActiveServerIndex(value: unknown, generation: string) {
   } = {
     generation,
     identityHistory: history,
+    canonicalDetailPaths() {
+      return [
+        ...[...courses].map((code) => {
+          const separator = code.indexOf(" ");
+          return `/courses/${code.slice(0, separator)}/${code.slice(separator + 1)}`;
+        }),
+        ...[...identitiesByUuid.values()]
+          .filter(
+            (identity) => history.resolveUuid(identity.uuid) === identity.uuid,
+          )
+          .map((identity) => `/instructors/${identity.itsc ?? identity.uuid}`),
+      ].sort();
+    },
     validateReviewAssociations(associations) {
       const code = associations.course
         ? courseCode(
