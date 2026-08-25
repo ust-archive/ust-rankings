@@ -71,7 +71,7 @@ export function RankingResultCard({
     >
       <EntityLink
         className="group block touch-manipulation rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950"
-        href={cardPresentation.href}
+        href={navigationHref ?? cardPresentation.href}
         navigationHref={navigationHref}
         prefetch
         style={{ textDecoration: "none" }}
