@@ -47,7 +47,7 @@ test.afterEach(async ({ request }) => {
   }
 });
 
-test("Instructor Rankings use the pinned worker and lazy Instructor artifacts", async ({
+test("Instructor Rankings use the pinned worker and prefetch Course Rankings", async ({
   page,
 }) => {
   const requests: string[] = [];
@@ -68,7 +68,7 @@ test("Instructor Rankings use the pinned worker and lazy Instructor artifacts", 
   expect(names).toContain("instructor-ratings.parquet");
   expect(names).toContain("instructors.parquet");
   expect(names).toContain("relation.parquet");
-  expect(names).not.toContain("course-ratings.parquet");
+  expect(names).toContain("course-ratings.parquet");
   expect([...names].some((name) => name?.startsWith("schedule-"))).toBe(false);
 });
 

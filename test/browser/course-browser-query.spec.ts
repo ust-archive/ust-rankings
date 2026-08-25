@@ -11,7 +11,7 @@ declare global {
   }
 }
 
-test("Course Rankings use one pinned worker generation and fetch only Course artifacts", async ({
+test("Course Rankings use one pinned worker generation and prefetch Instructor Rankings", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -74,7 +74,7 @@ test("Course Rankings use one pinned worker generation and fetch only Course art
     "relation.parquet",
   ])
     expect(requested).toContain(name);
-  expect(requested).not.toContain("instructor-ratings.parquet");
+  expect(requested).toContain("instructor-ratings.parquet");
   expect([...requested].some((name) => name?.startsWith("schedule-"))).toBe(
     false,
   );
@@ -182,6 +182,20 @@ test("Course details retain historical evidence and relation parity", async ({
   await expect(page.getByText("Rankings are unavailable.")).toHaveCount(0);
 });
 
+test("Course Rankings prefetch after Instructor Rankings become ready", async ({
+  page,
+}) => {
+  const prefetched = page.waitForRequest((request) =>
+    request.url().endsWith("/course-ratings.parquet"),
+  );
+  await page.goto("/rankings/instructors");
+  await expect(
+    page.getByRole("list", { name: "Instructor rankings" }),
+  ).toBeVisible();
+  await prefetched;
+  await expect(page).toHaveURL(/\/rankings\/instructors/);
+});
+
 test("Course navigation prefetches without leaving an empty destination", async ({
   browserName,
   page,
@@ -190,6 +204,9 @@ test("Course navigation prefetches without leaving an empty destination", async 
     await new Promise((resolve) => setTimeout(resolve, 750));
     await route.continue();
   });
+  const prefetched = page.waitForRequest((request) =>
+    request.url().endsWith("/course-ratings.parquet"),
+  );
   await page.goto("/rankings/instructors");
   const instructorList = page.getByRole("list", {
     name: "Instructor rankings",
@@ -198,11 +215,8 @@ test("Course navigation prefetches without leaving an empty destination", async 
   const link = page
     .getByRole("navigation", { name: "Primary navigation" })
     .getByRole("link", { name: "Courses" });
-  const prefetched = page.waitForRequest((request) =>
-    request.url().endsWith("/course-ratings.parquet"),
-  );
-  await link.hover();
   await prefetched;
+  await link.hover();
   await expect(page).toHaveURL(/\/rankings\/instructors/);
   await expect(instructorList).toBeVisible();
 
