@@ -23,6 +23,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import {
   cachedCourseRankings,
+  preloadPublicQuery,
   queryCourseRankingPages,
 } from "@/lib/browser-query/client";
 import type { RankingPreference } from "@/lib/rankings/preference";
@@ -172,6 +173,10 @@ export function CourseRankingsPage({
 
   const current = state.key === queryKey ? state : { ...state, loading: true };
   const rankings = current.rankings;
+  useEffect(() => {
+    if (rankings)
+      void preloadPublicQuery("/rankings/instructors").catch(() => undefined);
+  }, [rankings]);
   const preset = selectedPreset(
     rankings,
     query ?? ({ entity: "course" } as RankingsQuery & { entity: "course" }),

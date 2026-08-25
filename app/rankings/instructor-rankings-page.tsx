@@ -22,6 +22,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import {
   cachedInstructorRankings,
+  preloadPublicQuery,
   queryInstructorRankingPages,
 } from "@/lib/browser-query/client";
 import type { RankingPreference } from "@/lib/rankings/preference";
@@ -155,6 +156,10 @@ export function InstructorRankingsPage({
   }, [parsed.error, parsed.pages, query, queryKey]);
   const current = state.key === queryKey ? state : { ...state, loading: true };
   const rankings = current.rankings;
+  useEffect(() => {
+    if (rankings)
+      void preloadPublicQuery("/rankings/courses").catch(() => undefined);
+  }, [rankings]);
   const preset =
     rankings?.configuration.preset ??
     (query?.weights ? "custom" : (query?.preset ?? "learning"));
