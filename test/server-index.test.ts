@@ -150,6 +150,13 @@ test("the active index serves static Instructor identity and names", async () =>
     ],
   });
   expect(index.instructorIdentity("unknown")).toBeUndefined();
+  expect(index.canonicalDetailPaths()).toEqual([
+    "/courses/COMP/2000",
+    "/courses/LANG/FR1",
+    "/courses/MATH/1000",
+    "/instructors/00000000-0000-4000-8000-000000000003",
+    "/instructors/alpha",
+  ]);
   expect(
     index.instructorNamesForUuids([RETIRED_UUID, SPLIT_UUID, "unknown"]),
   ).toEqual(

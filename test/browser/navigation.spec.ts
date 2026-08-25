@@ -259,6 +259,58 @@ test("hierarchical navigation works without View Transitions", async ({
   await context.close();
 });
 
+test("SEO discovery routes expose the canonical sitemap", async ({
+  request,
+}) => {
+  const robots = await request.get("/robots.txt");
+  expect(robots.status()).toBe(200);
+  expect(await robots.text()).toContain(
+    "Sitemap: https://ust-rankings.com/sitemap.xml",
+  );
+
+  const sitemap = await request.get("/sitemap.xml");
+  expect(sitemap.status()).toBe(200);
+  const xml = await sitemap.text();
+  for (const path of [
+    "/rankings/instructors",
+    "/rankings/courses",
+    "/schedule",
+    "/faq",
+    "/privacy",
+  ])
+    expect(xml).toContain(`<loc>https://ust-rankings.com${path}</loc>`);
+  expect(xml).toContain(
+    "<loc>https://ust-rankings.com/courses/COMP/2000</loc>",
+  );
+  expect(xml).toContain(
+    "<loc>https://ust-rankings.com/instructors/00000000-0000-4000-8000-000000000001</loc>",
+  );
+  expect(xml).not.toContain(
+    "<loc>https://ust-rankings.com/instructors/00000000-0000-4000-8000-000000000002</loc>",
+  );
+  expect(xml).not.toContain("/account");
+
+  for (const [path, title, description] of [
+    [
+      "/rankings/instructors",
+      "Instructor Rankings | UST Rankings",
+      "Compare HKUST Instructor rankings using student reviews and official SFQ evidence.",
+    ],
+    [
+      "/rankings/courses",
+      "Course Rankings | UST Rankings",
+      "Compare HKUST Course rankings using student reviews and official SFQ evidence.",
+    ],
+  ]) {
+    const html = await (await request.get(path)).text();
+    expect(html).toContain(`<title>${title}</title>`);
+    expect(html).toContain(`<meta name="description" content="${description}"`);
+    expect(html).toContain(
+      `<link rel="canonical" href="https://ust-rankings.com${path}"`,
+    );
+  }
+});
+
 test("reduced motion keeps navigation functional without effective animation", async ({
   browser,
 }) => {

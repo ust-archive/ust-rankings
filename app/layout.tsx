@@ -24,6 +24,7 @@ const roboto_mono = Roboto_Mono({
 const forwardTransition = ["nav-forward"];
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://ust-rankings.com"),
   title: "UST Rankings",
   description: "Course and Instructor rankings for HKUST students.",
 };
