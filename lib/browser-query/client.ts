@@ -110,7 +110,7 @@ function execute<Selected extends Operation>(
         "Public Course query timed out.",
       );
       failWorker(error);
-    }, 15_000);
+    }, 30_000);
     pending.set(id, { reject, resolve, timer });
     try {
       worker().postMessage(request);

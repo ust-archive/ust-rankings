@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
-import { Spinner } from "@/components/ui/spinner";
 import type { PublicReview } from "@/lib/contributions/reviews";
 import {
   gradeColor,
+  histogramPercentiles,
   letterGrade,
   rankingTermName,
 } from "@/lib/rankings/presentation";
@@ -53,11 +53,32 @@ type DetailRankings = Pick<
   "configuration" | "population" | "ranking" | "terms"
 >;
 
+function DetailsRankingsLoading() {
+  return (
+    <Card
+      aria-label="Loading Rankings"
+      className="animate-pulse p-5 sm:p-6"
+      data-details-rankings-skeleton
+      role="status"
+    >
+      <div className="h-7 w-32 rounded bg-slate-200" />
+      <div className="mt-2 h-4 w-24 rounded bg-slate-100" />
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="h-28 rounded-lg bg-slate-100 sm:col-span-2 xl:col-span-1" />
+        <div className="h-28 rounded-lg bg-slate-100" />
+        <div className="h-28 rounded-lg bg-slate-100" />
+      </div>
+    </Card>
+  );
+}
+
 export function DetailsHeader({
   eyebrow,
   title,
   subtitle,
+  subtitleLoading = false,
   termName,
+  termLoading = false,
   description,
   notice,
   transitionName,
@@ -65,7 +86,9 @@ export function DetailsHeader({
   eyebrow: string;
   title: string;
   subtitle?: string;
+  subtitleLoading?: boolean;
   termName?: string;
+  termLoading?: boolean;
   description?: string;
   notice?: ReactNode;
   transitionName?: string;
@@ -80,12 +103,24 @@ export function DetailsHeader({
           {title}
         </h1>
       </EntityTitleTransition>
-      {subtitle ? (
+      {subtitleLoading ? (
+        <div
+          aria-label="Loading subtitle"
+          className="mt-3 h-6 w-64 max-w-full animate-pulse rounded bg-slate-200"
+          role="status"
+        />
+      ) : subtitle ? (
         <p className="mt-2 max-w-3xl text-lg font-medium text-slate-700">
           {subtitle}
         </p>
       ) : null}
-      {termName ? (
+      {termLoading ? (
+        <div
+          aria-label="Loading Term"
+          className="mt-3 h-4 w-28 animate-pulse rounded bg-slate-100"
+          role="status"
+        />
+      ) : termName ? (
         <p className="mt-2 text-sm font-medium text-slate-600">{termName}</p>
       ) : null}
       {description ? (
@@ -112,6 +147,10 @@ function ScoreHistogram({
   const gap = 2;
   const barWidth = width / distribution.bins.length - gap;
   const maximumBin = Math.max(...distribution.bins, 1);
+  const binPercentiles = histogramPercentiles(
+    distribution.bins,
+    distribution.count,
+  );
   const position =
     ((value - distribution.minimum) /
       (distribution.maximum - distribution.minimum || 1)) *
@@ -127,11 +166,7 @@ function ScoreHistogram({
         <title>{`${entity} score distribution`}</title>
         {distribution.bins.map((count, index) => {
           const barHeight = Math.max(2, (count / maximumBin) * (height - 6));
-          const color = gradeColor(
-            distribution.bins.length === 1
-              ? 1
-              : index / (distribution.bins.length - 1),
-          );
+          const color = gradeColor(binPercentiles[index] ?? 0);
           return (
             <rect
               fill={`rgb(${color.join(", ")})`}
@@ -189,7 +224,7 @@ function RankMetric({
         </>
       ) : (
         <>
-          <span className="mt-1 block text-xl font-bold tabular-nums">
+          <span className="mt-1 block whitespace-nowrap text-lg font-bold tabular-nums sm:text-xl">
             #{integer.format(rank)} of {integer.format(population)}
           </span>
           <span className="mt-1 block text-sm text-slate-700 tabular-nums">
@@ -214,6 +249,7 @@ export function DetailsRankings({
   scoreDistribution?: ScoreDistribution;
   termNames?: Map<string, string>;
 }) {
+  if (loading && !rankings) return <DetailsRankingsLoading />;
   const evidence = rankings?.terms.find(
     (term) => term.termCode === selectedTermCode,
   );
@@ -245,8 +281,8 @@ export function DetailsRankings({
           </span>
         ) : null}
         {selectedRanking && grade ? (
-          <span className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <span className="block rounded-lg border border-slate-200 bg-white p-4 text-slate-900 sm:col-span-2">
+          <span className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <span className="block rounded-lg border border-slate-200 bg-white p-4 text-slate-900 sm:col-span-2 xl:col-span-1">
               <span className="flex items-center gap-3">
                 <span className="shrink-0">
                   <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">
@@ -424,18 +460,19 @@ export function ExpandCardTrigger({
 
 export function DetailsCommunityLoading() {
   return (
-    <Card aria-busy="true">
+    <Card
+      aria-label="Loading Community"
+      className="animate-pulse"
+      data-details-community-skeleton
+      role="status"
+    >
       <CardHeader>
-        <CardTitle
-          asChild
-          className={`text-2xl text-balance ${styles.heading}`}
-        >
-          <h2>Community</h2>
-        </CardTitle>
+        <div className="h-7 w-40 rounded bg-slate-200" />
       </CardHeader>
-      <CardContent className="flex items-center gap-3 text-sm text-slate-700">
-        <Spinner aria-hidden="true" />
-        <p>Loading Community…</p>
+      <CardContent className="flex flex-col gap-3">
+        <div className="h-4 w-full rounded bg-slate-100" />
+        <div className="h-4 w-4/5 rounded bg-slate-100" />
+        <div className="h-20 rounded-lg bg-slate-100" />
       </CardContent>
     </Card>
   );

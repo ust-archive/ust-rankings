@@ -8,6 +8,7 @@ import {
   courseRankingQuery,
   InvalidCourseRankingQueryError,
 } from "@/app/rankings/course-query";
+import { RankingCardSkeletons } from "@/app/rankings/ranking-card-skeleton";
 import { RankingControls } from "@/app/rankings/ranking-controls";
 import { RankingResultCard } from "@/app/rankings/ranking-result-card";
 import { RankingPagination } from "@/app/rankings/ranking-results";
@@ -20,7 +21,6 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Spinner } from "@/components/ui/spinner";
 import {
   cachedCourseRankings,
   queryCourseRankingPages,
@@ -215,15 +215,7 @@ export function CourseRankingsPage({
         terms={terms}
       />
       {current.loading && !rankings ? (
-        <Alert aria-live="polite" className="p-6">
-          <div className="flex items-center gap-3">
-            <Spinner aria-hidden="true" />
-            <h2 className="text-xl font-bold">Loading Course rankings…</h2>
-          </div>
-          <AlertDescription>
-            Catalog and Ranking data are loading in this tab.
-          </AlertDescription>
-        </Alert>
+        <RankingCardSkeletons entity="Course" />
       ) : current.error === "invalid" ? (
         <RankingAlert
           message={current.message ?? "The ranking query is invalid."}
@@ -246,23 +238,25 @@ export function CourseRankingsPage({
             {rankings.results.map((result) => (
               <RankingResultCard key={result.courseCode} result={result} />
             ))}
-            <RankingPagination
-              fallbackHref={
-                rankings.nextCursor
-                  ? nextPageHref(
-                      searchParams,
-                      rankings.nextCursor,
-                      rankings.population.termCode,
-                      restoredPages,
-                    )
-                  : undefined
-              }
-              initialNextCursor={rankings.nextCursor}
-              initialPages={restoredPages}
-              initialResultCount={rankings.results.length}
-              key={JSON.stringify(query)}
-              query={query as RankingsQuery}
-            />
+            {!current.loading ? (
+              <RankingPagination
+                fallbackHref={
+                  rankings.nextCursor
+                    ? nextPageHref(
+                        searchParams,
+                        rankings.nextCursor,
+                        rankings.population.termCode,
+                        restoredPages,
+                      )
+                    : undefined
+                }
+                initialNextCursor={rankings.nextCursor}
+                initialPages={restoredPages}
+                initialResultCount={rankings.results.length}
+                key={JSON.stringify(query)}
+                query={query as RankingsQuery}
+              />
+            ) : null}
           </ol>
         ) : rankings.unrankedMatchCount > 0 ? (
           <RankingEmpty>
