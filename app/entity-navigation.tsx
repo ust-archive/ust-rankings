@@ -62,7 +62,7 @@ export function EntityLink({
       return undefined;
     if (preparation.current?.href === props.href)
       return preparation.current.promise;
-    router.prefetch(props.href);
+    router.prefetch(navigationHref ?? props.href);
     const promise = import("@/lib/browser-query/client")
       .then(({ preloadPublicQuery }) =>
         preloadPublicQuery(props.href as string),

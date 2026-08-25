@@ -9,7 +9,6 @@ import { EntityLink } from "@/app/entity-navigation";
 import { instructorPath } from "@/app/instructors/routes";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Spinner } from "@/components/ui/spinner";
 import {
   cachedScheduleDetails,
   queryScheduleDetails,
@@ -122,6 +121,26 @@ export function BrowserScheduleReviewComposer({
   );
 }
 
+function ScheduleDetailsLoading({ title }: { title: string }) {
+  return (
+    <Card
+      aria-label={`Loading ${title}`}
+      className="animate-pulse"
+      data-details-schedule-skeleton
+      role="status"
+    >
+      <CardHeader>
+        <div className="h-7 w-48 max-w-full rounded bg-slate-200" />
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="h-5 w-2/3 rounded bg-slate-100" />
+        <div className="h-4 w-full rounded bg-slate-100" />
+        <div className="h-4 w-4/5 rounded bg-slate-100" />
+      </CardContent>
+    </Card>
+  );
+}
+
 export function BrowserScheduleDetails({ entity }: { entity: ScheduleEntity }) {
   const input = useMemo(() => entity, [entity]);
   const cached = cachedScheduleDetails(input);
@@ -145,10 +164,15 @@ export function BrowserScheduleDetails({ entity }: { entity: ScheduleEntity }) {
   }, [input]);
   if (state.loading)
     return (
-      <Alert aria-live="polite">
-        <Spinner aria-hidden="true" />
-        <AlertDescription>Loading Schedule…</AlertDescription>
-      </Alert>
+      <ScheduleDetailsLoading
+        title={
+          entity.type === "instructor"
+            ? "Classes"
+            : entity.type === "class"
+              ? "Class Details"
+              : "Offerings & Classes"
+        }
+      />
     );
   if (!state.schedule)
     return (
@@ -241,7 +265,10 @@ export function BrowserScheduleDetails({ entity }: { entity: ScheduleEntity }) {
                 </p>
               ) : null}
               {offering.classes.map((item) => (
-                <div className="text-sm" key={item.classNumber}>
+                <div
+                  className="flex flex-col gap-1 text-sm"
+                  key={item.classNumber}
+                >
                   <EntityLink
                     className="font-medium"
                     href={coursePath(
@@ -253,26 +280,6 @@ export function BrowserScheduleDetails({ entity }: { entity: ScheduleEntity }) {
                   >
                     {item.courseCode} {item.section} ({item.classNumber})
                   </EntityLink>
-                  <p className="text-slate-600">
-                    {item.enrollment}/{item.capacity} enrolled · {item.waitlist}{" "}
-                    waitlisted · {item.classType} ·{" "}
-                    {item.open ? "Open" : "Closed"}
-                  </p>
-                  {item.meetings.map((meeting) => (
-                    <p className="text-slate-600" key={JSON.stringify(meeting)}>
-                      {meeting.weekday} {meeting.timeFrom ?? "TBA"}–
-                      {meeting.timeTo ?? "TBA"} · {meeting.room || "Room TBA"}
-                      {meeting.roomCode ? ` (${meeting.roomCode})` : ""} ·{" "}
-                      {meeting.dateFrom ?? "Dates TBA"}
-                      {meeting.dateTo ? `–${meeting.dateTo}` : ""}
-                    </p>
-                  ))}
-                  {item.reservations.map((reservation) => (
-                    <p className="text-slate-600" key={reservation.name}>
-                      {reservation.name}: {reservation.enrollment}/
-                      {reservation.quota}
-                    </p>
-                  ))}
                   {[
                     ...new Map(
                       item.meetings

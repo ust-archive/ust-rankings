@@ -45,10 +45,10 @@ test("direct Course Offering and Class URLs preserve Community while Schedule re
   await expect(
     page.getByRole("heading", { name: "Offerings & Classes" }),
   ).toBeVisible();
-  await expect(page.getByText(/waitlisted · LEC/)).toBeVisible();
-  await expect(page.getByText(/Room 101|Room 102/).first()).toBeVisible();
-  await expect(page.getByText(/2025-09-01–2025-11-30/).first()).toBeVisible();
-  await expect(page.getByText("COMP majors: 20/40")).toBeVisible();
+  await expect(page.getByText(/waitlisted · LEC/)).toHaveCount(0);
+  await expect(page.getByText(/Room 101|Room 102/)).toHaveCount(0);
+  await expect(page.getByText(/2025-09-01–2025-11-30/)).toHaveCount(0);
+  await expect(page.getByText("COMP majors: 20/40")).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: "Alpha Instructor" }),
   ).toBeVisible();

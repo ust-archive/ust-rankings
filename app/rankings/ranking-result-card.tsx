@@ -73,7 +73,7 @@ export function RankingResultCard({
         className="group block touch-manipulation rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950"
         href={cardPresentation.href}
         navigationHref={navigationHref}
-        prefetch={false}
+        prefetch
         style={{ textDecoration: "none" }}
       >
         <Card className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 bg-white p-4 transition-shadow motion-reduce:transition-none hover:border-slate-300 hover:shadow-md group-focus-visible:border-slate-400 sm:gap-5 sm:p-6">

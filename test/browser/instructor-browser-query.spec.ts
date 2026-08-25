@@ -47,6 +47,33 @@ test.afterEach(async ({ request }) => {
   }
 });
 
+test("Instructor Ranking skeletons match card height", async ({ page }) => {
+  await page.route(
+    `${dataOrigin}/**/instructor-ratings.parquet`,
+    async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      await route.continue();
+    },
+  );
+  await page.goto("/rankings/instructors");
+  const loading = page.getByRole("status", {
+    name: "Loading Instructor rankings",
+  });
+  const skeleton = loading.locator("[data-ranking-card-skeleton]").first();
+  await expect(skeleton).toBeVisible();
+  const skeletonHeight = await skeleton.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
+  const rankings = page.getByRole("list", { name: "Instructor rankings" });
+  await expect(rankings).toBeVisible();
+  const cardHeight = await rankings
+    .getByRole("link")
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().height);
+  expect(skeletonHeight).toBeGreaterThanOrEqual(cardHeight);
+  expect(skeletonHeight - cardHeight).toBeLessThanOrEqual(0.5);
+});
+
 test("Instructor Rankings use the pinned worker and lazy Course artifacts", async ({
   page,
 }) => {
@@ -70,6 +97,25 @@ test("Instructor Rankings use the pinned worker and lazy Course artifacts", asyn
   expect(names).toContain("relation.parquet");
   expect(names).not.toContain("course-ratings.parquet");
   expect([...names].some((name) => name?.startsWith("schedule-"))).toBe(false);
+});
+
+test("Instructor filters do not reuse the previous pagination cursor", async ({
+  page,
+}) => {
+  await page.goto("/rankings/instructors?term=2510&activity=all");
+  await expect(
+    page.getByRole("list", { name: "Instructor rankings" }).getByRole("link"),
+  ).toHaveCount(100);
+  await page
+    .getByPlaceholder(/Search for instructors/)
+    .fill("Alpha Instructor");
+  await expect(
+    page.getByText(/Showing 2 Instructor ranking results/),
+  ).toBeAttached();
+  await expect(page.getByText("All 2 rankings loaded.")).toBeAttached();
+  await expect(page.getByText("More rankings could not be loaded")).toHaveCount(
+    0,
+  );
 });
 
 test("Instructor details retain identity history, corrections, relations, and zero-sample Rank", async ({

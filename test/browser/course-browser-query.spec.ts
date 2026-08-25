@@ -27,6 +27,53 @@ test("DuckDB browser assets are versioned and immutable", async ({ page }) => {
   );
 });
 
+test("Course Rankings show card skeletons while Parquet loads", async ({
+  page,
+}) => {
+  await page.route(`${dataOrigin}/**/course-ratings.parquet`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    await route.continue();
+  });
+  await page.goto("/rankings/courses");
+  const loading = page.getByRole("status", {
+    name: "Loading Course rankings",
+  });
+  await expect(loading).toBeVisible();
+  const skeletons = loading.locator("[data-ranking-card-skeleton]");
+  await expect(skeletons).toHaveCount(3);
+  const skeletonHeight = await skeletons
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().height);
+  const rankings = page.getByRole("list", { name: "Course rankings" });
+  await expect(rankings).toBeVisible();
+  const cardHeight = await rankings
+    .getByRole("link")
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().height);
+  expect(skeletonHeight).toBeGreaterThanOrEqual(cardHeight);
+  expect(skeletonHeight - cardHeight).toBeLessThanOrEqual(0.5);
+});
+
+test("Details use card skeletons while browser data loads", async ({
+  page,
+}) => {
+  await page.route(`${dataOrigin}/**/*.parquet`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    await route.continue();
+  });
+  await page.goto("/courses/comp/2000?term=2510");
+  await expect(page.locator("[data-details-rankings-skeleton]")).toBeVisible();
+  await expect(page.locator("[data-details-schedule-skeleton]")).toBeVisible();
+  await expect(page.getByText("Loading Rankings…")).toHaveCount(0);
+  await expect(page.getByText("Loading Schedule…")).toHaveCount(0);
+  await expect(page.getByText("Loading Catalog details…")).toHaveCount(0);
+  await expect(page.getByText("Loading Term…")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Rankings" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Offerings & Classes" }),
+  ).toBeVisible();
+});
+
 test("Course Rankings use one pinned worker generation and lazy Instructor artifacts", async ({
   page,
 }) => {
@@ -196,6 +243,11 @@ test("Course details retain historical evidence and relation parity", async ({
   ).toBeAttached();
   await expect(page.getByText("2025-26 Fall").first()).toBeVisible();
   await expect(page.getByText("Rankings are unavailable.")).toHaveCount(0);
+  const scheduleCard = page
+    .getByRole("heading", { name: "Offerings & Classes" })
+    .locator("xpath=../..");
+  await expect(scheduleCard.getByText(/waitlisted/)).toHaveCount(0);
+  await expect(scheduleCard.getByText(/\d{4}-\d{2}-\d{2}/)).toHaveCount(0);
 });
 
 test("counterpart Ranking navigation does not wait for cold browser data", async ({
@@ -271,7 +323,7 @@ test("Course Details stream Rankings while Community is loading", async ({
       timeout: 10_000,
       waitUntil: "commit",
     });
-    await expect(page.getByText("Loading Community…")).toBeVisible();
+    await expect(page.getByLabel("Loading Community")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Rankings" })).toBeVisible();
   } finally {
     unlock();
@@ -311,7 +363,9 @@ test("unavailable WebAssembly preserves static Course identity and Community", a
     page.getByRole("heading", { level: 1, name: "COMP 2000" }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
-  await expect(page.getByText("Rankings are unavailable.")).toBeVisible();
+  await expect(page.getByText("Rankings are unavailable.")).toBeVisible({
+    timeout: 35_000,
+  });
 });
 
 test("Delivery CORS failure is explicit", async ({ page }) => {

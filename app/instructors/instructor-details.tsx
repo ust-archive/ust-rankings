@@ -450,9 +450,8 @@ export function InstructorDetails({
             ? `ITSC ${identity.instructor.itsc}`
             : undefined
         }
-        termName={
-          termLoading ? "Loading Term…" : rankingTermName(selectedTermCode)
-        }
+        termLoading={termLoading}
+        termName={termLoading ? undefined : rankingTermName(selectedTermCode)}
         title={identity.instructor.canonicalName}
         transitionName={instructorTitleTransitionName(identity.instructor.uuid)}
       />

@@ -172,9 +172,7 @@ export function CourseDetails({
   const title =
     currentOffering?.title ??
     rankings?.course.title ??
-    (detailsLoading
-      ? "Loading Catalog details…"
-      : "Catalog details unavailable");
+    "Catalog details unavailable";
   const termNames = new Map(
     offerings.map((offering) => [offering.termCode, offering.termName]),
   );
@@ -340,14 +338,14 @@ export function CourseDetails({
       <DetailsHeader
         description={currentOffering?.description}
         eyebrow="Course"
-        subtitle={title}
+        subtitle={detailsLoading ? undefined : title}
+        subtitleLoading={detailsLoading}
+        termLoading={detailsLoading && !evidenceTermCode}
         termName={
           termNames.get(evidenceTermCode ?? "") ??
           (evidenceTermCode
             ? rankingTermName(evidenceTermCode)
-            : detailsLoading
-              ? "Loading Term…"
-              : rankingTermName())
+            : rankingTermName())
         }
         title={`${coursePrefix} ${courseNumber}`}
         transitionName={courseTitleTransitionName(coursePrefix, courseNumber)}
