@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   type CourseRankingSearchParams,
@@ -102,6 +102,7 @@ export function CourseRankingsPage({
   preference: RankingPreference;
   schemes: ReadonlyArray<CommonCoreSchemeDefinition>;
 }) {
+  const router = useRouter();
   const currentSearchParams = useSearchParams();
   const searchParams = useMemo(
     () => rankingSearchParams(currentSearchParams) as CourseRankingSearchParams,
@@ -174,9 +175,10 @@ export function CourseRankingsPage({
   const current = state.key === queryKey ? state : { ...state, loading: true };
   const rankings = current.rankings;
   useEffect(() => {
-    if (rankings)
-      void preloadPublicQuery("/rankings/instructors").catch(() => undefined);
-  }, [rankings]);
+    if (!rankings) return;
+    router.prefetch("/rankings/instructors");
+    void preloadPublicQuery("/rankings/instructors").catch(() => undefined);
+  }, [rankings, router]);
   const preset = selectedPreset(
     rankings,
     query ?? ({ entity: "course" } as RankingsQuery & { entity: "course" }),
