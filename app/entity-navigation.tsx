@@ -7,6 +7,7 @@ import {
   type ComponentProps,
   startTransition,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
@@ -37,39 +38,67 @@ function NavigationProgress({ preloading = false }: { preloading?: boolean }) {
 
 export function EntityLink({
   children,
+  onFocus,
+  onMouseEnter,
   onNavigate,
+  onPointerDown,
   ref,
   transitionTypes,
   ...props
 }: EntityLinkProps) {
   const router = useRouter();
+  const preparation = useRef<{
+    href: string;
+    promise: Promise<string>;
+  } | null>(null);
   const [preloading, setPreloading] = useState(false);
   const types = transitionTypes ?? ["nav-forward"];
+
+  function prepare() {
+    if (
+      typeof props.href !== "string" ||
+      (!props.href.startsWith("/courses/") &&
+        !props.href.startsWith("/instructors/") &&
+        !props.href.startsWith("/rankings/courses") &&
+        !props.href.startsWith("/rankings/instructors"))
+    )
+      return undefined;
+    if (preparation.current?.href === props.href)
+      return preparation.current.promise;
+    router.prefetch(props.href);
+    const promise = import("@/lib/browser-query/client")
+      .then(({ preloadPublicQuery }) =>
+        preloadPublicQuery(props.href as string),
+      )
+      .then((destination) => {
+        router.prefetch(destination);
+        return destination;
+      });
+    preparation.current = { href: props.href, promise };
+    return promise;
+  }
+
   return (
     <Link
       {...props}
-      prefetch={props.prefetch ?? false}
+      onFocus={(event) => {
+        onFocus?.(event);
+        void prepare()?.catch(() => undefined);
+      }}
+      onMouseEnter={(event) => {
+        onMouseEnter?.(event);
+        void prepare()?.catch(() => undefined);
+      }}
       onNavigate={(event) => {
         onNavigate?.(event);
         pendingEntityNavigation = true;
-        if (
-          typeof props.href !== "string" ||
-          (!props.href.startsWith("/courses/") &&
-            !props.href.startsWith("/instructors/") &&
-            !props.href.startsWith("/rankings/courses") &&
-            !props.href.startsWith("/rankings/instructors"))
-        )
-          return;
+        const prepared = prepare();
+        if (!prepared) return;
         event.preventDefault();
         setPreloading(true);
-        let destination = props.href as string;
-        void import("@/lib/browser-query/client")
-          .then(({ preloadPublicQuery }) => preloadPublicQuery(destination))
-          .then((href) => {
-            destination = href;
-          })
-          .catch(() => undefined)
-          .finally(() => {
+        void prepared
+          .catch(() => props.href as string)
+          .then((destination) => {
             setPreloading(false);
             startTransition(() => {
               router.push(destination, {
@@ -79,6 +108,11 @@ export function EntityLink({
             });
           });
       }}
+      onPointerDown={(event) => {
+        onPointerDown?.(event);
+        void prepare()?.catch(() => undefined);
+      }}
+      prefetch={false}
       ref={ref}
       transitionTypes={types}
     >

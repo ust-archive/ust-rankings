@@ -1,4 +1,10 @@
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
+import type { ReviewEditorOptions } from "@/app/courses/course-reviews";
+import {
+  DetailsCommunity,
+  DetailsCommunityLoading,
+} from "@/app/courses/details-sections";
 import { loadReviews } from "@/app/courses/review-data";
 import {
   BrowserInstructorDetails,
@@ -13,9 +19,11 @@ import {
   normalizeInstructorRoute,
 } from "@/app/instructors/routes";
 import { loadSignals } from "@/app/signals/data";
+import { SignalControls } from "@/app/signals/signal-controls";
 import { reviewOrder } from "@/lib/contributions/review-order";
 import { normalizeInstructorUuid } from "@/lib/instructor-identity";
 import { readRankingPreferenceQuery } from "@/lib/rankings/preference-server";
+import type { InstructorIdentityLookup } from "@/lib/rankings/server";
 import {
   currentServerIndex,
   ServerIndexUnavailableError,
@@ -43,6 +51,82 @@ function pinnedInstructor(searchParams: InstructorRouteSearchParams) {
 
 export default function InstructorPage(props: InstructorPageProps) {
   return renderInstructorPage(props);
+}
+
+async function InstructorCommunity({
+  browserInstructorKey,
+  identity,
+  query,
+  rankingPreference,
+  readReviews,
+  requestedTermCode,
+}: {
+  browserInstructorKey: string;
+  identity: InstructorIdentityLookup;
+  query: InstructorRouteSearchParams;
+  rankingPreference: Awaited<ReturnType<typeof readRankingPreferenceQuery>>;
+  readReviews: typeof loadReviews;
+  requestedTermCode?: string;
+}) {
+  const [signalResult, reviewResult] = await Promise.all([
+    loadSignals({
+      type: "instructor",
+      instructorUuid: identity.instructor.uuid,
+    }),
+    readReviews({
+      type: "instructor",
+      instructorUuids: identity.familyUuids,
+      order: reviewOrder(query.order),
+    }),
+  ]);
+  const editor: ReviewEditorOptions = {
+    courses: [],
+    contexts: [],
+    instructors: [
+      {
+        instructorUuid: identity.instructor.uuid,
+        name: identity.instructor.canonicalName,
+      },
+    ],
+  };
+  return (
+    <DetailsCommunity
+      editor={editor}
+      error={
+        typeof query.reviewError === "string" ? query.reviewError : undefined
+      }
+      published={query.review === "published"}
+      reviewComposer={
+        <BrowserInstructorReviewComposer
+          classes={[]}
+          fallbackIdentity={identity}
+          instructorKey={browserInstructorKey}
+          rankingConfiguration={rankingPreference}
+          requestedTermCode={requestedTermCode}
+        />
+      }
+      reviews={reviewResult.reviews}
+      reviewsUnavailable={reviewResult.unavailable}
+      signedIn={reviewResult.signedIn}
+      signalControls={
+        <SignalControls
+          error={
+            typeof query.signalError === "string"
+              ? query.signalError
+              : undefined
+          }
+          signedIn={reviewResult.signedIn}
+          summary={signalResult.summary}
+          target={{
+            type: "instructor",
+            instructorUuid: identity.instructor.uuid,
+          }}
+          unavailable={signalResult.unavailable}
+        />
+      }
+      withdrawn={query.review === "withdrawn"}
+    />
+  );
 }
 
 export async function renderInstructorPage(
@@ -89,17 +173,6 @@ export async function renderInstructorPage(
 
   const browserInstructorKey =
     pinned?.instructorUuid ?? identity.instructor.uuid;
-  const [signalResult, reviewResult] = await Promise.all([
-    loadSignals({
-      type: "instructor",
-      instructorUuid: identity.instructor.uuid,
-    }),
-    readReviews({
-      type: "instructor",
-      instructorUuids: identity.familyUuids,
-      order: reviewOrder(query.order),
-    }),
-  ]);
   const classes = [];
   const selectedTermCode = undefined;
   return (
@@ -109,6 +182,18 @@ export async function renderInstructorPage(
       instructorKey={browserInstructorKey}
       rankingConfiguration={rankingPreference}
       requestedTermCode={selectedTerm}
+      communityContent={
+        <Suspense fallback={<DetailsCommunityLoading />}>
+          <InstructorCommunity
+            browserInstructorKey={browserInstructorKey}
+            identity={identity}
+            query={query}
+            rankingPreference={rankingPreference}
+            readReviews={readReviews}
+            requestedTermCode={selectedTerm}
+          />
+        </Suspense>
+      }
       identityContent={
         <BrowserInstructorIdentity
           fallbackIdentity={identity}
@@ -124,16 +209,6 @@ export async function renderInstructorPage(
           requestedTermCode={selectedTerm}
         />
       }
-      reviewComposerContent={
-        <BrowserInstructorReviewComposer
-          classes={classes}
-          fallbackIdentity={identity}
-          instructorKey={browserInstructorKey}
-          rankingConfiguration={rankingPreference}
-          requestedTermCode={selectedTerm}
-          selectedTermCode={selectedTermCode}
-        />
-      }
       classes={classes}
       scheduleUnavailable={false}
       selectedTermCode={selectedTermCode}
@@ -144,19 +219,6 @@ export async function renderInstructorPage(
           rankingConfiguration={rankingPreference}
           requestedTermCode={selectedTerm}
         />
-      }
-      signals={signalResult.summary}
-      signalsUnavailable={signalResult.unavailable}
-      signedIn={reviewResult.signedIn}
-      signalError={
-        typeof query.signalError === "string" ? query.signalError : undefined
-      }
-      reviews={reviewResult.reviews}
-      reviewsUnavailable={reviewResult.unavailable}
-      reviewPublished={query.review === "published"}
-      reviewWithdrawn={query.review === "withdrawn"}
-      reviewError={
-        typeof query.reviewError === "string" ? query.reviewError : undefined
       }
     />
   );

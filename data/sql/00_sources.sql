@@ -63,6 +63,10 @@ FROM (
 WHERE event_rank = 1 AND status = 'ACTIVE';
 
 -- Reviews have a stable content hash, which is their logical event-stream key.
+-- PfqhaZDjE3u5fJvqPS0Gd1u5FNsJ8lnc claims LAI, Priscilla taught LANG 1402
+-- in 2025-26 Fall, but no such Instructor appears anywhere in the ust-cq
+-- roster history. Keep the source archive intact and exclude this false review
+-- only from derived Ranking evidence.
 CREATE OR REPLACE TABLE source_reviews AS
 SELECT * EXCLUDE (event_rank)
 FROM (
@@ -74,7 +78,9 @@ FROM (
     ) AS event_rank
   FROM read_parquet(getvariable('reviews'))
 )
-WHERE event_rank = 1 AND status = 'ACTIVE';
+WHERE event_rank = 1
+  AND status = 'ACTIVE'
+  AND hash <> 'PfqhaZDjE3u5fJvqPS0Gd1u5FNsJ8lnc';
 
 -- Instructor SFQ has no single row id. The survey dimensions and measurements
 -- form its semantic identity; acquisition SHA/date fields identify snapshots

@@ -330,10 +330,12 @@ export type InstructorDetailsProps = {
   communityInstructorUuid?: string;
   rankingsContent?: ReactNode;
   reviewComposerContent?: ReactNode;
+  communityContent?: ReactNode;
   teachingContent?: ReactNode;
   classes: ScheduleClass[];
   scheduleUnavailable: boolean;
   selectedTermCode?: string;
+  termLoading?: boolean;
   invalidTermCode?: string;
   signals?: SignalSummary;
   signalsUnavailable?: boolean;
@@ -353,10 +355,12 @@ export function InstructorDetails({
   communityInstructorUuid = identity.instructor.uuid,
   rankingsContent,
   reviewComposerContent,
+  communityContent,
   teachingContent,
   classes,
   scheduleUnavailable,
   selectedTermCode,
+  termLoading = false,
   invalidTermCode,
   signals,
   signalsUnavailable = true,
@@ -446,7 +450,9 @@ export function InstructorDetails({
             ? `ITSC ${identity.instructor.itsc}`
             : undefined
         }
-        termName={rankingTermName(selectedTermCode)}
+        termName={
+          termLoading ? "Loading Term…" : rankingTermName(selectedTermCode)
+        }
         title={identity.instructor.canonicalName}
         transitionName={instructorTitleTransitionName(identity.instructor.uuid)}
       />
@@ -462,37 +468,39 @@ export function InstructorDetails({
               selectedTermCode={selectedTermCode}
             />
           )}
-          <DetailsCommunity
-            editor={reviewEditor}
-            error={reviewError}
-            published={reviewPublished}
-            reviewComposer={
-              reviewComposerContent ?? (
-                <ReviewComposer
-                  {...reviewEditor}
-                  displayTermNames
-                  initialInstructorUuid={identity.instructor.uuid}
-                  initialTermCode={selectedTermCode}
+          {communityContent ?? (
+            <DetailsCommunity
+              editor={reviewEditor}
+              error={reviewError}
+              published={reviewPublished}
+              reviewComposer={
+                reviewComposerContent ?? (
+                  <ReviewComposer
+                    {...reviewEditor}
+                    displayTermNames
+                    initialInstructorUuid={identity.instructor.uuid}
+                    initialTermCode={selectedTermCode}
+                  />
+                )
+              }
+              reviews={reviews}
+              reviewsUnavailable={reviewsUnavailable}
+              signedIn={signedIn}
+              signalControls={
+                <SignalControls
+                  error={signalError}
+                  signedIn={signedIn}
+                  summary={signals}
+                  target={{
+                    type: "instructor",
+                    instructorUuid: communityInstructorUuid,
+                  }}
+                  unavailable={signalsUnavailable}
                 />
-              )
-            }
-            reviews={reviews}
-            reviewsUnavailable={reviewsUnavailable}
-            signedIn={signedIn}
-            signalControls={
-              <SignalControls
-                error={signalError}
-                signedIn={signedIn}
-                summary={signals}
-                target={{
-                  type: "instructor",
-                  instructorUuid: communityInstructorUuid,
-                }}
-                unavailable={signalsUnavailable}
-              />
-            }
-            withdrawn={reviewWithdrawn}
-          />
+              }
+              withdrawn={reviewWithdrawn}
+            />
+          )}
         </section>
         <aside className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-6">
           {teachingContent ?? (

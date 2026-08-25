@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   type InstructorRankingSearchParams,
@@ -26,6 +27,7 @@ import {
 import type { RankingPreference } from "@/lib/rankings/preference";
 import { rankingTermName } from "@/lib/rankings/presentation";
 import type { RankingsPage, RankingsQuery } from "@/lib/rankings/server";
+import { rankingSearchParams } from "@/lib/rankings/url";
 
 function nextPageHref(
   searchParams: InstructorRankingSearchParams,
@@ -80,11 +82,15 @@ function EmptyRankings({ children }: { children: ReactNode }) {
 
 export function InstructorRankingsPage({
   preference,
-  searchParams,
 }: {
   preference: RankingPreference;
-  searchParams: InstructorRankingSearchParams;
 }) {
+  const currentSearchParams = useSearchParams();
+  const searchParams = useMemo(
+    () =>
+      rankingSearchParams(currentSearchParams) as InstructorRankingSearchParams,
+    [currentSearchParams],
+  );
   const parsed = useMemo(() => {
     try {
       return {

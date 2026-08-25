@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import type { PublicReview } from "@/lib/contributions/reviews";
 import {
   gradeColor,
@@ -418,6 +419,25 @@ export function ExpandCardTrigger({
         />
       </Button>
     </CollapsibleTrigger>
+  );
+}
+
+export function DetailsCommunityLoading() {
+  return (
+    <Card aria-busy="true">
+      <CardHeader>
+        <CardTitle
+          asChild
+          className={`text-2xl text-balance ${styles.heading}`}
+        >
+          <h2>Community</h2>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex items-center gap-3 text-sm text-slate-700">
+        <Spinner aria-hidden="true" />
+        <p>Loading Community…</p>
+      </CardContent>
+    </Card>
   );
 }
 

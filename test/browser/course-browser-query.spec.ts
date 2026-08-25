@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import postgres from "postgres";
+import { browserContributionsUrl } from "../browser-contributions-fixture";
 
 const dataOrigin = "http://127.0.0.1:17832";
 
@@ -121,6 +123,32 @@ test("Course filtering preserves population Rank and searches Instructor relatio
   await expect(links.first()).toContainText("#3");
 });
 
+test("Course search updates the Worker locally without an RSC navigation", async ({
+  page,
+}) => {
+  await page.goto("/rankings/courses?term=2510");
+  await expect(
+    page.getByRole("list", { name: "Course rankings" }),
+  ).toBeVisible();
+  const rscRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.headers().rsc === "1") rscRequests.push(request.url());
+  });
+
+  await page
+    .getByRole("searchbox", { name: "Search Courses" })
+    .fill("COMP 1000");
+  expect(new URL(page.url()).searchParams.get("q")).toBe("COMP 1000");
+  const results = page
+    .getByRole("list", { name: "Course rankings" })
+    .getByRole("link");
+  await expect(results).toHaveCount(1);
+  await expect(results).toContainText("COMP 1000");
+  expect(
+    rscRequests.filter((url) => new URL(url).pathname === "/rankings/courses"),
+  ).toEqual([]);
+});
+
 test("custom Course weights preserve server scoring", async ({ page }) => {
   await page.goto(
     "/rankings/courses?term=2510&preset=custom&weight_content=2&activity=all&q=COMP%201000",
@@ -142,6 +170,9 @@ test("Course details retain historical evidence and relation parity", async ({
     page.getByRole("heading", { level: 1, name: "COMP 2000" }),
   ).toBeVisible();
   await expect(page.getByText("Loading Rankings…")).toHaveCount(0);
+  await expect(page.getByText("Catalog details unavailable")).toHaveCount(0);
+  await expect(page.getByText("Term name unavailable")).toHaveCount(0);
+  await expect(page.getByText("Updated Course title").first()).toBeVisible();
   await page.getByRole("heading", { name: "Rankings" }).click();
   await expect(page.getByRole("row", { name: /Content 0\.25/ })).toBeVisible();
   await expect(
@@ -151,11 +182,11 @@ test("Course details retain historical evidence and relation parity", async ({
   await expect(page.getByText("Rankings are unavailable.")).toHaveCount(0);
 });
 
-test("Course navigation retains the current page until a cold browser query resolves", async ({
+test("Course navigation prefetches without leaving an empty destination", async ({
   browserName,
   page,
 }) => {
-  await page.route(`${dataOrigin}/latest.json`, async (route) => {
+  await page.route(`${dataOrigin}/**/course-ratings.parquet`, async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 750));
     await route.continue();
   });
@@ -164,11 +195,18 @@ test("Course navigation retains the current page until a cold browser query reso
     name: "Instructor rankings",
   });
   await expect(instructorList).toBeVisible();
-
-  const navigation = page
+  const link = page
     .getByRole("navigation", { name: "Primary navigation" })
-    .getByRole("link", { name: "Courses" })
-    .click();
+    .getByRole("link", { name: "Courses" });
+  const prefetched = page.waitForRequest((request) =>
+    request.url().endsWith("/course-ratings.parquet"),
+  );
+  await link.hover();
+  await prefetched;
+  await expect(page).toHaveURL(/\/rankings\/instructors/);
+  await expect(instructorList).toBeVisible();
+
+  const navigation = link.click();
   if (browserName === "chromium")
     await expect(
       page.getByRole("progressbar", { name: "Loading page" }),
@@ -180,6 +218,43 @@ test("Course navigation retains the current page until a cold browser query reso
   await expect(
     page.getByRole("list", { name: "Course rankings" }),
   ).toBeVisible();
+});
+
+test("Course Details stream Rankings while Community is loading", async ({
+  page,
+}) => {
+  test.skip(
+    !process.env.TEST_CONTRIBUTIONS_POSTGRES_URL,
+    "requires the browser contributions database",
+  );
+  const sql = postgres(browserContributionsUrl(), { max: 1 });
+  let unlock = () => {};
+  const unlocked = new Promise<void>((resolve) => {
+    unlock = resolve;
+  });
+  let locked = () => {};
+  const acquired = new Promise<void>((resolve) => {
+    locked = resolve;
+  });
+  const blocker = sql.begin(async (transaction) => {
+    await transaction.unsafe("LOCK TABLE reviews IN ACCESS EXCLUSIVE MODE");
+    locked();
+    await unlocked;
+  });
+  await acquired;
+  try {
+    await page.goto("/courses/comp/2000?community-stream=1", {
+      timeout: 10_000,
+      waitUntil: "commit",
+    });
+    await expect(page.getByText("Loading Community…")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Rankings" })).toBeVisible();
+  } finally {
+    unlock();
+    await blocker;
+    await sql.end();
+  }
+  await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
 });
 
 test("blocked Worker creation preserves static Course identity and Community", async ({
