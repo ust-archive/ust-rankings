@@ -178,6 +178,12 @@ test("Instructor navigation keeps the tab-pinned generation across Server Index 
     .filter({ hasText: "Alpha Instructor" })
     .first();
   await expect(instructor).toBeVisible();
+  const destination = new URL(
+    (await instructor.getAttribute("href")) ?? "",
+    page.url(),
+  );
+  expect(destination.searchParams.get("_generation")).toBe(pinnedGeneration);
+  expect(destination.searchParams.get("_instructor")).toBe(alphaUuid);
 
   restoreGeneration = pinnedGeneration;
   await activateFixtureServerIndex(request, browserRolloverGeneration);
