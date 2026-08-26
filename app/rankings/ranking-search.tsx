@@ -14,7 +14,7 @@ export function RankingSearch({
   entity,
   initialValue,
 }: {
-  entity: "course" | "instructor";
+  entity: "course" | "instructor" | "waitlist";
   initialValue: string;
 }) {
   const pathname = usePathname();
@@ -36,7 +36,12 @@ export function RankingSearch({
     );
   }
 
-  const label = entity === "course" ? "Search Courses" : "Search Instructors";
+  const label =
+    entity === "course"
+      ? "Search Courses"
+      : entity === "instructor"
+        ? "Search Instructors"
+        : "Search Waitlist Evidence Courses";
   return (
     <InputGroup className="h-12 min-w-0 flex-1 rounded-full bg-white">
       <InputGroupAddon className="cursor-default">
@@ -52,7 +57,9 @@ export function RankingSearch({
         placeholder={
           entity === "course"
             ? "Search for courses by name / instructor / etc…"
-            : "Search for instructors by name / course / etc…"
+            : entity === "instructor"
+              ? "Search for instructors by name / course / etc…"
+              : "Search for courses by code / title / Class…"
         }
         spellCheck={false}
         type="search"
