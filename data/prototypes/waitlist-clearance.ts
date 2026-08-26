@@ -3,6 +3,17 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DuckDBInstance } from "@duckdb/node-api";
+import {
+  bundleTrajectories,
+  formatHeadline,
+  interval as jointInterval,
+  jointOutcome,
+  prediction as jointPrediction,
+  planForBundle,
+  tuneJoint,
+  type WaitlistModelName,
+  type WaitlistTrajectory,
+} from "../src/waitlist-evidence.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const output = resolve(root, "data/prototypes/waitlist-clearance-report.md");
@@ -62,6 +73,7 @@ type Features = {
 };
 type Trajectory = {
   activationFeatures?: Features;
+  association?: number;
   course: string;
   deadlineFeatures?: Features;
   deadlineWait?: number;
@@ -216,6 +228,7 @@ async function extractTrajectories(): Promise<Trajectory[]> {
     }));
   } finally {
     connection.closeSync();
+    instance.closeSync();
   }
 }
 
@@ -558,6 +571,7 @@ async function currentHuma(): Promise<CurrentClass> {
     };
   } finally {
     connection.closeSync();
+    instance.closeSync();
   }
 }
 
@@ -597,7 +611,39 @@ function selfCheck(): void {
     throw new Error("movement self-check failed");
 }
 
+function jointSelfCheck(): void {
+  const make = (
+    section: string,
+    type: string,
+    waits: number[],
+  ): WaitlistTrajectory => ({
+    association: 1,
+    course: "TEST1000",
+    events: waits.map((wait, index) => ({ at: index * 3_600_000, wait })),
+    section,
+    term: "2410",
+    type,
+  });
+  const bundle = bundleTrajectories([
+    make("L1", "LEC", [0, 30, 10]),
+    make("LA1", "LAB", [0, 12, 2]),
+  ])[0];
+  const favorable = bundle
+    ? jointOutcome(bundle, { LAB: 5, LEC: 20 }, { LAB: 0, LEC: 0 })
+    : undefined;
+  const failed = bundle
+    ? jointOutcome(bundle, { LAB: 11, LEC: 20 }, { LAB: 0, LEC: 0 })
+    : undefined;
+  if (!favorable?.success || failed?.success !== false)
+    throw new Error("joint movement self-check failed");
+}
+
 selfCheck();
+jointSelfCheck();
+if (process.argv.includes("--self-check")) {
+  console.log("Waitlist single-Class and joint self-checks passed");
+  process.exit(0);
+}
 console.error("Extracting historical queue trajectories…");
 const trajectories = await extractTrajectories();
 const current = await currentHuma();
@@ -617,6 +663,43 @@ const modelResults = (
   ] as ModelName[]
 ).map((model) => ({ model, ...tune(trajectories, model) }));
 const retained = [...modelResults].sort((a, b) => a.brier - b.brier)[0];
+
+const bundles = bundleTrajectories(trajectories as WaitlistTrajectory[]);
+const jointModelResults = (
+  [
+    "global",
+    "baseline",
+    "capacity",
+    "instructor",
+    "meeting",
+    "all",
+  ] as WaitlistModelName[]
+).map((model) => ({ model, ...tuneJoint(bundles, model) }));
+const retainedJoint = [...jointModelResults].sort(
+  (a, b) =>
+    (Number.isNaN(a.brier) ? Number.POSITIVE_INFINITY : a.brier) -
+    (Number.isNaN(b.brier) ? Number.POSITIVE_INFINITY : b.brier),
+)[0];
+if (!retainedJoint) throw new Error("No joint model result was available");
+const jointBundle = bundles.find((bundle) => bundle.components.length >= 2);
+const jointCandidate = jointBundle
+  ? planForBundle(jointBundle, 25, 24)
+  : undefined;
+const jointPredictionResult = jointCandidate
+  ? jointPrediction(
+      bundles,
+      jointCandidate,
+      retainedJoint.model,
+      retainedJoint.weight,
+    )
+  : undefined;
+const jointUncertainty = jointPredictionResult
+  ? jointInterval(
+      jointPredictionResult.estimate,
+      jointPredictionResult.local.length,
+      retainedJoint.weight,
+    )
+  : undefined;
 
 const target: Trajectory = {
   activationFeatures: current,
@@ -688,6 +771,22 @@ const modelRows = modelResults.map(
 const tuningRows = retained.scores.map(
   (result) => `| ${result.weight} | ${result.brier.toFixed(4)} |`,
 );
+const jointModelRows = jointModelResults.map(
+  (result) =>
+    `| ${result.model} | ${result.weight} | ${Number.isNaN(result.brier) ? "n/a" : result.brier.toFixed(4)} | ${result.exact}/${result.total} | ${result.model === retainedJoint.model ? "Retain" : "Reject"} |`,
+);
+const jointPattern = jointBundle?.pattern ?? "none";
+const jointHeadline =
+  jointPredictionResult && jointUncertainty
+    ? formatHeadline(
+        jointPredictionResult.estimate,
+        jointPredictionResult.local.length,
+        retainedJoint.weight,
+      )
+    : "Unavailable (no two-component Course Offering in the source)";
+const jointCalculation = jointPredictionResult
+  ? `(${jointPredictionResult.successes} + ${retainedJoint.weight} × ${jointPredictionResult.prior.toFixed(3)}) ÷ (${jointPredictionResult.local.length} + ${retainedJoint.weight}) = ${jointPredictionResult.estimate.toFixed(3)}`
+  : "not available";
 
 const report = `# Waitlist queue-evidence prototype
 
@@ -723,6 +822,23 @@ Prior-strength tuning for the retained candidate:
 ${tuningRows.join("\n")}
 
 This tuning is provisional: Fall 2026 remains incomplete and is reserved as the next untouched evaluation Term.
+
+## Joint Waitlist Plan demonstration
+
+The joint model groups required Classes from one historical Course Offering before calculating outcomes. A favorable sample requires every selected component to clear its own position; marginal component percentages are never multiplied.
+
+- Historical component pattern: **${jointPattern}**
+- Joint headline for position 25 on each component: **${jointHeadline}**
+- Exact Course-Offering histories: **${jointPredictionResult?.local.length ?? 0}** (${jointPredictionResult?.successes ?? 0} favorable); broader same-pattern histories: **${jointPredictionResult?.priorSamples ?? 0}** at **${jointPredictionResult ? percent(jointPredictionResult.prior) : "n/a"}**
+- Separate Queue Activation clocks are used for each component. Section labels remain identifiers only.
+- Joint smoothing calculation: \`${jointCalculation}\`.
+- Self-check favorable plan: LEC position 20 + LAB position 5 is favorable. Self-check failed plan: the same LEC position 20 + LAB position 11 is not favorable, because AND semantics require both components to clear.
+
+| Candidate matching | Prior weight | Brier | Local-match coverage | Decision |
+| --- | ---: | ---: | ---: | --- |
+${jointModelRows.join("\n")}
+
+The retained joint candidate is **${retainedJoint.model}** with prior weight **${retainedJoint.weight}**. Exact smoothing is independent of the single-Class provisional result above.
 
 ## Demonstration: HUMA 1710 L1, position 25
 

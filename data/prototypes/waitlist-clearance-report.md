@@ -47,6 +47,28 @@ Prior-strength tuning for the retained candidate:
 
 This tuning is provisional: Fall 2026 remains incomplete and is reserved as the next untouched evaluation Term.
 
+## Joint Waitlist Plan demonstration
+
+The joint model groups required Classes from one historical Course Offering before calculating outcomes. A favorable sample requires every selected component to clear its own position; marginal component percentages are never multiplied.
+
+- Historical component pattern: **LEC+TUT**
+- Joint headline for position 25 on each component: **52% ±37 pp (16–89%)**
+- Exact Course-Offering histories: **0** (0 favorable); broader same-pattern histories: **111** at **52%**
+- Separate Queue Activation clocks are used for each component. Section labels remain identifiers only.
+- Joint smoothing calculation: `(0 + 4 × 0.523) ÷ (0 + 4) = 0.523`.
+- Self-check favorable plan: LEC position 20 + LAB position 5 is favorable. Self-check failed plan: the same LEC position 20 + LAB position 11 is not favorable, because AND semantics require both components to clear.
+
+| Candidate matching | Prior weight | Brier | Local-match coverage | Decision |
+| --- | ---: | ---: | ---: | --- |
+| global | 32 | 0.2027 | 3573/3592 | Reject |
+| baseline | 4 | 0.1976 | 1508/3592 | Retain |
+| capacity | 2 | 0.1986 | 758/3592 | Reject |
+| instructor | 2 | 0.1985 | 1049/3592 | Reject |
+| meeting | 4 | 0.2017 | 231/3592 | Reject |
+| all | 4 | 0.2019 | 121/3592 | Reject |
+
+The retained joint candidate is **baseline** with prior weight **4**. Exact smoothing is independent of the single-Class provisional result above.
+
 ## Demonstration: HUMA 1710 L1, position 25
 
 Current Schedule snapshot (2026-08-26T13:14:44.014Z):
