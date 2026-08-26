@@ -90,7 +90,7 @@ export async function generateBrowserFixtures() {
       includeScheduleCourse: true,
       sameNameAssociations: true,
     }),
-    makeScheduleGeneration(scheduleRoot),
+    makeScheduleGeneration(scheduleRoot, undefined, scheduleFixtureSha, true),
   ]);
   const rankingDeliveryDirectory = resolve(rankingDeliveryRoot, fixtureSha);
   await cp(rankingDirectory, rankingDeliveryDirectory, { recursive: true });

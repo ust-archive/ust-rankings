@@ -115,11 +115,15 @@ export const WAITLIST_TUNING_POSITIONS = [5, 25, 50] as const;
 export const WAITLIST_TUNING_HOURS = [12, 24, 48] as const;
 export const WAITLIST_PRIOR_WEIGHTS = [0.5, 1, 2, 4, 8, 16, 32] as const;
 
-function termInfo(term: string) {
+export function waitlistTerm(term: string) {
   return WAITLIST_TERMS[term as WaitlistTermCode];
 }
 
-function season(term: string): WaitlistSeason | undefined {
+function termInfo(term: string) {
+  return waitlistTerm(term);
+}
+
+export function waitlistSeason(term: string): WaitlistSeason | undefined {
   const value = termInfo(term)?.season;
   return value === "Fall" || value === "Spring" ? value : undefined;
 }
@@ -152,7 +156,7 @@ export function bundleTrajectories(
   const bundles: WaitlistBundle[] = [];
   for (const group of groups.values()) {
     const first = group[0];
-    const groupSeason = first ? season(first.term) : undefined;
+    const groupSeason = first ? waitlistSeason(first.term) : undefined;
     if (!first || !groupSeason) continue;
     const byType = new Map<string, WaitlistTrajectory>();
     for (const trajectory of [...group].sort((left, right) =>
@@ -232,7 +236,9 @@ export function outcome(
   return { ...result, success: result.net >= position };
 }
 
-function activationAt(trajectory: WaitlistTrajectory): number | undefined {
+export function activationAt(
+  trajectory: WaitlistTrajectory,
+): number | undefined {
   return trajectory.events.find((event) => event.wait > 0)?.at;
 }
 

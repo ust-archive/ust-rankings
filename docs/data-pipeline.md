@@ -122,9 +122,9 @@ while keeping only the browser contract columns; Instructor names remain in
 
 `waitlist-evidence.parquet` is a narrow, aggregate-only projection of the
 pinned Schedule `classes_legacy.parquet` relation. It retains supported
-Fall/Spring observations, component type derived from the section identifier,
-capacity/enrollment/wait counts, timestamps, reservations, schedules, and
-source order. It contains no student identity or individual queue outcome.
+Fall/Spring observations, component type derived from the section identifier, Course Offering
+association, capacity/enrollment/wait counts, timestamps, reservations,
+schedules, and source order. It contains no student identity or individual queue outcome.
 When a delivery input lacks `classes_legacy.parquet`, the derivation emits a
 schema-only artifact and marks `waitlistEvidence.sourceAvailable` false; it
 does not infer historical evidence from the current snapshot.

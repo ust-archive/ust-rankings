@@ -34,9 +34,39 @@ import type {
   ScheduleMeeting,
   SchedulePage,
 } from "@/lib/schedule/server";
-import { DELIVERY_CDN_BASE_URL } from "@/lib/server-index-contract";
+import {
+  DELIVERY_CDN_BASE_URL,
+  WAITLIST_EVIDENCE_FILENAME,
+} from "@/lib/server-index-contract";
+import {
+  activationAt,
+  bundleTrajectories,
+  formatHeadline,
+  interval,
+  prediction,
+  WAITLIST_MODEL_VERSION,
+  WAITLIST_PRIOR_WEIGHTS,
+  WAITLIST_TUNING_HOURS,
+  WAITLIST_TUNING_POSITIONS,
+  type WaitlistBundle,
+  type WaitlistFeatures,
+  type WaitlistPlanCandidate,
+  type WaitlistTrajectory,
+  waitlistSeason,
+  waitlistTerm,
+} from "@/lib/waitlist-evidence";
 import { type PinnedDelivery, resolveDeliveryManifest } from "./manifest";
-import type { CourseQueryOperations } from "./protocol";
+import type {
+  CourseQueryOperations,
+  WaitlistClass,
+  WaitlistComponentResult,
+  WaitlistCourseOffering,
+  WaitlistPlanInput,
+  WaitlistPlanResult,
+  WaitlistSearchResult,
+  WaitlistTerm,
+  WaitlistUnsupportedReason,
+} from "./protocol";
 
 const asset = (name: string) =>
   new URL(`/duckdb/1.32.0/${name}`, self.location.origin).href;
@@ -169,6 +199,7 @@ type Runtime = {
   identities: Map<string, InstructorIdentity>;
   identityHistory: ReturnType<typeof buildInstructorIdentityHistory>;
   cache: Map<string, unknown>;
+  waitlistRegistered: boolean;
 };
 
 export class QueryError extends Error {
@@ -295,13 +326,15 @@ async function createRuntimeCandidate(
   const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
   lifecycle.db = db;
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-  for (const [name, artifact] of Object.entries(delivery.manifest.artifacts))
+  for (const [name, artifact] of Object.entries(delivery.manifest.artifacts)) {
+    if (name === WAITLIST_EVIDENCE_FILENAME) continue;
     await db.registerFileURL(
       name,
       artifact.url,
       duckdb.DuckDBDataProtocol.HTTP,
       false,
     );
+  }
   const connection = await db.connect();
   lifecycle.connection = connection;
   await connection.query("SET threads = 1");
@@ -441,6 +474,7 @@ async function createRuntimeCandidate(
     identities,
     identityHistory,
     cache: new Map(),
+    waitlistRegistered: false,
   };
 }
 
@@ -469,6 +503,33 @@ function runtime(baseUrl: string) {
   pinnedBaseUrl ??= baseUrl;
   runtimePromise ??= createRuntime(baseUrl);
   return runtimePromise;
+}
+
+async function waitlistRuntime(baseUrl: string) {
+  const value = await runtime(baseUrl);
+  if (value.waitlistRegistered) return value;
+  const artifact =
+    value.delivery.manifest.artifacts[WAITLIST_EVIDENCE_FILENAME];
+  if (!value.delivery.manifest.waitlistEvidence.sourceAvailable || !artifact)
+    throw new QueryError(
+      "unavailable",
+      "Public Waitlist Evidence data is unavailable.",
+    );
+  try {
+    await value.db.registerFileURL(
+      WAITLIST_EVIDENCE_FILENAME,
+      artifact.url,
+      duckdb.DuckDBDataProtocol.HTTP,
+      false,
+    );
+    value.waitlistRegistered = true;
+    return value;
+  } catch {
+    throw new QueryError(
+      "unavailable",
+      "Public Waitlist Evidence data is unavailable.",
+    );
+  }
 }
 
 function resolvedIdentity(runtime: Runtime, uuid: string) {
@@ -1321,7 +1382,8 @@ const scheduleOfferingSql = `
     course.corequisite, course.exclusion, course.attributes,
     class.section, class.number class_number, class.role, class.type class_type,
     class.association, class.remarks, class.capacity, class.enroll, class.wait,
-    class.consent, class.open, class.schedules, class.reservations
+    class.consent, class.open, class.schedules, class.reservations,
+    class.timestamp::VARCHAR observed_at
   FROM courses course JOIN classes class
     ON course.term_num = class.term_num AND course.id = class.course_id`;
 
@@ -1637,6 +1699,843 @@ async function scheduleDetails(
   return { type: "class", ...scheduleClass };
 }
 
+type WaitlistCurrentClass = {
+  value: WaitlistClass;
+  association?: number;
+  courseCode: string;
+  observedAtMs?: number;
+  features: WaitlistFeatures;
+};
+
+type WaitlistHistoricalData = {
+  bundles: WaitlistBundle[];
+  byClass: Map<string, WaitlistTrajectory>;
+  byComponent: Map<string, WaitlistTrajectory[]>;
+};
+
+function sameNumbers(left: readonly number[], right: readonly number[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+function waitlistMetadata(runtime: Runtime) {
+  const metadata = runtime.delivery.manifest.waitlistEvidence;
+  if (
+    metadata.schemaVersion !== 1 ||
+    metadata.modelVersion !== WAITLIST_MODEL_VERSION ||
+    metadata.sourceArtifact !== "classes_legacy.parquet" ||
+    metadata.sourceRevision !== runtime.delivery.manifest.sources.schedule ||
+    metadata.selectedModel !== "baseline" ||
+    !Number.isFinite(metadata.priorWeight) ||
+    metadata.priorWeight <= 0 ||
+    metadata.timing.activation !== "first-positive-wait" ||
+    metadata.timing.normalEnrollment !== "official-registry" ||
+    metadata.timing.addDrop !== "official-registry" ||
+    !sameNumbers(
+      metadata.timing.sinceActivationBucketsHours,
+      WAITLIST_TUNING_HOURS,
+    ) ||
+    metadata.timing.sinceEnrollmentBucketDays !== 2 ||
+    metadata.timing.untilAddDropBucketDays !== 3 ||
+    !sameNumbers(metadata.tuning.positions, WAITLIST_TUNING_POSITIONS) ||
+    !sameNumbers(metadata.tuning.activationHours, WAITLIST_TUNING_HOURS) ||
+    !sameNumbers(metadata.tuning.priorWeights, WAITLIST_PRIOR_WEIGHTS) ||
+    metadata.tuning.holdout !== "whole-term" ||
+    metadata.uncertainty !== "estimated-bounded-margin-not-calibrated-interval"
+  )
+    throw new QueryError(
+      "unavailable",
+      "Public Waitlist Evidence metadata is unavailable.",
+    );
+  return metadata;
+}
+
+function waitlistTermValue(
+  runtime: Runtime,
+  termCode: string,
+  termNumber: number,
+  termName: string,
+): WaitlistTerm {
+  const info = waitlistTerm(termCode);
+  const season = waitlistSeason(termCode);
+  const declared = waitlistMetadata(runtime).terms.find(
+    (term) => term.termCode === termCode,
+  );
+  if (!info || !season || !declared)
+    throw new QueryError(
+      "unavailable",
+      "Public Waitlist Evidence metadata is unavailable.",
+    );
+  if (
+    declared.season !== season ||
+    declared.enrollmentStart !== info.enrollmentStart ||
+    declared.addDropEnd !== info.addDropEnd ||
+    declared.source !== info.source
+  )
+    throw new QueryError(
+      "unavailable",
+      "Public Waitlist Evidence metadata is unavailable.",
+    );
+  return {
+    termNumber,
+    termCode,
+    termName,
+    season,
+    enrollmentStart: info.enrollmentStart,
+    addDropEnd: info.addDropEnd,
+    source: info.source,
+  };
+}
+
+async function currentWaitlistTerm(runtime: Runtime): Promise<WaitlistTerm> {
+  const [row] = await queryRows(
+    runtime,
+    `SELECT term_num, term_code, term_name
+     FROM read_parquet('schedule-courses.parquet')
+     GROUP BY ALL ORDER BY term_num DESC LIMIT 1`,
+  );
+  const code = row ? scheduleText(row.term_code) : "";
+  if (!row || !waitlistSeason(code) || !waitlistTerm(code))
+    throw new QueryError(
+      "unavailable",
+      row
+        ? `Current Term ${scheduleText(row.term_name) || code} is unsupported.`
+        : "No current Term is available.",
+    );
+  return waitlistTermValue(
+    runtime,
+    code,
+    number(row.term_num),
+    scheduleText(row.term_name),
+  );
+}
+
+function waitlistRecords(
+  value: unknown,
+  label: string,
+): Record<string, unknown>[] {
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw new QueryError("unavailable", `Invalid Waitlist ${label}.`);
+    }
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some((item) => !item || typeof item !== "object")
+  )
+    throw new QueryError("unavailable", `Invalid Waitlist ${label}.`);
+  return parsed as Record<string, unknown>[];
+}
+
+function waitlistTimestamp(value: unknown): { iso?: string; ms?: number } {
+  if (value === null || value === undefined || value === "") return {};
+  const micros =
+    value && typeof value === "object" && "micros" in value
+      ? Number((value as { micros: unknown }).micros)
+      : undefined;
+  const ms =
+    micros !== undefined
+      ? micros / 1_000
+      : value instanceof Date
+        ? value.getTime()
+        : Date.parse(String(value));
+  if (!Number.isFinite(ms))
+    throw new QueryError("unavailable", "Invalid Waitlist observation time.");
+  return { iso: new Date(ms).toISOString(), ms };
+}
+
+function waitlistCount(value: unknown, label: string) {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0)
+    throw new QueryError("unavailable", `Invalid Waitlist ${label}.`);
+  return parsed;
+}
+
+function waitlistBoolean(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (value === "true" || value === 1) return true;
+  if (value === "false" || value === 0 || value === null || value === undefined)
+    return false;
+  throw new QueryError("unavailable", "Invalid Waitlist boolean value.");
+}
+
+function waitlistInstructorKey(schedules: readonly Record<string, unknown>[]) {
+  return [
+    ...new Set(
+      schedules.flatMap((meeting) =>
+        (Array.isArray(meeting.instructors) ? meeting.instructors : []).flatMap(
+          (value) => {
+            const name = String(value).trim();
+            return name && name.toLowerCase() !== "tba" ? [name] : [];
+          },
+        ),
+      ),
+    ),
+  ]
+    .sort()
+    .join("|");
+}
+
+function waitlistMeetingKey(schedules: readonly Record<string, unknown>[]) {
+  return JSON.stringify(
+    schedules.map((meeting) => ({
+      weekday: meeting.weekday ?? null,
+      dateFrom: meeting.date_from ?? null,
+      dateTo: meeting.date_to ?? null,
+      timeFrom: meeting.time_from ?? null,
+      timeTo: meeting.time_to ?? null,
+      venue: meeting.venue ?? null,
+      venueName: meeting.venue_name ?? null,
+    })),
+  );
+}
+
+function waitlistFeatures(
+  capacity: number,
+  enrollment: number,
+  schedules: readonly Record<string, unknown>[],
+  reservations: readonly Record<string, unknown>[],
+): WaitlistFeatures {
+  return {
+    capacity,
+    enroll: enrollment,
+    instructor: waitlistInstructorKey(schedules),
+    meeting: waitlistMeetingKey(schedules),
+    reservationEnroll: reservations.reduce(
+      (sum, reservation) =>
+        sum +
+        waitlistCount(
+          reservation.enroll ?? reservation.enrollment,
+          "reservation enrollment",
+        ),
+      0,
+    ),
+    reservationQuota: reservations.reduce(
+      (sum, reservation) =>
+        sum + waitlistCount(reservation.quota, "reservation quota"),
+      0,
+    ),
+  };
+}
+
+function waitlistUnsupported(
+  runtime: Runtime,
+  reason: WaitlistUnsupportedReason,
+  message: string,
+  term?: WaitlistTerm,
+  course?: string,
+): WaitlistPlanResult {
+  return {
+    status: "unsupported",
+    generation: runtime.delivery.generation,
+    ...(term ? { term } : {}),
+    ...(course ? { course } : {}),
+    reason,
+    message,
+  };
+}
+
+function waitlistClassFromRow(
+  row: Row,
+  courseCode: string,
+): WaitlistCurrentClass {
+  const section = scheduleText(row.section).trim().toUpperCase();
+  const classType = scheduleText(row.class_type).trim().toUpperCase();
+  if (!section || !["LEC", "TUT", "LAB", "IND"].includes(classType))
+    throw new QueryError("unavailable", "Invalid Waitlist Class data.");
+  const schedules = waitlistRecords(row.schedules, "schedule data");
+  const reservations = waitlistRecords(row.reservations, "reservation data");
+  const capacity = waitlistCount(row.capacity, "capacity");
+  const enrollment = waitlistCount(row.enroll, "enrollment");
+  const waitlist = waitlistCount(row.wait, "waitlist");
+  const timestamp = waitlistTimestamp(row.observed_at);
+  const consent = waitlistBoolean(row.consent);
+  const open = waitlistBoolean(row.open);
+  const reservationValues = reservations.map((reservation) => ({
+    name: scheduleText(reservation.name),
+    quota: waitlistCount(reservation.quota, "reservation quota"),
+    enrollment: waitlistCount(
+      reservation.enroll ?? reservation.enrollment,
+      "reservation enrollment",
+    ),
+  }));
+  const reason = consent
+    ? "consent-required"
+    : !open
+      ? "inactive"
+      : waitlist <= 0
+        ? "non-waitlisted"
+        : !timestamp.iso
+          ? "missing-date"
+          : undefined;
+  const association =
+    row.association === null || row.association === undefined
+      ? undefined
+      : waitlistCount(row.association, "association");
+  return {
+    value: {
+      section,
+      classNumber: waitlistCount(row.class_number, "Class number"),
+      classType: classType as WaitlistClass["classType"],
+      capacity,
+      enrollment,
+      waitlist,
+      consent,
+      open,
+      ...(timestamp.iso ? { observedAt: timestamp.iso } : {}),
+      schedules,
+      reservations: reservationValues,
+      eligible: !reason,
+      ...(reason ? { unsupportedReason: reason } : {}),
+    },
+    association,
+    courseCode,
+    ...(timestamp.ms === undefined ? {} : { observedAtMs: timestamp.ms }),
+    features: waitlistFeatures(capacity, enrollment, schedules, reservations),
+  };
+}
+
+function waitlistOfferings(rows: readonly Row[]): WaitlistCourseOffering[] {
+  const offerings = new Map<string, WaitlistCourseOffering>();
+  for (const row of rows) {
+    const prefix = scheduleText(row.prefix).trim().toUpperCase();
+    const courseNumber = scheduleText(row.course_number).trim().toUpperCase();
+    const courseCode = `${prefix} ${courseNumber}`;
+    if (!prefix || !courseNumber)
+      throw new QueryError("unavailable", "Invalid Waitlist Course data.");
+    const offering = offerings.get(courseCode) ?? {
+      coursePrefix: prefix,
+      courseNumber,
+      courseCode,
+      title: scheduleText(row.title),
+      classes: [],
+    };
+    const current = waitlistClassFromRow(row, courseCode);
+    offering.classes.push(current.value);
+    offerings.set(courseCode, offering);
+  }
+  return [...offerings.values()]
+    .map((offering) => ({
+      ...offering,
+      classes: offering.classes.sort((left, right) =>
+        left.section.localeCompare(right.section),
+      ),
+    }))
+    .sort((left, right) => left.courseCode.localeCompare(right.courseCode));
+}
+
+function waitlistSearchText(offering: WaitlistCourseOffering) {
+  return [
+    offering.courseCode,
+    offering.title,
+    ...offering.classes.flatMap((item) => [
+      item.section,
+      String(item.classNumber),
+      item.classType,
+    ]),
+  ]
+    .join(" ")
+    .toLocaleLowerCase();
+}
+
+async function waitlistClassStatus(
+  runtime: Runtime,
+  termCode: string,
+  coursePrefix: string,
+  courseNumber: string,
+  section: string,
+) {
+  const rows = await queryRows(
+    runtime,
+    `WITH courses AS (
+       SELECT * EXCLUDE (rn) FROM (
+         SELECT *, row_number() OVER (PARTITION BY term_num, id ORDER BY timestamp DESC) rn
+         FROM read_parquet('schedule-courses.parquet')
+       ) WHERE rn = 1
+     ), classes AS (
+       SELECT * EXCLUDE (rn) FROM (
+         SELECT *, row_number() OVER (PARTITION BY term_num, course_id, section ORDER BY timestamp DESC) rn
+         FROM read_parquet('schedule-classes.parquet')
+       ) WHERE rn = 1
+     )
+     SELECT classes.status::VARCHAR AS status
+     FROM courses JOIN classes
+       ON courses.term_num = classes.term_num AND courses.id = classes.course_id
+     WHERE courses.term_code = ? AND upper(courses.prefix) = ? AND upper(courses.number) = ?
+       AND upper(classes.section) = ?
+     ORDER BY classes.timestamp DESC LIMIT 1`,
+    [termCode, coursePrefix, courseNumber, section],
+  );
+  return rows[0]?.status ? String(rows[0].status) : undefined;
+}
+
+async function waitlistSearch(
+  runtime: Runtime,
+  input: CourseQueryOperations["waitlistSearch"]["input"],
+): Promise<WaitlistSearchResult> {
+  const search =
+    input?.search === undefined
+      ? undefined
+      : typeof input.search === "string"
+        ? input.search.trim()
+        : (() => {
+            throw new QueryError("invalid", "Invalid Waitlist search.");
+          })();
+  if (search && search.length > 100)
+    throw new QueryError("invalid", "Search is limited to 100 characters.");
+  const limitValue = input?.limit ?? 100;
+  const limit =
+    typeof limitValue === "number" ? Math.floor(limitValue) : Number.NaN;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+    throw new QueryError("invalid", "Invalid Waitlist page size.");
+  const term = await currentWaitlistTerm(runtime);
+  const rows = await queryRows(
+    runtime,
+    `${scheduleOfferingSql} WHERE course.term_code = ? ORDER BY course.prefix, course.number, class.section`,
+    [term.termCode],
+  );
+  const offerings = waitlistOfferings(rows);
+  const results = search
+    ? offerings.filter((offering) =>
+        waitlistSearchText(offering).includes(search.toLocaleLowerCase()),
+      )
+    : offerings;
+  return {
+    generation: runtime.delivery.generation,
+    term,
+    ...(search ? { search } : {}),
+    total: results.length,
+    results: results.slice(0, limit),
+  };
+}
+
+function waitlistHistoricalData(rows: readonly Row[]): WaitlistHistoricalData {
+  const grouped = new Map<
+    string,
+    {
+      trajectory: WaitlistTrajectory;
+      features: Array<{ at: number; value: WaitlistFeatures }>;
+    }
+  >();
+  for (const row of rows) {
+    const term = scheduleText(row.term_code);
+    const course = scheduleText(row.course_code).trim().toUpperCase();
+    const section = scheduleText(row.section).trim().toUpperCase();
+    const type = scheduleText(row.class_type).trim().toUpperCase();
+    if (
+      !term ||
+      !course ||
+      !section ||
+      !["LEC", "TUT", "LAB", "IND"].includes(type)
+    )
+      throw new QueryError("unavailable", "Invalid Waitlist history data.");
+    if (waitlistBoolean(row.consent)) continue;
+    const timestamp = waitlistTimestamp(row.observed_at);
+    if (timestamp.ms === undefined)
+      throw new QueryError("unavailable", "Waitlist history is missing dates.");
+    const schedules = waitlistRecords(row.schedules, "schedule data");
+    const reservations = waitlistRecords(row.reservations, "reservation data");
+    const capacity = waitlistCount(row.capacity, "capacity");
+    const enrollment = waitlistCount(row.enrollment, "enrollment");
+    const wait = waitlistCount(row.waitlist, "waitlist");
+    const features = waitlistFeatures(
+      capacity,
+      enrollment,
+      schedules,
+      reservations,
+    );
+    const association =
+      row.association === null || row.association === undefined
+        ? undefined
+        : waitlistCount(row.association, "association");
+    const groupKey = `${term}\0${course}\0${association === undefined ? "offering" : association}\0${type}\0${section}`;
+    const value = grouped.get(groupKey) ?? {
+      trajectory: {
+        association,
+        course,
+        events: [],
+        section,
+        term,
+        type,
+      },
+      features: [],
+    };
+    value.trajectory.events.push({ at: timestamp.ms, wait });
+    value.features.push({ at: timestamp.ms, value: features });
+    grouped.set(groupKey, value);
+  }
+  const trajectories = [...grouped.values()].map(({ trajectory, features }) => {
+    const paired = trajectory.events
+      .map((event, index) => ({ event, features: features[index] }))
+      .sort(
+        (left, right) =>
+          left.event.at - right.event.at ||
+          left.features.at - right.features.at,
+      );
+    trajectory.events = paired.map(({ event }) => event);
+    const firstPositive = paired.findIndex(({ event }) => event.wait > 0);
+    trajectory.activationFeatures =
+      firstPositive < 0 ? undefined : paired[firstPositive]?.features.value;
+    return trajectory;
+  });
+  const byClass = new Map(
+    trajectories.map((trajectory) => [
+      `${trajectory.term}\0${trajectory.course}\0${trajectory.association === undefined ? "offering" : trajectory.association}\0${trajectory.type}\0${trajectory.section}`,
+      trajectory,
+    ]),
+  );
+  const byComponent = new Map<string, WaitlistTrajectory[]>();
+  for (const trajectory of trajectories) {
+    const key = `${trajectory.term}\0${trajectory.course}\0${trajectory.association === undefined ? "offering" : trajectory.association}\0${trajectory.type}`;
+    const values = byComponent.get(key) ?? [];
+    values.push(trajectory);
+    byComponent.set(key, values);
+  }
+  return { bundles: bundleTrajectories(trajectories), byClass, byComponent };
+}
+
+function waitlistCandidate(
+  term: WaitlistTerm,
+  courseCode: string,
+  selected: readonly WaitlistCurrentClass[],
+  positions: ReadonlyMap<string, number>,
+  historical: WaitlistHistoricalData,
+): WaitlistPlanCandidate {
+  const activationAtValues: Record<string, number> = {};
+  const activationHours: Record<string, number> = {};
+  const features: Record<string, WaitlistFeatures> = {};
+  const positionValues: Record<string, number> = {};
+  for (const item of selected) {
+    const type = item.value.classType;
+    const position = positions.get(item.value.section) as number;
+    const association =
+      item.association === undefined ? "offering" : item.association;
+    const key = `${term.termCode}\0${courseCode}\0${association}\0${type}\0${item.value.section}`;
+    const componentKey = `${term.termCode}\0${courseCode}\0${association}\0${type}`;
+    const trajectory =
+      historical.byClass.get(key) ??
+      historical.byComponent.get(componentKey)?.[0];
+    const observedAt = item.observedAtMs;
+    const activation = trajectory ? activationAt(trajectory) : undefined;
+    if (observedAt === undefined) continue;
+    const at = activation ?? observedAt;
+    activationAtValues[type] = at;
+    activationHours[type] = Math.max(0, (observedAt - at) / 3_600_000);
+    features[type] = item.features;
+    positionValues[type] = position;
+  }
+  return {
+    activationAt: activationAtValues,
+    activationHours,
+    course: courseCode,
+    features,
+    pattern: [...new Set(selected.map((item) => item.value.classType))]
+      .sort()
+      .join("+"),
+    positions: positionValues,
+    season: term.season,
+    term: term.termCode,
+  };
+}
+
+async function waitlistPlan(
+  runtime: Runtime,
+  input: WaitlistPlanInput,
+): Promise<WaitlistPlanResult> {
+  const termCode =
+    typeof input?.termCode === "string" ? input.termCode.trim() : "";
+  const coursePrefix =
+    typeof input?.coursePrefix === "string"
+      ? input.coursePrefix.trim().toUpperCase()
+      : "";
+  const courseNumber =
+    typeof input?.courseNumber === "string"
+      ? input.courseNumber.trim().toUpperCase()
+      : "";
+  if (!/^\d{4}$/.test(termCode))
+    throw new QueryError("invalid", "Invalid Waitlist Term Code.");
+  if (
+    !/^[A-Z]{2,8}$/.test(coursePrefix) ||
+    !/^[0-9]{3,5}(?:[A-Z]|-[0-9]{3,5})?$/.test(courseNumber)
+  )
+    throw new QueryError("invalid", "Invalid Waitlist Course.");
+  if (!Array.isArray(input?.classes) || input.classes.length === 0)
+    throw new QueryError(
+      "invalid",
+      "A Waitlist Plan needs one required Class.",
+    );
+  const entries = input.classes.map((item) => ({
+    section:
+      typeof item?.section === "string"
+        ? item.section.trim().toUpperCase()
+        : "",
+    position: typeof item?.position === "number" ? item.position : Number.NaN,
+  }));
+  if (
+    entries.some(
+      ({ section, position }) =>
+        !section || !Number.isSafeInteger(position) || position <= 0,
+    )
+  )
+    throw new QueryError(
+      "invalid",
+      "Waitlist positions must be positive integers.",
+    );
+  if (new Set(entries.map(({ section }) => section)).size !== entries.length)
+    return waitlistUnsupported(
+      runtime,
+      "duplicate-class",
+      "A Waitlist Plan cannot repeat a Class.",
+    );
+  const requestedCourse = `${coursePrefix} ${courseNumber}`;
+  const term = await currentWaitlistTerm(runtime);
+  if (termCode !== term.termCode)
+    return waitlistUnsupported(
+      runtime,
+      "unsupported-term",
+      "Historical or unsupported Terms cannot be selected.",
+      term,
+      requestedCourse,
+    );
+  const rows = await queryRows(
+    runtime,
+    `${scheduleOfferingSql} WHERE course.term_code = ? AND upper(course.prefix) = ? AND upper(course.number) = ? ORDER BY class.section`,
+    [termCode, coursePrefix, courseNumber],
+  );
+  if (!rows.length)
+    return waitlistUnsupported(
+      runtime,
+      "class-not-found",
+      "The current Course Offering is unavailable.",
+      term,
+      requestedCourse,
+    );
+  const current = rows.map((row) => waitlistClassFromRow(row, requestedCourse));
+  const selected: WaitlistCurrentClass[] = [];
+  for (const entry of entries) {
+    const item = current.find(({ value }) => value.section === entry.section);
+    if (!item) {
+      const status = await waitlistClassStatus(
+        runtime,
+        termCode,
+        coursePrefix,
+        courseNumber,
+        entry.section,
+      );
+      return waitlistUnsupported(
+        runtime,
+        status === "INACTIVE" ? "inactive" : "class-not-found",
+        status === "INACTIVE"
+          ? `Class ${entry.section} is inactive.`
+          : `Class ${entry.section} is unavailable.`,
+        term,
+        requestedCourse,
+      );
+    }
+    if (!item.value.eligible)
+      return waitlistUnsupported(
+        runtime,
+        item.value.unsupportedReason as WaitlistUnsupportedReason,
+        `Class ${entry.section} is unsupported.`,
+        term,
+        requestedCourse,
+      );
+    if (entry.position > item.value.waitlist)
+      return waitlistUnsupported(
+        runtime,
+        "stale-position",
+        `Class ${entry.section} no longer has that queue position.`,
+        term,
+        requestedCourse,
+      );
+    selected.push(item);
+  }
+  if (
+    new Set(selected.map((item) => item.value.classType)).size !==
+    selected.length
+  )
+    return waitlistUnsupported(
+      runtime,
+      "duplicate-component",
+      "A Waitlist Plan cannot repeat a component type.",
+      term,
+      requestedCourse,
+    );
+  const metadata = waitlistMetadata(runtime);
+  const historyRows = await queryRows(
+    runtime,
+    `SELECT term_code, course_code, section, association, class_type, class_number,
+      capacity, enrollment, waitlist, consent, schedules, reservations,
+      observed_at::VARCHAR AS observed_at, source_order
+     FROM read_parquet('${WAITLIST_EVIDENCE_FILENAME}')
+     ORDER BY term_code, course_code, association, class_type, section, observed_at, source_order`,
+  );
+  const historical = waitlistHistoricalData(historyRows);
+  const candidate = waitlistCandidate(
+    term,
+    requestedCourse,
+    selected,
+    new Map(entries.map(({ section, position }) => [section, position])),
+    historical,
+  );
+  const training = historical.bundles.filter((bundle) => {
+    const info = waitlistTerm(bundle.term);
+    return (
+      bundle.term !== termCode &&
+      info !== undefined &&
+      Date.parse(info.addDropEnd) < Date.parse(term.addDropEnd)
+    );
+  });
+  const predicted = prediction(
+    training,
+    candidate,
+    "baseline",
+    metadata.priorWeight,
+  );
+  if (!predicted)
+    return waitlistUnsupported(
+      runtime,
+      "no-history",
+      "No comparable historical queue evidence is available.",
+      term,
+      requestedCourse,
+    );
+  const uncertainty = interval(
+    predicted.estimate,
+    predicted.local.length,
+    metadata.priorWeight,
+  );
+  const localComponentResults: WaitlistComponentResult[] = [];
+  for (const item of selected) {
+    const type = item.value.classType;
+    const outcomes = predicted.local
+      .map((result) => result.components[type])
+      .filter(Boolean);
+    const netValues = outcomes.map((result) => result.net);
+    const grossValues = outcomes.map((result) => result.gross);
+    const successes = outcomes.filter((result) => result.success).length;
+    const localStats = {
+      samples: outcomes.length,
+      successes,
+      ...(netValues.length
+        ? {
+            averageNetReduction:
+              netValues.reduce((a, b) => a + b, 0) / netValues.length,
+          }
+        : {}),
+      ...(grossValues.length
+        ? {
+            averageGrossExits:
+              grossValues.reduce((a, b) => a + b, 0) / grossValues.length,
+          }
+        : {}),
+      ...(netValues.length
+        ? {
+            minimumNetReduction: Math.min(...netValues),
+            maximumNetReduction: Math.max(...netValues),
+          }
+        : {}),
+    };
+    const capacities = training.flatMap((bundle) =>
+      bundle.components
+        .filter(({ type: componentType }) => componentType === type)
+        .flatMap(({ trajectory }) =>
+          trajectory.activationFeatures?.capacity === undefined
+            ? []
+            : [trajectory.activationFeatures.capacity],
+        ),
+    );
+    const largerCapacity = capacities.find(
+      (capacity) => capacity > item.value.capacity,
+    );
+    localComponentResults.push({
+      type,
+      section: item.value.section,
+      classNumber: item.value.classNumber,
+      position: entries.find(({ section }) => section === item.value.section)
+        ?.position as number,
+      ...(candidate.activationAt?.[type] === undefined
+        ? {}
+        : {
+            activationAt: new Date(candidate.activationAt[type]).toISOString(),
+          }),
+      ...(item.value.observedAt ? { observedAt: item.value.observedAt } : {}),
+      ...(candidate.activationHours?.[type] === undefined
+        ? {}
+        : { activationHours: candidate.activationHours[type] }),
+      current: {
+        capacity: item.value.capacity,
+        enrollment: item.value.enrollment,
+        waitlist: item.value.waitlist,
+        consent: item.value.consent,
+        open: item.value.open,
+        reservations: item.value.reservations,
+      },
+      historical: localStats,
+      capacityScenarios: [
+        { name: "current", capacity: item.value.capacity, status: "known" },
+        { name: "venue", status: "unknown" },
+        ...(largerCapacity
+          ? [
+              {
+                name: "historical-large" as const,
+                capacity: largerCapacity,
+                status: "known" as const,
+              },
+            ]
+          : [
+              { name: "historical-large" as const, status: "unknown" as const },
+            ]),
+      ],
+    });
+  }
+  return {
+    status: "supported",
+    generation: runtime.delivery.generation,
+    term,
+    course: requestedCourse,
+    model: metadata,
+    headline: formatHeadline(
+      predicted.estimate,
+      predicted.local.length,
+      metadata.priorWeight,
+    ),
+    estimate: predicted.estimate,
+    margin: uncertainty.margin,
+    range: { low: uncertainty.low, high: uncertainty.high },
+    exactHistoryCount: predicted.local.length,
+    broaderHistoryCount: predicted.priorSamples,
+    prior: {
+      rate: predicted.prior,
+      samples: predicted.priorSamples,
+      weight: metadata.priorWeight,
+      influence:
+        metadata.priorWeight / (predicted.local.length + metadata.priorWeight),
+    },
+    smoothing: {
+      successes: predicted.successes,
+      priorRate: predicted.prior,
+      priorWeight: metadata.priorWeight,
+      exactSamples: predicted.local.length,
+      numerator: predicted.successes + metadata.priorWeight * predicted.prior,
+      denominator: predicted.local.length + metadata.priorWeight,
+      estimate: predicted.estimate,
+    },
+    joint: { successes: predicted.successes, samples: predicted.local.length },
+    components: localComponentResults,
+    sourceObservationTime: selected
+      .map((item) => item.value.observedAt)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) as string,
+  };
+}
+
 export function deliveryBaseUrl() {
   return (
     process.env.NEXT_PUBLIC_DELIVERY_BASE_URL ?? DELIVERY_CDN_BASE_URL
@@ -1725,5 +2624,35 @@ export async function queryCourseDetails(
   } catch (error) {
     if (error instanceof QueryError) throw error;
     throw new QueryError("unavailable", "Public Course data is unavailable.");
+  }
+}
+
+export async function queryWaitlistSearch(
+  input: CourseQueryOperations["waitlistSearch"]["input"],
+  baseUrl = deliveryBaseUrl(),
+) {
+  try {
+    return await waitlistSearch(await runtime(baseUrl), input);
+  } catch (error) {
+    if (error instanceof QueryError) throw error;
+    throw new QueryError(
+      "unavailable",
+      "Public Waitlist Evidence data is unavailable.",
+    );
+  }
+}
+
+export async function queryWaitlistPlan(
+  input: CourseQueryOperations["waitlistPlan"]["input"],
+  baseUrl = deliveryBaseUrl(),
+) {
+  try {
+    return await waitlistPlan(await waitlistRuntime(baseUrl), input);
+  } catch (error) {
+    if (error instanceof QueryError) throw error;
+    throw new QueryError(
+      "unavailable",
+      "Public Waitlist Evidence data is unavailable.",
+    );
   }
 }

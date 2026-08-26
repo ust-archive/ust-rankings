@@ -26,6 +26,7 @@ export async function makeScheduleGeneration(
   root: string,
   malformation?: ScheduleFixtureVariant,
   sourceCommit = scheduleFixtureSha,
+  includeLegacy = false,
 ) {
   const directory = join(root, sourceCommit);
   await mkdir(directory, { recursive: true });
@@ -57,6 +58,7 @@ export async function makeScheduleGeneration(
     (100, '2510', '2025-26 Fall', 'c2', 'COMP', '2000', 'UGRD', 'Original title', 'Original description', 3, '', '', '', '', 'ACTIVE', '2025-01-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c2', 'COMP', '2000', 'UGRD', 'Updated Course title', 'Bounded search description', 3, '', '', '', '', 'ACTIVE', '2025-02-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c3', 'MATH', '1000', 'UGRD', 'Mathematics', 'Numbers', 4, '', '', '', '', 'ACTIVE', '2025-01-01T00:00:00Z'),
+    (100, '2510', '2025-26 Fall', 'c5', 'WAIT', '3000', 'UGRD', 'Waitlist Fixture', 'Queue evidence', 3, '', '', '', '', 'ACTIVE', '2025-01-01T00:00:00Z'),
     (99, '2430', '2024-25 Spring', 'c4', 'COMP', '2000', 'UGRD', 'Earlier Offering', 'Earlier', 3, '', '', '', '', 'ACTIVE', '2024-01-01T00:00:00Z')
   ) t(term_num, term_code, term_name, id, prefix, number, career, title, description, credits, previous, prerequisite, corequisite, exclusion, status, timestamp)`;
 
@@ -102,7 +104,10 @@ export async function makeScheduleGeneration(
     (100, '2510', '2025-26 Fall', 'c2', 'L1', 1001, 'E', 'LEC', 1, 'Bring a laptop', 80, 30, 0, false, true, ${latestSchedules}, 'ACTIVE', '2025-02-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c2', 'T1', 1002, 'N', 'TUT', 1, '', 20, 10, 0, false, true, [], 'ACTIVE', '2025-01-01T00:00:00Z'),
     (100, '2510', '2025-26 Fall', 'c2', 'T1', 1002, 'N', 'TUT', 1, '', 20, 10, 0, false, false, [], 'INACTIVE', '2025-02-01T00:00:00Z'),
-    (100, '2510', '2025-26 Fall', '${malformation === "orphan-class" ? "missing" : "c3"}', 'L1', 2001, 'E', 'LEC', 1, '', 60, 40, 0, false, true, [{weekday:'${malformation === "conflict" ? "Wed" : "Fri"}', date_from:${malformation === "conflict" ? "'2025-09-01'" : "NULL"}::DATE, date_to:${malformation === "conflict" ? "'2025-11-30'" : "NULL"}::DATE, time_from:'${malformation === "conflict" ? "11:30" : "13:00"}'::TIME, time_to:'${malformation === "conflict" ? "12:20" : "13:50"}'::TIME, venue:'R202', venue_name:'Room 202', instructors:${malformation === "same-name" ? "['Alpha Instructor']" : "[' ', ' TBA ', ' Unresolved Teacher ']"}}], 'ACTIVE', '2025-01-01T00:00:00Z'),
+    (100, '2510', '2025-26 Fall', '${malformation === "orphan-class" ? "missing" : "c3"}', 'L1', 2001, 'E', 'LEC', 1, '', 60, 40, 5, false, true, [{weekday:'${malformation === "conflict" ? "Wed" : "Fri"}', date_from:${malformation === "conflict" ? "'2025-09-01'" : "NULL"}::DATE, date_to:${malformation === "conflict" ? "'2025-11-30'" : "NULL"}::DATE, time_from:'${malformation === "conflict" ? "11:30" : "13:00"}'::TIME, time_to:'${malformation === "conflict" ? "12:20" : "13:50"}'::TIME, venue:'R202', venue_name:'Room 202', instructors:${malformation === "same-name" ? "['Alpha Instructor']" : "[' ', ' TBA ', ' Unresolved Teacher ']"}}], 'ACTIVE', '2025-01-01T00:00:00Z'),
+    (100, '2510', '2025-26 Fall', 'c3', 'T1', 2002, 'N', 'TUT', 1, '', 20, 15, 3, false, true, [], 'ACTIVE', '2025-01-01T00:00:00Z'),
+    (100, '2510', '2025-26 Fall', 'c5', 'L1', 5001, 'E', 'LEC', 1, '', 40, 30, 8, false, true, [{weekday:'Mon', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'16:00'::TIME, time_to:'16:50'::TIME, venue:'R301', venue_name:'Room 301', instructors:['Queue Instructor']}], 'ACTIVE', '2025-08-28T00:00:00Z'),
+    (100, '2510', '2025-26 Fall', 'c5', 'T1', 5002, 'N', 'TUT', 1, '', 20, 15, 4, false, true, [{weekday:'Tue', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'17:00'::TIME, time_to:'17:50'::TIME, venue:'R302', venue_name:'Room 302', instructors:['Queue Instructor']}], 'ACTIVE', '2025-08-28T00:00:00Z'),
     (99, '2430', '2024-25 Spring', 'c4', 'L1', 3001, 'E', 'LEC', 1, '', 60, 40, 0, false, true, [], 'ACTIVE', '2024-01-01T00:00:00Z')
   ) t(term_num, term_code, term_name, course_id, section, number, role, type, association, remarks, capacity, enroll, wait, consent, open, schedules, status, timestamp)`;
 
@@ -117,12 +122,34 @@ export async function makeScheduleGeneration(
         "CREATE TABLE duplicated AS SELECT * FROM read_parquet(getvariable('duplicate_path')); INSERT INTO duplicated SELECT * FROM duplicated LIMIT 1; COPY duplicated TO (getvariable('duplicate_path')) (FORMAT parquet, OVERWRITE true)",
       );
     }
+
+    if (includeLegacy) {
+      await copy(
+        "classes_legacy.parquet",
+        `SELECT * FROM (VALUES
+        (100, '2510', '2025-26 Fall', 'WAIT 3000', 'L1', 5001, 1, 40, 20, 12, false, [{weekday:'Mon', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'16:00'::TIME, time_to:'16:50'::TIME, venue:'R301', venue_name:'Room 301', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-08-27T00:00:00Z', 1),
+        (100, '2510', '2025-26 Fall', 'WAIT 3000', 'T1', 5002, 1, 20, 10, 8, false, [{weekday:'Tue', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'17:00'::TIME, time_to:'17:50'::TIME, venue:'R302', venue_name:'Room 302', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-08-27T00:00:00Z', 2),
+        (100, '2510', '2025-26 Fall', 'WAIT 3000', 'L1', 5001, 1, 40, 30, 8, false, [{weekday:'Mon', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'16:00'::TIME, time_to:'16:50'::TIME, venue:'R301', venue_name:'Room 301', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-08-28T00:00:00Z', 3),
+        (100, '2510', '2025-26 Fall', 'WAIT 3000', 'T1', 5002, 1, 20, 15, 4, false, [{weekday:'Tue', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'17:00'::TIME, time_to:'17:50'::TIME, venue:'R302', venue_name:'Room 302', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-08-28T00:00:00Z', 4),
+        (99, '2430', '2024-25 Spring', 'WAIT 3000', 'L1', 5001, 1, 40, 20, 10, false, [{weekday:'Mon', date_from:'2025-01-27'::DATE, date_to:'2025-02-14'::DATE, time_from:'16:00'::TIME, time_to:'16:50'::TIME, venue:'R301', venue_name:'Room 301', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-01-27T00:00:00Z', 5),
+        (99, '2430', '2024-25 Spring', 'WAIT 3000', 'T1', 5002, 1, 20, 10, 3, false, [{weekday:'Tue', date_from:'2025-01-27'::DATE, date_to:'2025-02-14'::DATE, time_from:'17:00'::TIME, time_to:'17:50'::TIME, venue:'R302', venue_name:'Room 302', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-02-14T00:00:00Z', 6),
+        (99, '2430', '2024-25 Spring', 'WAIT 3000', 'L1', 5001, 1, 40, 25, 2, false, [{weekday:'Mon', date_from:'2025-01-27'::DATE, date_to:'2025-02-14'::DATE, time_from:'16:00'::TIME, time_to:'16:50'::TIME, venue:'R301', venue_name:'Room 301', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-02-14T00:00:00Z', 7),
+        (99, '2430', '2024-25 Spring', 'WAIT 3000', 'T1', 5002, 1, 20, 15, 1, false, [{weekday:'Tue', date_from:'2025-01-27'::DATE, date_to:'2025-02-14'::DATE, time_from:'17:00'::TIME, time_to:'17:50'::TIME, venue:'R302', venue_name:'Room 302', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-02-14T00:00:00Z', 8),
+        (98, '2410', '2024-25 Fall', 'WAIT 3000', 'L1', 5001, 1, 40, 20, 10, false, [{weekday:'Mon', date_from:'2024-09-01'::DATE, date_to:'2024-11-30'::DATE, time_from:'16:00'::TIME, time_to:'16:50'::TIME, venue:'R301', venue_name:'Room 301', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2024-08-27T00:00:00Z', 9),
+        (98, '2410', '2024-25 Fall', 'WAIT 3000', 'T1', 5002, 1, 20, 10, 3, false, [{weekday:'Tue', date_from:'2024-09-01'::DATE, date_to:'2024-11-30'::DATE, time_from:'17:00'::TIME, time_to:'17:50'::TIME, venue:'R302', venue_name:'Room 302', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2024-08-27T00:00:00Z', 10),
+        (98, '2410', '2024-25 Fall', 'WAIT 3000', 'L1', 5001, 1, 40, 20, 0, false, [{weekday:'Mon', date_from:'2024-09-01'::DATE, date_to:'2024-11-30'::DATE, time_from:'16:00'::TIME, time_to:'16:50'::TIME, venue:'R301', venue_name:'Room 301', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2024-09-14T00:00:00Z', 11),
+        (98, '2410', '2024-25 Fall', 'WAIT 3000', 'T1', 5002, 1, 20, 10, 1, false, [{weekday:'Tue', date_from:'2024-09-01'::DATE, date_to:'2024-11-30'::DATE, time_from:'17:00'::TIME, time_to:'17:50'::TIME, venue:'R302', venue_name:'Room 302', instructors:['Queue Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2024-09-14T00:00:00Z', 12)
+      ) AS t(term_num, term_code, term_name, course_code, section, number, association, capacity, enroll, wait, consent, schedules, reservations, timestamp, source_order)`,
+      );
+    }
   } finally {
     connection.closeSync();
     instance.closeSync();
   }
 
-  const filenames = ["courses.parquet", "classes.parquet"];
+  const filenames = includeLegacy
+    ? ["courses.parquet", "classes.parquet", "classes_legacy.parquet"]
+    : ["courses.parquet", "classes.parquet"];
   const artifacts = Object.fromEntries(
     await Promise.all(
       filenames.map(async (name) => [

@@ -5,6 +5,7 @@ import {
   deliveryGenerationIdentityInput,
   WAITLIST_EVIDENCE_FILENAME,
 } from "@/lib/server-index-contract";
+import { WAITLIST_MODEL_VERSION } from "@/lib/waitlist-evidence";
 
 const GENERATION = /^[0-9a-f]{64}$/;
 const REVISION = /^[0-9a-f]{40}$/;
@@ -124,16 +125,20 @@ export async function resolveDeliveryManifest(
     !waitlist ||
     waitlist.artifact !== WAITLIST_EVIDENCE_FILENAME ||
     waitlist.schemaVersion !== 1 ||
-    typeof waitlist.modelVersion !== "string" ||
+    waitlist.modelVersion !== WAITLIST_MODEL_VERSION ||
     waitlist.sourceArtifact !== "classes_legacy.parquet" ||
     !REVISION.test(waitlist.sourceRevision) ||
+    waitlist.sourceRevision !== manifest.sources.schedule ||
     typeof waitlist.sourceAvailable !== "boolean" ||
     waitlist.selectedModel !== "baseline" ||
     !Number.isFinite(waitlist.priorWeight) ||
+    waitlist.priorWeight <= 0 ||
     waitlist.timing?.activation !== "first-positive-wait" ||
     waitlist.timing?.normalEnrollment !== "official-registry" ||
     waitlist.timing?.addDrop !== "official-registry" ||
     !Array.isArray(waitlist.timing?.sinceActivationBucketsHours) ||
+    waitlist.timing.sinceEnrollmentBucketDays !== 2 ||
+    waitlist.timing.untilAddDropBucketDays !== 3 ||
     !Array.isArray(waitlist.tuning?.positions) ||
     !Array.isArray(waitlist.tuning?.activationHours) ||
     !Array.isArray(waitlist.tuning?.priorWeights) ||
