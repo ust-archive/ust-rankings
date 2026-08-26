@@ -2,6 +2,25 @@ import { expect, test, vi } from "vitest";
 import { ContributionsUnavailableError } from "@/lib/contributions/signals";
 
 vi.mock("server-only", () => ({}));
+const { postgresReadSignals } = vi.hoisted(() => ({
+  postgresReadSignals: vi.fn(),
+}));
+vi.mock("next/cache", () => ({
+  unstable_cache: (read: (...args: unknown[]) => Promise<unknown>) => {
+    const values = new Map<string, Promise<unknown>>();
+    return (...args: unknown[]) => {
+      const key = JSON.stringify(args);
+      const existing = values.get(key);
+      if (existing) return existing;
+      const value = read(...args);
+      values.set(key, value);
+      return value;
+    };
+  },
+}));
+vi.mock("@/lib/contributions/postgres", () => ({
+  getSignalService: () => ({ readSignals: postgresReadSignals }),
+}));
 
 const target = {
   type: "course" as const,
@@ -45,6 +64,26 @@ test("signal loading composes public aggregates with only the authenticated User
     },
   });
   expect(reads).toEqual([userId]);
+});
+
+test("cached Signal reads isolate each User's personalized result", async () => {
+  const { loadSignals } = await import("@/app/signals/data");
+  postgresReadSignals.mockReset();
+  postgresReadSignals.mockImplementation(
+    async (_target: unknown, userId?: string) => ({
+      ...summary,
+      mine: { thumbs: userId === "user-a" ? "up" : "none", emoji: [] },
+    }),
+  );
+
+  await loadSignals(target, undefined, async () => "user-a");
+  await loadSignals(target, undefined, async () => "user-a");
+  await loadSignals(target, undefined, async () => "user-b");
+
+  expect(postgresReadSignals.mock.calls).toEqual([
+    [target, "user-a"],
+    [target, "user-b"],
+  ]);
 });
 
 test("signal loading distinguishes provider failure from zero and keeps public reads available without Auth configuration", async () => {

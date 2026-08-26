@@ -15,6 +15,33 @@ test("Review Order defaults invalid and absent input to Top", () => {
 });
 
 vi.mock("server-only", () => ({}));
+const { auth, postgresGetReview, postgresListReviews } = vi.hoisted(() => ({
+  auth: { userId: undefined as string | undefined },
+  postgresGetReview: vi.fn(),
+  postgresListReviews: vi.fn(),
+}));
+vi.mock("next/cache", () => ({
+  unstable_cache: (read: (...args: unknown[]) => Promise<unknown>) => {
+    const values = new Map<string, Promise<unknown>>();
+    return (...args: unknown[]) => {
+      const key = JSON.stringify(args);
+      const existing = values.get(key);
+      if (existing) return existing;
+      const value = read(...args);
+      values.set(key, value);
+      return value;
+    };
+  },
+}));
+vi.mock("@/lib/auth/user", () => ({
+  authenticatedUserId: async () => auth.userId,
+}));
+vi.mock("@/lib/contributions/postgres", () => ({
+  getReviewService: () => ({
+    getReview: postgresGetReview,
+    listReviews: postgresListReviews,
+  }),
+}));
 
 const review = {
   id: "00000000-0000-4000-8000-000000000144",
@@ -79,6 +106,57 @@ test("Review reads reveal edit capability only to the authenticated author query
   ]);
   expect(result.reviews[0]?.viewerCanEdit).toBe(true);
   expect(result.signedIn).toBe(true);
+});
+
+test("cached Review reads isolate each User's personalized result", async () => {
+  postgresListReviews.mockReset();
+  postgresListReviews.mockImplementation(
+    async (_query: unknown, viewerUserId?: string) => [
+      { ...review, viewerCanEdit: viewerUserId === "user-a" },
+    ],
+  );
+  const query = {
+    type: "course" as const,
+    coursePrefix: "COMP",
+    courseNumber: "3000",
+  };
+
+  await loadReviews(query, undefined, async () => "user-a");
+  await loadReviews(query, undefined, async () => "user-a");
+  await loadReviews(query, undefined, async () => "user-b");
+
+  expect(postgresListReviews.mock.calls).toEqual([
+    [query, "user-a"],
+    [query, "user-b"],
+  ]);
+});
+
+test("cached Review permalink reads isolate each User's personalized result", async () => {
+  const previousSecret = process.env.AUTH_SECRET;
+  process.env.AUTH_SECRET = "configured";
+  postgresGetReview.mockReset();
+  postgresGetReview.mockImplementation(
+    async (_reviewId: string, viewerUserId?: string) => ({
+      ...review,
+      viewerCanEdit: viewerUserId === "user-a",
+    }),
+  );
+  try {
+    auth.userId = "user-a";
+    await loadReview(review.id);
+    await loadReview(review.id);
+    auth.userId = "user-b";
+    await loadReview(review.id);
+
+    expect(postgresGetReview.mock.calls).toEqual([
+      [review.id, "user-a"],
+      [review.id, "user-b"],
+    ]);
+  } finally {
+    auth.userId = undefined;
+    if (previousSecret) process.env.AUTH_SECRET = previousSecret;
+    else delete process.env.AUTH_SECRET;
+  }
 });
 
 test("Review permalinks remain public without Auth configuration", async () => {

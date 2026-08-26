@@ -1,5 +1,6 @@
 "use server";
 
+import { updateTag } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { authenticatedUserId } from "@/lib/auth/user";
@@ -133,6 +134,7 @@ export async function publishReview(
       return { error: error.code };
     redirectReviewError(error, parsed.path);
   }
+  updateTag("contributions");
   redirect(`${parsed.path}?review=published#reviews`);
 }
 
@@ -170,6 +172,7 @@ export async function editReview(formData: FormData) {
   } catch (error) {
     redirectReviewError(error, parsed.path);
   }
+  updateTag("contributions");
   redirect(`${parsed.path}?review=published#reviews`);
 }
 
@@ -194,6 +197,7 @@ export async function withdrawReview(formData: FormData) {
   } catch (error) {
     redirectReviewError(error, parsed.path);
   }
+  updateTag("contributions");
   redirect(`${parsed.path}?review=withdrawn#reviews`);
 }
 

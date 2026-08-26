@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import {
   ContributionsUnavailableError,
   type PublicReview,
@@ -14,6 +15,11 @@ const readReviews: ReadReviews = async (query, viewerUserId) =>
   (await import("@/lib/contributions/postgres"))
     .getReviewService()
     .listReviews(query, viewerUserId);
+
+const readCachedReviews = unstable_cache(readReviews, ["reviews"], {
+  revalidate: 3600,
+  tags: ["contributions"],
+});
 
 async function optionalAuthenticatedUserId() {
   if (!process.env.AUTH_SECRET) return undefined;
@@ -32,7 +38,9 @@ export async function loadReviews(
   const viewerUserId = await identify().catch(() => undefined);
   try {
     return {
-      reviews: await read(query, viewerUserId),
+      reviews: await (read === readReviews
+        ? readCachedReviews(query, viewerUserId)
+        : read(query, viewerUserId)),
       signedIn: Boolean(viewerUserId),
       unavailable: false as const,
     };

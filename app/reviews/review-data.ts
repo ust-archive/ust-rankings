@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { authenticatedUserId } from "@/lib/auth/user";
 import {
   ContributionsUnavailableError,
@@ -14,6 +15,11 @@ const readReview: ReadReview = async (reviewId, viewerUserId) =>
     .getReviewService()
     .getReview(reviewId, viewerUserId);
 
+const readCachedReview = unstable_cache(readReview, ["review"], {
+  revalidate: 3600,
+  tags: ["contributions"],
+});
+
 export async function loadReview(
   reviewId: string,
   read: ReadReview = readReview,
@@ -23,7 +29,9 @@ export async function loadReview(
     : undefined;
   try {
     return {
-      review: await read(reviewId, viewerUserId),
+      review: await (read === readReview
+        ? readCachedReview(reviewId, viewerUserId)
+        : read(reviewId, viewerUserId)),
       unavailable: false as const,
     };
   } catch (error) {

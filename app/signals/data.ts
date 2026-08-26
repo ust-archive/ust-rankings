@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { authenticatedUserId } from "@/lib/auth/user";
 import {
   ContributionsUnavailableError,
@@ -14,6 +15,11 @@ const readSignals: ReadSignals = async (target, userId) =>
   (await import("@/lib/contributions/postgres"))
     .getSignalService()
     .readSignals(target, userId);
+
+const readCachedSignals = unstable_cache(readSignals, ["signals"], {
+  revalidate: 3600,
+  tags: ["contributions"],
+});
 
 async function optionalAuthenticatedUserId() {
   if (!process.env.AUTH_SECRET) return undefined;
@@ -32,7 +38,9 @@ export async function loadSignals(
   const userId = await identify().catch(() => undefined);
   try {
     return {
-      summary: await read(target, userId),
+      summary: await (read === readSignals
+        ? readCachedSignals(target, userId)
+        : read(target, userId)),
       unavailable: false as const,
     };
   } catch (error) {
