@@ -37,7 +37,11 @@ const rankingInputs = [
   "instructor-identity-events.parquet",
   "instructor-split-affected-associations.parquet",
 ] as const;
-const scheduleInputs = ["courses.parquet", "classes.parquet"] as const;
+const scheduleInputs = [
+  "courses.parquet",
+  "classes.parquet",
+  "classes_legacy.parquet",
+] as const;
 
 async function copy(
   connection: Awaited<ReturnType<DuckDBInstance["connect"]>>,
@@ -161,6 +165,16 @@ async function makeArchiveFixtures(root: string) {
         (100, '2510', '2025-26 Fall', 'c1', 'L1', 1001, 'E', 'LEC', 1, '', 40, 20, 0, false, true, ${alphaMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00'),
         (100, '2510', '2025-26 Fall', 'c2', 'L1', 1002, 'E', 'LEC', 1, '', 40, 20, 0, false, true, ${calibratedMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00')
       ) AS t(${classColumns})`,
+    );
+    await copy(
+      connection,
+      schedulePath("classes_legacy.parquet"),
+      `SELECT * FROM (VALUES
+        (100, '2510', '2025-26 Fall', 'COMP 2000', 'L1', 1001, 1, 40, 20, 30, false, ${alphaMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-08-27T00:00:00Z', 1),
+        (100, '2510', '2025-26 Fall', 'COMP 2000', 'LA1', 1003, 1, 20, 10, 12, false, ${calibratedMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-08-27T00:00:00Z', 2),
+        (100, '2510', '2025-26 Fall', 'COMP 2000', 'L1', 1001, 1, 40, 25, 10, false, ${alphaMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-09-13T00:00:00Z', 3),
+        (100, '2510', '2025-26 Fall', 'COMP 2000', 'LA1', 1003, 1, 20, 12, 2, false, ${calibratedMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-09-13T00:00:00Z', 4)
+      ) AS t(term_num, term_code, term_name, course_code, section, number, association, capacity, enroll, wait, consent, schedules, reservations, timestamp, source_order)`,
     );
   } finally {
     connection.closeSync();
@@ -323,6 +337,24 @@ const expectedColumns: Record<string, string[]> = {
     "status",
     "timestamp",
   ],
+  "waitlist-evidence.parquet": [
+    "term_num",
+    "term_code",
+    "term_name",
+    "course_code",
+    "section",
+    "association",
+    "class_type",
+    "class_number",
+    "capacity",
+    "enrollment",
+    "waitlist",
+    "consent",
+    "schedules",
+    "reservations",
+    "observed_at",
+    "source_order",
+  ],
 };
 
 const expectedTypes: Record<string, string[]> = {
@@ -412,6 +444,24 @@ const expectedTypes: Record<string, string[]> = {
     "VARCHAR",
     "TIMESTAMP WITH TIME ZONE",
   ],
+  "waitlist-evidence.parquet": [
+    "INTEGER",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "VARCHAR",
+    "INTEGER",
+    "VARCHAR",
+    "INTEGER",
+    "INTEGER",
+    "INTEGER",
+    "INTEGER",
+    "BOOLEAN",
+    "VARCHAR",
+    "VARCHAR",
+    "TIMESTAMP WITH TIME ZONE",
+    "BIGINT",
+  ],
 };
 
 test("builds a deterministic Delivery Dataset and Server Index from pinned archives", async () => {
@@ -466,6 +516,73 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
     assert.equal(first.manifest.schemaVersion, 1);
     assert.equal(first.manifest.sources.rankings, rankingRevision);
     assert.equal(first.manifest.sources.schedule, scheduleRevision);
+    assert.deepEqual(first.manifest.waitlistEvidence, {
+      artifact: "waitlist-evidence.parquet",
+      schemaVersion: 1,
+      modelVersion: "joint-baseline-v1",
+      sourceArtifact: "classes_legacy.parquet",
+      sourceRevision: scheduleRevision,
+      sourceAvailable: true,
+      selectedModel: "baseline",
+      priorWeight: 4,
+      timing: {
+        activation: "first-positive-wait",
+        normalEnrollment: "official-registry",
+        addDrop: "official-registry",
+        sinceActivationBucketsHours: [12, 24, 48],
+        sinceEnrollmentBucketDays: 2,
+        untilAddDropBucketDays: 3,
+      },
+      tuning: {
+        positions: [5, 25, 50],
+        activationHours: [12, 24, 48],
+        priorWeights: [0.5, 1, 2, 4, 8, 16, 32],
+        holdout: "whole-term",
+      },
+      uncertainty: "estimated-bounded-margin-not-calibrated-interval",
+      terms: [
+        {
+          termCode: "2410",
+          season: "Fall",
+          enrollmentStart: "2024-08-27T00:00:00+08:00",
+          addDropEnd: "2024-09-14T23:59:00+08:00",
+          source:
+            "https://registry.hkust.edu.hk/calendar_dates/dates24-25confirmed.pdf",
+        },
+        {
+          termCode: "2430",
+          season: "Spring",
+          enrollmentStart: "2025-01-23T00:00:00+08:00",
+          addDropEnd: "2025-02-15T23:59:00+08:00",
+          source:
+            "https://registry.hkust.edu.hk/calendar_dates/dates24-25confirmed.pdf",
+        },
+        {
+          termCode: "2510",
+          season: "Fall",
+          enrollmentStart: "2025-08-26T00:00:00+08:00",
+          addDropEnd: "2025-09-13T23:59:00+08:00",
+          source:
+            "https://registry.hkust.edu.hk/calendar_dates/dates25-26confirmed.pdf",
+        },
+        {
+          termCode: "2530",
+          season: "Spring",
+          enrollmentStart: "2026-01-27T00:00:00+08:00",
+          addDropEnd: "2026-02-14T23:59:00+08:00",
+          source:
+            "https://registry.hkust.edu.hk/calendar_dates/dates25-26confirmed.pdf",
+        },
+        {
+          termCode: "2610",
+          season: "Fall",
+          enrollmentStart: "2026-08-25T00:00:00+08:00",
+          addDropEnd: "2026-09-14T23:59:00+08:00",
+          source:
+            "https://registry.hkust.edu.hk/calendar_dates/dates26-27confirmed.pdf",
+        },
+      ],
+    });
     for (const filename of DELIVERY_ARTIFACTS) {
       const schema = await describe(join(first.directory, filename));
       assert.deepEqual(
@@ -502,6 +619,7 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
       "relation.parquet": 3,
       "schedule-classes.parquet": 2,
       "schedule-courses.parquet": 4,
+      "waitlist-evidence.parquet": 4,
     };
     for (const filename of DELIVERY_ARTIFACTS)
       assert.equal(
@@ -514,6 +632,62 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
         expectedRowCounts[filename],
         `${filename} row count`,
       );
+    assert.deepEqual(
+      await rows(
+        join(first.directory, "waitlist-evidence.parquet"),
+        "SELECT term_code, course_code, section, association, class_type, class_number, capacity, enrollment, waitlist, source_order FROM read_parquet('$PATH') ORDER BY source_order",
+      ),
+      [
+        {
+          term_code: "2510",
+          course_code: "COMP 2000",
+          section: "L1",
+          association: 1,
+          class_type: "LEC",
+          class_number: 1001,
+          capacity: 40,
+          enrollment: 20,
+          waitlist: 30,
+          source_order: 1n,
+        },
+        {
+          term_code: "2510",
+          course_code: "COMP 2000",
+          section: "LA1",
+          association: 1,
+          class_type: "LAB",
+          class_number: 1003,
+          capacity: 20,
+          enrollment: 10,
+          waitlist: 12,
+          source_order: 2n,
+        },
+        {
+          term_code: "2510",
+          course_code: "COMP 2000",
+          section: "L1",
+          association: 1,
+          class_type: "LEC",
+          class_number: 1001,
+          capacity: 40,
+          enrollment: 25,
+          waitlist: 10,
+          source_order: 3n,
+        },
+        {
+          term_code: "2510",
+          course_code: "COMP 2000",
+          section: "LA1",
+          association: 1,
+          class_type: "LAB",
+          class_number: 1003,
+          capacity: 20,
+          enrollment: 12,
+          waitlist: 2,
+          source_order: 4n,
+        },
+      ],
+    );
     const fullCourseRatingColumns = await describe(
       join(rankingDirectory, "course-ratings.parquet"),
     );
@@ -685,7 +859,7 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
       first.manifest.serverIndex.sha256,
       await digest(join(first.directory, SERVER_INDEX_FILENAME)),
     );
-    assert.equal(Object.keys(first.manifest.artifacts).length, 10);
+    assert.equal(Object.keys(first.manifest.artifacts).length, 11);
 
     const repeated = await buildDeliveryGeneration({
       rankingDirectory,
@@ -705,6 +879,38 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
         outputDirectory: join(root, "first"),
       }),
       /Delivery generation is not immutable/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("emits a schema-only Waitlist Evidence artifact when legacy history is unavailable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ust-delivery-no-history-"));
+  try {
+    const { rankingDirectory, scheduleDirectory } =
+      await makeArchiveFixtures(root);
+    await rm(join(scheduleDirectory, "classes_legacy.parquet"));
+    const sourceManifestPath = join(scheduleDirectory, "manifest.json");
+    const sourceManifest = JSON.parse(
+      await readFile(sourceManifestPath, "utf8"),
+    ) as { artifacts: Record<string, unknown> };
+    delete sourceManifest.artifacts["classes_legacy.parquet"];
+    await writeFile(sourceManifestPath, `${JSON.stringify(sourceManifest)}\n`);
+    const result = await buildDeliveryGeneration({
+      rankingDirectory,
+      scheduleDirectory,
+      rankingRevision,
+      scheduleRevision,
+      outputDirectory: join(root, "output"),
+    });
+    assert.equal(result.manifest.waitlistEvidence.sourceAvailable, false);
+    assert.deepEqual(
+      await rows(
+        join(result.directory, "waitlist-evidence.parquet"),
+        "SELECT count(*)::INTEGER AS count FROM read_parquet('$PATH')",
+      ),
+      [{ count: 0 }],
     );
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -111,13 +111,23 @@ Face tree, declaring the revision, byte size, and SHA-256 of every consumed
 artifact; the derivation verifies those declarations before reading data.
 
 The derivation leaves the full-fidelity archive inputs untouched. It writes the
-browser Delivery Dataset as the ten Parquet relations `courses.parquet`,
+browser Delivery Dataset as the eleven Parquet relations `courses.parquet`,
 `course-ratings.parquet`, `instructors.parquet`, `instructor-ratings.parquet`,
 `relation.parquet`, `instructor-aliases.parquet`,
 `instructor-identity-events.parquet`, `instructor-split-associations.parquet`,
-`schedule-courses.parquet`, and `schedule-classes.parquet`. Rating projections
-retain every historical row while keeping only the browser contract columns;
-Instructor names remain in `instructors.parquet` rather than the rating rows.
+`schedule-courses.parquet`, `schedule-classes.parquet`, and
+`waitlist-evidence.parquet`. Rating projections retain every historical row
+while keeping only the browser contract columns; Instructor names remain in
+`instructors.parquet` rather than the rating rows.
+
+`waitlist-evidence.parquet` is a narrow, aggregate-only projection of the
+pinned Schedule `classes_legacy.parquet` relation. It retains supported
+Fall/Spring observations, component type derived from the section identifier,
+capacity/enrollment/wait counts, timestamps, reservations, schedules, and
+source order. It contains no student identity or individual queue outcome.
+When a delivery input lacks `classes_legacy.parquet`, the derivation emits a
+schema-only artifact and marks `waitlistEvidence.sourceAvailable` false; it
+does not infer historical evidence from the current snapshot.
 
 The same generation writes a compressed `server-index.json.gz` containing the
 Course, Instructor identity/history, relation, active Course Offering, active
@@ -127,7 +137,8 @@ and scoped Instructor Association Corrections.
 
 `manifest.json` records schema version, the pinned `rankings` and `schedule`
 revisions, every Delivery artifact's immutable Spaces CDN URL, byte size, and
-SHA-256, plus the Server Index's relative staged URL and declaration. The generation SHA is a SHA-256 of the schema version, pinned revisions,
+SHA-256, the versioned `waitlistEvidence` model/timing/tuning metadata, plus
+the Server Index's relative staged URL and declaration. The generation SHA is a SHA-256 of the schema version, pinned revisions,
 ordered Delivery artifact hashes, and the compressed Server Index with its
 embedded generation blanked. The manifest records that canonical Server Index
 identity hash so browser clients can verify the same non-circular identity.

@@ -3,6 +3,7 @@ import {
   DELIVERY_SCHEMA_VERSION,
   type DeliveryManifest,
   deliveryGenerationIdentityInput,
+  WAITLIST_EVIDENCE_FILENAME,
 } from "@/lib/server-index-contract";
 
 const GENERATION = /^[0-9a-f]{64}$/;
@@ -118,6 +119,30 @@ export async function resolveDeliveryManifest(
     )
       throw new Error(`Invalid dataset artifact: ${name}`);
   }
+  const waitlist = manifest.waitlistEvidence;
+  if (
+    !waitlist ||
+    waitlist.artifact !== WAITLIST_EVIDENCE_FILENAME ||
+    waitlist.schemaVersion !== 1 ||
+    typeof waitlist.modelVersion !== "string" ||
+    waitlist.sourceArtifact !== "classes_legacy.parquet" ||
+    !REVISION.test(waitlist.sourceRevision) ||
+    typeof waitlist.sourceAvailable !== "boolean" ||
+    waitlist.selectedModel !== "baseline" ||
+    !Number.isFinite(waitlist.priorWeight) ||
+    waitlist.timing?.activation !== "first-positive-wait" ||
+    waitlist.timing?.normalEnrollment !== "official-registry" ||
+    waitlist.timing?.addDrop !== "official-registry" ||
+    !Array.isArray(waitlist.timing?.sinceActivationBucketsHours) ||
+    !Array.isArray(waitlist.tuning?.positions) ||
+    !Array.isArray(waitlist.tuning?.activationHours) ||
+    !Array.isArray(waitlist.tuning?.priorWeights) ||
+    waitlist.tuning?.holdout !== "whole-term" ||
+    waitlist.uncertainty !==
+      "estimated-bounded-margin-not-calibrated-interval" ||
+    !Array.isArray(waitlist.terms)
+  )
+    throw new Error("Invalid Waitlist Evidence metadata");
   if (
     manifest.serverIndex.name !== "server-index.json.gz" ||
     manifest.serverIndex.url !== "server-index.json.gz" ||

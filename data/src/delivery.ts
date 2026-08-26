@@ -29,7 +29,16 @@ import {
   deliveryGenerationIdentityInput,
   SERVER_INDEX_FILENAME,
   type ServerIndex,
+  WAITLIST_EVIDENCE_FILENAME,
+  type WaitlistEvidenceManifest,
 } from "../../lib/server-index-contract.ts";
+import {
+  WAITLIST_MODEL_VERSION,
+  WAITLIST_PRIOR_WEIGHTS,
+  WAITLIST_TERMS,
+  WAITLIST_TUNING_HOURS,
+  WAITLIST_TUNING_POSITIONS,
+} from "./waitlist-evidence.ts";
 
 export {
   DELIVERY_ARTIFACTS,
@@ -39,6 +48,7 @@ export {
   type DeliveryManifest,
   SERVER_INDEX_FILENAME,
   type ServerIndex,
+  WAITLIST_EVIDENCE_FILENAME,
 } from "../../lib/server-index-contract.ts";
 
 const RANKING_INPUTS = [
@@ -52,6 +62,7 @@ const RANKING_INPUTS = [
   "instructor-split-affected-associations.parquet",
 ] as const;
 const SCHEDULE_INPUTS = ["courses.parquet", "classes.parquet"] as const;
+const LEGACY_CLASSES_INPUT = "classes_legacy.parquet";
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 
 export type BuildDeliveryGenerationOptions = {
@@ -248,6 +259,8 @@ async function validateInputs(
 ): Promise<void> {
   const rankingDirectory = resolve(options.rankingDirectory);
   const scheduleDirectory = resolve(options.scheduleDirectory);
+  const legacyClassesPath = join(scheduleDirectory, LEGACY_CLASSES_INPUT);
+  const hasLegacyClasses = await fileExists(legacyClassesPath);
   for (const filename of RANKING_INPUTS) {
     const path = join(rankingDirectory, filename);
     if (!(await fileExists(path)))
@@ -267,7 +280,9 @@ async function validateInputs(
   await validateSourceManifest(
     scheduleDirectory,
     options.scheduleRevision,
-    SCHEDULE_INPUTS,
+    hasLegacyClasses
+      ? [...SCHEDULE_INPUTS, LEGACY_CLASSES_INPUT]
+      : SCHEDULE_INPUTS,
     "Schedule archive",
   );
 
@@ -383,6 +398,24 @@ async function validateInputs(
       join(scheduleDirectory, filename),
       columns,
     );
+  if (hasLegacyClasses)
+    await requireColumns(connection, legacyClassesPath, [
+      "term_num",
+      "term_code",
+      "term_name",
+      "course_code",
+      "section",
+      "association",
+      "number",
+      "capacity",
+      "enroll",
+      "wait",
+      "consent",
+      "schedules",
+      "reservations",
+      "timestamp",
+      "source_order",
+    ]);
 }
 
 async function copyParquet(
@@ -396,6 +429,88 @@ async function copyParquet(
   await connection.run(
     `COPY (${query}) TO (getvariable('delivery_output')) (FORMAT parquet, COMPRESSION zstd)`,
   );
+}
+
+function waitlistEvidenceMetadata(
+  scheduleRevision: string,
+  sourceAvailable: boolean,
+): WaitlistEvidenceManifest {
+  return {
+    artifact: WAITLIST_EVIDENCE_FILENAME,
+    schemaVersion: 1,
+    modelVersion: WAITLIST_MODEL_VERSION,
+    sourceArtifact: "classes_legacy.parquet",
+    sourceRevision: scheduleRevision,
+    sourceAvailable,
+    selectedModel: "baseline",
+    priorWeight: 4,
+    timing: {
+      activation: "first-positive-wait",
+      normalEnrollment: "official-registry",
+      addDrop: "official-registry",
+      sinceActivationBucketsHours: WAITLIST_TUNING_HOURS,
+      sinceEnrollmentBucketDays: 2,
+      untilAddDropBucketDays: 3,
+    },
+    tuning: {
+      positions: WAITLIST_TUNING_POSITIONS,
+      activationHours: WAITLIST_TUNING_HOURS,
+      priorWeights: WAITLIST_PRIOR_WEIGHTS,
+      holdout: "whole-term",
+    },
+    uncertainty: "estimated-bounded-margin-not-calibrated-interval",
+    terms: Object.entries(WAITLIST_TERMS).map(([termCode, term]) => ({
+      termCode,
+      season: term.season,
+      enrollmentStart: term.enrollmentStart,
+      addDropEnd: term.addDropEnd,
+      source: term.source,
+    })),
+  };
+}
+
+async function copyWaitlistEvidence(
+  connection: DuckDBConnection,
+  outputPath: string,
+  scheduleDirectory: string,
+): Promise<boolean> {
+  const sourcePath = join(scheduleDirectory, LEGACY_CLASSES_INPUT);
+  const sourceAvailable = await fileExists(sourcePath);
+  const source = sqlPath(sourcePath);
+  const query = sourceAvailable
+    ? `SELECT term_num::INTEGER AS term_num, term_code::VARCHAR AS term_code,
+        term_name::VARCHAR AS term_name, course_code::VARCHAR AS course_code,
+        section::VARCHAR AS section,
+        association::INTEGER AS association,
+        CASE
+          WHEN regexp_matches(section, '^LA', 'i') THEN 'LAB'
+          WHEN regexp_matches(section, '^L', 'i') THEN 'LEC'
+          WHEN regexp_matches(section, '^T', 'i') THEN 'TUT'
+          ELSE 'IND'
+        END::VARCHAR AS class_type,
+        number::INTEGER AS class_number, capacity::INTEGER AS capacity,
+        enroll::INTEGER AS enrollment, wait::INTEGER AS waitlist,
+        consent::BOOLEAN AS consent,
+        to_json(schedules)::VARCHAR AS schedules,
+        to_json(reservations)::VARCHAR AS reservations,
+        timestamp::TIMESTAMPTZ AS observed_at, source_order::BIGINT AS source_order
+      FROM read_parquet('${source}')
+      WHERE term_code IN (${Object.keys(WAITLIST_TERMS)
+        .map((term) => `'${term}'`)
+        .join(", ")})
+      ORDER BY term_num, course_code, section, observed_at, source_order`
+    : `SELECT
+        NULL::INTEGER AS term_num, NULL::VARCHAR AS term_code,
+        NULL::VARCHAR AS term_name, NULL::VARCHAR AS course_code,
+        NULL::VARCHAR AS section, NULL::INTEGER AS association,
+        NULL::VARCHAR AS class_type, NULL::INTEGER AS class_number,
+        NULL::INTEGER AS capacity,
+        NULL::INTEGER AS enrollment, NULL::INTEGER AS waitlist,
+        NULL::BOOLEAN AS consent, NULL::VARCHAR AS schedules, NULL::VARCHAR AS reservations,
+        NULL::TIMESTAMPTZ AS observed_at, NULL::BIGINT AS source_order
+      WHERE false`;
+  await copyParquet(connection, outputPath, query);
+  return sourceAvailable;
 }
 
 async function sha256(path: string): Promise<string> {
@@ -933,6 +1048,11 @@ export async function buildDeliveryGeneration(
        FROM read_parquet('${schedule("courses.parquet")}')
        ORDER BY term_num, id, timestamp`,
     );
+    const waitlistSourceAvailable = await copyWaitlistEvidence(
+      connection,
+      join(staging, WAITLIST_EVIDENCE_FILENAME),
+      options.scheduleDirectory,
+    );
 
     const declarations = {} as Record<
       DeliveryArtifactName,
@@ -989,6 +1109,10 @@ export async function buildDeliveryGeneration(
         schedule: options.scheduleRevision,
       },
       artifacts,
+      waitlistEvidence: waitlistEvidenceMetadata(
+        options.scheduleRevision,
+        waitlistSourceAvailable,
+      ),
       serverIndex: {
         name: SERVER_INDEX_FILENAME,
         url: SERVER_INDEX_FILENAME,

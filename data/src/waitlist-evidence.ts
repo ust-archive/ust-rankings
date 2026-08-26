@@ -110,6 +110,7 @@ export type WaitlistTuneResult = {
   weight: number;
 };
 
+export const WAITLIST_MODEL_VERSION = "joint-baseline-v1" as const;
 export const WAITLIST_TUNING_POSITIONS = [5, 25, 50] as const;
 export const WAITLIST_TUNING_HOURS = [12, 24, 48] as const;
 export const WAITLIST_PRIOR_WEIGHTS = [0.5, 1, 2, 4, 8, 16, 32] as const;
