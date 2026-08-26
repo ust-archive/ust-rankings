@@ -56,6 +56,22 @@ _Avoid_: Course, Course Offering, Section
 A numeric identifier assigned to a Class, unique within a Term, such as 1004. It may be shortened to Number when the class context is clear.
 _Avoid_: Section
 
+**Pre-enrollment**:
+Enrollment in a Class assigned by the Academic Registry or a School or Program Office before normal Class enrollment.
+
+**Queue Activation**:
+The moment a Class's waitlist first becomes non-empty during normal Class enrollment. Earlier Pre-enrollment is baseline occupancy, not Queue Activation.
+
+**Reserved Quota**:
+Places within a Class's capacity set aside for an eligible student population.
+
+**Historical Queue Evidence**:
+A confidence-qualified estimate of how often comparable Classes had sufficient aggregate waitlist reduction for a given queue position by the add/drop deadline. It does not estimate an individual student's enrollment likelihood.
+_Avoid_: Enrollment Probability, Enrollment Likelihood
+
+**Waitlist Plan**:
+One Course Offering together with the Classes and queue positions a student requires. A Waitlist Plan has favorable joint Historical Queue Evidence only when every selected Class has sufficient aggregate waitlist reduction. Alternative section combinations are separate Waitlist Plans.
+
 **Instructor**:
 A person who teaches a Class, distinct from any name or identifier used to refer to them.
 _Avoid_: Professor, Teacher
