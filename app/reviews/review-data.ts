@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 import { authenticatedUserId } from "@/lib/auth/user";
 import {
   ContributionsUnavailableError,
+  normalizePublicReview,
   type PublicReview,
 } from "@/lib/contributions/reviews";
 
@@ -28,10 +29,12 @@ export async function loadReview(
     ? await authenticatedUserId().catch(() => undefined)
     : undefined;
   try {
+    const review = await (read === readReview &&
+    process.env.NODE_ENV !== "development"
+      ? readCachedReview(reviewId, viewerUserId)
+      : read(reviewId, viewerUserId));
     return {
-      review: await (read === readReview
-        ? readCachedReview(reviewId, viewerUserId)
-        : read(reviewId, viewerUserId)),
+      review: review ? normalizePublicReview(review) : undefined,
       unavailable: false as const,
     };
   } catch (error) {

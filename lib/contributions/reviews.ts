@@ -136,6 +136,18 @@ export class ContributionsUnavailableError extends Error {
   }
 }
 
+export function normalizeReviewDate(value: unknown): Date {
+  const date =
+    value instanceof Date ? new Date(value.getTime()) : new Date(String(value));
+  if (Number.isNaN(date.getTime()))
+    throw new ContributionsUnavailableError("Invalid Review timestamp");
+  return date;
+}
+
+export function normalizePublicReview(review: PublicReview): PublicReview {
+  return { ...review, publishedAt: normalizeReviewDate(review.publishedAt) };
+}
+
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const COURSE_PREFIX = /^[A-Z]{2,8}$/u;
