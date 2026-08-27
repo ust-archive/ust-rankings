@@ -12,7 +12,19 @@ export default defineConfig({
   timeout: 90_000,
   workers: process.env.CI ? 1 : 6,
   reporter: process.env.CI ? "github" : "list",
-  projects: [{ name: "chromium", use: devices["Desktop Chrome"] }],
+  projects: [
+    { name: "chromium", use: devices["Desktop Chrome"] },
+    {
+      name: "firefox-waitlist",
+      testMatch: "waitlist-interface.spec.ts",
+      use: devices["Desktop Firefox"],
+    },
+    {
+      name: "webkit-waitlist",
+      testMatch: "waitlist-interface.spec.ts",
+      use: devices["Desktop Safari"],
+    },
+  ],
   use: {
     baseURL: `http://localhost:${port}`,
     trace: "retain-on-failure",
