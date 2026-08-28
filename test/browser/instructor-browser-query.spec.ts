@@ -66,6 +66,23 @@ test("Instructor filters do not reuse the previous pagination cursor", async ({
   );
 });
 
+test("Instructor search accepts compact Course Codes", async ({ page }) => {
+  await page.goto("/rankings/instructors?term=2510&activity=all");
+  await expect(
+    page.getByRole("list", { name: "Instructor rankings" }),
+  ).toBeVisible();
+  const search = page.getByRole("searchbox", {
+    name: "Search Instructors",
+  });
+  await search.fill("COMP2000");
+  expect(new URL(page.url()).searchParams.get("q")).toBe("COMP2000");
+  const results = page
+    .getByRole("list", { name: "Instructor rankings" })
+    .getByRole("link");
+  await expect(results).toHaveCount(1);
+  await expect(results).toContainText("Alpha Instructor");
+});
+
 test("Instructor details retain identity history, corrections, relations, and zero-sample Rank", async ({
   page,
 }) => {

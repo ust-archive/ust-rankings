@@ -70,6 +70,19 @@ test("WL Compass calculates independent browser-only Course Plans", async ({
   ).toBe(false);
 });
 
+test("WL Compass search accepts compact Course Codes", async ({ page }) => {
+  await page.goto("/waitlist");
+  const search = page.getByRole("searchbox", {
+    name: "Search WL Compass Courses",
+  });
+  await search.fill("WAIT3000");
+  expect(new URL(page.url()).searchParams.get("q")).toBe("WAIT3000");
+  await expect(waitlistCard(page)).toBeVisible();
+  await expect(page.locator("[data-waitlist-course='MATH 1000']")).toHaveCount(
+    0,
+  );
+});
+
 test("WL Compass supports keyboard use at 390px without horizontal overflow", async ({
   page,
 }) => {
