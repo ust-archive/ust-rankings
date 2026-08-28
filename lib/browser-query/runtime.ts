@@ -542,12 +542,8 @@ function resolvedIdentity(runtime: Runtime, uuid: string) {
   return runtime.identities.get(runtime.identityHistory.resolveUuid(uuid));
 }
 
-function compactCourseCode(courseCode: string) {
-  return courseCode.replace(" ", "");
-}
-
 function courseCodeSearchValues(courseCode: string) {
-  return [courseCode, compactCourseCode(courseCode)];
+  return [courseCode, courseCode.replace(" ", "")];
 }
 
 async function catalog(
