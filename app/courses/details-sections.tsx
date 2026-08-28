@@ -57,14 +57,14 @@ function DetailsRankingsLoading() {
   return (
     <Card
       aria-label="Loading Rankings"
-      className="animate-pulse p-5 sm:p-6"
+      className="animate-pulse border-slate-300 p-5 shadow-sm sm:p-6"
       data-details-rankings-skeleton
       role="status"
     >
       <div className="h-7 w-32 rounded bg-slate-200" />
       <div className="mt-2 h-4 w-24 rounded bg-slate-100" />
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <div className="h-28 rounded-lg bg-slate-100 sm:col-span-2 xl:col-span-1" />
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="col-span-2 h-28 rounded-lg bg-slate-100 sm:col-span-2 xl:col-span-1" />
         <div className="h-28 rounded-lg bg-slate-100" />
         <div className="h-28 rounded-lg bg-slate-100" />
       </div>
@@ -99,7 +99,7 @@ export function DetailsHeader({
         {eyebrow}
       </p>
       <EntityTitleTransition name={transitionName}>
-        <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900 sm:text-6xl">
+        <h1 className="mt-2 text-balance text-4xl font-bold tracking-tight text-slate-900 sm:text-6xl">
           {title}
         </h1>
       </EntityTitleTransition>
@@ -211,7 +211,7 @@ function RankMetric({
   unavailable?: string;
 }) {
   return (
-    <span className="block rounded-lg border border-slate-200 bg-white p-4 text-slate-900">
+    <span className="block rounded-lg border border-slate-200 bg-slate-50/70 p-4 text-slate-900">
       <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">
         {label}
       </span>
@@ -265,7 +265,7 @@ export function DetailsRankings({
   return (
     <details
       aria-busy={loading}
-      className="group overflow-hidden rounded-lg border border-gray-200 bg-white text-gray-950 shadow-sm"
+      className="group overflow-hidden rounded-lg border border-slate-300 bg-white text-gray-950 shadow-sm"
     >
       <summary className="relative cursor-pointer list-none p-5 focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[#003366] sm:p-6">
         <h2 className={`block pr-24 text-2xl text-slate-900 ${styles.heading}`}>
@@ -281,8 +281,8 @@ export function DetailsRankings({
           </span>
         ) : null}
         {selectedRanking && grade ? (
-          <span className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <span className="block rounded-lg border border-slate-200 bg-white p-4 text-slate-900 sm:col-span-2 xl:col-span-1">
+          <span className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <span className="col-span-2 block rounded-lg border border-slate-200 bg-slate-50/70 p-4 text-slate-900 sm:col-span-2 xl:col-span-1">
               <span className="flex items-center gap-3">
                 <span className="shrink-0">
                   <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">
@@ -349,7 +349,7 @@ export function DetailsRankings({
           />
         </span>
       </summary>
-      <div className="flex flex-col gap-6 border-t border-gray-200 bg-gray-50 p-5 sm:p-6">
+      <div className="flex flex-col gap-6 border-t border-slate-200 bg-slate-50 p-5 sm:p-6">
         <section
           aria-labelledby="criterion-evidence"
           className="flex flex-col gap-4"
@@ -462,7 +462,7 @@ export function DetailsCommunityLoading() {
   return (
     <Card
       aria-label="Loading Community"
-      className="animate-pulse"
+      className="animate-pulse border-slate-300 shadow-sm"
       data-details-community-skeleton
       role="status"
     >
@@ -502,7 +502,7 @@ export function DetailsCommunity({
   error?: string;
 }) {
   return (
-    <Card id="reviews">
+    <Card className="overflow-hidden border-slate-300 shadow-sm" id="reviews">
       <CardHeader className={description ? undefined : "pb-3"}>
         <CardTitle
           asChild
@@ -526,14 +526,14 @@ export function DetailsCommunity({
           aria-labelledby="community-reviews"
           className="flex flex-col gap-5"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3
               className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600"
               id="community-reviews"
             >
               Reviews
             </h3>
-            <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="flex w-full flex-col items-start gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
               <ReviewOrderSelect />
               {signedIn ? (
                 reviewComposer

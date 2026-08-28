@@ -9,6 +9,7 @@ import {
 } from "@/app/rankings/instructor-query";
 import { RankingCardSkeletons } from "@/app/rankings/ranking-card-skeleton";
 import { RankingControls } from "@/app/rankings/ranking-controls";
+import { RankingHeader } from "@/app/rankings/ranking-header";
 import { RankingResultCard } from "@/app/rankings/ranking-result-card";
 import { RankingPagination } from "@/app/rankings/ranking-results";
 import { Announcement } from "@/components/component/announcement";
@@ -179,13 +180,8 @@ export function InstructorRankingsPage({
     ? Math.max(1, Math.ceil(rankings.results.length / 100))
     : 1;
   return (
-    <div className="flex w-full max-w-sm flex-col gap-8 text-left lg:max-w-2xl">
-      <header className="text-center">
-        <h1 className="text-logo-gradient text-balance text-6xl font-bold tracking-tighter sm:text-7xl">
-          UST Rankings
-        </h1>
-        <p className="sr-only">Instructor Rankings</p>
-      </header>
+    <div className="flex w-full max-w-sm flex-col gap-8 text-left sm:max-w-xl lg:max-w-2xl">
+      <RankingHeader entity="Instructor" />
       <Announcement />
       <RankingControls
         entity="instructor"

@@ -14,6 +14,7 @@ import {
   queryScheduleDetails,
 } from "@/lib/browser-query/client";
 import type { ScheduleDetails, ScheduleEntity } from "@/lib/schedule/server";
+import detailsStyles from "./details.module.css";
 import { coursePath } from "./routes";
 
 export function BrowserScheduleReviewComposer({
@@ -187,7 +188,9 @@ export function BrowserScheduleDetails({ entity }: { entity: ScheduleEntity }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Classes</CardTitle>
+          <CardTitle asChild className={detailsStyles.heading}>
+            <h2>Classes</h2>
+          </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {state.schedule.classes.length ? (
@@ -228,7 +231,9 @@ export function BrowserScheduleDetails({ entity }: { entity: ScheduleEntity }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Offerings &amp; Classes</CardTitle>
+          <CardTitle asChild className={detailsStyles.heading}>
+            <h2>Offerings &amp; Classes</h2>
+          </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           {offerings.map((offering) => (
@@ -315,9 +320,11 @@ export function BrowserScheduleDetails({ entity }: { entity: ScheduleEntity }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>
-            {state.schedule.courseCode} {state.schedule.section} (
-            {state.schedule.classNumber})
+          <CardTitle asChild className={detailsStyles.heading}>
+            <h2>
+              {state.schedule.courseCode} {state.schedule.section} (
+              {state.schedule.classNumber})
+            </h2>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm">

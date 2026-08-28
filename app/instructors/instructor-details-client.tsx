@@ -198,8 +198,10 @@ export function BrowserInstructorReviewComposer({
   const [rankings, setRankings] = useState<Rankings | undefined>(
     cachedInstructorDetails(input),
   );
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     let current = true;
+    setHydrated(true);
     void queryInstructorDetails(input).then(
       (value) => {
         if (current) startTransition(() => setRankings(value));
@@ -302,7 +304,7 @@ export function BrowserInstructorReviewComposer({
         initialInstructorUuid={identity.instructor.uuid}
         initialTermCode={rankings?.population.termCode ?? selectedTermCode}
       />
-      {rankings ? (
+      {hydrated && rankings ? (
         <span className="sr-only">
           Ranking Course–Instructor Review contexts: {rankings.courses.length}
         </span>

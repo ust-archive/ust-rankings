@@ -1,6 +1,6 @@
 "use client";
 
-import { Target } from "lucide-react";
+import { ChevronDown, Target } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { RankingSearch } from "@/app/rankings/ranking-search";
@@ -188,14 +188,14 @@ export function RankingControls({
             ))
           : null}
       </noscript>
-      <div className="flex w-full items-center gap-4">
+      <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
         <Field className="min-w-0 flex-1 gap-0">
           <FieldLabel className="sr-only" htmlFor="ranking-search">
             Search Rankings
           </FieldLabel>
           <RankingSearch entity={entity} initialValue={initial.search} />
         </Field>
-        <Field className="w-[10.75rem] shrink-0 gap-0">
+        <Field className="w-full shrink-0 gap-0 sm:w-[10.75rem]">
           <FieldLabel className="sr-only" htmlFor="ranking-term">
             Term
           </FieldLabel>
@@ -206,7 +206,7 @@ export function RankingControls({
           >
             <SelectTrigger
               aria-label="Term"
-              className="h-11 bg-white font-semibold"
+              className="h-12 bg-white font-semibold"
               id="ranking-term"
             >
               <SelectValue placeholder="Latest Term" />
@@ -224,25 +224,29 @@ export function RankingControls({
         </Field>
       </div>
 
-      <Card>
+      <Card className="overflow-hidden border-slate-300 bg-white shadow-sm">
         <Collapsible onOpenChange={changeOpen} open={isOpen}>
-          <CardHeader className="p-4">
+          <CardHeader className="p-0">
             <CardTitle asChild className="text-sm">
               <CollapsibleTrigger asChild>
                 <Button
                   aria-label="Settings"
-                  className="h-auto w-full justify-start p-0 hover:bg-transparent"
+                  className="group min-h-12 w-full justify-between px-4 py-3 text-left hover:bg-slate-50"
                   type="button"
                   variant="ghost"
                 >
-                  Settings
+                  <span>Settings</span>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="size-4 text-slate-500 transition-transform group-data-[state=open]:rotate-180"
+                  />
                 </Button>
               </CollapsibleTrigger>
             </CardTitle>
           </CardHeader>
           <CollapsibleContent>
             <Separator />
-            <CardContent className="flex flex-col gap-6 p-5">
+            <CardContent className="flex flex-col gap-6 bg-slate-50/35 p-5 sm:p-6">
               <header className="flex flex-col items-center gap-1 text-center">
                 <Target aria-hidden="true" />
                 <h2 className="text-balance text-xl font-semibold">
@@ -266,29 +270,31 @@ export function RankingControls({
                   variant="outline"
                 >
                   <ToggleGroupItem
-                    className="h-auto min-h-20 flex-col items-start px-4 text-left"
+                    className="group h-auto min-h-20 flex-col items-start border-slate-300 bg-white px-4 text-left data-[state=on]:border-slate-950 data-[state=on]:bg-slate-950 data-[state=on]:text-white data-[state=on]:hover:bg-slate-900"
                     value="learning"
                   >
-                    <span>Knowledge-Focus&apos;d</span>
-                    <span className="whitespace-normal text-xs font-normal text-gray-600">
+                    <span className="font-semibold">
+                      Knowledge-Focus&apos;d
+                    </span>
+                    <span className="whitespace-normal text-xs font-normal text-slate-600 group-data-[state=on]:text-slate-200">
                       Prioritize things learned.
                     </span>
                   </ToggleGroupItem>
                   <ToggleGroupItem
-                    className="h-auto min-h-20 flex-col items-start px-4 text-left"
+                    className="group h-auto min-h-20 flex-col items-start border-slate-300 bg-white px-4 text-left data-[state=on]:border-slate-950 data-[state=on]:bg-slate-950 data-[state=on]:text-white data-[state=on]:hover:bg-slate-900"
                     value="grade"
                   >
-                    <span>Grading-Focus&apos;d</span>
-                    <span className="whitespace-normal text-xs font-normal text-gray-600">
+                    <span className="font-semibold">Grading-Focus&apos;d</span>
+                    <span className="whitespace-normal text-xs font-normal text-slate-600 group-data-[state=on]:text-slate-200">
                       Prioritize grading evidence.
                     </span>
                   </ToggleGroupItem>
                   <ToggleGroupItem
-                    className="h-auto min-h-20 flex-col items-start px-4 text-left"
+                    className="group h-auto min-h-20 flex-col items-start border-slate-300 bg-white px-4 text-left data-[state=on]:border-slate-950 data-[state=on]:bg-slate-950 data-[state=on]:text-white data-[state=on]:hover:bg-slate-900"
                     value="custom"
                   >
-                    <span>Custom</span>
-                    <span className="whitespace-normal text-xs font-normal text-gray-600">
+                    <span className="font-semibold">Custom</span>
+                    <span className="whitespace-normal text-xs font-normal text-slate-600 group-data-[state=on]:text-slate-200">
                       Set every criterion weight.
                     </span>
                   </ToggleGroupItem>
