@@ -546,6 +546,10 @@ function compactCourseCode(courseCode: string) {
   return courseCode.replace(" ", "");
 }
 
+function courseCodeSearchValues(courseCode: string) {
+  return [courseCode, compactCourseCode(courseCode)];
+}
+
 async function catalog(
   runtime: Runtime,
   input: CourseQueryOperations["catalog"]["input"],
@@ -711,8 +715,7 @@ async function courseRankings(
       searchText: [
         prefix,
         courseNumber,
-        code,
-        compactCourseCode(code),
+        ...courseCodeSearchValues(code),
         courseMetadata?.title,
         ...associated.flatMap((identity) => [
           identity.uuid,
@@ -1146,8 +1149,7 @@ async function instructorRankings(
       searchText: [
         ...(familySearchValues.get(identity.uuid) ?? []),
         ...[...courseCodes].flatMap((code) => [
-          code,
-          compactCourseCode(code),
+          ...courseCodeSearchValues(code),
           runtime.courses.get(code)?.title,
         ]),
       ]
@@ -2077,8 +2079,7 @@ function waitlistOfferings(rows: readonly Row[]): WaitlistCourseOffering[] {
 
 function waitlistSearchText(offering: WaitlistCourseOffering) {
   return [
-    offering.courseCode,
-    compactCourseCode(offering.courseCode),
+    ...courseCodeSearchValues(offering.courseCode),
     offering.title,
     ...offering.classes.flatMap((item) => [
       item.section,
