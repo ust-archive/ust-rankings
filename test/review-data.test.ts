@@ -82,6 +82,19 @@ test("Review reads cross one contribution seam and distinguish provider unavaila
   ).rejects.toBe(programmingError);
 });
 
+test("Review reads normalize cached timestamp strings", async () => {
+  postgresListReviews.mockReset();
+  postgresListReviews.mockResolvedValue([
+    {
+      ...review,
+      publishedAt: "2026-08-20T12:00:00.000Z" as unknown as Date,
+    },
+  ]);
+  const result = await loadCourseReviews("COMP", "2000");
+  expect(result.reviews[0]?.publishedAt).toEqual(review.publishedAt);
+  expect(result.reviews[0]?.publishedAt).toBeInstanceOf(Date);
+});
+
 test("Review reads reveal edit capability only to the authenticated author query", async () => {
   const userId = "00000000-0000-4000-8000-000000000044";
   const calls: unknown[] = [];
