@@ -43,6 +43,32 @@ function fixture() {
         },
       ]),
     ),
+    waitlistEvidence: {
+      artifact: "waitlist-evidence.parquet",
+      schemaVersion: 1,
+      modelVersion: "joint-baseline-v3",
+      sourceArtifact: "canonical/class_records.parquet",
+      sourceRevision: "2".repeat(40),
+      sourceAvailable: true,
+      selectedModel: "baseline",
+      priorWeight: 2,
+      timing: {
+        activation: "first-positive-wait",
+        normalEnrollment: "official-registry",
+        addDrop: "official-registry",
+        sinceActivationBucketsHours: [12, 24, 48],
+        sinceEnrollmentBucketDays: 2,
+        untilAddDropBucketDays: 3,
+      },
+      tuning: {
+        positions: [5, 25, 50],
+        activationHours: [12, 24, 48],
+        priorWeights: [0.5, 1, 2, 4, 8, 16, 32],
+        holdout: "whole-term",
+      },
+      uncertainty: "estimated-bounded-margin-not-calibrated-interval",
+      terms: [],
+    },
     serverIndex: {
       name: "server-index.json.gz",
       url: "server-index.json.gz",
@@ -86,6 +112,14 @@ test("rejects non-loopback HTTP delivery", async () => {
   ).rejects.toThrow("Invalid dataset origin");
 });
 
+test("rejects missing Waitlist Evidence metadata", async () => {
+  const value = fixture();
+  delete (value.manifest as Record<string, unknown>).waitlistEvidence;
+  await expect(
+    resolveDeliveryManifest(baseUrl, request(value)),
+  ).rejects.toThrow("Invalid Waitlist Evidence metadata");
+});
+
 test.each([
   [
     "generation",
@@ -112,6 +146,12 @@ test.each([
     "artifact hash",
     (value: ReturnType<typeof fixture>) => {
       value.manifest.artifacts["courses.parquet"].sha256 = "a".repeat(64);
+    },
+  ],
+  [
+    "Waitlist prior weight",
+    (value: ReturnType<typeof fixture>) => {
+      value.manifest.waitlistEvidence.priorWeight = 4;
     },
   ],
 ] as const)("rejects an invalid %s", async (_label, mutate) => {

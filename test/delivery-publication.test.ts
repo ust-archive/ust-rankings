@@ -19,6 +19,32 @@ function manifest(value = generation): DeliveryManifest {
     schemaVersion: 1,
     generation: value,
     sources: { rankings: "1".repeat(40), schedule: "2".repeat(40) },
+    waitlistEvidence: {
+      artifact: "waitlist-evidence.parquet",
+      schemaVersion: 1,
+      modelVersion: "joint-baseline-v3",
+      sourceArtifact: "canonical/class_records.parquet",
+      sourceRevision: "2".repeat(40),
+      sourceAvailable: true,
+      selectedModel: "baseline",
+      priorWeight: 2,
+      timing: {
+        activation: "first-positive-wait",
+        normalEnrollment: "official-registry",
+        addDrop: "official-registry",
+        sinceActivationBucketsHours: [12, 24, 48],
+        sinceEnrollmentBucketDays: 2,
+        untilAddDropBucketDays: 3,
+      },
+      tuning: {
+        positions: [5, 25, 50],
+        activationHours: [12, 24, 48],
+        priorWeights: [0.5, 1, 2, 4, 8, 16, 32],
+        holdout: "whole-term",
+      },
+      uncertainty: "estimated-bounded-margin-not-calibrated-interval",
+      terms: [],
+    },
     artifacts: {
       "course-ratings.parquet": {
         url: `${cdn}/${value}/course-ratings.parquet`,

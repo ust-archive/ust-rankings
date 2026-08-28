@@ -124,9 +124,20 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           uvx hf download ust-archive/ust-rankings --type dataset --revision "$RANKING_GENERATION_SHA" --local-dir "$RUNNER_TEMP/rankings" --include courses.parquet --include course-ratings.parquet --include instructor-ratings.parquet --include course-instructors.parquet --include instructor-identities.parquet --include instructor-aliases.parquet --include instructor-identity-events.parquet --include instructor-split-affected-associations.parquet
+          schedule_tree="$(curl --fail --silent --show-error --header "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/datasets/ust-archive/schedule/tree/$SCHEDULE_REVISION?recursive=true")"
           uvx hf download ust-archive/schedule --type dataset --revision "$SCHEDULE_REVISION" --local-dir "$RUNNER_TEMP/schedule" --include courses.parquet --include classes.parquet
+          schedule_files=(courses.parquet classes.parquet)
+          if jq -e '.[] | select(.type == "file" and .path == "canonical/class_records.parquet")' <<<"$schedule_tree" >/dev/null; then
+            uvx hf download ust-archive/schedule --type dataset --revision "$SCHEDULE_REVISION" --local-dir "$RUNNER_TEMP/schedule" --include canonical/class_records.parquet
+            schedule_files+=(canonical/class_records.parquet)
+          elif jq -e '.[] | select(.type == "file" and .path == "classes_legacy.parquet")' <<<"$schedule_tree" >/dev/null; then
+            uvx hf download ust-archive/schedule --type dataset --revision "$SCHEDULE_REVISION" --local-dir "$RUNNER_TEMP/schedule" --include classes_legacy.parquet
+            schedule_files+=(classes_legacy.parquet)
+          else
+            echo "::warning::Schedule archive has no canonical/class_records.parquet or classes_legacy.parquet; Waitlist Evidence will be unavailable."
+          fi
           node scripts/write-source-manifest.ts "$RUNNER_TEMP/rankings" "$RANKING_GENERATION_SHA" courses.parquet course-ratings.parquet instructor-ratings.parquet course-instructors.parquet instructor-identities.parquet instructor-aliases.parquet instructor-identity-events.parquet instructor-split-affected-associations.parquet
-          node scripts/write-source-manifest.ts "$RUNNER_TEMP/schedule" "$SCHEDULE_REVISION" courses.parquet classes.parquet
+          node scripts/write-source-manifest.ts "$RUNNER_TEMP/schedule" "$SCHEDULE_REVISION" "${schedule_files[@]}"
 
       - name: Build paired Delivery Dataset and Server Index
         if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'

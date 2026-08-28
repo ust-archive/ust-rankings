@@ -219,6 +219,24 @@ export function cachedCourseDetails(
   return cached("courseDetails", input).value;
 }
 
+export function queryWaitlistSearch(
+  input: CourseQueryOperations["waitlistSearch"]["input"],
+) {
+  return cached("waitlistSearch", input).promise;
+}
+
+export function queryWaitlistPlan(
+  input: CourseQueryOperations["waitlistPlan"]["input"],
+) {
+  return cached("waitlistPlan", input).promise;
+}
+
+export function cachedWaitlistPlan(
+  input: CourseQueryOperations["waitlistPlan"]["input"],
+) {
+  return cached("waitlistPlan", input).value;
+}
+
 export async function queryCourseRankingPages(
   query: RankingsQuery & { entity: "course" },
   pages: number,

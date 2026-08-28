@@ -27,7 +27,8 @@ workers while keeping independent files parallel.
 Critical navigation behavior is automated through the rendered browser
 interface with Playwright. Browser tests use accessible roles, labels, URLs,
 and browser-level controls rather than test-only markup or private framework
-protocols. Run them with `npm run test:browser`.
+protocols. Chromium runs the full suite, including the Waitlist flows. Run them
+with `npm run test:browser`.
 
 Follow `AGENTS.md` for visual coverage that automation does not replace: run the
 app, inspect desktop and 390px screenshots with `agent-browser`, exercise

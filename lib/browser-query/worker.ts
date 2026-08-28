@@ -14,6 +14,8 @@ import {
   queryInstructorRankings,
   queryScheduleDetails,
   querySchedulePage,
+  queryWaitlistPlan,
+  queryWaitlistSearch,
 } from "./runtime";
 
 const scope = self as DedicatedWorkerGlobalScope;
@@ -53,6 +55,16 @@ scope.addEventListener("message", (event: MessageEvent<QueryRequest>) => {
       else if (request.operation === "scheduleDetails")
         output = await queryScheduleDetails(
           request.input as CourseQueryOperations["scheduleDetails"]["input"],
+          request.baseUrl,
+        );
+      else if (request.operation === "waitlistSearch")
+        output = await queryWaitlistSearch(
+          request.input as CourseQueryOperations["waitlistSearch"]["input"],
+          request.baseUrl,
+        );
+      else if (request.operation === "waitlistPlan")
+        output = await queryWaitlistPlan(
+          request.input as CourseQueryOperations["waitlistPlan"]["input"],
           request.baseUrl,
         );
       else

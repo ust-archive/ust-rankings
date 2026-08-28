@@ -275,6 +275,7 @@ test("SEO discovery routes expose the canonical sitemap", async ({
     "/rankings/instructors",
     "/rankings/courses",
     "/schedule",
+    "/waitlist",
     "/faq",
     "/privacy",
   ])

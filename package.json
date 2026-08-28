@@ -9,6 +9,7 @@
   "scripts": {
     "assets:duckdb": "node scripts/copy-duckdb-assets.ts",
     "predev": "npm run assets:duckdb",
+    "preview:data": "node scripts/prepare-preview.ts",
     "dev": "next dev",
     "prebuild": "npm run assets:duckdb",
     "build": "next build",
