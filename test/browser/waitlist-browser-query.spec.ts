@@ -100,6 +100,15 @@ test("Waitlist search and Plan use the typed browser Worker contract", async ({
     course: "WAIT 3000",
   });
   expect(result.components).toHaveLength(2);
+  expect(result.historyLevels).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: "course-pattern-season-timing" }),
+      expect.objectContaining({ id: "course-pattern-timing" }),
+      expect.objectContaining({ id: "pattern-season-timing" }),
+      expect.objectContaining({ id: "pattern-timing" }),
+      expect.objectContaining({ id: "pattern" }),
+    ]),
+  );
   expect(result.joint).toMatchObject({ samples: 1, successes: 0 });
   expect(result.components).toEqual(
     expect.arrayContaining([
@@ -114,7 +123,7 @@ test("Waitlist search and Plan use the typed browser Worker contract", async ({
       }),
     ]),
   );
-  expect(result.smoothing).toMatchObject({ priorWeight: 4 });
+  expect(result.smoothing).toMatchObject({ priorWeight: 2 });
   expect(
     new Set(requests.map((url) => new URL(url).pathname.split("/").at(-1))),
   ).toContain("waitlist-evidence.parquet");

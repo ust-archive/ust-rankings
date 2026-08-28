@@ -37,6 +37,7 @@ import type {
 import {
   DELIVERY_CDN_BASE_URL,
   WAITLIST_EVIDENCE_FILENAME,
+  WAITLIST_SOURCE_ARTIFACTS,
 } from "@/lib/server-index-contract";
 import {
   activationAt,
@@ -1739,7 +1740,7 @@ function waitlistMetadata(runtime: Runtime) {
   if (
     metadata.schemaVersion !== 1 ||
     metadata.modelVersion !== WAITLIST_MODEL_VERSION ||
-    metadata.sourceArtifact !== "classes_legacy.parquet" ||
+    !WAITLIST_SOURCE_ARTIFACTS.includes(metadata.sourceArtifact) ||
     metadata.sourceRevision !== runtime.delivery.manifest.sources.schedule ||
     metadata.selectedModel !== "baseline" ||
     metadata.priorWeight !== WAITLIST_PRIOR_WEIGHT ||
@@ -2132,8 +2133,17 @@ async function waitlistSearch(
   const limitValue = input?.limit ?? 100;
   const limit =
     typeof limitValue === "number" ? Math.floor(limitValue) : Number.NaN;
+  const offsetValue = input?.offset ?? 0;
+  const offset =
+    typeof offsetValue === "number" ? Math.floor(offsetValue) : Number.NaN;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
     throw new QueryError("invalid", "Invalid Waitlist page size.");
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    offset > Number.MAX_SAFE_INTEGER - limit
+  )
+    throw new QueryError("invalid", "Invalid Waitlist page offset.");
   const term = await currentWaitlistTerm(runtime);
   const rows = await queryRows(
     runtime,
@@ -2151,7 +2161,7 @@ async function waitlistSearch(
     term,
     ...(search ? { search } : {}),
     total: results.length,
-    results: results.slice(0, limit),
+    results: results.slice(offset, offset + limit),
   };
 }
 
@@ -2236,30 +2246,38 @@ function waitlistCandidate(
   selected: readonly WaitlistCurrentClass[],
   positions: ReadonlyMap<string, number>,
 ): WaitlistPlanCandidate {
-  const activationAtValues: Record<string, number> = {};
-  const activationHours: Record<string, number> = {};
-  const features: Record<string, WaitlistFeatures> = {};
-  const positionValues: Record<string, number> = {};
-  for (const item of selected) {
-    const type = item.value.classType;
-    const position = positions.get(item.value.section) as number;
-    const observedAt = item.observedAtMs;
-    const activation = item.activationAtMs;
-    if (observedAt === undefined || activation === undefined) continue;
-    activationAtValues[type] = activation;
-    activationHours[type] = Math.max(0, (observedAt - activation) / 3_600_000);
-    features[type] = item.features;
-    positionValues[type] = position;
-  }
+  const components = selected
+    .map((item) => {
+      const observedAt = item.observedAtMs;
+      const activation = item.activationAtMs;
+      return {
+        ...(activation === undefined ? {} : { activationAt: activation }),
+        ...(observedAt === undefined || activation === undefined
+          ? {}
+          : {
+              activationHours: Math.max(
+                0,
+                (observedAt - activation) / 3_600_000,
+              ),
+            }),
+        features: item.features,
+        position: positions.get(item.value.section) as number,
+        section: item.value.section,
+        type: item.value.classType,
+      };
+    })
+    .sort(
+      (left, right) =>
+        left.type.localeCompare(right.type) ||
+        left.section.localeCompare(right.section),
+    );
   return {
-    activationAt: activationAtValues,
-    activationHours,
+    components,
     course: courseCode,
-    features,
-    pattern: [...new Set(selected.map((item) => item.value.classType))]
+    pattern: components
+      .map(({ type }) => type)
       .sort()
       .join("+"),
-    positions: positionValues,
     season: term.season,
     term: term.termCode,
   };
@@ -2377,17 +2395,6 @@ async function waitlistPlan(
       );
     selected.push(item);
   }
-  if (
-    new Set(selected.map((item) => item.value.classType)).size !==
-    selected.length
-  )
-    return waitlistUnsupported(
-      runtime,
-      "duplicate-component",
-      "A Waitlist Plan cannot repeat a component type.",
-      term,
-      requestedCourse,
-    );
   const metadata = waitlistMetadata(runtime);
   const historyRows = await queryRows(
     runtime,
@@ -2434,9 +2441,12 @@ async function waitlistPlan(
   const localComponentResults: WaitlistComponentResult[] = [];
   for (const item of selected) {
     const type = item.value.classType;
-    const outcomes = predicted.local
-      .map((result) => result.components[type])
-      .filter(Boolean);
+    const candidateComponent = candidate.components.find(
+      ({ section }) => section === item.value.section,
+    );
+    const outcomes = predicted.local.flatMap((result) =>
+      result.components.filter(({ section }) => section === item.value.section),
+    );
     const netValues = outcomes.map((result) => result.net);
     const grossValues = outcomes.map((result) => result.gross);
     const successes = outcomes.filter((result) => result.success).length;
@@ -2503,15 +2513,17 @@ async function waitlistPlan(
       classNumber: item.value.classNumber,
       position: entries.find(({ section }) => section === item.value.section)
         ?.position as number,
-      ...(candidate.activationAt?.[type] === undefined
+      ...(candidateComponent?.activationAt === undefined
         ? {}
         : {
-            activationAt: new Date(candidate.activationAt[type]).toISOString(),
+            activationAt: new Date(
+              candidateComponent.activationAt,
+            ).toISOString(),
           }),
       ...(item.value.observedAt ? { observedAt: item.value.observedAt } : {}),
-      ...(candidate.activationHours?.[type] === undefined
+      ...(candidateComponent?.activationHours === undefined
         ? {}
-        : { activationHours: candidate.activationHours[type] }),
+        : { activationHours: candidateComponent.activationHours }),
       current: {
         capacity: item.value.capacity,
         enrollment: item.value.enrollment,
@@ -2552,6 +2564,7 @@ async function waitlistPlan(
     estimate: predicted.estimate,
     margin: uncertainty.margin,
     range: { low: uncertainty.low, high: uncertainty.high },
+    historyLevels: predicted.historyLevels,
     exactHistoryCount: predicted.local.length,
     broaderHistoryCount: predicted.priorSamples,
     prior: {

@@ -22,12 +22,12 @@ function manifest(value = generation): DeliveryManifest {
     waitlistEvidence: {
       artifact: "waitlist-evidence.parquet",
       schemaVersion: 1,
-      modelVersion: "joint-baseline-v1",
-      sourceArtifact: "classes_legacy.parquet",
+      modelVersion: "joint-baseline-v3",
+      sourceArtifact: "canonical/class_records.parquet",
       sourceRevision: "2".repeat(40),
       sourceAvailable: true,
       selectedModel: "baseline",
-      priorWeight: 4,
+      priorWeight: 2,
       timing: {
         activation: "first-positive-wait",
         normalEnrollment: "official-registry",

@@ -64,12 +64,53 @@ test("joint outcome requires every selected component to clear its position", ()
   ]);
   if (!bundle) throw new Error("fixture bundle missing");
   assert.equal(
-    jointOutcome(bundle, { LAB: 11, LEC: 20 }, { LAB: 0, LEC: 0 })?.success,
+    jointOutcome(bundle, {
+      components: [
+        { section: "L1", type: "LEC", position: 20, activationHours: 0 },
+        { section: "LA1", type: "LAB", position: 11, activationHours: 0 },
+      ],
+    })?.success,
     false,
   );
   assert.equal(
-    jointOutcome(bundle, { LAB: 5, LEC: 20 }, { LAB: 0, LEC: 0 })?.success,
+    jointOutcome(bundle, {
+      components: [
+        { section: "L1", type: "LEC", position: 20, activationHours: 0 },
+        { section: "LA1", type: "LAB", position: 5, activationHours: 0 },
+      ],
+    })?.success,
     true,
+  );
+});
+
+test("distinct Classes with the same component type remain separate", () => {
+  const [bundle] = bundleTrajectories([
+    trajectory("L1", "LEC", [0, 30, 10]),
+    trajectory("L2", "LEC", [0, 25, 0]),
+  ]);
+  if (!bundle) throw new Error("fixture bundle missing");
+  assert.equal(bundle.pattern, "LEC+LEC");
+  assert.deepEqual(
+    bundle.components.map(({ trajectory: item }) => item.section),
+    ["L1", "L2"],
+  );
+  assert.equal(
+    jointOutcome(bundle, {
+      components: [
+        { section: "A1", type: "LEC", position: 20, activationHours: 0 },
+        { section: "A2", type: "LEC", position: 20, activationHours: 0 },
+      ],
+    })?.success,
+    true,
+  );
+  assert.equal(
+    jointOutcome(bundle, {
+      components: [
+        { section: "A1", type: "LEC", position: 25, activationHours: 0 },
+        { section: "A2", type: "LEC", position: 20, activationHours: 0 },
+      ],
+    })?.success,
+    false,
   );
 });
 
@@ -86,11 +127,13 @@ test("sparse joint evidence is smoothed toward the component-pattern prior", () 
   const result = prediction(
     [favorable, unfavorable],
     {
+      components: [
+        { section: "L1", type: "LEC", position: 20, activationHours: 0 },
+        { section: "LA1", type: "LAB", position: 5, activationHours: 0 },
+      ],
       course: "COMP1000",
       pattern: "LAB+LEC",
       season: "Fall",
-      positions: { LAB: 5, LEC: 20 },
-      activationHours: { LAB: 0, LEC: 0 },
     },
     "baseline",
     4,
@@ -99,6 +142,24 @@ test("sparse joint evidence is smoothed toward the component-pattern prior", () 
   assert.equal(result?.priorSamples, 2);
   assert.equal(result?.successes, 1);
   assert.equal(result?.estimate, 0.5);
+  assert.deepEqual(
+    result?.historyLevels.map(({ id, offerings, samples }) => ({
+      id,
+      offerings,
+      samples,
+    })),
+    [
+      {
+        id: "course-pattern-season-timing",
+        offerings: 2,
+        samples: 2,
+      },
+      { id: "course-pattern-timing", offerings: 2, samples: 2 },
+      { id: "pattern-season-timing", offerings: 2, samples: 2 },
+      { id: "pattern-timing", offerings: 2, samples: 2 },
+      { id: "pattern", offerings: 2, samples: 2 },
+    ],
+  );
 });
 
 test("completed Terms can be validated without changing production parameters", () => {

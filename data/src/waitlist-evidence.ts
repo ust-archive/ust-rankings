@@ -88,21 +88,42 @@ export type WaitlistBundle = {
   season: WaitlistSeason;
   term: string;
 };
+export type WaitlistPlanComponent = {
+  activationAt?: number;
+  activationHours?: number;
+  features?: WaitlistFeatures;
+  position: number;
+  section: string;
+  type: string;
+};
 export type WaitlistPlanCandidate = {
-  activationAt?: Record<string, number>;
-  activationHours: Record<string, number>;
+  components: WaitlistPlanComponent[];
   course: string;
-  features?: Record<string, WaitlistFeatures | undefined>;
   pattern: string;
-  positions: Record<string, number>;
   season: WaitlistSeason;
   term?: string;
 };
+export type WaitlistJointComponentOutcome = WaitlistOutcome & {
+  section: string;
+  type: string;
+};
 export type WaitlistJointOutcome = {
-  components: Record<string, WaitlistOutcome>;
+  components: WaitlistJointComponentOutcome[];
   success: boolean;
 };
+export type WaitlistHistoryLevelId =
+  | "course-pattern-season-timing"
+  | "course-pattern-timing"
+  | "pattern-season-timing"
+  | "pattern-timing"
+  | "pattern";
+export type WaitlistHistoryLevel = {
+  id: WaitlistHistoryLevelId;
+  offerings: number;
+  samples: number;
+};
 export type WaitlistEvidence = {
+  historyLevels: WaitlistHistoryLevel[];
   local: WaitlistJointOutcome[];
   prior: number;
   priorSamples: number;
@@ -120,8 +141,8 @@ export type WaitlistTuneResult = {
   weight: number;
 };
 
-export const WAITLIST_MODEL_VERSION = "joint-baseline-v1" as const;
-export const WAITLIST_PRIOR_WEIGHT = 4 as const;
+export const WAITLIST_MODEL_VERSION = "joint-baseline-v3" as const;
+export const WAITLIST_PRIOR_WEIGHT = 2 as const;
 export const WAITLIST_TUNING_POSITIONS = [5, 25, 50] as const;
 export const WAITLIST_TUNING_HOURS = [12, 24, 48] as const;
 export const WAITLIST_PRIOR_WEIGHTS = [0.5, 1, 2, 4, 8, 16, 32] as const;
@@ -144,7 +165,7 @@ function typeKey(type: string): string {
 }
 
 function componentPattern(types: Iterable<string>): string {
-  return [...new Set([...types].map(typeKey))].sort().join("+");
+  return [...types].map(typeKey).sort().join("+");
 }
 
 function associationKey(trajectory: WaitlistTrajectory): string {
@@ -169,16 +190,16 @@ export function bundleTrajectories(
     const first = group[0];
     const groupSeason = first ? waitlistSeason(first.term) : undefined;
     if (!first || !groupSeason) continue;
-    const byType = new Map<string, WaitlistTrajectory>();
-    for (const trajectory of [...group].sort((left, right) =>
-      left.section.localeCompare(right.section),
-    )) {
-      const key = typeKey(trajectory.type);
-      if (!byType.has(key)) byType.set(key, trajectory);
-    }
-    const components = [...byType.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([type, trajectory]) => ({ type, trajectory }));
+    const components = [...group]
+      .sort(
+        (left, right) =>
+          typeKey(left.type).localeCompare(typeKey(right.type)) ||
+          left.section.localeCompare(right.section),
+      )
+      .map((trajectory) => ({
+        type: typeKey(trajectory.type),
+        trajectory,
+      }));
     if (components.length === 0) continue;
     bundles.push({
       components,
@@ -281,14 +302,66 @@ function timingBucket(
   ];
 }
 
+function componentSection(
+  component: WaitlistComponent | WaitlistPlanComponent,
+): string {
+  return "trajectory" in component
+    ? component.trajectory.section
+    : component.section;
+}
+
+function componentOrder(
+  left: WaitlistComponent | WaitlistPlanComponent,
+  right: WaitlistComponent | WaitlistPlanComponent,
+): number {
+  return (
+    typeKey(left.type).localeCompare(typeKey(right.type)) ||
+    componentSection(left).localeCompare(componentSection(right))
+  );
+}
+
+function componentPairs(
+  sample: WaitlistBundle,
+  candidate: Pick<WaitlistPlanCandidate, "components">,
+):
+  | Array<{
+      sample: WaitlistComponent;
+      candidate: WaitlistPlanComponent;
+    }>
+  | undefined {
+  const sampleComponents = [...sample.components].sort(componentOrder);
+  const candidateComponents = [...candidate.components].sort(componentOrder);
+  if (sampleComponents.length !== candidateComponents.length) return;
+  const pairs: Array<{
+    sample: WaitlistComponent;
+    candidate: WaitlistPlanComponent;
+  }> = [];
+  for (const [index, sampleComponent] of sampleComponents.entries()) {
+    const candidateComponent = candidateComponents[index];
+    if (
+      !candidateComponent ||
+      typeKey(sampleComponent.type) !== typeKey(candidateComponent.type)
+    )
+      return;
+    pairs.push({ sample: sampleComponent, candidate: candidateComponent });
+  }
+  return pairs;
+}
+
 function candidateTimingBucket(
   candidate: WaitlistPlanCandidate,
-  type: string,
+  component: WaitlistPlanComponent,
 ): [number, number] | undefined {
-  const activation = candidate.activationAt?.[type];
+  const activation = component.activationAt;
   const info = termInfo(candidate.term ?? "");
-  const hours = candidate.activationHours[type];
-  if (activation === undefined || !info || !Number.isFinite(hours)) return;
+  const hours = component.activationHours;
+  if (
+    activation === undefined ||
+    !info ||
+    hours === undefined ||
+    !Number.isFinite(hours)
+  )
+    return;
   const observed = activation + hours * 3_600_000;
   return [
     Math.floor((observed - Date.parse(info.enrollmentStart)) / 86_400_000 / 2),
@@ -300,12 +373,15 @@ function timingClose(
   sample: WaitlistBundle,
   candidate: WaitlistPlanCandidate,
 ): boolean {
-  return sample.components.every(({ type, trajectory }) => {
-    const hours = candidate.activationHours[type] ?? 0;
-    const left = timingBucket(trajectory, hours);
-    const right = candidate.activationAt
-      ? candidateTimingBucket(candidate, type)
-      : left;
+  const pairs = componentPairs(sample, candidate);
+  if (!pairs) return false;
+  return pairs.every(({ sample: item, candidate: component }) => {
+    const hours = component.activationHours ?? 0;
+    const left = timingBucket(item.trajectory, hours);
+    const right =
+      component.activationAt === undefined
+        ? left
+        : candidateTimingBucket(candidate, component);
     return Boolean(
       left &&
         right &&
@@ -332,9 +408,11 @@ function sameFeatures(
   candidate: WaitlistPlanCandidate,
   kind: "capacity" | "instructor" | "meeting",
 ): boolean {
-  return sample.components.every(({ type, trajectory }) => {
-    const sampleFeatures = trajectory.activationFeatures;
-    const candidateFeatures = candidate.features?.[type];
+  const pairs = componentPairs(sample, candidate);
+  if (!pairs) return false;
+  return pairs.every(({ sample: item, candidate: component }) => {
+    const sampleFeatures = item.trajectory.activationFeatures;
+    const candidateFeatures = component.features;
     if (!sampleFeatures || !candidateFeatures) return false;
     if (kind === "capacity")
       return (
@@ -342,6 +420,34 @@ function sameFeatures(
       );
     return sampleFeatures[kind] === candidateFeatures[kind];
   });
+}
+
+const historyLevelCriteria: Record<
+  WaitlistHistoryLevelId,
+  { course: boolean; season: boolean; timing: boolean }
+> = {
+  "course-pattern-season-timing": { course: true, season: true, timing: true },
+  "course-pattern-timing": { course: true, season: false, timing: true },
+  "pattern-season-timing": { course: false, season: true, timing: true },
+  "pattern-timing": { course: false, season: false, timing: true },
+  pattern: { course: false, season: false, timing: false },
+};
+const historyLevelIds = Object.keys(
+  historyLevelCriteria,
+) as WaitlistHistoryLevelId[];
+
+function historyLevelMatch(
+  sample: WaitlistBundle,
+  candidate: WaitlistPlanCandidate,
+  id: WaitlistHistoryLevelId,
+): boolean {
+  const criteria = historyLevelCriteria[id];
+  return (
+    sample.pattern === candidate.pattern &&
+    (!criteria.course || sample.course === candidate.course) &&
+    (!criteria.season || sample.season === candidate.season) &&
+    (!criteria.timing || timingClose(sample, candidate))
+  );
 }
 
 function modelMatch(
@@ -365,23 +471,27 @@ function modelMatch(
 
 export function jointOutcome(
   bundle: WaitlistBundle,
-  positions: Record<string, number>,
-  activationHours: Record<string, number>,
+  candidate: Pick<WaitlistPlanCandidate, "components">,
 ): WaitlistJointOutcome | undefined {
-  const components: Record<string, WaitlistOutcome> = {};
-  for (const type of Object.keys(positions).map(typeKey)) {
-    const component = bundle.components.find((item) => item.type === type);
-    const position = positions[type];
-    const result = component
-      ? outcome(component.trajectory, position, activationHours[type] ?? 0)
-      : undefined;
+  const pairs = componentPairs(bundle, candidate);
+  if (!pairs?.length) return;
+  const components: WaitlistJointComponentOutcome[] = [];
+  for (const { sample, candidate: component } of pairs) {
+    const result = outcome(
+      sample.trajectory,
+      component.position,
+      component.activationHours ?? 0,
+    );
     if (!result) return;
-    components[type] = result;
+    components.push({
+      ...result,
+      section: component.section,
+      type: typeKey(component.type),
+    });
   }
-  if (Object.keys(components).length === 0) return;
   return {
     components,
-    success: Object.values(components).every((result) => result.success),
+    success: components.every((result) => result.success),
   };
 }
 
@@ -389,14 +499,24 @@ function planOutcome(
   bundle: WaitlistBundle,
   candidate: WaitlistPlanCandidate,
 ): WaitlistJointOutcome | undefined {
-  return jointOutcome(bundle, candidate.positions, candidate.activationHours);
+  return jointOutcome(bundle, candidate);
 }
 
 function evidenceFor(
+  training: readonly WaitlistBundle[],
   eligible: Array<{ bundle: WaitlistBundle; result: WaitlistJointOutcome }>,
   candidate: WaitlistPlanCandidate,
   model: WaitlistModelName,
 ): WaitlistEvidence | undefined {
+  const historyLevels = historyLevelIds.map((id) => ({
+    id,
+    offerings: training.filter((bundle) =>
+      historyLevelMatch(bundle, candidate, id),
+    ).length,
+    samples: eligible.filter(({ bundle }) =>
+      historyLevelMatch(bundle, candidate, id),
+    ).length,
+  }));
   const patternPopulation = eligible.filter(
     ({ bundle }) =>
       bundle.pattern === candidate.pattern && timingClose(bundle, candidate),
@@ -416,6 +536,7 @@ function evidenceFor(
       modelMatch(bundle, candidate, model, false),
     );
   return {
+    historyLevels,
     local: local.map(({ result }) => result),
     prior,
     priorSamples: priorPopulation.length,
@@ -432,7 +553,7 @@ export function evidence(
     const result = planOutcome(bundle, candidate);
     return result ? [{ bundle, result }] : [];
   });
-  return evidenceFor(eligible, candidate, model);
+  return evidenceFor(training, eligible, candidate, model);
 }
 
 export function prediction(
@@ -457,26 +578,16 @@ export function planForBundle(
   hours: number,
 ): WaitlistPlanCandidate {
   return {
-    activationAt: Object.fromEntries(
-      bundle.components.map(({ type, trajectory }) => [
-        type,
-        activationAt(trajectory),
-      ]),
-    ) as Record<string, number>,
-    activationHours: Object.fromEntries(
-      bundle.components.map(({ type }) => [type, hours]),
-    ),
+    components: bundle.components.map(({ type, trajectory }) => ({
+      activationAt: activationAt(trajectory),
+      activationHours: hours,
+      features: trajectory.activationFeatures,
+      position,
+      section: trajectory.section,
+      type,
+    })),
     course: bundle.course,
-    features: Object.fromEntries(
-      bundle.components.map(({ type, trajectory }) => [
-        type,
-        trajectory.activationFeatures,
-      ]),
-    ),
     pattern: bundle.pattern,
-    positions: Object.fromEntries(
-      bundle.components.map(({ type }) => [type, position]),
-    ),
     season: bundle.season,
     term: bundle.term,
   };

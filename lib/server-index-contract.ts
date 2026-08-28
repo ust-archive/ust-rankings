@@ -8,12 +8,16 @@ export const DELIVERY_CDN_BASE_URL =
   "https://ust-rankings-data.sgp1.cdn.digitaloceanspaces.com";
 export const SERVER_INDEX_FILENAME = "server-index.json.gz";
 export const WAITLIST_EVIDENCE_FILENAME = "waitlist-evidence.parquet";
+export const WAITLIST_SOURCE_ARTIFACTS = [
+  "canonical/class_records.parquet",
+  "classes_legacy.parquet",
+] as const;
 
 export type WaitlistEvidenceManifest = {
   artifact: typeof WAITLIST_EVIDENCE_FILENAME;
   schemaVersion: number;
   modelVersion: string;
-  sourceArtifact: "classes_legacy.parquet";
+  sourceArtifact: (typeof WAITLIST_SOURCE_ARTIFACTS)[number];
   sourceRevision: string;
   sourceAvailable: boolean;
   selectedModel: "baseline";

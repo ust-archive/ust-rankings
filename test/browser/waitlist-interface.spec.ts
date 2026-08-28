@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 const waitlistCard = (page: import("@playwright/test").Page) =>
   page.locator("[data-waitlist-course='WAIT 3000']");
 
-test("Waitlist Evidence calculates independent browser-only Course Plans", async ({
+test("WL Compass calculates independent browser-only Course Plans", async ({
   page,
 }) => {
   const requests: Array<{ postData: string | null; url: string }> = [];
@@ -13,97 +13,103 @@ test("Waitlist Evidence calculates independent browser-only Course Plans", async
   await page.goto("/waitlist");
 
   await expect(
-    page.getByRole("heading", { level: 1, name: "Historical Queue Evidence" }),
+    page.getByRole("heading", { level: 1, name: "WL Compass" }),
   ).toBeVisible();
   await expect(
     page
       .getByRole("navigation", { name: "Primary navigation" })
-      .getByRole("link", { name: "Waitlist Evidence" }),
+      .getByRole("link", { name: "WL Compass" }),
   ).toBeVisible();
+  await expect(page.getByText(/2025-26 Fall ·/)).toBeVisible();
   await expect(
-    page.getByText("Current supported Term: 2025-26 Fall"),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("searchbox", { name: "Search Waitlist Evidence Courses" }),
+    page.getByRole("searchbox", { name: "Search WL Compass Courses" }),
   ).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Term" })).toHaveCount(0);
 
   const card = waitlistCard(page);
   await expect(card).toBeVisible();
-  await expect(card.getByRole("button", { name: /WAIT 3000/ })).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
-
-  await card.getByRole("button", { name: /WAIT 3000/ }).click();
-  await expect(card.getByRole("button", { name: /WAIT 3000/ })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
-  await expect(card.getByText("L1")).toBeVisible();
-  await expect(card.getByText("Lecture")).toBeVisible();
-  await expect(card.getByText("40 / 30", { exact: true })).toBeVisible();
-  await expect(card.getByText("8", { exact: true })).toBeVisible();
-  await expect(card.getByText(/Queue Instructor/)).toHaveCount(2);
   await expect(
-    card.getByRole("checkbox", { name: /Require L1/ }),
+    card.getByRole("heading", { level: 2, name: "WAIT 3000" }),
   ).toBeVisible();
+  await expect(
+    card.getByRole("columnheader", { name: "Section" }),
+  ).toBeVisible();
+  await expect(
+    card.getByRole("columnheader", { name: "Position" }),
+  ).toBeVisible();
+  await expect(card.locator("tbody > :not(tr)")).toHaveCount(0);
+  await expect(
+    card.getByRole("button", { name: "Require L1" }),
+  ).toHaveAttribute("aria-pressed", "false");
 
-  await card.getByRole("checkbox", { name: /Require L1/ }).check();
+  await card.getByRole("button", { name: "Require L1" }).click();
+  await expect(
+    card.getByRole("button", { name: "Require L1" }),
+  ).toHaveAttribute("aria-pressed", "true");
   await card
-    .getByRole("spinbutton", { name: "Queue position for WAIT 3000 L1" })
+    .getByRole("spinbutton", { name: "WL Position for WAIT 3000 L1" })
     .fill("5");
-  await card.getByRole("checkbox", { name: /Require T1/ }).check();
+  await card.getByRole("button", { name: "Require T1" }).click();
   await card
-    .getByRole("spinbutton", { name: "Queue position for WAIT 3000 T1" })
+    .getByRole("spinbutton", { name: "WL Position for WAIT 3000 T1" })
     .fill("3");
-  await card
-    .getByRole("button", { name: "Calculate Historical Queue Evidence" })
-    .click();
-  const result = card.getByRole("region", {
-    name: "Historical Queue Evidence result",
-  });
-  await expect(result).toBeVisible();
-  await expect(
-    result.getByText(/Not an individual enrollment probability/),
-  ).toBeVisible();
-  await expect(result.getByText(/% ±\d+ pp \(\d+–\d+%\)/)).toBeVisible();
 
-  await result.getByText("Evidence details").click();
-  await expect(result.getByText(/Exact comparable history/)).toBeVisible();
-  await expect(result.getByText(/Smoothing formula/)).toBeVisible();
-  await expect(result.getByText(/Source and model/)).toBeVisible();
+  const result = card.getByRole("region", { name: "WL Compass result" });
+  await expect(result).toBeVisible();
+  await expect(result).toContainText(/The clearance rate/i);
+  await expect(result.getByText("Details")).toBeVisible();
+  await expect(result.getByText("Evidence and Smoothing")).toBeVisible();
+  await expect(result.getByText("Per-Section Evidence")).toBeVisible();
+  await expect(result.getByText("Exact Historical Samples")).toBeVisible();
+  await expect(result.getByText("Fuzzy Historical Samples")).toBeVisible();
+  await expect(result.getByText("Prior Influence")).toBeVisible();
+  await expect(result.getByText("Joint Outcome")).toBeVisible();
   await expect(
-    result.getByText(/Current room capacity: known \(60 seats\)/),
+    result.getByRole("heading", { level: 4, name: "Timing" }),
   ).toBeVisible();
-  await expect(result.getByText(/average gross exits/).first()).toBeVisible();
+  await expect(result.getByText("Enrol Starts")).toBeVisible();
+  await expect(result.getByText("Enrol Ends")).toBeVisible();
+  await expect(result.getByText("Source")).toHaveCount(0);
+  await expect(result.getByText("Joint Clearance Model")).toHaveCount(0);
+  await expect(result.getByText("Historical Waitlist Records")).toHaveCount(0);
+  await expect(
+    result.getByRole("link", { name: "Registry Calendar" }),
+  ).toHaveCount(0);
+  await expect(result.getByText(/joint-baseline-v\d+/)).toHaveCount(0);
+  await expect(
+    result.getByText(/canonical\/class_records\.parquet/),
+  ).toHaveCount(0);
+  await expect(
+    result.getByText(/This estimate uses comparable historical queues/),
+  ).toHaveCount(0);
+  await expect(
+    result.getByRole("button", { name: /How this was read/ }),
+  ).toHaveCount(0);
 
   const math = page.locator("[data-waitlist-course='MATH 1000']");
-  await math.getByRole("button", { name: /MATH 1000/ }).click();
-  await math.getByRole("checkbox", { name: /Require L1/ }).check();
-  await math
-    .getByRole("spinbutton", { name: "Queue position for MATH 1000 L1" })
-    .fill("2");
-  await math
-    .getByRole("button", { name: "Calculate Historical Queue Evidence" })
-    .click();
   await expect(
-    math.getByRole("region", { name: "Historical Queue Evidence result" }),
+    math.getByRole("heading", { level: 2, name: "MATH 1000" }),
   ).toBeVisible();
-  await expect(card.getByRole("button", { name: /WAIT 3000/ })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
+  await math.getByRole("button", { name: "Require L1" }).click();
+  await math
+    .getByRole("spinbutton", { name: "WL Position for MATH 1000 L1" })
+    .fill("2");
+  await expect(
+    math.getByRole("region", { name: "WL Compass result" }),
+  ).toBeVisible();
+  await expect(
+    card.getByRole("button", { name: "Require L1" }),
+  ).toHaveAttribute("aria-pressed", "true");
 
   const search = page.getByRole("searchbox", {
-    name: "Search Waitlist Evidence Courses",
+    name: "Search WL Compass Courses",
   });
   await search.fill("MATH");
   await expect(card).toHaveCount(0);
   await search.fill("");
   await expect(result).toBeVisible();
   await expect(
-    math.getByRole("region", { name: "Historical Queue Evidence result" }),
+    math.getByRole("region", { name: "WL Compass result" }),
   ).toBeVisible();
   await expect(page.locator("#waitlist-wait-3000-summary-heading")).toHaveCount(
     1,
@@ -120,81 +126,103 @@ test("Waitlist Evidence calculates independent browser-only Course Plans", async
   ).toBe(false);
 });
 
-test("Waitlist cards expose independent unsupported Classes and empty-plan validation", async ({
+test("WL Compass supports keyboard use at 390px without horizontal overflow", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/waitlist");
+  const card = waitlistCard(page);
+  await expect(card).toBeVisible();
+
+  const require = card.getByRole("button", { name: "Require L1" });
+  await require.focus();
+  await page.keyboard.press("Enter");
+  await expect(require).toHaveAttribute("aria-pressed", "true");
+
+  const position = card.getByRole("spinbutton", {
+    name: "WL Position for WAIT 3000 L1",
+  });
+  await position.focus();
+  await page.keyboard.type("5");
+  await expect(position).toHaveValue("5");
+  await page.keyboard.press("Tab");
+
+  const details = card.getByRole("button", {
+    name: "More details for WAIT 3000 L1",
+  });
+  await expect(details).toBeFocused();
+  await expect(details).toHaveAttribute("aria-expanded", "true");
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+});
+
+test("WL Compass exposes unsupported sections and waits for valid positions", async ({
   page,
 }) => {
   await page.goto("/waitlist");
   const comp = page.locator("[data-waitlist-course='COMP 2000']");
   const wait = waitlistCard(page);
-  await comp.getByRole("button", { name: /COMP 2000/ }).click();
-  await wait.getByRole("button", { name: /WAIT 3000/ }).click();
-  await expect(comp.getByRole("button", { name: /COMP 2000/ })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
-  await expect(wait.getByRole("button", { name: /WAIT 3000/ })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
   await expect(
-    comp.getByText(/No waitlist is currently reported/),
+    comp.getByRole("heading", { level: 2, name: "COMP 2000" }),
   ).toBeVisible();
-  await expect(comp.getByRole("checkbox")).toHaveCount(1);
   await expect(
-    comp.getByRole("checkbox", { name: /Require L1/ }),
-  ).toBeDisabled();
-  await wait
-    .getByRole("button", { name: "Calculate Historical Queue Evidence" })
-    .click();
-  await expect(
-    wait.getByRole("alert").filter({ hasText: /Select at least one/ }),
+    comp.getByText(/No wait is currently reported/).first(),
   ).toBeVisible();
+  await expect(comp.getByRole("button", { name: "Require L1" })).toBeDisabled();
+  await expect(comp.getByRole("checkbox")).toHaveCount(0);
+
+  await expect(
+    wait.getByRole("button", { name: "Calculate WL Compass" }),
+  ).toHaveCount(0);
+  await expect(
+    wait.getByRole("region", { name: "WL Compass result" }),
+  ).toHaveCount(0);
 });
 
-test("Waitlist cards retain browser-only plans through filtering and validate positions", async ({
+test("WL Compass retains plans through filtering and validates positions", async ({
   page,
 }) => {
   await page.goto("/waitlist");
   const card = waitlistCard(page);
-  await card.getByRole("button", { name: /WAIT 3000/ }).click();
-  await card.getByRole("checkbox", { name: /Require L1/ }).check();
+  await card.getByRole("button", { name: "Require L1" }).click();
   const position = card.getByRole("spinbutton", {
-    name: "Queue position for WAIT 3000 L1",
+    name: "WL Position for WAIT 3000 L1",
   });
   await position.fill("9");
+  await expect(position).toHaveAttribute("aria-invalid", "true");
   await expect(
     card.getByText(/cannot exceed the current wait of 8/),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
-    card.getByRole("button", { name: "Calculate Historical Queue Evidence" }),
-  ).toBeDisabled();
+    card.getByRole("button", { name: "Calculate WL Compass" }),
+  ).toHaveCount(0);
   expect(page.url()).not.toContain("9");
 
   await position.fill("5");
   await expect(
-    card.getByRole("button", { name: "Calculate Historical Queue Evidence" }),
-  ).toBeEnabled();
+    card.getByRole("region", { name: "WL Compass result" }),
+  ).toBeVisible();
   const search = page.getByRole("searchbox", {
-    name: "Search Waitlist Evidence Courses",
+    name: "Search WL Compass Courses",
   });
   await search.fill("MATH");
   await expect(card).toHaveCount(0);
   await search.fill("WAIT");
   await expect(card).toBeVisible();
-  await expect(card.getByRole("button", { name: /WAIT 3000/ })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
+  await expect(
+    card.getByRole("button", { name: "Require L1" }),
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(position).toHaveValue("5");
 
   await page.reload();
   const freshCard = waitlistCard(page);
   await expect(
-    freshCard.getByRole("button", { name: /WAIT 3000/ }),
-  ).toHaveAttribute("aria-expanded", "false");
+    freshCard.getByRole("button", { name: "Require L1" }),
+  ).toHaveAttribute("aria-pressed", "false");
   await expect(
     freshCard.getByRole("spinbutton", {
-      name: "Queue position for WAIT 3000 L1",
+      name: "WL Position for WAIT 3000 L1",
     }),
   ).toHaveCount(0);
 });

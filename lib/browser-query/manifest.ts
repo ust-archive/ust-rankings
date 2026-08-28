@@ -4,6 +4,7 @@ import {
   type DeliveryManifest,
   deliveryGenerationIdentityInput,
   WAITLIST_EVIDENCE_FILENAME,
+  WAITLIST_SOURCE_ARTIFACTS,
 } from "@/lib/server-index-contract";
 import {
   WAITLIST_MODEL_VERSION,
@@ -129,7 +130,7 @@ export async function resolveDeliveryManifest(
     waitlist.artifact !== WAITLIST_EVIDENCE_FILENAME ||
     waitlist.schemaVersion !== 1 ||
     waitlist.modelVersion !== WAITLIST_MODEL_VERSION ||
-    waitlist.sourceArtifact !== "classes_legacy.parquet" ||
+    !WAITLIST_SOURCE_ARTIFACTS.includes(waitlist.sourceArtifact) ||
     !REVISION.test(waitlist.sourceRevision) ||
     waitlist.sourceRevision !== manifest.sources.schedule ||
     typeof waitlist.sourceAvailable !== "boolean" ||

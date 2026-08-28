@@ -1,11 +1,16 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { Info } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { RankingSearch } from "@/app/rankings/ranking-search";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -14,30 +19,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-} from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   BrowserQueryError,
   queryWaitlistPlan,
@@ -50,6 +46,7 @@ import type {
   WaitlistSearchResult,
   WaitlistUnsupportedReason,
 } from "@/lib/browser-query/protocol";
+import { cn } from "@/lib/utils";
 
 const dateFormatter = new Intl.DateTimeFormat("en-HK", {
   dateStyle: "medium",
@@ -57,15 +54,19 @@ const dateFormatter = new Intl.DateTimeFormat("en-HK", {
   timeZone: "Asia/Hong_Kong",
 });
 const numberFormatter = new Intl.NumberFormat("en");
+const waitlistPageSize = 24;
+const waitlistSkeletonCards = [0, 1, 2];
+const waitlistSkeletonRows = [0, 1, 2, 3, 4];
+const waitlistSkeletonColumns = [0, 1, 2, 3, 4, 5];
 
 type SupportedPlan = Extract<WaitlistPlanResult, { status: "supported" }>;
 type CardState = {
-  expanded: boolean;
   loading: boolean;
   positions: Record<string, string>;
   result?: SupportedPlan;
   selectedSections: string[];
   submittedKey?: string;
+  touchedSections: string[];
   error?: string;
 };
 type CardUpdate = (current: CardState) => CardState;
@@ -74,10 +75,10 @@ type WaitlistSchedule = Record<string, unknown>;
 
 function newCardState(): CardState {
   return {
-    expanded: false,
     loading: false,
     positions: {},
     selectedSections: [],
+    touchedSections: [],
   };
 }
 
@@ -86,12 +87,12 @@ function formatDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? value : dateFormatter.format(parsed);
 }
 
-function text(value: unknown) {
+function stringValue(value: unknown) {
   return typeof value === "string" ? value : value == null ? "" : String(value);
 }
 
 function scheduleText(item: WaitlistSchedule, key: string) {
-  return text(item[key]).trim();
+  return stringValue(item[key]).trim();
 }
 
 function scheduleTime(item: WaitlistSchedule, key: string) {
@@ -106,22 +107,26 @@ function scheduleTime(item: WaitlistSchedule, key: string) {
   return scheduleText(item, key).replace(/:00$/, "");
 }
 
-function meetingLabel(schedules: readonly WaitlistSchedule[]) {
-  if (!schedules.length) return "No meeting published";
-  return schedules
-    .map((meeting) =>
-      [
-        scheduleText(meeting, "weekday"),
-        [scheduleTime(meeting, "time_from"), scheduleTime(meeting, "time_to")]
-          .filter(Boolean)
-          .join("–"),
-        scheduleText(meeting, "venue_name") || scheduleText(meeting, "venue"),
-      ]
+function meetingDetails(schedules: readonly WaitlistSchedule[]) {
+  if (!schedules.length) return [{ time: "No meeting published", venue: "" }];
+  return schedules.map((meeting) => ({
+    time: [
+      scheduleText(meeting, "weekday"),
+      [scheduleTime(meeting, "time_from"), scheduleTime(meeting, "time_to")]
         .filter(Boolean)
-        .join(" · "),
-    )
-    .filter(Boolean)
-    .join("; ");
+        .join("–"),
+    ]
+      .filter(Boolean)
+      .join(" "),
+    venue:
+      scheduleText(meeting, "venue_name") || scheduleText(meeting, "venue"),
+  }));
+}
+
+function availableSeats(
+  classItem: Pick<WaitlistClass, "capacity" | "enrollment">,
+) {
+  return Math.max(0, classItem.capacity - classItem.enrollment);
 }
 
 function instructorLabel(schedules: readonly WaitlistSchedule[]) {
@@ -130,7 +135,7 @@ function instructorLabel(schedules: readonly WaitlistSchedule[]) {
       schedules.flatMap((meeting) =>
         Array.isArray(meeting.instructors)
           ? meeting.instructors
-              .map((value) => text(value).trim())
+              .map((value) => stringValue(value).trim())
               .filter(Boolean)
           : [],
       ),
@@ -146,7 +151,7 @@ function reservationLabel(classItem: WaitlistClass) {
       (reservation) =>
         `${reservation.name || "Reserved quota"}: ${numberFormatter.format(
           reservation.enrollment,
-        )}/${numberFormatter.format(reservation.quota)} enrolled`,
+        )}/${numberFormatter.format(reservation.quota)} enrol`,
     )
     .join("; ");
 }
@@ -156,171 +161,234 @@ function unsupportedLabel(reason?: WaitlistUnsupportedReason) {
     case "consent-required":
       return "Consent required before this evidence can be shown.";
     case "inactive":
-      return "Class is inactive in the current Term.";
+      return "Section is inactive in the current term.";
     case "non-waitlisted":
-      return "No waitlist is currently reported for this Class.";
+      return "No wait is currently reported for this section.";
     case "missing-date":
       return "Observation date is missing.";
     case "missing-activation":
-      return "Queue Activation was not observed after normal Class enrollment started.";
+      return "Waitlist activation was not observed after enrol opened.";
     default:
-      return "This Class cannot be used in a Waitlist Plan.";
+      return "This section cannot be used in a Waitlist Plan.";
   }
 }
 
 function positionError(classItem: WaitlistClass, value: string) {
-  if (!value.trim()) return "Enter a positive queue position.";
-  if (!/^\d+$/.test(value)) return "Queue position must be a positive integer.";
+  if (!value.trim()) return "Enter a positive WL position.";
+  if (!/^\d+$/.test(value)) return "WL position must be a positive integer.";
   const position = Number(value);
   if (!Number.isSafeInteger(position) || position <= 0)
-    return "Queue position must be a positive integer.";
+    return "WL position must be a positive integer.";
   if (position > classItem.waitlist)
-    return `Queue position cannot exceed the current wait of ${classItem.waitlist}.`;
+    return `WL position cannot exceed the current wait of ${classItem.waitlist}.`;
   return undefined;
+}
+
+function waitlistPositionInputId(courseCode: string, section: string) {
+  return `waitlist-position-${courseCode.replaceAll(" ", "-")}-${section}`;
 }
 
 function percent(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 
-function average(value: number | undefined) {
+function pp(value: number) {
+  return `${Math.round(value * 100)} pp`;
+}
+
+function DetailItem({
+  title,
+  value,
+  description,
+  className,
+  valueClassName,
+}: {
+  title: string;
+  value: ReactNode;
+  description: ReactNode;
+  className?: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col gap-1", className)}>
+      <dt>{title}</dt>
+      <dd className={cn("font-semibold text-slate-950", valueClassName)}>
+        {value}
+      </dd>
+      <dd className="text-xs leading-relaxed text-slate-600">{description}</dd>
+    </div>
+  );
+}
+
+function formatAverage(value: number | undefined) {
   return value === undefined ? "not available" : value.toFixed(1);
 }
 
 function scenarioLabel(name: "current" | "venue" | "historical-large") {
   switch (name) {
     case "current":
-      return "No capacity adjustment (current Class)";
+      return "Current Section Capacity";
     case "venue":
-      return "Current room capacity";
+      return "Current Room Capacity";
     case "historical-large":
-      return "Larger historical venue";
+      return "Larger Historical Venue";
   }
+}
+
+function scenarioDescription(name: "current" | "venue" | "historical-large") {
+  switch (name) {
+    case "current":
+      return "Capacity reported for this section now.";
+    case "venue":
+      return "Capacity associated with the section's current room.";
+    case "historical-large":
+      return "Whether a larger-venue historical comparison was available.";
+  }
+}
+
+function averageWithUnit(value: number | undefined, unit: string) {
+  return value === undefined
+    ? "Not available"
+    : `${formatAverage(value)} ${unit}`;
 }
 
 function WaitlistEvidenceResult({ result }: { result: SupportedPlan }) {
   const idPrefix = `waitlist-${result.course.replaceAll(" ", "-").toLowerCase()}`;
-  const summaryHeadingId = `${idPrefix}-summary-heading`;
+  const detailsHeadingId = `${idPrefix}-details-heading`;
   const componentsHeadingId = `${idPrefix}-components-heading`;
   const timingHeadingId = `${idPrefix}-timing-heading`;
   return (
     <section
-      aria-label="Historical Queue Evidence result"
+      aria-label="WL Compass result"
       aria-live="polite"
-      className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-blue-50 p-4 sm:p-5"
+      className="flex flex-col gap-5 text-sm text-slate-700"
     >
-      <header className="flex flex-col gap-2">
-        <Badge className="w-fit" variant="secondary">
-          Historical Queue Evidence
-        </Badge>
-        <p className="text-3xl font-bold tracking-tight text-slate-950">
-          {result.headline}
-        </p>
-        <p className="text-sm leading-relaxed text-slate-700">
-          Aggregate queue movement only. Not an individual enrollment
-          probability.
-        </p>
-      </header>
-      <details className="rounded-md border border-blue-200 bg-white p-3">
-        <summary className="cursor-pointer font-semibold text-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2">
-          Evidence details
-        </summary>
-        <div className="mt-4 flex flex-col gap-5 text-sm text-slate-700">
-          <section aria-labelledby={summaryHeadingId}>
-            <h4 className="font-semibold text-slate-950" id={summaryHeadingId}>
-              Evidence and smoothing
-            </h4>
-            <dl className="mt-2 grid gap-2 sm:grid-cols-2">
-              <div>
-                <dt>Exact comparable history</dt>
-                <dd className="font-semibold text-slate-950">
-                  {numberFormatter.format(result.exactHistoryCount)} samples
-                </dd>
-              </div>
-              <div>
-                <dt>Broader pattern history</dt>
-                <dd className="font-semibold text-slate-950">
-                  {numberFormatter.format(result.broaderHistoryCount)} samples
-                </dd>
-              </div>
-              <div>
-                <dt>Prior influence</dt>
-                <dd className="font-semibold text-slate-950">
-                  {percent(result.prior.influence)}
-                </dd>
-              </div>
-              <div>
-                <dt>Joint outcome</dt>
-                <dd className="font-semibold text-slate-950">
-                  {result.joint.successes}/{result.joint.samples} comparable
-                  Course Offerings cleared every required Class
-                </dd>
-              </div>
-            </dl>
-            <p className="mt-3 break-words font-mono text-xs leading-relaxed">
-              Smoothing formula: ({result.smoothing.successes} +{" "}
-              {result.smoothing.priorWeight} ×{" "}
-              {result.smoothing.priorRate.toFixed(3)}) ÷ ({" "}
-              {result.smoothing.exactSamples} + {result.smoothing.priorWeight})
-              = {result.smoothing.estimate.toFixed(3)}
-            </p>
-            <p className="mt-2 leading-relaxed">
-              The margin is an estimated bounded uncertainty display, not a
-              calibrated confidence interval. Historical samples are matched by
-              Course, component pattern, Season, and timing.
-            </p>
-          </section>
+      <p className="m-0 text-slate-950">
+        The clearance rate is{" "}
+        <strong className="font-semibold tabular-nums">
+          {`${percent(result.estimate)} ±${pp(result.margin)} (${percent(result.range.low)}–${percent(result.range.high)})`}
+        </strong>
+        .
+      </p>
+      <section
+        aria-labelledby={detailsHeadingId}
+        className="flex flex-col gap-4"
+      >
+        <h3
+          className="text-base font-semibold text-slate-950"
+          id={detailsHeadingId}
+        >
+          Details
+        </h3>
+        <section>
+          <h4 className="font-semibold text-slate-950">
+            Evidence and Smoothing
+          </h4>
+          <dl className="mt-2 grid gap-4 sm:grid-cols-2">
+            <DetailItem
+              title="Exact Historical Samples"
+              value={`${numberFormatter.format(result.exactHistoryCount)} samples`}
+              description="Direct historical matches for this course, section pattern, term, and timing."
+            />
+            <DetailItem
+              title="Fuzzy Historical Samples"
+              value={`${numberFormatter.format(result.broaderHistoryCount)} samples`}
+              description="Broader historical matches used when exact history is limited."
+            />
+            <DetailItem
+              title="Prior Influence"
+              value={percent(result.prior.influence)}
+              description="How much the smoothing prior contributes to the estimate."
+            />
+            <DetailItem
+              title="Joint Outcome"
+              value={`${result.joint.successes}/${result.joint.samples} offerings`}
+              description="Historical offerings where every required section cleared the requested position."
+            />
+            <DetailItem
+              className="sm:col-span-2"
+              title="Smoothing Formula"
+              value={`(${result.smoothing.successes} + ${result.smoothing.priorWeight} × ${result.smoothing.priorRate.toFixed(3)}) ÷ (${result.smoothing.exactSamples} + ${result.smoothing.priorWeight}) = ${result.smoothing.estimate.toFixed(3)}`}
+              valueClassName="break-words font-mono text-xs"
+              description="Combines exact historical outcomes with the prior; the margin is a bounded uncertainty estimate, not a confidence interval."
+            />
+          </dl>
+        </section>
 
-          <section aria-labelledby={componentsHeadingId}>
-            <h4
-              className="font-semibold text-slate-950"
-              id={componentsHeadingId}
-            >
-              Per-Class evidence
-            </h4>
-            <ul
-              className="mt-2 flex list-none flex-col gap-3 p-0"
-              style={{ listStyle: "none", marginInlineStart: 0 }}
-            >
-              {result.components.map((component) => (
-                <li
-                  className="rounded-md border border-slate-200 p-3"
-                  key={component.section}
-                >
-                  <p className="font-semibold text-slate-950">
-                    {component.section} · {component.type} · queue position{" "}
-                    {component.position}
-                  </p>
-                  <p>
-                    {component.historical.successes}/
-                    {component.historical.samples} comparable Course Offerings
-                    cleared this position; average net reduction{" "}
-                    {average(component.historical.averageNetReduction)}; average
-                    gross exits{" "}
-                    {average(component.historical.averageGrossExits)}.
-                  </p>
-                  {component.historical.minimumNetReduction !== undefined ? (
-                    <p>
-                      Observed net reduction range:{" "}
-                      {component.historical.minimumNetReduction}–
-                      {component.historical.maximumNetReduction}.
-                    </p>
-                  ) : null}
-                  <p>
-                    Queue Activation:{" "}
-                    {component.activationAt
-                      ? formatDate(component.activationAt)
-                      : "not observed"}
-                    {component.activationHours === undefined
-                      ? ""
-                      : ` · ${component.activationHours.toFixed(1)} hours since activation`}
-                    .
-                  </p>
-                  <p>
-                    Current observation: {component.current.enrollment}/
-                    {component.current.capacity} enrolled, wait{" "}
-                    {component.current.waitlist}; reservations:{" "}
-                    {reservationLabel({
+        <section
+          aria-labelledby={componentsHeadingId}
+          className="border-t border-slate-200 pt-4"
+        >
+          <h4 className="font-semibold text-slate-950" id={componentsHeadingId}>
+            Per-Section Evidence
+          </h4>
+          <ul
+            className="mt-2 flex list-none flex-col p-0"
+            style={{ listStyle: "none", marginInlineStart: 0 }}
+          >
+            {result.components.map((component) => (
+              <li className="py-4" key={component.section}>
+                <p className="font-semibold text-slate-950">
+                  {component.section} · {component.type} · position{" "}
+                  {component.position}
+                </p>
+                <dl className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <DetailItem
+                    title="Historical Clearance"
+                    value={`${component.historical.successes}/${component.historical.samples} offerings`}
+                    description="Historical offerings where this section cleared the requested position."
+                  />
+                  <DetailItem
+                    title="Average Net Reduction"
+                    value={averageWithUnit(
+                      component.historical.averageNetReduction,
+                      "positions",
+                    )}
+                    description="Average decrease in queue position after activation."
+                  />
+                  <DetailItem
+                    title="Average Gross Exits"
+                    value={averageWithUnit(
+                      component.historical.averageGrossExits,
+                      "exits",
+                    )}
+                    description="Average number of people leaving the queue after activation."
+                  />
+                  <DetailItem
+                    title="Observed Net Reduction"
+                    value={
+                      component.historical.minimumNetReduction === undefined
+                        ? "Not available"
+                        : `${component.historical.minimumNetReduction}–${component.historical.maximumNetReduction} positions`
+                    }
+                    description="Smallest to largest net reduction observed in matching offerings."
+                  />
+                  <DetailItem
+                    title="Queue Activation"
+                    value={
+                      component.activationAt
+                        ? formatDate(component.activationAt)
+                        : "Not observed"
+                    }
+                    description={
+                      component.activationHours === undefined
+                        ? "When the waitlist first became active after enrol opened."
+                        : `When the waitlist first became active: ${component.activationHours.toFixed(1)} hours after enrol opened.`
+                    }
+                  />
+                  <DetailItem
+                    title="Current Enrollment"
+                    value={`${component.current.enrollment}/${component.current.capacity}`}
+                    description="Currently enrolled students / section capacity."
+                  />
+                  <DetailItem
+                    title="Current Wait"
+                    value={`${component.current.waitlist} students`}
+                    description="Students currently waiting for this section."
+                  />
+                  <DetailItem
+                    title="Reservations"
+                    value={reservationLabel({
                       section: component.section,
                       classNumber: component.classNumber,
                       classType: component.type,
@@ -333,71 +401,57 @@ function WaitlistEvidenceResult({ result }: { result: SupportedPlan }) {
                       reservations: component.current.reservations,
                       eligible: true,
                     })}
-                    .
-                  </p>
-                  <ul
-                    className="mt-2 flex list-none flex-col gap-1 p-0 text-xs"
-                    style={{ listStyle: "none", marginInlineStart: 0 }}
-                  >
-                    {component.capacityScenarios.map((scenario) => (
-                      <li key={scenario.name}>
-                        {scenarioLabel(scenario.name)}: {scenario.status}{" "}
-                        {scenario.capacity === undefined
-                          ? ""
-                          : `(${scenario.capacity} seats)`}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          </section>
+                    description="Reserved-quota enrolment / quota reported for this section."
+                  />
+                </dl>
+                <h5 className="mt-4 font-semibold text-slate-950">
+                  Capacity Scenarios
+                </h5>
+                <dl className="mt-2 grid gap-4 sm:grid-cols-3">
+                  {component.capacityScenarios.map((scenario) => (
+                    <DetailItem
+                      key={scenario.name}
+                      title={scenarioLabel(scenario.name)}
+                      value={
+                        scenario.capacity === undefined
+                          ? "Unknown"
+                          : `${scenario.capacity} seats`
+                      }
+                      description={scenarioDescription(scenario.name)}
+                    />
+                  ))}
+                </dl>
+              </li>
+            ))}
+          </ul>
+        </section>
 
-          <section aria-labelledby={timingHeadingId}>
-            <h4 className="font-semibold text-slate-950" id={timingHeadingId}>
-              Timing, source, and model
-            </h4>
-            <dl className="mt-2 grid gap-2">
-              <div>
-                <dt>Normal Class enrollment starts</dt>
-                <dd className="font-semibold text-slate-950">
-                  {formatDate(result.term.enrollmentStart)}
-                </dd>
-              </div>
-              <div>
-                <dt>Add/drop ends</dt>
-                <dd className="font-semibold text-slate-950">
-                  {formatDate(result.term.addDropEnd)}
-                </dd>
-              </div>
-              <div>
-                <dt>Current observation</dt>
-                <dd className="font-semibold text-slate-950">
-                  {formatDate(result.sourceObservationTime)}
-                </dd>
-              </div>
-              <div>
-                <dt>Timing method</dt>
-                <dd className="font-semibold text-slate-950">
-                  Queue Activation uses the first positive wait observed after
-                  normal Class enrollment starts; enrollment and add/drop dates
-                  use the official Registry calendar.
-                </dd>
-              </div>
-              <div>
-                <dt>Source and model</dt>
-                <dd className="break-words font-semibold text-slate-950">
-                  <a href={result.term.source} rel="noreferrer" target="_blank">
-                    Registry calendar
-                  </a>{" "}
-                  · {result.model.modelVersion} · {result.model.sourceArtifact}{" "}
-                  · source revision {result.model.sourceRevision}
-                </dd>
-              </div>
-            </dl>
-          </section>
-        </div>
-      </details>
+        <section
+          aria-labelledby={timingHeadingId}
+          className="border-t border-slate-200 pt-4"
+        >
+          <h4 className="font-semibold text-slate-950" id={timingHeadingId}>
+            Timing
+          </h4>
+          <dl className="mt-2 grid gap-4 sm:grid-cols-2">
+            <DetailItem
+              title="Enrol Starts"
+              value={formatDate(result.term.enrollmentStart)}
+              description="Official start of enrolment."
+            />
+            <DetailItem
+              title="Enrol Ends"
+              value={formatDate(result.term.addDropEnd)}
+              description="Official end of enrolment and add/drop."
+            />
+            <DetailItem
+              title="Current Observation"
+              value={formatDate(result.sourceObservationTime)}
+              description="Timestamp of the current waitlist snapshot."
+            />
+          </dl>
+        </section>
+      </section>
     </section>
   );
 }
@@ -408,138 +462,273 @@ function WaitlistClassChoice({
   positions,
   selected,
   onChange,
+  showError,
 }: {
   classItem: WaitlistClass;
   courseCode: string;
   positions: Record<string, string>;
   selected: boolean;
+  showError: boolean;
   onChange(update: CardUpdate): void;
 }) {
   const position = positions[classItem.section] ?? "";
-  const error = selected ? positionError(classItem, position) : undefined;
-  const inputId = `waitlist-position-${courseCode.replaceAll(" ", "-")}-${classItem.section}`;
-  const checkboxId = `waitlist-class-${courseCode.replaceAll(" ", "-")}-${classItem.section}`;
+  const error =
+    selected && showError ? positionError(classItem, position) : undefined;
+  const inputId = waitlistPositionInputId(courseCode, classItem.section);
   const schedules = classItem.schedules as WaitlistSchedule[];
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const toggleSelection = () =>
+    onChange((current) => {
+      const checked = !selected;
+      return {
+        ...current,
+        error: undefined,
+        loading: false,
+        positions: checked
+          ? current.positions
+          : Object.fromEntries(
+              Object.entries(current.positions).filter(
+                ([section]) => section !== classItem.section,
+              ),
+            ),
+        result: undefined,
+        selectedSections: checked
+          ? [...current.selectedSections, classItem.section]
+          : current.selectedSections.filter(
+              (section) => section !== classItem.section,
+            ),
+        submittedKey: undefined,
+        touchedSections: checked
+          ? current.touchedSections
+          : current.touchedSections.filter(
+              (section) => section !== classItem.section,
+            ),
+      };
+    });
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="flex flex-col gap-4 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:items-start md:gap-6">
-        <Field orientation="horizontal" className="items-start gap-3">
-          <Checkbox
-            aria-label={`Require ${classItem.section}`}
-            checked={selected}
-            disabled={!classItem.eligible}
-            id={checkboxId}
-            onCheckedChange={(checked) =>
-              onChange((current) => ({
-                ...current,
-                error: undefined,
-                loading: false,
-                positions: checked
-                  ? current.positions
-                  : Object.fromEntries(
-                      Object.entries(current.positions).filter(
-                        ([section]) => section !== classItem.section,
-                      ),
-                    ),
-                result: undefined,
-                selectedSections: checked
-                  ? [...current.selectedSections, classItem.section]
-                  : current.selectedSections.filter(
-                      (section) => section !== classItem.section,
-                    ),
-                submittedKey: undefined,
-              }))
-            }
-          />
-          <div className="flex min-w-0 flex-col gap-1">
-            <FieldLabel className="text-base" htmlFor={checkboxId}>
-              {classItem.section} ·{" "}
-              {classItem.classType === "LEC"
-                ? "Lecture"
-                : classItem.classType === "TUT"
-                  ? "Tutorial"
-                  : classItem.classType === "LAB"
-                    ? "Laboratory"
-                    : "Independent"}
-            </FieldLabel>
-            <FieldDescription>
-              {classItem.eligible
-                ? "Supported for Waitlist Plans"
-                : unsupportedLabel(classItem.unsupportedReason)}
-            </FieldDescription>
-          </div>
-        </Field>
-        <Field data-invalid={Boolean(error)} className="gap-2">
-          <FieldLabel htmlFor={inputId}>Queue position</FieldLabel>
-          <Input
-            aria-describedby={error ? `${inputId}-error` : undefined}
-            aria-invalid={Boolean(error)}
-            aria-label={`Queue position for ${courseCode} ${classItem.section}`}
-            autoComplete="off"
-            disabled={!selected}
-            id={inputId}
-            name={inputId}
-            inputMode="numeric"
-            max={classItem.waitlist}
-            min={1}
-            onChange={(event) =>
-              onChange((current) => ({
-                ...current,
-                error: undefined,
-                loading: false,
-                positions: {
-                  ...current.positions,
-                  [classItem.section]: event.target.value,
-                },
-                result: undefined,
-                submittedKey: undefined,
-              }))
-            }
-            placeholder={selected ? "e.g. 5…" : "Select Class first…"}
-            step={1}
-            type="number"
-            value={position}
-          />
-          <FieldDescription>
-            Current wait: {classItem.waitlist}
-          </FieldDescription>
-          {error ? (
-            <FieldError id={`${inputId}-error`}>{error}</FieldError>
-          ) : null}
-        </Field>
-      </div>
-      <dl className="mt-4 grid gap-x-4 gap-y-2 border-t border-slate-100 pt-3 text-sm text-slate-700 sm:grid-cols-2">
-        <div>
-          <dt className="font-semibold text-slate-950">Meeting</dt>
-          <dd>{meetingLabel(schedules)}</dd>
-        </div>
-        <div>
-          <dt className="font-semibold text-slate-950">Instructor</dt>
-          <dd>{instructorLabel(schedules)}</dd>
-        </div>
-        <div>
-          <dt className="font-semibold text-slate-950">
-            Capacity / enrollment
-          </dt>
-          <dd>
-            {classItem.capacity} / {classItem.enrollment}
-          </dd>
-        </div>
-        <div>
-          <dt className="font-semibold text-slate-950">Wait</dt>
-          <dd>{classItem.waitlist}</dd>
-        </div>
-        <div className="sm:col-span-2">
-          <dt className="font-semibold text-slate-950">Reservations</dt>
-          <dd>{reservationLabel(classItem)}</dd>
-        </div>
-        {classItem.observedAt ? (
-          <div className="sm:col-span-2">
-            <dt className="font-semibold text-slate-950">Observed</dt>
-            <dd>{formatDate(classItem.observedAt)}</dd>
-          </div>
-        ) : null}
-      </dl>
+    <tr
+      className={cn(
+        "text-sm transition-colors hover:bg-slate-50",
+        selected && "bg-slate-50",
+      )}
+    >
+      <td className="border border-slate-200 p-1 align-middle">
+        <button
+          aria-label={`Require ${classItem.section}`}
+          aria-pressed={selected}
+          className={cn(
+            "min-h-12 w-full rounded-md border px-3 py-2 text-center font-mono tabular-nums transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2",
+            selected
+              ? "border-slate-950 bg-slate-950 text-white"
+              : "border-slate-200 bg-slate-50 text-slate-950 hover:bg-slate-100",
+            !classItem.eligible && "cursor-not-allowed opacity-60",
+          )}
+          disabled={!classItem.eligible}
+          onClick={toggleSelection}
+          type="button"
+        >
+          {classItem.section}({classItem.classNumber})
+        </button>
+      </td>
+      {classItem.eligible ? (
+        <>
+          <td className="border border-slate-200 px-1 py-2 text-center font-mono tabular-nums sm:px-2">
+            {numberFormatter.format(classItem.capacity)}
+          </td>
+          <td className="border border-slate-200 px-1 py-2 text-center font-mono tabular-nums sm:px-2">
+            {numberFormatter.format(availableSeats(classItem))}
+          </td>
+          <td className="border border-slate-200 px-1 py-2 text-center font-mono tabular-nums sm:px-2">
+            {numberFormatter.format(classItem.waitlist)}
+          </td>
+          <td className="border border-slate-200 p-1 text-center align-middle">
+            {selected ? (
+              <Field data-invalid={Boolean(error)} className="min-w-0 gap-1">
+                <FieldLabel className="sr-only" htmlFor={inputId}>
+                  WL position
+                </FieldLabel>
+                <Input
+                  aria-invalid={Boolean(error)}
+                  aria-label={`WL Position for ${courseCode} ${classItem.section}`}
+                  autoComplete="off"
+                  className="h-9 min-w-0 border-slate-200 bg-white px-2 text-center font-mono text-xs tabular-nums shadow-none focus-visible:ring-1 focus-visible:ring-slate-400 focus-visible:ring-offset-0 aria-invalid:border-red-700 aria-invalid:text-red-700 aria-invalid:focus-visible:ring-red-700 sm:px-3 sm:text-sm"
+                  id={inputId}
+                  inputMode="numeric"
+                  max={classItem.waitlist}
+                  min={1}
+                  name={inputId}
+                  onBlur={() =>
+                    onChange((current) => ({
+                      ...current,
+                      touchedSections: current.touchedSections.includes(
+                        classItem.section,
+                      )
+                        ? current.touchedSections
+                        : [...current.touchedSections, classItem.section],
+                    }))
+                  }
+                  onChange={(event) =>
+                    onChange((current) => ({
+                      ...current,
+                      error: undefined,
+                      loading: false,
+                      positions: {
+                        ...current.positions,
+                        [classItem.section]: event.target.value,
+                      },
+                      result: undefined,
+                      submittedKey: undefined,
+                      touchedSections: current.touchedSections.includes(
+                        classItem.section,
+                      )
+                        ? current.touchedSections
+                        : [...current.touchedSections, classItem.section],
+                    }))
+                  }
+                  placeholder="-"
+                  step={1}
+                  type="number"
+                  value={position}
+                />
+              </Field>
+            ) : (
+              <span aria-hidden="true" className="text-slate-400">
+                -
+              </span>
+            )}
+          </td>
+        </>
+      ) : (
+        <td
+          className="border border-slate-200 px-2 py-2 text-left text-xs text-slate-600"
+          colSpan={4}
+        >
+          {unsupportedLabel(classItem.unsupportedReason)}
+        </td>
+      )}
+      <td className="border border-slate-200 p-1 text-center align-middle">
+        <Tooltip onOpenChange={setTooltipOpen} open={tooltipOpen}>
+          <TooltipTrigger asChild>
+            <Button
+              aria-expanded={tooltipOpen}
+              aria-label={`More details for ${courseCode} ${classItem.section}`}
+              className="size-9 text-slate-600"
+              onClick={() => setTooltipOpen((open) => !open)}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <Info aria-hidden="true" data-icon="inline-start" />
+            </Button>
+          </TooltipTrigger>
+
+          <TooltipContent
+            className="w-max max-w-[calc(100vw-2rem)] p-4"
+            side="top"
+          >
+            <dl className="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-4 gap-y-3 text-sm">
+              <dt className="font-semibold text-slate-950">Section</dt>
+              <dd className="font-medium tabular-nums">
+                {classItem.section} · {classItem.classType} ·{" "}
+                {classItem.classNumber}
+              </dd>
+              <dt className="font-semibold text-slate-950">Instructor</dt>
+              <dd className="break-words">{instructorLabel(schedules)}</dd>
+              <dt className="self-start font-semibold text-slate-950">
+                Schedule
+              </dt>
+              <dd className="flex min-w-0 flex-col gap-2">
+                {meetingDetails(schedules).map((meeting) => (
+                  <span
+                    className="flex min-w-0 flex-col"
+                    key={`${meeting.time}-${meeting.venue}`}
+                  >
+                    <span className="tabular-nums">
+                      {meeting.time || "Time not published"}
+                    </span>
+                    {meeting.venue ? (
+                      <span className="break-words text-slate-600">
+                        {meeting.venue}
+                      </span>
+                    ) : null}
+                  </span>
+                ))}
+              </dd>
+              <dt className="font-semibold text-slate-950">Quota</dt>
+              <dd className="font-medium tabular-nums">
+                {numberFormatter.format(classItem.capacity)}
+              </dd>
+              <dt className="font-semibold text-slate-950">Avail</dt>
+              <dd className="font-medium tabular-nums">
+                {numberFormatter.format(availableSeats(classItem))}
+              </dd>
+              <dt className="font-semibold text-slate-950">Wait</dt>
+              <dd className="font-medium tabular-nums">
+                {numberFormatter.format(classItem.waitlist)}
+              </dd>
+              <dt className="font-semibold text-slate-950">Reservations</dt>
+              <dd className="min-w-0 break-words">
+                {reservationLabel(classItem)}
+              </dd>
+              {classItem.observedAt ? (
+                <>
+                  <dt className="font-semibold text-slate-950">Observed</dt>
+                  <dd>{formatDate(classItem.observedAt)}</dd>
+                </>
+              ) : null}
+            </dl>
+          </TooltipContent>
+        </Tooltip>
+      </td>
+    </tr>
+  );
+}
+
+function WaitlistCardSkeletons() {
+  return (
+    <div
+      aria-label="Loading WL Compass Courses"
+      className="flex flex-col gap-6"
+      role="status"
+    >
+      {waitlistSkeletonCards.map((card) => (
+        <Card
+          aria-hidden="true"
+          className="animate-pulse overflow-hidden bg-white motion-reduce:animate-none"
+          data-waitlist-card-skeleton
+          key={card}
+        >
+          <CardHeader className="gap-1.5 p-6">
+            <div className="h-7 w-32 rounded bg-slate-200" />
+            <div className="h-4 w-56 max-w-full rounded bg-slate-100" />
+          </CardHeader>
+          <CardContent className="p-6 pt-0">
+            <div className="overflow-hidden rounded-md bg-slate-50">
+              <div className="grid grid-cols-[30%_12%_12%_12%_20%_14%]">
+                {waitlistSkeletonColumns.map((column) => (
+                  <div
+                    className="h-10 border border-slate-200 bg-slate-100"
+                    key={column}
+                  />
+                ))}
+              </div>
+              {waitlistSkeletonRows.map((row) => (
+                <div
+                  className="grid grid-cols-[30%_12%_12%_12%_20%_14%]"
+                  key={row}
+                >
+                  {waitlistSkeletonColumns.map((column) => (
+                    <div className="border border-slate-200 p-1" key={column}>
+                      <div className="h-8 rounded bg-slate-100" />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 }
@@ -569,115 +758,130 @@ function WaitlistCourseCard({
   );
   const canCalculate =
     selectedClasses.length > 0 && Object.keys(errors).length === 0;
-  const calculate = () => {
-    if (!selectedClasses.length) {
-      onUpdate((current) => ({
-        ...current,
-        error: "Select at least one supported Class before calculating.",
-      }));
-      return;
-    }
-    if (!canCalculate) {
-      onUpdate((current) => ({
-        ...current,
-        error: "Fix the highlighted queue positions before calculating.",
-      }));
-      return;
-    }
-    const input = {
+  const planInput = useMemo(() => {
+    if (!canCalculate) return undefined;
+    const classes = offering.classes.filter((item) =>
+      state.selectedSections.includes(item.section),
+    );
+    return {
       termCode,
       coursePrefix: offering.coursePrefix,
       courseNumber: offering.courseNumber,
-      classes: selectedClasses.map((item) => ({
+      classes: classes.map((item) => ({
         section: item.section,
         position: Number(state.positions[item.section]),
       })),
     };
-    const requestKey = JSON.stringify(input);
-    onUpdate((current) => ({
-      ...current,
-      error: undefined,
-      loading: true,
-      result: undefined,
-      submittedKey: requestKey,
-    }));
-    void queryWaitlistPlan(input).then(
-      (result) => {
-        onUpdate((current) => {
-          if (current.submittedKey !== requestKey) return current;
-          if (result.status === "supported")
-            return { ...current, loading: false, result, error: undefined };
-          return { ...current, loading: false, error: result.message };
-        });
-      },
-      (error) =>
-        onUpdate((current) => {
-          if (current.submittedKey !== requestKey) return current;
-          return {
-            ...current,
-            loading: false,
-            error:
-              error instanceof BrowserQueryError
-                ? error.message
-                : "Waitlist Evidence could not be calculated.",
-          };
-        }),
-    );
-  };
+  }, [
+    canCalculate,
+    offering.classes,
+    offering.courseNumber,
+    offering.coursePrefix,
+    state.positions,
+    state.selectedSections,
+    termCode,
+  ]);
+  const planKey = planInput ? JSON.stringify(planInput) : undefined;
+  const calculating =
+    state.loading || (planKey !== undefined && state.submittedKey !== planKey);
+  const runPlan = useCallback(
+    (input: NonNullable<typeof planInput>, requestKey: string) => {
+      onUpdate((current) => ({
+        ...current,
+        error: undefined,
+        loading: true,
+        result: undefined,
+        submittedKey: requestKey,
+      }));
+      void queryWaitlistPlan(input).then(
+        (result) => {
+          onUpdate((current) => {
+            if (current.submittedKey !== requestKey) return current;
+            if (result.status === "supported")
+              return { ...current, loading: false, result, error: undefined };
+            return { ...current, loading: false, error: result.message };
+          });
+        },
+        (error) =>
+          onUpdate((current) => {
+            if (current.submittedKey !== requestKey) return current;
+            return {
+              ...current,
+              loading: false,
+              error:
+                error instanceof BrowserQueryError
+                  ? error.message
+                  : "WL Compass could not be calculated.",
+            };
+          }),
+      );
+    },
+    [onUpdate],
+  );
+  useEffect(() => {
+    if (!planInput || !planKey || state.submittedKey === planKey) return;
+    runPlan(planInput, planKey);
+  }, [planInput, planKey, runPlan, state.submittedKey]);
+  const headingId = `waitlist-${offering.courseCode.replaceAll(" ", "-").toLowerCase()}-summary-heading`;
   return (
     <li data-waitlist-course={offering.courseCode}>
-      <Card className="overflow-hidden bg-white">
-        <Collapsible
-          onOpenChange={(expanded) =>
-            onUpdate((current) => ({ ...current, expanded }))
-          }
-          open={state.expanded}
-        >
-          <CardHeader className="gap-2 p-4 sm:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <CardTitle asChild className="min-w-0 text-left">
-                <h2>
-                  <CollapsibleTrigger asChild>
-                    <Button
-                      aria-label={`${state.expanded ? "Collapse" : "Expand"} ${offering.courseCode}`}
-                      className="h-auto max-w-full justify-start gap-2 whitespace-normal p-0 text-left text-xl font-bold hover:bg-transparent sm:text-2xl"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <span className="wrap-break-word">
-                        {offering.courseCode}
-                      </span>
-                      <ChevronDown
-                        aria-hidden="true"
-                        className="shrink-0 transition-transform data-[state=open]:rotate-180"
-                      />
-                    </Button>
-                  </CollapsibleTrigger>
-                </h2>
-              </CardTitle>
-              <Badge className="shrink-0" variant="outline">
-                {offering.classes.filter((item) => item.eligible).length}{" "}
-                supported
-              </Badge>
-            </div>
-            <CardDescription>{offering.title}</CardDescription>
-          </CardHeader>
-          <CollapsibleContent>
-            <Separator />
-            <CardContent className="flex flex-col gap-5 p-4 sm:p-6">
-              <p className="text-sm leading-relaxed text-slate-700">
-                Select every Class required by this Course Offering and enter
-                the queue position currently shown by SIS. The calculation
-                applies AND semantics across your selected Classes.
-              </p>
-              <FieldSet className="gap-4">
-                <FieldLegend>Required Classes</FieldLegend>
-                <FieldDescription>
-                  Section labels identify Classes but are not predictive
-                  features.
-                </FieldDescription>
-                <FieldGroup className="gap-3">
-                  <div className="flex flex-col gap-3">
+      <Card aria-busy={calculating} className="overflow-hidden bg-white">
+        <CardHeader className="relative gap-1.5 p-6">
+          <div className="min-w-0 pr-8">
+            <CardTitle asChild>
+              <h2 className="wrap-break-word" id={headingId}>
+                {offering.courseCode}
+              </h2>
+            </CardTitle>
+            <CardDescription className="truncate">
+              {offering.title}
+            </CardDescription>
+          </div>
+          {calculating ? (
+            <Spinner
+              aria-label="Calculating WL Compass"
+              className="absolute right-6 top-6 size-5 text-slate-600"
+            />
+          ) : null}
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5 bg-white p-6 pt-0">
+          <section aria-label="Course components">
+            <TooltipProvider delayDuration={300}>
+              <div className="overflow-x-auto rounded-md bg-slate-50">
+                <table className="w-full table-fixed border-collapse text-xs sm:text-sm">
+                  <caption className="sr-only">
+                    Select the course components you need and enter a WL
+                    position for each selected component.
+                  </caption>
+                  <colgroup>
+                    <col className="w-[30%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[14%]" />
+                  </colgroup>
+                  <thead className="bg-slate-50">
+                    <tr>
+                      {[
+                        "Section",
+                        "Quota",
+                        "Avail",
+                        "Wait",
+                        "Position",
+                        "",
+                      ].map((label) => (
+                        <th
+                          className="border border-slate-200 px-1 py-3 text-center font-mono text-xs font-semibold leading-tight sm:px-2 sm:text-sm"
+                          key={label || "details"}
+                          scope="col"
+                        >
+                          {label || <span className="sr-only">Details</span>}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
                     {offering.classes.map((classItem) => (
                       <WaitlistClassChoice
                         classItem={classItem}
@@ -686,35 +890,26 @@ function WaitlistCourseCard({
                         onChange={onUpdate}
                         positions={state.positions}
                         selected={selected.has(classItem.section)}
+                        showError={state.touchedSections.includes(
+                          classItem.section,
+                        )}
                       />
                     ))}
-                  </div>
-                </FieldGroup>
-              </FieldSet>
-              {state.error ? (
-                <Alert variant="destructive">
-                  <h3 className="font-semibold">Plan not calculated</h3>
-                  <AlertDescription>{state.error}</AlertDescription>
-                </Alert>
-              ) : null}
-              <Button
-                disabled={
-                  state.loading || (selectedClasses.length > 0 && !canCalculate)
-                }
-                onClick={calculate}
-                type="button"
-              >
-                {state.loading ? <Spinner aria-hidden="true" /> : null}
-                {state.loading
-                  ? "Calculating…"
-                  : "Calculate Historical Queue Evidence"}
-              </Button>
-              {state.result ? (
-                <WaitlistEvidenceResult result={state.result} />
-              ) : null}
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
+                  </tbody>
+                </table>
+              </div>
+            </TooltipProvider>
+          </section>
+          {state.error ? (
+            <Alert variant="destructive">
+              <h3 className="font-semibold">Plan not calculated</h3>
+              <AlertDescription>{state.error}</AlertDescription>
+            </Alert>
+          ) : null}
+          {state.result ? (
+            <WaitlistEvidenceResult result={state.result} />
+          ) : null}
+        </CardContent>
       </Card>
     </li>
   );
@@ -723,22 +918,32 @@ function WaitlistCourseCard({
 export function WaitlistPage() {
   const searchParams = useSearchParams();
   const search = searchParams.get("q") ?? "";
-  const input = useMemo(() => ({ search: search || undefined }), [search]);
+  const input = useMemo(
+    () => ({
+      limit: waitlistPageSize,
+      offset: 0,
+      search: search || undefined,
+    }),
+    [search],
+  );
   const [state, setState] = useState<{
     error?: "invalid" | "unavailable";
     errorMessage?: string;
     key: string;
+    loadMoreError?: string;
     loading: boolean;
+    loadingMore: boolean;
     page?: WaitlistSearchResult;
-  }>({ key: search, loading: true });
+  }>({ key: search, loading: true, loadingMore: false });
   const [cards, setCards] = useState<Record<string, CardState>>({});
 
   useEffect(() => {
     let current = true;
-    setState((previous) => ({ ...previous, key: search, loading: true }));
+    setState({ key: search, loading: true, loadingMore: false });
     void queryWaitlistSearch(input).then(
       (page) => {
-        if (current) setState({ key: search, loading: false, page });
+        if (current)
+          setState({ key: search, loading: false, loadingMore: false, page });
       },
       (error) => {
         if (!current) return;
@@ -747,6 +952,7 @@ export function WaitlistPage() {
         setState({
           key: search,
           loading: false,
+          loadingMore: false,
           error: invalid ? "invalid" : "unavailable",
           errorMessage:
             error instanceof BrowserQueryError ? error.message : undefined,
@@ -760,6 +966,61 @@ export function WaitlistPage() {
 
   const current = state.key === search ? state : { ...state, loading: true };
   const page = current.page;
+  function loadMore() {
+    if (
+      !page ||
+      state.key !== search ||
+      state.loadingMore ||
+      page.results.length >= page.total
+    )
+      return;
+    const offset = page.results.length;
+    setState((previous) =>
+      previous.key === search
+        ? { ...previous, loadMoreError: undefined, loadingMore: true }
+        : previous,
+    );
+    void queryWaitlistSearch({
+      limit: waitlistPageSize,
+      offset,
+      search: search || undefined,
+    }).then(
+      (nextPage) =>
+        setState((previous) => {
+          if (previous.key !== search || !previous.page) return previous;
+          const knownCourses = new Set(
+            previous.page.results.map((item) => item.courseCode),
+          );
+          return {
+            ...previous,
+            loadMoreError: undefined,
+            loadingMore: false,
+            page: {
+              ...nextPage,
+              results: [
+                ...previous.page.results,
+                ...nextPage.results.filter(
+                  (item) => !knownCourses.has(item.courseCode),
+                ),
+              ],
+            },
+          };
+        }),
+      (error) =>
+        setState((previous) =>
+          previous.key === search
+            ? {
+                ...previous,
+                loadMoreError:
+                  error instanceof BrowserQueryError
+                    ? error.message
+                    : "More WL Compass Course Offerings could not be loaded.",
+                loadingMore: false,
+              }
+            : previous,
+        ),
+    );
+  }
   function updateCard(courseCode: string, update: CardUpdate) {
     setCards((previous) => ({
       ...previous,
@@ -768,75 +1029,88 @@ export function WaitlistPage() {
   }
 
   return (
-    <div className="flex w-full max-w-sm flex-col gap-8 text-left lg:max-w-4xl">
+    <div className="flex w-full max-w-2xl flex-col gap-8 text-left text-slate-900">
       <header className="text-center">
-        <p className="text-xs font-bold uppercase tracking-widest text-blue-700">
-          Waitlist Evidence
-        </p>
-        <h1 className="text-balance text-5xl font-black tracking-tight sm:text-6xl">
-          Historical Queue Evidence
+        <h1 className="text-logo-gradient text-6xl font-bold tracking-tighter sm:text-7xl">
+          WL Compass
         </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-pretty leading-relaxed text-slate-700">
-          Compare aggregate queue movement for a required Waitlist Plan. This
-          evidence does not estimate an individual student&apos;s enrollment
-          outcome.
-        </p>
       </header>
       <div className="flex flex-col gap-4">
         <div className="flex w-full items-center gap-4">
           <Field className="min-w-0 flex-1 gap-0">
             <FieldLabel className="sr-only" htmlFor="ranking-search">
-              Search Waitlist Evidence Courses
+              Search WL Compass Courses
             </FieldLabel>
             <RankingSearch entity="waitlist" initialValue={search} />
           </Field>
         </div>
         {page ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-700">
-            <p className="font-semibold">
-              Current supported Term: {page.term.termName}
-            </p>
-            <p>
-              {numberFormatter.format(page.total)} Course Offering
-              {page.total === 1 ? "" : "s"}
-            </p>
-          </div>
+          <p className="text-sm text-slate-700">
+            {page.term.termName} · {numberFormatter.format(page.total)} Course
+            Offering{page.total === 1 ? "" : "s"}
+          </p>
         ) : null}
       </div>
       {current.loading && !page ? (
-        <Alert aria-label="Loading Waitlist Evidence Courses">
-          <Spinner aria-hidden="true" />
-          <AlertDescription>
-            Loading current Waitlist Evidence Courses…
-          </AlertDescription>
-        </Alert>
+        <WaitlistCardSkeletons />
       ) : current.error ? (
         <Alert variant="destructive">
-          <h2 className="text-xl font-bold">
-            Waitlist Evidence is unavailable
-          </h2>
+          <h2 className="text-xl font-bold">WL Compass is unavailable</h2>
           <AlertDescription>
             {current.errorMessage ??
               "Public current-Term Schedule data could not be loaded. Refresh to try again."}
           </AlertDescription>
         </Alert>
       ) : page?.results.length ? (
-        <ol
-          aria-busy={current.loading}
-          aria-label="Waitlist Evidence Course Offerings"
-          className="flex list-none flex-col gap-3 p-0"
-          style={{ listStyle: "none", marginInlineStart: 0 }}
-        >
-          {page.results.map((offering) => (
-            <WaitlistCourseCard
-              key={offering.courseCode}
-              offering={offering}
-              onUpdate={(update) => updateCard(offering.courseCode, update)}
-              state={cards[offering.courseCode] ?? newCardState()}
-              termCode={page.term.termCode}
-            />
-          ))}
-        </ol>
+        <>
+          <ol
+            aria-busy={current.loading || current.loadingMore}
+            aria-label="WL Compass Course Offerings"
+            className="flex list-none flex-col gap-6 p-0"
+            style={{ listStyle: "none", marginInlineStart: 0 }}
+          >
+            {page.results.map((offering) => (
+              <WaitlistCourseCard
+                key={offering.courseCode}
+                offering={offering}
+                onUpdate={(update) => updateCard(offering.courseCode, update)}
+                state={cards[offering.courseCode] ?? newCardState()}
+                termCode={page.term.termCode}
+              />
+            ))}
+          </ol>
+          {page.results.length < page.total ? (
+            <div className="flex flex-col items-center gap-3">
+              <Button
+                aria-label="Load more WL Compass Course Offerings"
+                className="min-w-32"
+                disabled={current.loadingMore}
+                onClick={loadMore}
+                type="button"
+                variant="outline"
+              >
+                {current.loadingMore ? <Spinner aria-hidden="true" /> : null}
+                {current.loadingMore
+                  ? "Loading…"
+                  : `Load ${numberFormatter.format(
+                      Math.min(
+                        waitlistPageSize,
+                        page.total - page.results.length,
+                      ),
+                    )} more`}
+              </Button>
+              {current.loadMoreError ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{current.loadMoreError}</AlertDescription>
+                </Alert>
+              ) : null}
+              <p className="text-sm text-slate-600" aria-live="polite">
+                Showing {numberFormatter.format(page.results.length)} of{" "}
+                {numberFormatter.format(page.total)} Course Offerings.
+              </p>
+            </div>
+          ) : null}
+        </>
       ) : (
         <Empty className="border bg-white">
           <EmptyHeader>
@@ -851,8 +1125,8 @@ export function WaitlistPage() {
       )}
       <p className="sr-only" role="status">
         {current.loading
-          ? "Updating Waitlist Evidence Courses…"
-          : `Showing ${page?.results.length ?? 0} Waitlist Evidence Course Offerings.`}
+          ? "Updating WL Compass Courses…"
+          : `Showing ${page?.results.length ?? 0} of ${page?.total ?? 0} WL Compass Course Offerings.`}
       </p>
     </div>
   );

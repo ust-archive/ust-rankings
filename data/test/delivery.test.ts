@@ -40,6 +40,7 @@ const rankingInputs = [
 const scheduleInputs = [
   "courses.parquet",
   "classes.parquet",
+  "canonical/class_records.parquet",
   "classes_legacy.parquet",
 ] as const;
 
@@ -61,6 +62,7 @@ async function makeArchiveFixtures(root: string) {
   const scheduleDirectory = join(root, "schedule");
   await mkdir(rankingDirectory, { recursive: true });
   await mkdir(scheduleDirectory, { recursive: true });
+  await mkdir(join(scheduleDirectory, "canonical"), { recursive: true });
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
   const rankingPath = (name: string) => join(rankingDirectory, name);
@@ -175,6 +177,32 @@ async function makeArchiveFixtures(root: string) {
         (100, '2510', '2025-26 Fall', 'COMP 2000', 'L1', 1001, 1, 40, 25, 10, false, ${alphaMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-09-13T00:00:00Z', 3),
         (100, '2510', '2025-26 Fall', 'COMP 2000', 'LA1', 1003, 1, 20, 12, -1, false, ${calibratedMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-09-13T00:00:00Z', 4)
       ) AS t(term_num, term_code, term_name, course_code, section, number, association, capacity, enroll, wait, consent, schedules, reservations, timestamp, source_order)`,
+    );
+    await copy(
+      connection,
+      schedulePath("canonical/class_records.parquet"),
+      `SELECT
+        'legacy'::VARCHAR AS version, NULL::VARCHAR AS source_commit,
+        source_order::BIGINT AS source_order, term_num::INTEGER AS term_num,
+        term_code::VARCHAR AS term_code, term_name::VARCHAR AS term_name,
+        NULL::VARCHAR AS course_id,
+        regexp_extract(upper(trim(course_code)), '^[A-Z]{2,8}')::VARCHAR AS prefix,
+        regexp_extract(upper(trim(course_code)), '[0-9].*$')::VARCHAR AS course_number,
+        upper(trim(course_code))::VARCHAR AS course_code,
+        section::VARCHAR AS section, number::INTEGER AS number,
+        NULL::VARCHAR AS role,
+        CASE
+          WHEN regexp_matches(section, '^LA', 'i') THEN 'LAB'
+          WHEN regexp_matches(section, '^L', 'i') THEN 'LEC'
+          WHEN regexp_matches(section, '^T', 'i') THEN 'TUT'
+          ELSE 'IND'
+        END::VARCHAR AS type,
+        NULL::INTEGER AS association, ''::VARCHAR AS remarks,
+        capacity::INTEGER AS capacity, enroll::INTEGER AS enroll,
+        wait::INTEGER AS wait, consent::BOOLEAN AS consent,
+        true::BOOLEAN AS open, schedules, reservations,
+        'ACTIVE'::VARCHAR AS status, timestamp::TIMESTAMPTZ AS timestamp
+      FROM read_parquet('${schedulePath("classes_legacy.parquet").replaceAll("\\\\", "/")}')`,
     );
   } finally {
     connection.closeSync();
@@ -519,12 +547,12 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
     assert.deepEqual(first.manifest.waitlistEvidence, {
       artifact: "waitlist-evidence.parquet",
       schemaVersion: 1,
-      modelVersion: "joint-baseline-v1",
-      sourceArtifact: "classes_legacy.parquet",
+      modelVersion: "joint-baseline-v3",
+      sourceArtifact: "canonical/class_records.parquet",
       sourceRevision: scheduleRevision,
       sourceAvailable: true,
       selectedModel: "baseline",
-      priorWeight: 4,
+      priorWeight: 2,
       timing: {
         activation: "first-positive-wait",
         normalEnrollment: "official-registry",
@@ -890,11 +918,13 @@ test("emits a schema-only Waitlist Evidence artifact when legacy history is unav
   try {
     const { rankingDirectory, scheduleDirectory } =
       await makeArchiveFixtures(root);
+    await rm(join(scheduleDirectory, "canonical/class_records.parquet"));
     await rm(join(scheduleDirectory, "classes_legacy.parquet"));
     const sourceManifestPath = join(scheduleDirectory, "manifest.json");
     const sourceManifest = JSON.parse(
       await readFile(sourceManifestPath, "utf8"),
     ) as { artifacts: Record<string, unknown> };
+    delete sourceManifest.artifacts["canonical/class_records.parquet"];
     delete sourceManifest.artifacts["classes_legacy.parquet"];
     await writeFile(sourceManifestPath, `${JSON.stringify(sourceManifest)}\n`);
     const result = await buildDeliveryGeneration({

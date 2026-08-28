@@ -148,6 +148,33 @@ export async function makeScheduleGeneration(
         (98, '2410', '2024-25 Fall', 'MATH 1000', 'L1', 2001, 1, 60, 41, 0, false, [{weekday:'Fri', date_from:NULL::DATE, date_to:NULL::DATE, time_from:'13:00'::TIME, time_to:'13:50'::TIME, venue:'R202', venue_name:'Room 202', instructors:['Math Instructor']}], []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2024-09-14T00:00:00Z', 18)
       ) AS t(term_num, term_code, term_name, course_code, section, number, association, capacity, enroll, wait, consent, schedules, reservations, timestamp, source_order))`,
       );
+      await mkdir(join(directory, "canonical"), { recursive: true });
+      await copy(
+        "canonical/class_records.parquet",
+        `SELECT
+          'canonical'::VARCHAR AS version, NULL::VARCHAR AS source_commit,
+          source_order::BIGINT AS source_order, term_num::INTEGER AS term_num,
+          term_code::VARCHAR AS term_code, term_name::VARCHAR AS term_name,
+          NULL::VARCHAR AS course_id,
+          regexp_extract(upper(trim(course_code)), '^[A-Z]+')::VARCHAR AS prefix,
+          regexp_extract(upper(trim(course_code)), '[0-9].*$')::VARCHAR AS course_number,
+          regexp_extract(upper(trim(course_code)), '^[A-Z]+') || ' ' ||
+            regexp_extract(upper(trim(course_code)), '[0-9].*$') AS course_code,
+          section::VARCHAR AS section, number::INTEGER AS number,
+          NULL::VARCHAR AS role,
+          CASE
+            WHEN regexp_matches(section, '^LA', 'i') THEN 'LAB'
+            WHEN regexp_matches(section, '^L', 'i') THEN 'LEC'
+            WHEN regexp_matches(section, '^T', 'i') THEN 'TUT'
+            ELSE 'IND'
+          END::VARCHAR AS type,
+          association::INTEGER AS association, ''::VARCHAR AS remarks,
+          capacity::INTEGER AS capacity, enroll::INTEGER AS enroll,
+          wait::INTEGER AS wait, consent::BOOLEAN AS consent,
+          true::BOOLEAN AS open, schedules, reservations,
+          'ACTIVE'::VARCHAR AS status, timestamp::TIMESTAMPTZ AS timestamp
+        FROM read_parquet('${file("classes_legacy.parquet")}')`,
+      );
     }
   } finally {
     connection.closeSync();
@@ -155,7 +182,12 @@ export async function makeScheduleGeneration(
   }
 
   const filenames = includeLegacy
-    ? ["courses.parquet", "classes.parquet", "classes_legacy.parquet"]
+    ? [
+        "courses.parquet",
+        "classes.parquet",
+        "canonical/class_records.parquet",
+        "classes_legacy.parquet",
+      ]
     : ["courses.parquet", "classes.parquet"];
   const artifacts = Object.fromEntries(
     await Promise.all(

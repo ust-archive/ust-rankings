@@ -39,7 +39,6 @@ export type WaitlistUnsupportedReason =
   | "malformed"
   | "class-not-found"
   | "duplicate-class"
-  | "duplicate-component"
   | "no-history"
   | "stale-position";
 export type WaitlistReservation = {
@@ -91,6 +90,16 @@ export type WaitlistSmoothing = {
   denominator: number;
   estimate: number;
 };
+export type WaitlistHistoryLevel = {
+  id:
+    | "course-pattern-season-timing"
+    | "course-pattern-timing"
+    | "pattern-season-timing"
+    | "pattern-timing"
+    | "pattern";
+  offerings: number;
+  samples: number;
+};
 export type WaitlistComponentResult = {
   type: WaitlistClass["classType"];
   section: string;
@@ -128,6 +137,7 @@ export type WaitlistPlanResult =
       estimate: number;
       margin: number;
       range: { low: number; high: number };
+      historyLevels: WaitlistHistoryLevel[];
       exactHistoryCount: number;
       broaderHistoryCount: number;
       prior: {
@@ -193,7 +203,7 @@ export type CourseQueryOperations = {
     output: CourseRankings;
   };
   waitlistSearch: {
-    input: { search?: string; limit?: number };
+    input: { search?: string; limit?: number; offset?: number };
     output: WaitlistSearchResult;
   };
   waitlistPlan: {

@@ -121,13 +121,14 @@ while keeping only the browser contract columns; Instructor names remain in
 `instructors.parquet` rather than the rating rows.
 
 `waitlist-evidence.parquet` is a narrow, aggregate-only projection of the
-pinned Schedule `classes_legacy.parquet` relation. It retains supported
-Fall/Spring observations, component type derived from the section identifier, Course Offering
-association, capacity/enrollment/wait counts, timestamps, reservations,
-schedules, and source order. It contains no student identity or individual queue outcome.
-When a delivery input lacks `classes_legacy.parquet`, the derivation emits a
-schema-only artifact and marks `waitlistEvidence.sourceAvailable` false; it
-does not infer historical evidence from the current snapshot.
+pinned Schedule unified `canonical/class_records.parquet` view. Older Schedule revisions may use `classes_legacy.parquet` as a fallback. It retains supported
+Fall/Spring observations, component type, Course Offering association,
+capacity/enrollment/wait counts, timestamps, reservations, schedules, and
+source order. DuckDB removes unchanged wait observations before publication.
+It contains no student identity or individual queue outcome.
+When neither source is available, the derivation emits a schema-only artifact
+and marks `waitlistEvidence.sourceAvailable` false; it does not infer historical
+evidence from the current snapshot.
 
 The same generation writes a compressed `server-index.json.gz` containing the
 Course, Instructor identity/history, relation, active Course Offering, active

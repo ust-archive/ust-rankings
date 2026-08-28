@@ -41,7 +41,7 @@ export function RankingSearch({
       ? "Search Courses"
       : entity === "instructor"
         ? "Search Instructors"
-        : "Search Waitlist Evidence Courses";
+        : "Search WL Compass Courses";
   return (
     <InputGroup className="h-12 min-w-0 flex-1 rounded-full bg-white">
       <InputGroupAddon className="cursor-default">
@@ -59,7 +59,7 @@ export function RankingSearch({
             ? "Search for courses by name / instructor / etc…"
             : entity === "instructor"
               ? "Search for instructors by name / course / etc…"
-              : "Search for courses by code / title / Class…"
+              : "Search for courses by code / title…"
         }
         spellCheck={false}
         type="search"
