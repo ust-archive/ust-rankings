@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-28T00:00:00.000Z",
+  "title": "Design System: UST Rankings",
+  "extensions": {
+    "colorMeta": {
+      "hkust-blue": {
+        "role": "primary",
+        "displayName": "HKUST Blue",
+        "canonical": "#003366",
+        "tonalRamp": ["oklch(18% 0.07 255)", "oklch(28% 0.09 255)", "#003366", "oklch(45% 0.12 255)", "#2b6297", "oklch(68% 0.09 255)", "oklch(82% 0.05 255)", "oklch(94% 0.02 255)"]
+      },
+      "hkust-gold": {
+        "role": "secondary",
+        "displayName": "HKUST Gold",
+        "canonical": "#996600",
+        "tonalRamp": ["oklch(20% 0.06 78)", "oklch(32% 0.08 78)", "#996600", "oklch(45% 0.11 78)", "oklch(58% 0.12 80)", "oklch(72% 0.1 84)", "oklch(86% 0.06 88)", "oklch(96% 0.03 90)"]
+      },
+      "hkust-yellow": {
+        "role": "secondary",
+        "displayName": "HKUST Yellow",
+        "canonical": "#CC9900",
+        "tonalRamp": ["oklch(20% 0.06 82)", "oklch(34% 0.08 82)", "oklch(48% 0.1 82)", "#CC9900", "oklch(70% 0.13 84)", "oklch(82% 0.09 88)", "oklch(91% 0.055 90)", "oklch(97% 0.025 92)"]
+      },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#020617", "tonalRamp": ["#020617", "#0f172a", "#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#e2e8f0"] },
+      "surface": { "role": "neutral", "displayName": "Surface", "canonical": "#ffffff", "tonalRamp": ["#0f172a", "#334155", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#f1f5f9", "#ffffff"] },
+      "grade-red": { "role": "tertiary", "displayName": "Grade Red", "canonical": "#ed1b2f", "tonalRamp": ["oklch(18% 0.08 25)", "oklch(30% 0.12 25)", "oklch(42% 0.17 25)", "#ed1b2f", "oklch(65% 0.17 25)", "oklch(78% 0.11 25)", "oklch(88% 0.06 25)", "oklch(96% 0.025 25)"] },
+      "grade-green": { "role": "tertiary", "displayName": "Grade Green", "canonical": "#009a61", "tonalRamp": ["oklch(18% 0.06 158)", "oklch(30% 0.09 158)", "#009a61", "oklch(55% 0.13 158)", "#a3cf62", "oklch(78% 0.1 138)", "oklch(88% 0.06 138)", "oklch(96% 0.025 138)"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Product title moments and ranking mastheads." },
+      "headline": { "displayName": "Headline", "purpose": "Detail-page identities and major page headings." },
+      "title": { "displayName": "Title", "purpose": "Cards, result names, and section headings." },
+      "body": { "displayName": "Body", "purpose": "Operational reading, controls, descriptions, and form copy." },
+      "label": { "displayName": "Label", "purpose": "Eyebrows, metric labels, and compact metadata headings." },
+      "mono": { "displayName": "Mono", "purpose": "Technical or tabular contexts that benefit from fixed rhythm." }
+    },
+    "shadows": [
+      { "name": "surface-rest", "value": "0 1px 2px rgb(0 0 0 / 0.05)", "purpose": "Barely-there separation for cards and active tabs." },
+      { "name": "interactive-hover", "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)", "purpose": "Hover lift for clickable ranking result cards." },
+      { "name": "focus-ring", "value": "0 0 0 2px #020617, 0 0 0 4px #ffffff", "purpose": "Keyboard focus and accessible control state." }
+    ],
+    "motion": [
+      { "name": "navigation-exit", "value": "150ms ease-in", "purpose": "Fade/slide old route content during view transitions." },
+      { "name": "navigation-enter", "value": "210ms ease-out 150ms", "purpose": "Fade/slide new route content during view transitions." },
+      { "name": "navigation-move", "value": "400ms ease-in-out", "purpose": "Shared movement timing for route transitions and text morphs." },
+      { "name": "collapsible-open", "value": "300ms ease-out", "purpose": "Waitlist/details collapsible expansion." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Default compact action button: ink fill, off-white text, visible focus ring.",
+      "html": "<button class=\"ds-btn-primary\">Load more</button>",
+      "css": ".ds-btn-primary{display:inline-flex;height:40px;align-items:center;justify-content:center;border:0;border-radius:6px;background:#111827;color:#f9fafb;padding:8px 16px;font-family:Inter,system-ui,sans-serif;font-size:14px;font-weight:500;white-space:nowrap;transition:background-color .15s ease,color .15s ease}.ds-btn-primary:hover{background:rgb(17 24 39 / .9)}.ds-btn-primary:focus-visible{outline:0;box-shadow:0 0 0 2px #020617,0 0 0 4px #fff}.ds-btn-primary:active{background:#020617}.ds-btn-primary:disabled{pointer-events:none;opacity:.5}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action button for recovery links and low-emphasis operations.",
+      "html": "<button class=\"ds-btn-outline\">Restart rankings</button>",
+      "css": ".ds-btn-outline{display:inline-flex;height:40px;align-items:center;justify-content:center;border:1px solid #e5e7eb;border-radius:6px;background:#fff;color:#111827;padding:8px 16px;font-family:Inter,system-ui,sans-serif;font-size:14px;font-weight:500;white-space:nowrap;transition:background-color .15s ease,color .15s ease,border-color .15s ease}.ds-btn-outline:hover{background:#f3f4f6;color:#111827}.ds-btn-outline:focus-visible{outline:0;box-shadow:0 0 0 2px #020617,0 0 0 4px #fff}.ds-btn-outline:disabled{pointer-events:none;opacity:.5}"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "input-default",
+      "description": "Rounded search group with leading icon for ranking and waitlist search.",
+      "html": "<label class=\"ds-search\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"8\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/><path d=\"m21 21-4.35-4.35\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/></svg><input aria-label=\"Search Courses\" placeholder=\"Search for courses by name / instructor / etc…\" /></label>",
+      "css": ".ds-search{display:flex;height:48px;align-items:center;border:1px solid #e5e7eb;border-radius:9999px;background:#fff;color:#6b7280;padding:0 16px;font-family:Inter,system-ui,sans-serif;transition:box-shadow .15s ease,border-color .15s ease}.ds-search svg{width:16px;height:16px;flex:0 0 auto}.ds-search input{min-width:0;flex:1;border:0;background:transparent;color:#020617;padding:8px 0 8px 8px;font:inherit;font-size:14px;outline:0}.ds-search input::placeholder{color:#6b7280}.ds-search:focus-within{border-color:#020617;box-shadow:0 0 0 1px #020617}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card-default",
+      "description": "Default white evidence container with hairline border and subtle rest shadow.",
+      "html": "<section class=\"ds-card\"><h3>Instructor evidence</h3><p>Samples, ranks, and population metadata stay close to the entity they qualify.</p></section>",
+      "css": ".ds-card{border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#030712;padding:24px;font-family:Inter,system-ui,sans-serif;box-shadow:0 1px 2px rgb(0 0 0 / .05)}.ds-card h3{margin:0 0 6px;font-size:24px;line-height:1;font-weight:600;letter-spacing:-.025em}.ds-card p{margin:0;color:#6b7280;font-size:14px;line-height:1.5}"
+    },
+    {
+      "name": "Ranking Result Card",
+      "kind": "custom",
+      "refersTo": "card-default",
+      "description": "Signature result row with rank, entity evidence, and grade badge in one scan path.",
+      "html": "<a class=\"ds-ranking-card\" href=\"#\"><span class=\"ds-rank\">#12 <small>(86.4)</small></span><span class=\"ds-result\"><strong>Jane Chan</strong><em>24 samples from ust.space. 18 samples from SFQ.</em><small>Rank 12 of 418 · Rank of all time 30 of 1220</small></span><span class=\"ds-grade\">A</span></a>",
+      "css": ".ds-ranking-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:20px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#020617;padding:24px;font-family:Inter,system-ui,sans-serif;text-decoration:none;box-shadow:0 1px 2px rgb(0 0 0 / .05);transition:border-color .15s ease,box-shadow .15s ease}.ds-ranking-card:hover{border-color:#cbd5e1;box-shadow:0 4px 6px -1px rgb(0 0 0 / .1),0 2px 4px -2px rgb(0 0 0 / .1)}.ds-ranking-card:focus-visible{outline:2px solid #020617;outline-offset:2px}.ds-rank{width:128px;color:#475569;font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}.ds-rank small{font-size:16px;font-weight:500}.ds-result{display:grid;gap:3px;min-width:0}.ds-result strong{font-size:24px;line-height:1.1;font-weight:600;color:#020617}.ds-result em{font-style:normal;font-size:14px;color:#475569}.ds-result small{font-size:12px;color:#64748b;font-variant-numeric:tabular-nums}.ds-grade{display:inline-flex;width:48px;justify-content:center;border-radius:8px;background:#009a61;color:#fff;padding:8px 0;font-size:24px;font-weight:700;text-shadow:0 1px 2px rgb(0 0 0 / .8);box-shadow:0 1px 2px rgb(0 0 0 / .05)}"
+    },
+    {
+      "name": "Global Header",
+      "kind": "nav",
+      "description": "HKUST Blue gradient shell with white primary navigation and pill account control.",
+      "html": "<nav class=\"ds-header\"><a class=\"ds-brand\" href=\"#\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M22 10 12 5 2 10l10 5 10-5Z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/><path d=\"M6 12v5c3 2 9 2 12 0v-5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/></svg><span>UST Rankings</span></a><span class=\"ds-links\"><a href=\"#\">Instructors</a><a href=\"#\">Courses</a><a href=\"#\" class=\"ds-pill\">Login</a></span></nav>",
+      "css": ".ds-header{display:flex;min-height:64px;align-items:center;gap:16px;background:linear-gradient(90deg,#003366,#2b6297,#003366);color:#fff;padding:12px 24px;font-family:Inter,system-ui,sans-serif}.ds-brand{display:inline-flex;align-items:center;gap:8px;color:#fff;text-decoration:none;font-weight:700}.ds-brand svg{width:32px;height:32px}.ds-links{margin-left:auto;display:flex;align-items:center;gap:24px;font-size:14px;font-weight:600}.ds-links a{color:#fff;text-decoration:none;text-underline-offset:4px}.ds-links a:hover{text-decoration:underline}.ds-pill{max-width:160px;border:1px solid rgb(255 255 255 / .6);border-radius:9999px;padding:6px 12px}.ds-pill:hover{background:rgb(255 255 255 / .1);text-decoration:none!important}"
+    },
+    {
+      "name": "Tabs",
+      "kind": "custom",
+      "description": "Compact instrument switch: soft rail, white active tab, tiny active shadow.",
+      "html": "<div class=\"ds-tabs\" role=\"tablist\"><button role=\"tab\" aria-selected=\"true\">Teaching</button><button role=\"tab\">Content</button><button role=\"tab\">Workload</button></div>",
+      "css": ".ds-tabs{display:inline-flex;height:40px;align-items:center;justify-content:center;border-radius:6px;background:#f3f4f6;padding:4px;color:#6b7280;font-family:Inter,system-ui,sans-serif}.ds-tabs button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border:0;border-radius:4px;background:transparent;color:inherit;padding:6px 12px;font-size:14px;font-weight:500;transition:color .15s ease,box-shadow .15s ease}.ds-tabs button[aria-selected=true]{background:#fff;color:#030712;box-shadow:0 1px 2px rgb(0 0 0 / .05)}.ds-tabs button:focus-visible{outline:0;box-shadow:0 0 0 2px #020617,0 0 0 4px #fff}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Campus Ledger",
+    "overview": "UST Rankings should feel like a community-maintained academic ledger: independent, precise, transparent, and calm enough to trust during real enrolment decisions. The visual system borrows institutional cues from HKUST Blue and HKUST Gold, then restrains them inside a clean white-and-slate interface where evidence, rank, sample count, and state are always more important than decoration.\n\nThe current system is an operational web app, not a campaign site. Its craft comes from fast scan paths, crisp borders, readable density, tabular figures, compact controls, and small moments of polish: gradient institutional headers, gold title accents, grade-color badges, and view transitions that make navigation feel continuous without turning ranking work into spectacle.",
+    "keyCharacteristics": [
+      "Institutional blue/gold identity used sparingly over a white, slate, and gray working surface.",
+      "Evidence-first hierarchy: titles, rank, grade, sample counts, and terms stay immediately scannable.",
+      "Flat-by-default surfaces with borders; shadows appear mainly as state feedback.",
+      "Rounded but not playful geometry: compact 6–8px controls, fuller pills only for search and identity affordances.",
+      "Motion is purposeful navigation continuity, never ornamental animation."
+    ],
+    "rules": [
+      { "name": "The Evidence Color Rule", "body": "Grade reds, oranges, and greens only represent ranking evidence or score distribution; do not use them as generic decoration.", "section": "colors" },
+      { "name": "The Gold Rarity Rule", "body": "HKUST Gold and HKUST Yellow are brand glints, not generic fill colors. Keep them rare enough that the UST Rankings title and key institutional cues remain special.", "section": "colors" },
+      { "name": "The Scan First Rule", "body": "Ranking screens must let a user read title, rank, grade, and evidence count before any secondary prose competes for attention.", "section": "typography" },
+      { "name": "The Flat Ledger Rule", "body": "Surfaces rest flat. If a shadow appears, it must explain state, focus, or hierarchy.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep HKUST Blue as the primary institutional anchor for navigation, chart markers, and select accents.",
+      "Do use HKUST Gold sparingly for brand emphasis and title moments.",
+      "Do preserve tabular numerals for ranks, scores, populations, dates, and sample counts.",
+      "Do show evidence metadata close to the ranked entity it qualifies.",
+      "Do use borders and tonal surfaces before reaching for heavy shadows."
+    ],
+    "donts": [
+      "Don't use grade red/orange/green for non-evidence decoration.",
+      "Don't make ranking pages visually louder than the data they explain.",
+      "Don't stretch operational ranking controls into overly wide, low-density layouts.",
+      "Don't replace focus rings with hover-only feedback.",
+      "Don't fabricate institutional endorsement, testimonials, or proof assets in visual treatments."
+    ]
+  }
+}
