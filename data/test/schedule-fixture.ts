@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
+import { writeArchiveFixture } from "./archive-fixture.ts";
 
 export const scheduleFixtureSha = "1234567890abcdef1234567890abcdef12345678";
 
@@ -20,6 +21,85 @@ async function digest(path: string) {
   return createHash("sha256")
     .update(await readFile(path))
     .digest("hex");
+}
+
+export async function makeScheduleArchiveFixture(
+  directory: string,
+  sourceCommit: string,
+) {
+  const inputs = [
+    "courses.parquet",
+    "classes.parquet",
+    "canonical/class_records.parquet",
+    "classes_legacy.parquet",
+  ];
+  return writeArchiveFixture(
+    directory,
+    sourceCommit,
+    inputs,
+    async ({ copy, file }) => {
+      const courseColumns = `
+      term_num, term_code, term_name, id, prefix, number, career, title,
+      description, credits, previous, prerequisite, corequisite, exclusion,
+      attributes, status, timestamp`;
+      await copy(
+        "courses.parquet",
+        `SELECT * FROM (VALUES
+        (100, '2510', '2025-26 Fall', 'c1', 'COMP', '1000', 'UGRD', 'Computing One', 'One', 3.0, '', '', '', '', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[], 'INACTIVE', TIMESTAMPTZ '2025-01-01 00:00:00+00'),
+        (100, '2510', '2025-26 Fall', 'c1', 'COMP', '1000', 'UGRD', 'Computing One', 'One', 3.0, '', '', '', '', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00'),
+        (100, '2510', '2025-26 Fall', 'c2', 'COMP', '2000', 'UGRD', 'Computing Two', 'Two', 3.0, '', '', '', '', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00'),
+        (100, '2510', '2025-26 Fall', 'c3', 'SCHED', '4000', 'UGRD', 'Schedule Only', 'Schedule', 3.0, '', '', '', '', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00')
+      ) AS t(${courseColumns})`,
+      );
+      const classColumns = `
+      term_num, term_code, term_name, course_id, section, number, role, type,
+      association, remarks, capacity, enroll, wait, consent, open, schedules,
+      reservations, status, timestamp`;
+      const alphaMeeting = `[{weekday:'Mon', date_from:NULL::DATE, date_to:NULL::DATE, time_from:NULL::TIME, time_to:NULL::TIME, venue:'R101', venue_name:'Room 101', instructors:['Alias Alpha']}]`;
+      const calibratedMeeting = `[{weekday:'Tue', date_from:NULL::DATE, date_to:NULL::DATE, time_from:NULL::TIME, time_to:NULL::TIME, venue:'R102', venue_name:'Room 102', instructors:['Calibrated Name', 'Unknown Name']}]`;
+      await copy(
+        "classes.parquet",
+        `SELECT * FROM (VALUES
+        (100, '2510', '2025-26 Fall', 'c1', 'L1', 1001, 'E', 'LEC', 1, '', 40, 20, 0, false, true, ${alphaMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00'),
+        (100, '2510', '2025-26 Fall', 'c2', 'L1', 1002, 'E', 'LEC', 1, '', 40, 20, 0, false, true, ${calibratedMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00')
+      ) AS t(${classColumns})`,
+      );
+      await copy(
+        "classes_legacy.parquet",
+        `SELECT * FROM (VALUES
+        (100, '2510', '2025-26 Fall', 'COMP 2000', 'L1', 1001, 1, 40, 20, 30, false, ${alphaMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-08-27T00:00:00Z', 1),
+        (100, '2510', '2025-26 Fall', 'COMP 2000', 'LA1', 1003, 1, 20, 10, 12, false, ${calibratedMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-08-27T00:00:00Z', 2),
+        (100, '2510', '2025-26 Fall', 'COMP 2000', 'L1', 1001, 1, 40, 25, 10, false, ${alphaMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-09-13T00:00:00Z', 3),
+        (100, '2510', '2025-26 Fall', 'COMP 2000', 'LA1', 1003, 1, 20, 12, -1, false, ${calibratedMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-09-13T00:00:00Z', 4)
+      ) AS t(term_num, term_code, term_name, course_code, section, number, association, capacity, enroll, wait, consent, schedules, reservations, timestamp, source_order)`,
+      );
+      await copy(
+        "canonical/class_records.parquet",
+        `SELECT
+        'legacy'::VARCHAR AS version, NULL::VARCHAR AS source_commit,
+        source_order::BIGINT AS source_order, term_num::INTEGER AS term_num,
+        term_code::VARCHAR AS term_code, term_name::VARCHAR AS term_name,
+        NULL::VARCHAR AS course_id,
+        regexp_extract(upper(trim(course_code)), '^[A-Z]{2,8}')::VARCHAR AS prefix,
+        regexp_extract(upper(trim(course_code)), '[0-9].*$')::VARCHAR AS course_number,
+        upper(trim(course_code))::VARCHAR AS course_code,
+        section::VARCHAR AS section, number::INTEGER AS number,
+        NULL::VARCHAR AS role,
+        CASE
+          WHEN regexp_matches(section, '^LA', 'i') THEN 'LAB'
+          WHEN regexp_matches(section, '^L', 'i') THEN 'LEC'
+          WHEN regexp_matches(section, '^T', 'i') THEN 'TUT'
+          ELSE 'IND'
+        END::VARCHAR AS type,
+        NULL::INTEGER AS association, ''::VARCHAR AS remarks,
+        capacity::INTEGER AS capacity, enroll::INTEGER AS enroll,
+        wait::INTEGER AS wait, consent::BOOLEAN AS consent,
+        true::BOOLEAN AS open, schedules, reservations,
+        'ACTIVE'::VARCHAR AS status, timestamp::TIMESTAMPTZ AS timestamp
+      FROM read_parquet('${file("classes_legacy.parquet")}')`,
+      );
+    },
+  );
 }
 
 export async function makeScheduleGeneration(

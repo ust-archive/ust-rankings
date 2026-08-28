@@ -1,9 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import postgres from "postgres";
 import { expect, test, vi } from "vitest";
 import { createSignalService, EMOJI_CODES } from "@/lib/contributions/signals";
+import { type PostgresScope, withPostgresSchema } from "./postgres-fixture";
 
 vi.mock("server-only", () => ({}));
 
@@ -19,7 +17,7 @@ const TERMINAL = "00000000-0000-4000-8000-000000000003";
 const SPLIT = "00000000-0000-4000-8000-00000000000a";
 
 async function waitForGraphLock(
-  sql: ReturnType<typeof postgres>,
+  sql: PostgresScope["sql"],
   mode: "ShareLock" | "ExclusiveLock",
   granted: boolean,
 ) {
@@ -45,25 +43,7 @@ if (!connection) {
   test.skip("Signal PostgreSQL contract (TEST_CONTRIBUTIONS_POSTGRES_URL is not configured)", () => {});
 } else {
   test("Signal PostgreSQL contract enforces desired states, privacy, concurrency, authorization, and Instructor identity rules", async () => {
-    const schema = `signal_test_${crypto.randomUUID().replaceAll("-", "")}`;
-    const admin = postgres(connection, { max: 1, onnotice: () => {} });
-    await admin.unsafe(`CREATE SCHEMA ${schema}`);
-    await admin.end();
-    const sql = postgres(connection, {
-      max: 12,
-      connection: { search_path: schema },
-      onnotice: () => {},
-    });
-    try {
-      for (const name of (
-        await readdir(join(process.cwd(), "contributions", "migrations"))
-      ).sort())
-        await sql.unsafe(
-          await readFile(
-            join(process.cwd(), "contributions", "migrations", name),
-            "utf8",
-          ),
-        );
+    await withPostgresSchema("signal", async ({ sql, connect, schemaUrl }) => {
       const { PostgresSignalRepository } = await import(
         "@/lib/contributions/postgres"
       );
@@ -270,8 +250,7 @@ if (!connection) {
         "invalid or cyclic Instructor signal merge",
       );
 
-      const commandUrl = new URL(connection);
-      commandUrl.searchParams.set("options", `-csearch_path=${schema}`);
+      const commandUrl = new URL(schemaUrl);
       const npmCli = process.env.npm_execpath;
       if (!npmCli) throw new Error("npm_execpath is not configured");
       const reverseCommand = spawnSync(
@@ -363,21 +342,9 @@ if (!connection) {
         BEFORE INSERT ON instructor_thumbs_votes
         FOR EACH ROW EXECUTE FUNCTION block_chained_signal_write();
       `);
-      const blockerSql = postgres(connection, {
-        max: 1,
-        connection: { search_path: schema },
-        onnotice: () => {},
-      });
-      const writerSql = postgres(connection, {
-        max: 1,
-        connection: { search_path: schema },
-        onnotice: () => {},
-      });
-      const mergerSql = postgres(connection, {
-        max: 1,
-        connection: { search_path: schema },
-        onnotice: () => {},
-      });
+      const blockerSql = connect(1);
+      const writerSql = connect(1);
+      const mergerSql = connect(1);
       const blocker = await blockerSql.reserve();
       try {
         await blocker`SELECT pg_advisory_lock(470047)`;
@@ -428,11 +395,6 @@ if (!connection) {
         emoji: { confused: 1 },
         mine: { emoji: ["confused"] },
       });
-    } finally {
-      await sql.end({ timeout: 1 });
-      const cleanup = postgres(connection, { max: 1, onnotice: () => {} });
-      await cleanup.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-      await cleanup.end();
-    }
+    });
   }, 30_000);
 }

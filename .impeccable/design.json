@@ -8,43 +8,172 @@
         "role": "primary",
         "displayName": "HKUST Blue",
         "canonical": "#003366",
-        "tonalRamp": ["oklch(18% 0.07 255)", "oklch(28% 0.09 255)", "#003366", "oklch(45% 0.12 255)", "#2b6297", "oklch(68% 0.09 255)", "oklch(82% 0.05 255)", "oklch(94% 0.02 255)"]
+        "tonalRamp": [
+          "oklch(18% 0.07 255)",
+          "oklch(28% 0.09 255)",
+          "#003366",
+          "oklch(45% 0.12 255)",
+          "#2b6297",
+          "oklch(68% 0.09 255)",
+          "oklch(82% 0.05 255)",
+          "oklch(94% 0.02 255)"
+        ]
       },
       "hkust-gold": {
         "role": "secondary",
         "displayName": "HKUST Gold",
         "canonical": "#996600",
-        "tonalRamp": ["oklch(20% 0.06 78)", "oklch(32% 0.08 78)", "#996600", "oklch(45% 0.11 78)", "oklch(58% 0.12 80)", "oklch(72% 0.1 84)", "oklch(86% 0.06 88)", "oklch(96% 0.03 90)"]
+        "tonalRamp": [
+          "oklch(20% 0.06 78)",
+          "oklch(32% 0.08 78)",
+          "#996600",
+          "oklch(45% 0.11 78)",
+          "oklch(58% 0.12 80)",
+          "oklch(72% 0.1 84)",
+          "oklch(86% 0.06 88)",
+          "oklch(96% 0.03 90)"
+        ]
       },
       "hkust-yellow": {
         "role": "secondary",
         "displayName": "HKUST Yellow",
         "canonical": "#CC9900",
-        "tonalRamp": ["oklch(20% 0.06 82)", "oklch(34% 0.08 82)", "oklch(48% 0.1 82)", "#CC9900", "oklch(70% 0.13 84)", "oklch(82% 0.09 88)", "oklch(91% 0.055 90)", "oklch(97% 0.025 92)"]
+        "tonalRamp": [
+          "oklch(20% 0.06 82)",
+          "oklch(34% 0.08 82)",
+          "oklch(48% 0.1 82)",
+          "#CC9900",
+          "oklch(70% 0.13 84)",
+          "oklch(82% 0.09 88)",
+          "oklch(91% 0.055 90)",
+          "oklch(97% 0.025 92)"
+        ]
       },
-      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#020617", "tonalRamp": ["#020617", "#0f172a", "#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#e2e8f0"] },
-      "surface": { "role": "neutral", "displayName": "Surface", "canonical": "#ffffff", "tonalRamp": ["#0f172a", "#334155", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#f1f5f9", "#ffffff"] },
-      "grade-red": { "role": "tertiary", "displayName": "Grade Red", "canonical": "#ed1b2f", "tonalRamp": ["oklch(18% 0.08 25)", "oklch(30% 0.12 25)", "oklch(42% 0.17 25)", "#ed1b2f", "oklch(65% 0.17 25)", "oklch(78% 0.11 25)", "oklch(88% 0.06 25)", "oklch(96% 0.025 25)"] },
-      "grade-green": { "role": "tertiary", "displayName": "Grade Green", "canonical": "#009a61", "tonalRamp": ["oklch(18% 0.06 158)", "oklch(30% 0.09 158)", "#009a61", "oklch(55% 0.13 158)", "#a3cf62", "oklch(78% 0.1 138)", "oklch(88% 0.06 138)", "oklch(96% 0.025 138)"] }
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#020617",
+        "tonalRamp": [
+          "#020617",
+          "#0f172a",
+          "#1e293b",
+          "#334155",
+          "#475569",
+          "#64748b",
+          "#94a3b8",
+          "#e2e8f0"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0f172a",
+          "#334155",
+          "#64748b",
+          "#94a3b8",
+          "#cbd5e1",
+          "#e2e8f0",
+          "#f1f5f9",
+          "#ffffff"
+        ]
+      },
+      "grade-red": {
+        "role": "tertiary",
+        "displayName": "Grade Red",
+        "canonical": "#ed1b2f",
+        "tonalRamp": [
+          "oklch(18% 0.08 25)",
+          "oklch(30% 0.12 25)",
+          "oklch(42% 0.17 25)",
+          "#ed1b2f",
+          "oklch(65% 0.17 25)",
+          "oklch(78% 0.11 25)",
+          "oklch(88% 0.06 25)",
+          "oklch(96% 0.025 25)"
+        ]
+      },
+      "grade-green": {
+        "role": "tertiary",
+        "displayName": "Grade Green",
+        "canonical": "#009a61",
+        "tonalRamp": [
+          "oklch(18% 0.06 158)",
+          "oklch(30% 0.09 158)",
+          "#009a61",
+          "oklch(55% 0.13 158)",
+          "#a3cf62",
+          "oklch(78% 0.1 138)",
+          "oklch(88% 0.06 138)",
+          "oklch(96% 0.025 138)"
+        ]
+      }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display", "purpose": "Product title moments and ranking mastheads." },
-      "headline": { "displayName": "Headline", "purpose": "Detail-page identities and major page headings." },
-      "title": { "displayName": "Title", "purpose": "Cards, result names, and section headings." },
-      "body": { "displayName": "Body", "purpose": "Operational reading, controls, descriptions, and form copy." },
-      "label": { "displayName": "Label", "purpose": "Eyebrows, metric labels, and compact metadata headings." },
-      "mono": { "displayName": "Mono", "purpose": "Technical or tabular contexts that benefit from fixed rhythm." }
+      "display": {
+        "displayName": "Display",
+        "purpose": "Product title moments and ranking mastheads."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Detail-page identities and major page headings."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Cards, result names, and section headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Operational reading, controls, descriptions, and form copy."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Eyebrows, metric labels, and compact metadata headings."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Technical or tabular contexts that benefit from fixed rhythm."
+      }
     },
     "shadows": [
-      { "name": "surface-rest", "value": "0 1px 2px rgb(0 0 0 / 0.05)", "purpose": "Barely-there separation for cards and active tabs." },
-      { "name": "interactive-hover", "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)", "purpose": "Hover lift for clickable ranking result cards." },
-      { "name": "focus-ring", "value": "0 0 0 2px #020617, 0 0 0 4px #ffffff", "purpose": "Keyboard focus and accessible control state." }
+      {
+        "name": "surface-rest",
+        "value": "0 1px 2px rgb(0 0 0 / 0.05)",
+        "purpose": "Barely-there separation for cards and active tabs."
+      },
+      {
+        "name": "interactive-hover",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "purpose": "Hover lift for clickable ranking result cards."
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 2px #020617, 0 0 0 4px #ffffff",
+        "purpose": "Keyboard focus and accessible control state."
+      }
     ],
     "motion": [
-      { "name": "navigation-exit", "value": "150ms ease-in", "purpose": "Fade/slide old route content during view transitions." },
-      { "name": "navigation-enter", "value": "210ms ease-out 150ms", "purpose": "Fade/slide new route content during view transitions." },
-      { "name": "navigation-move", "value": "400ms ease-in-out", "purpose": "Shared movement timing for route transitions and text morphs." },
-      { "name": "collapsible-open", "value": "300ms ease-out", "purpose": "Waitlist/details collapsible expansion." }
+      {
+        "name": "navigation-exit",
+        "value": "150ms ease-in",
+        "purpose": "Fade/slide old route content during view transitions."
+      },
+      {
+        "name": "navigation-enter",
+        "value": "210ms ease-out 150ms",
+        "purpose": "Fade/slide new route content during view transitions."
+      },
+      {
+        "name": "navigation-move",
+        "value": "400ms ease-in-out",
+        "purpose": "Shared movement timing for route transitions and text morphs."
+      },
+      {
+        "name": "collapsible-open",
+        "value": "300ms ease-out",
+        "purpose": "Waitlist/details collapsible expansion."
+      }
     ],
     "breakpoints": [
       { "name": "sm", "value": "640px" },
@@ -119,10 +248,26 @@
       "Motion is purposeful navigation continuity, never ornamental animation."
     ],
     "rules": [
-      { "name": "The Evidence Color Rule", "body": "Grade reds, oranges, and greens only represent ranking evidence or score distribution; do not use them as generic decoration.", "section": "colors" },
-      { "name": "The Gold Rarity Rule", "body": "HKUST Gold and HKUST Yellow are brand glints, not generic fill colors. Keep them rare enough that the UST Rankings title and key institutional cues remain special.", "section": "colors" },
-      { "name": "The Scan First Rule", "body": "Ranking screens must let a user read title, rank, grade, and evidence count before any secondary prose competes for attention.", "section": "typography" },
-      { "name": "The Flat Ledger Rule", "body": "Surfaces rest flat. If a shadow appears, it must explain state, focus, or hierarchy.", "section": "elevation" }
+      {
+        "name": "The Evidence Color Rule",
+        "body": "Grade reds, oranges, and greens only represent ranking evidence or score distribution; do not use them as generic decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Gold Rarity Rule",
+        "body": "HKUST Gold and HKUST Yellow are brand glints, not generic fill colors. Keep them rare enough that the UST Rankings title and key institutional cues remain special.",
+        "section": "colors"
+      },
+      {
+        "name": "The Scan First Rule",
+        "body": "Ranking screens must let a user read title, rank, grade, and evidence count before any secondary prose competes for attention.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Ledger Rule",
+        "body": "Surfaces rest flat. If a shadow appears, it must explain state, focus, or hierarchy.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do keep HKUST Blue as the primary institutional anchor for navigation, chart markers, and select accents.",

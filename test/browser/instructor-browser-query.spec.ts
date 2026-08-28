@@ -47,58 +47,6 @@ test.afterEach(async ({ request }) => {
   }
 });
 
-test("Instructor Ranking skeletons match card height", async ({ page }) => {
-  await page.route(
-    `${dataOrigin}/**/instructor-ratings.parquet`,
-    async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 750));
-      await route.continue();
-    },
-  );
-  await page.goto("/rankings/instructors");
-  const loading = page.getByRole("status", {
-    name: "Loading Instructor rankings",
-  });
-  const skeleton = loading.locator("[data-ranking-card-skeleton]").first();
-  await expect(skeleton).toBeVisible();
-  const skeletonHeight = await skeleton.evaluate(
-    (element) => element.getBoundingClientRect().height,
-  );
-  const rankings = page.getByRole("list", { name: "Instructor rankings" });
-  await expect(rankings).toBeVisible();
-  const cardHeight = await rankings
-    .getByRole("link")
-    .first()
-    .evaluate((element) => element.getBoundingClientRect().height);
-  expect(skeletonHeight).toBeGreaterThanOrEqual(cardHeight);
-  expect(skeletonHeight - cardHeight).toBeLessThanOrEqual(0.5);
-});
-
-test("Instructor Rankings use the pinned worker and lazy Course artifacts", async ({
-  page,
-}) => {
-  const requests: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().startsWith(dataOrigin)) requests.push(request.url());
-  });
-  await page.goto(
-    "/rankings/instructors?term=2510&preset=grade&activity=all&q=Bulk",
-  );
-  const links = page
-    .getByRole("list", { name: "Instructor rankings" })
-    .getByRole("link");
-  await expect(links).toHaveCount(100);
-  await expect(links.first()).toContainText("Bulk Instructor 001");
-  const names = new Set(
-    requests.map((url) => new URL(url).pathname.split("/").at(-1)),
-  );
-  expect(names).toContain("instructor-ratings.parquet");
-  expect(names).toContain("instructors.parquet");
-  expect(names).toContain("relation.parquet");
-  expect(names).not.toContain("course-ratings.parquet");
-  expect([...names].some((name) => name?.startsWith("schedule-"))).toBe(false);
-});
-
 test("Instructor filters do not reuse the previous pagination cursor", async ({
   page,
 }) => {

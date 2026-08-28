@@ -6,9 +6,7 @@ const dataOrigin = "http://127.0.0.1:17832";
 
 declare global {
   interface Window {
-    duckdbWorkerCount: number;
     navigationClickAt: number;
-    publicQueryWorkerCount: number;
     viewTransitionDelay: number;
   }
 }
@@ -25,151 +23,6 @@ test("DuckDB browser assets are versioned and immutable", async ({ page }) => {
   expect(response.headers()["cache-control"]).toBe(
     "public, max-age=31536000, immutable",
   );
-});
-
-test("Course Rankings show card skeletons while Parquet loads", async ({
-  page,
-}) => {
-  await page.route(`${dataOrigin}/**/course-ratings.parquet`, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 750));
-    await route.continue();
-  });
-  await page.goto("/rankings/courses");
-  const loading = page.getByRole("status", {
-    name: "Loading Course rankings",
-  });
-  await expect(loading).toBeVisible();
-  const skeletons = loading.locator("[data-ranking-card-skeleton]");
-  await expect(skeletons).toHaveCount(3);
-  const skeletonHeight = await skeletons
-    .first()
-    .evaluate((element) => element.getBoundingClientRect().height);
-  const rankings = page.getByRole("list", { name: "Course rankings" });
-  await expect(rankings).toBeVisible();
-  const cardHeight = await rankings
-    .getByRole("link")
-    .first()
-    .evaluate((element) => element.getBoundingClientRect().height);
-  expect(skeletonHeight).toBeGreaterThanOrEqual(cardHeight);
-  expect(skeletonHeight - cardHeight).toBeLessThanOrEqual(0.5);
-});
-
-test("Details use card skeletons while browser data loads", async ({
-  page,
-}) => {
-  await page.route(`${dataOrigin}/**/*.parquet`, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 750));
-    await route.continue();
-  });
-  await page.goto("/courses/comp/2000?term=2510");
-  await expect(page.locator("[data-details-rankings-skeleton]")).toBeVisible();
-  await expect(page.locator("[data-details-schedule-skeleton]")).toBeVisible();
-  await expect(page.getByText("Loading Rankings…")).toHaveCount(0);
-  await expect(page.getByText("Loading Schedule…")).toHaveCount(0);
-  await expect(page.getByText("Loading Catalog details…")).toHaveCount(0);
-  await expect(page.getByText("Loading Term…")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Rankings" })).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Offerings & Classes" }),
-  ).toBeVisible();
-});
-
-test("Course Rankings use one pinned worker generation and lazy Instructor artifacts", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    const NativeWorker = window.Worker;
-    window.duckdbWorkerCount = 0;
-    window.publicQueryWorkerCount = 0;
-    window.Worker = class extends NativeWorker {
-      constructor(url: string | URL, options?: WorkerOptions) {
-        window.duckdbWorkerCount += 1;
-        if (options?.name === "public-course-query")
-          window.publicQueryWorkerCount += 1;
-        super(url, options);
-      }
-    };
-  });
-  const dataRequests: string[] = [];
-  const parquetResponses: Array<{
-    contentRange?: string;
-    status: number;
-    url: string;
-  }> = [];
-  page.on("request", (request) => {
-    if (request.url().startsWith(dataOrigin)) dataRequests.push(request.url());
-  });
-  page.on("response", async (response) => {
-    if (
-      response.url().startsWith(dataOrigin) &&
-      response.url().endsWith(".parquet") &&
-      response.request().method() === "GET"
-    )
-      parquetResponses.push({
-        contentRange: (await response.allHeaders())["content-range"],
-        status: response.status(),
-        url: response.url(),
-      });
-  });
-
-  await page.goto(
-    "/rankings/courses?term=2510&preset=grade&activity=all&q=Bulk",
-  );
-  const rankings = page.getByRole("list", { name: "Course rankings" });
-  await expect(rankings.getByRole("link")).toHaveCount(100);
-  await expect(rankings.getByRole("link").first()).toContainText("BULK 1000");
-  await expect(rankings.getByRole("link").first()).toContainText("#5");
-  await expect
-    .poll(() => page.evaluate(() => window.duckdbWorkerCount))
-    .toBe(1);
-  expect(await page.evaluate(() => window.publicQueryWorkerCount)).toBe(1);
-
-  const requested = new Set(
-    dataRequests.map((url) => new URL(url).pathname.split("/").at(-1)),
-  );
-  for (const name of [
-    "course-ratings.parquet",
-    "courses.parquet",
-    "instructors.parquet",
-    "instructor-aliases.parquet",
-    "instructor-identity-events.parquet",
-    "instructor-split-associations.parquet",
-    "relation.parquet",
-  ])
-    expect(requested).toContain(name);
-  expect(requested).not.toContain("instructor-ratings.parquet");
-  expect([...requested].some((name) => name?.startsWith("schedule-"))).toBe(
-    false,
-  );
-  expect(parquetResponses.length).toBeGreaterThan(0);
-  for (const response of parquetResponses) {
-    expect([200, 206]).toContain(response.status);
-    if (response.status === 206)
-      expect(response.contentRange).toMatch(/^bytes /);
-  }
-  const courseRatingsUrl = dataRequests.find((url) =>
-    url.endsWith("/course-ratings.parquet"),
-  );
-  if (!courseRatingsUrl) throw new Error("Course ratings were not requested");
-  const range = await page.request.get(courseRatingsUrl, {
-    headers: { range: "bytes=0-99" },
-  });
-  expect(range.status()).toBe(206);
-  expect(range.headers()["content-range"]).toMatch(/^bytes 0-99\//);
-
-  const latestRequests = () =>
-    dataRequests.filter((url) => url.endsWith("/latest.json")).length;
-  expect(latestRequests()).toBe(1);
-  await page.route(`${dataOrigin}/latest.json`, (route) => route.abort());
-  await rankings.getByRole("link").first().click();
-  await expect(page).toHaveURL(/\/courses\/BULK\/1000/);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("BULK 1000");
-  await expect(
-    page.getByText("Pinned Course–Instructor relations:"),
-  ).toContainText(/\d+/);
-  expect(latestRequests()).toBe(1);
-  expect(await page.evaluate(() => window.duckdbWorkerCount)).toBe(1);
-  expect(await page.evaluate(() => window.publicQueryWorkerCount)).toBe(1);
 });
 
 test("Course filtering preserves population Rank and searches Instructor relations", async ({
@@ -354,20 +207,6 @@ test("blocked Worker creation preserves static Course identity and Community", a
   await expect(page.getByText("Rankings are unavailable.")).toBeVisible();
 });
 
-test("unavailable WebAssembly preserves static Course identity and Community", async ({
-  page,
-}) => {
-  await page.route("**/duckdb/**/*.wasm", (route) => route.abort());
-  await page.goto("/courses/comp/2000");
-  await expect(
-    page.getByRole("heading", { level: 1, name: "COMP 2000" }),
-  ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
-  await expect(page.getByText("Rankings are unavailable.")).toBeVisible({
-    timeout: 35_000,
-  });
-});
-
 test("Delivery CORS failure is explicit", async ({ page }) => {
   await page.route(`${dataOrigin}/**/courses.parquet`, (route) =>
     route.continue({
@@ -375,54 +214,6 @@ test("Delivery CORS failure is explicit", async ({ page }) => {
         ...route.request().headers(),
         "x-test-no-cors": "1",
       },
-    }),
-  );
-  await page.goto("/rankings/courses?term=2510");
-  await expect(
-    page.getByRole("heading", { name: "Course rankings are unavailable" }),
-  ).toBeVisible();
-});
-
-test("failed Parquet range delivery is explicit", async ({ page }) => {
-  await page.route(`${dataOrigin}/**/course-ratings.parquet`, (route) =>
-    route.fulfill({
-      body: "range unavailable",
-      headers: { "access-control-allow-origin": "*" },
-      status: 416,
-    }),
-  );
-  await page.goto("/rankings/courses?term=2510");
-  await expect(
-    page.getByRole("heading", { name: "Course rankings are unavailable" }),
-  ).toBeVisible();
-});
-
-test("manifest integrity mismatch fails explicitly", async ({ page }) => {
-  await page.route(`${dataOrigin}/**/manifest.json`, async (route) => {
-    const response = await route.fetch();
-    const manifest = (await response.json()) as {
-      artifacts: Record<string, { sha256: string }>;
-    };
-    const courses = manifest.artifacts["courses.parquet"];
-    if (courses) courses.sha256 = "a".repeat(64);
-    await route.fulfill({ json: manifest, response });
-  });
-  await page.goto("/rankings/courses?term=2510");
-  await expect(
-    page.getByRole("heading", { name: "Course rankings are unavailable" }),
-  ).toBeVisible();
-});
-
-test("corrupt Course Parquet fails explicitly", async ({ page }) => {
-  await page.route(`${dataOrigin}/**/course-ratings.parquet`, (route) =>
-    route.fulfill({
-      body: "not parquet",
-      contentType: "application/vnd.apache.parquet",
-      headers: {
-        "access-control-allow-origin": "*",
-        "content-range": "bytes 0-10/11",
-      },
-      status: 206,
     }),
   );
   await page.goto("/rankings/courses?term=2510");

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
   access,
-  mkdir,
   mkdtemp,
   readdir,
   readFile,
@@ -20,6 +19,8 @@ import {
   DELIVERY_ARTIFACTS,
   SERVER_INDEX_FILENAME,
 } from "../src/delivery.ts";
+import { makeRankingArchiveFixture } from "./rankings-fixture.ts";
+import { makeScheduleArchiveFixture } from "./schedule-fixture.ts";
 
 const rankingRevision = "1".repeat(40);
 const scheduleRevision = "2".repeat(40);
@@ -44,190 +45,16 @@ const scheduleInputs = [
   "classes_legacy.parquet",
 ] as const;
 
-async function copy(
-  connection: Awaited<ReturnType<DuckDBInstance["connect"]>>,
-  path: string,
-  query: string,
-) {
-  await connection.run("SET VARIABLE delivery_fixture_output = $path", {
-    path: path.replaceAll("\\", "/"),
-  });
-  await connection.run(
-    `COPY (${query}) TO (getvariable('delivery_fixture_output')) (FORMAT parquet)`,
-  );
-}
-
 async function makeArchiveFixtures(root: string) {
-  const rankingDirectory = join(root, "ranking");
-  const scheduleDirectory = join(root, "schedule");
-  await mkdir(rankingDirectory, { recursive: true });
-  await mkdir(scheduleDirectory, { recursive: true });
-  await mkdir(join(scheduleDirectory, "canonical"), { recursive: true });
-  const instance = await DuckDBInstance.create(":memory:");
-  const connection = await instance.connect();
-  const rankingPath = (name: string) => join(rankingDirectory, name);
-  const schedulePath = (name: string) => join(scheduleDirectory, name);
-  try {
-    await copy(
-      connection,
-      rankingPath("courses.parquet"),
-      `SELECT * FROM (VALUES
-        ('CAT', '5000', 'Catalog Only', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[]),
-        ('COMP', '1000', 'Computing One', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[]),
-        ('COMP', '2000', 'Computing Two', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[])
-      ) AS t(prefix, number, title, attributes)`,
-    );
-    const ratingColumns = `
-      term_num, term_code, is_offered, criterion, rating, bayesian,
-      confidence, samples, cumulative_samples, effective_samples,
-      reliability, posterior_stddev`;
-    await copy(
-      connection,
-      rankingPath("course-ratings.parquet"),
-      `SELECT * FROM (VALUES
-        ('COMP', '1000', 100, '2510', true, 'content', 4.0, 4.0, 1.0, 2::BIGINT, 2::BIGINT, 2.0, 0.8, 0.1),
-        ('COMP', '2000', 100, '2510', true, 'content', 3.0, 3.0, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.7, 0.2),
-        ('HIST', '3000', 99, '2430', false, 'content', 2.0, 2.0, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.6, 0.3)
-      ) AS t(subject, code, ${ratingColumns})`,
-    );
-    await copy(
-      connection,
-      rankingPath("instructor-ratings.parquet"),
-      `SELECT * FROM (VALUES
-        ('${alphaUuid}', 'Alpha Instructor', 100, '2510', true, 'instructor', 4.0, 4.0, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.8, 0.1),
-        ('${betaUuid}', 'Beta Instructor', 100, '2510', true, 'instructor', 3.0, 3.0, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.7, 0.2)
-      ) AS t(uuid, name, term_num, term_code, is_teaching, criterion, rating, bayesian,
-        confidence, samples, cumulative_samples, effective_samples, reliability, posterior_stddev)`,
-    );
-    await copy(
-      connection,
-      rankingPath("course-instructors.parquet"),
-      `SELECT * FROM (VALUES
-        ('${alphaUuid}', 'Alpha Instructor', 100, '2510', 'COMP', '1000'),
-        ('${betaUuid}', 'Beta Instructor', 100, '2510', 'COMP', '1000'),
-        ('${betaUuid}', 'Beta Instructor', 100, '2510', 'COMP', '2000')
-      ) AS t(uuid, name, term_num, term_code, subject, code)`,
-    );
-    await copy(
-      connection,
-      rankingPath("instructor-identities.parquet"),
-      `SELECT * FROM (VALUES
-        ('${alphaUuid}', 'Alpha Instructor', NULL::VARCHAR),
-        ('${betaUuid}', 'Beta Instructor', 'beta'::VARCHAR)
-      ) AS t(uuid, canonical_name, itsc)`,
-    );
-    await copy(
-      connection,
-      rankingPath("instructor-aliases.parquet"),
-      `SELECT * FROM (VALUES
-        ('${alphaUuid}', 'Alias Alpha', 'schedule', '${eventRevision}', NULL::VARCHAR),
-        ('${betaUuid}', 'Beta Instructor', 'schedule', '${eventRevision}', NULL::VARCHAR)
-      ) AS t(uuid, name, source, source_commit, source_file)`,
-    );
-    await copy(
-      connection,
-      rankingPath("instructor-identity-events.parquet"),
-      `SELECT * FROM (VALUES
-        ('merge', '${eventRevision}', NULL::VARCHAR, NULL::VARCHAR,
-          '${alphaUuid}', '${betaUuid}', NULL::VARCHAR, NULL::VARCHAR)
-      ) AS t(event_type, source_commit, uuid, itsc, retired_uuid, survivor_uuid, source_uuid, new_uuid)`,
-    );
-    await copy(
-      connection,
-      rankingPath("instructor-split-affected-associations.parquet"),
-      `SELECT * FROM (VALUES
-        ('calibration', '${correctionRevision}', '${betaUuid}', 'Calibrated Name', '2510', 'COMP 2000')
-      ) AS t(correction_type, source_commit, target_uuid, source_name, term_code, course_code)`,
-    );
-
-    const courseColumns = `
-      term_num, term_code, term_name, id, prefix, number, career, title,
-      description, credits, previous, prerequisite, corequisite, exclusion,
-      attributes, status, timestamp`;
-    await copy(
-      connection,
-      schedulePath("courses.parquet"),
-      `SELECT * FROM (VALUES
-        (100, '2510', '2025-26 Fall', 'c1', 'COMP', '1000', 'UGRD', 'Computing One', 'One', 3.0, '', '', '', '', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[], 'INACTIVE', TIMESTAMPTZ '2025-01-01 00:00:00+00'),
-        (100, '2510', '2025-26 Fall', 'c1', 'COMP', '1000', 'UGRD', 'Computing One', 'One', 3.0, '', '', '', '', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00'),
-        (100, '2510', '2025-26 Fall', 'c2', 'COMP', '2000', 'UGRD', 'Computing Two', 'Two', 3.0, '', '', '', '', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00'),
-        (100, '2510', '2025-26 Fall', 'c3', 'SCHED', '4000', 'UGRD', 'Schedule Only', 'Schedule', 3.0, '', '', '', '', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00')
-      ) AS t(${courseColumns})`,
-    );
-    const classColumns = `
-      term_num, term_code, term_name, course_id, section, number, role, type,
-      association, remarks, capacity, enroll, wait, consent, open, schedules,
-      reservations, status, timestamp`;
-    const alphaMeeting = `[{weekday:'Mon', date_from:NULL::DATE, date_to:NULL::DATE, time_from:NULL::TIME, time_to:NULL::TIME, venue:'R101', venue_name:'Room 101', instructors:['Alias Alpha']}]`;
-    const calibratedMeeting = `[{weekday:'Tue', date_from:NULL::DATE, date_to:NULL::DATE, time_from:NULL::TIME, time_to:NULL::TIME, venue:'R102', venue_name:'Room 102', instructors:['Calibrated Name', 'Unknown Name']}]`;
-    await copy(
-      connection,
-      schedulePath("classes.parquet"),
-      `SELECT * FROM (VALUES
-        (100, '2510', '2025-26 Fall', 'c1', 'L1', 1001, 'E', 'LEC', 1, '', 40, 20, 0, false, true, ${alphaMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00'),
-        (100, '2510', '2025-26 Fall', 'c2', 'L1', 1002, 'E', 'LEC', 1, '', 40, 20, 0, false, true, ${calibratedMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], 'ACTIVE', TIMESTAMPTZ '2025-02-01 00:00:00+00')
-      ) AS t(${classColumns})`,
-    );
-    await copy(
-      connection,
-      schedulePath("classes_legacy.parquet"),
-      `SELECT * FROM (VALUES
-        (100, '2510', '2025-26 Fall', 'COMP 2000', 'L1', 1001, 1, 40, 20, 30, false, ${alphaMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-08-27T00:00:00Z', 1),
-        (100, '2510', '2025-26 Fall', 'COMP 2000', 'LA1', 1003, 1, 20, 10, 12, false, ${calibratedMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-08-27T00:00:00Z', 2),
-        (100, '2510', '2025-26 Fall', 'COMP 2000', 'L1', 1001, 1, 40, 25, 10, false, ${alphaMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-09-13T00:00:00Z', 3),
-        (100, '2510', '2025-26 Fall', 'COMP 2000', 'LA1', 1003, 1, 20, 12, -1, false, ${calibratedMeeting}, []::STRUCT(name VARCHAR, quota INTEGER, enroll INTEGER)[], TIMESTAMPTZ '2025-09-13T00:00:00Z', 4)
-      ) AS t(term_num, term_code, term_name, course_code, section, number, association, capacity, enroll, wait, consent, schedules, reservations, timestamp, source_order)`,
-    );
-    await copy(
-      connection,
-      schedulePath("canonical/class_records.parquet"),
-      `SELECT
-        'legacy'::VARCHAR AS version, NULL::VARCHAR AS source_commit,
-        source_order::BIGINT AS source_order, term_num::INTEGER AS term_num,
-        term_code::VARCHAR AS term_code, term_name::VARCHAR AS term_name,
-        NULL::VARCHAR AS course_id,
-        regexp_extract(upper(trim(course_code)), '^[A-Z]{2,8}')::VARCHAR AS prefix,
-        regexp_extract(upper(trim(course_code)), '[0-9].*$')::VARCHAR AS course_number,
-        upper(trim(course_code))::VARCHAR AS course_code,
-        section::VARCHAR AS section, number::INTEGER AS number,
-        NULL::VARCHAR AS role,
-        CASE
-          WHEN regexp_matches(section, '^LA', 'i') THEN 'LAB'
-          WHEN regexp_matches(section, '^L', 'i') THEN 'LEC'
-          WHEN regexp_matches(section, '^T', 'i') THEN 'TUT'
-          ELSE 'IND'
-        END::VARCHAR AS type,
-        NULL::INTEGER AS association, ''::VARCHAR AS remarks,
-        capacity::INTEGER AS capacity, enroll::INTEGER AS enroll,
-        wait::INTEGER AS wait, consent::BOOLEAN AS consent,
-        true::BOOLEAN AS open, schedules, reservations,
-        'ACTIVE'::VARCHAR AS status, timestamp::TIMESTAMPTZ AS timestamp
-      FROM read_parquet('${schedulePath("classes_legacy.parquet").replaceAll("\\\\", "/")}')`,
-    );
-  } finally {
-    connection.closeSync();
-    instance.closeSync();
-  }
-  for (const [directory, sourceCommit, filenames] of [
-    [rankingDirectory, rankingRevision, rankingInputs],
-    [scheduleDirectory, scheduleRevision, scheduleInputs],
-  ] as const) {
-    const artifacts = Object.fromEntries(
-      await Promise.all(
-        filenames.map(async (name) => [
-          name,
-          {
-            size: (await stat(join(directory, name))).size,
-            sha256: await digest(join(directory, name)),
-          },
-        ]),
-      ),
-    );
-    await writeFile(
-      join(directory, "manifest.json"),
-      `${JSON.stringify({ schemaMajor: 0, sourceCommit, artifacts })}\n`,
-    );
-  }
+  const [rankingDirectory, scheduleDirectory] = await Promise.all([
+    makeRankingArchiveFixture(
+      join(root, "ranking"),
+      rankingRevision,
+      eventRevision,
+      correctionRevision,
+    ),
+    makeScheduleArchiveFixture(join(root, "schedule"), scheduleRevision),
+  ]);
   return { rankingDirectory, scheduleDirectory };
 }
 

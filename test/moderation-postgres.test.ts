@@ -1,9 +1,7 @@
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import postgres from "postgres";
 import { expect, test, vi } from "vitest";
 import { createModerationService } from "@/lib/contributions/moderation";
 import { createReviewService } from "@/lib/contributions/reviews";
+import { withPostgresSchema } from "./postgres-fixture";
 
 vi.mock("server-only", () => ({}));
 
@@ -14,26 +12,8 @@ if (!connection) {
   test.skip("Moderation PostgreSQL contract (TEST_CONTRIBUTIONS_POSTGRES_URL is not configured)", () => {});
 } else {
   test("Moderation PostgreSQL contract covers reports, privacy, operator actions, and lookup reasons", async () => {
-    const schema = `moderation_test_${crypto.randomUUID().replaceAll("-", "")}`;
-    const admin = postgres(connection, { max: 1, onnotice: () => {} });
-    await admin.unsafe(`CREATE SCHEMA ${schema}`);
-    await admin.end();
-    const sql = postgres(connection, {
-      max: 4,
-      connection: { search_path: schema },
-      onnotice: () => {},
-    });
-    let moderationSql: ReturnType<typeof postgres> | undefined;
-    try {
-      for (const name of (
-        await readdir(join(process.cwd(), "contributions", "migrations"))
-      ).sort())
-        await sql.unsafe(
-          await readFile(
-            join(process.cwd(), "contributions", "migrations", name),
-            "utf8",
-          ),
-        );
+    await withPostgresSchema("moderation", async ({ sql, connect }) => {
+      const moderationSql = connect(2);
       const { PostgresModerationRepository, PostgresReviewRepository } =
         await import("@/lib/contributions/postgres");
       const reviews = createReviewService(new PostgresReviewRepository(sql), {
@@ -41,11 +21,6 @@ if (!connection) {
         async validateAssociations(associations) {
           return associations;
         },
-      });
-      moderationSql = postgres(connection, {
-        max: 2,
-        connection: { search_path: schema },
-        onnotice: () => {},
       });
       const moderation = createModerationService(
         new PostgresModerationRepository(moderationSql),
@@ -274,10 +249,6 @@ if (!connection) {
       ]);
       expect(columns?.names).not.toContain("ip");
       expect(columns?.names).not.toContain("reporter_user_id");
-    } finally {
-      await sql.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-      await sql.end();
-      await moderationSql?.end();
-    }
+    });
   }, 30_000);
 }

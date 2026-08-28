@@ -1,12 +1,10 @@
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import postgres from "postgres";
 import { expect, test, vi } from "vitest";
 import {
   createReviewService,
   type ReviewAssociations,
 } from "@/lib/contributions/reviews";
 import { createSignalService } from "@/lib/contributions/signals";
+import { withPostgresSchema } from "./postgres-fixture";
 
 vi.mock("server-only", () => ({}));
 
@@ -17,28 +15,10 @@ if (!connection) {
   test.skip("Review PostgreSQL contract (TEST_CONTRIBUTIONS_POSTGRES_URL is not configured)", () => {});
 } else {
   test("Review PostgreSQL contract enforces one active Review per Basis set and aggregates durable associations", async () => {
-    const schema = `review_test_${crypto.randomUUID().replaceAll("-", "")}`;
-    const admin = postgres(connection, { max: 1, onnotice: () => {} });
-    await admin.unsafe(`CREATE SCHEMA ${schema}`);
-    await admin.end();
-    const sql = postgres(connection, {
-      max: 4,
-      connection: { search_path: schema },
-      onnotice: () => {},
-    });
-    try {
-      for (const name of (
-        await readdir(join(process.cwd(), "contributions", "migrations"))
-      ).sort())
-        await sql.unsafe(
-          await readFile(
-            join(process.cwd(), "contributions", "migrations", name),
-            "utf8",
-          ),
-        );
+    await withPostgresSchema("review", async ({ sql, connect }) => {
       const { PostgresReviewRepository, PostgresSignalRepository } =
         await import("@/lib/contributions/postgres");
-      const service = (client: ReturnType<typeof postgres>) =>
+      const service = (client: typeof sql) =>
         createReviewService(new PostgresReviewRepository(client), {
           reviewPolicyVersion: "review-test-v1",
           async validateAssociations(associations) {
@@ -61,11 +41,7 @@ if (!connection) {
         associations: ReviewAssociations,
         markdown = `Review ${JSON.stringify(associations)}`,
       ) => {
-        const client = postgres(connection, {
-          max: 1,
-          connection: { search_path: schema },
-          onnotice: () => {},
-        });
+        const client = connect(1);
         try {
           return await service(client).publishReview(userId, {
             associations,
@@ -754,9 +730,6 @@ if (!connection) {
       ).rejects.toMatchObject({
         code: "account-not-found",
       });
-    } finally {
-      await sql.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-      await sql.end();
-    }
+    });
   }, 30_000);
 }

@@ -1,9 +1,7 @@
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import postgres from "postgres";
 import { expect, test, vi } from "vitest";
 import { createAttachmentService } from "@/lib/attachments/attachments";
 import { jpegBytes } from "./attachment-fixtures";
+import { withPostgresSchema } from "./postgres-fixture";
 
 vi.mock("server-only", () => ({}));
 
@@ -13,26 +11,8 @@ if (!connection) {
   test.skip("Attachment PostgreSQL contract (TEST_CONTRIBUTIONS_POSTGRES_URL is not configured)", () => {});
 } else {
   test("Attachment PostgreSQL contract enforces quota races, reuse, Revision limits, and public current Revision reads", async () => {
-    const schema = `attachment_test_${crypto.randomUUID().replaceAll("-", "")}`;
-    const admin = postgres(connection, { max: 1, onnotice: () => {} });
-    await admin.unsafe(`CREATE SCHEMA ${schema}`);
-    await admin.end();
-    const sql = postgres(connection, {
-      max: 4,
-      connection: { search_path: schema },
-      onnotice: () => {},
-    });
-    const objects = new Map<string, Uint8Array>();
-    try {
-      for (const name of (
-        await readdir(join(process.cwd(), "contributions", "migrations"))
-      ).sort())
-        await sql.unsafe(
-          await readFile(
-            join(process.cwd(), "contributions", "migrations", name),
-            "utf8",
-          ),
-        );
+    await withPostgresSchema("attachment", async ({ sql }) => {
+      const objects = new Map<string, Uint8Array>();
       const { PostgresAttachmentRepository } = await import(
         "@/lib/attachments/postgres"
       );
@@ -174,11 +154,6 @@ if (!connection) {
       await expect(
         attachments.signPublicRead(attachment.id),
       ).rejects.toMatchObject({ code: "attachment-unavailable" });
-    } finally {
-      await sql.end();
-      const drop = postgres(connection, { max: 1, onnotice: () => {} });
-      await drop.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-      await drop.end();
-    }
+    });
   });
 }

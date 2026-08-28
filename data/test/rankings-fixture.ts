@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
+import { writeArchiveFixture } from "./archive-fixture.ts";
 
 export const fixtureSha = "0123456789abcdef0123456789abcdef01234567";
 
@@ -70,6 +71,96 @@ async function hash(path: string) {
   return createHash("sha256")
     .update(await readFile(path))
     .digest("hex");
+}
+
+export async function makeRankingArchiveFixture(
+  directory: string,
+  sourceCommit: string,
+  eventSourceCommit: string,
+  correctionSourceCommit: string,
+) {
+  const inputs = [
+    "courses.parquet",
+    "course-ratings.parquet",
+    "instructor-ratings.parquet",
+    "course-instructors.parquet",
+    "instructor-identities.parquet",
+    "instructor-aliases.parquet",
+    "instructor-identity-events.parquet",
+    "instructor-split-affected-associations.parquet",
+  ];
+  const alphaUuid = "00000000-0000-4000-8000-000000000001";
+  const betaUuid = "00000000-0000-4000-8000-000000000002";
+  return writeArchiveFixture(
+    directory,
+    sourceCommit,
+    inputs,
+    async ({ copy }) => {
+      await copy(
+        "courses.parquet",
+        `SELECT * FROM (VALUES
+        ('CAT', '5000', 'Catalog Only', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[]),
+        ('COMP', '1000', 'Computing One', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[]),
+        ('COMP', '2000', 'Computing Two', []::STRUCT(label VARCHAR, value VARCHAR, description VARCHAR)[])
+      ) AS t(prefix, number, title, attributes)`,
+      );
+      const ratingColumns = `
+      term_num, term_code, is_offered, criterion, rating, bayesian,
+      confidence, samples, cumulative_samples, effective_samples,
+      reliability, posterior_stddev`;
+      await copy(
+        "course-ratings.parquet",
+        `SELECT * FROM (VALUES
+        ('COMP', '1000', 100, '2510', true, 'content', 4.0, 4.0, 1.0, 2::BIGINT, 2::BIGINT, 2.0, 0.8, 0.1),
+        ('COMP', '2000', 100, '2510', true, 'content', 3.0, 3.0, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.7, 0.2),
+        ('HIST', '3000', 99, '2430', false, 'content', 2.0, 2.0, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.6, 0.3)
+      ) AS t(subject, code, ${ratingColumns})`,
+      );
+      await copy(
+        "instructor-ratings.parquet",
+        `SELECT * FROM (VALUES
+        ('${alphaUuid}', 'Alpha Instructor', 100, '2510', true, 'instructor', 4.0, 4.0, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.8, 0.1),
+        ('${betaUuid}', 'Beta Instructor', 100, '2510', true, 'instructor', 3.0, 3.0, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.7, 0.2)
+      ) AS t(uuid, name, term_num, term_code, is_teaching, criterion, rating, bayesian,
+        confidence, samples, cumulative_samples, effective_samples, reliability, posterior_stddev)`,
+      );
+      await copy(
+        "course-instructors.parquet",
+        `SELECT * FROM (VALUES
+        ('${alphaUuid}', 'Alpha Instructor', 100, '2510', 'COMP', '1000'),
+        ('${betaUuid}', 'Beta Instructor', 100, '2510', 'COMP', '1000'),
+        ('${betaUuid}', 'Beta Instructor', 100, '2510', 'COMP', '2000')
+      ) AS t(uuid, name, term_num, term_code, subject, code)`,
+      );
+      await copy(
+        "instructor-identities.parquet",
+        `SELECT * FROM (VALUES
+        ('${alphaUuid}', 'Alpha Instructor', NULL::VARCHAR),
+        ('${betaUuid}', 'Beta Instructor', 'beta'::VARCHAR)
+      ) AS t(uuid, canonical_name, itsc)`,
+      );
+      await copy(
+        "instructor-aliases.parquet",
+        `SELECT * FROM (VALUES
+        ('${alphaUuid}', 'Alias Alpha', 'schedule', '${eventSourceCommit}', NULL::VARCHAR),
+        ('${betaUuid}', 'Beta Instructor', 'schedule', '${eventSourceCommit}', NULL::VARCHAR)
+      ) AS t(uuid, name, source, source_commit, source_file)`,
+      );
+      await copy(
+        "instructor-identity-events.parquet",
+        `SELECT * FROM (VALUES
+        ('merge', '${eventSourceCommit}', NULL::VARCHAR, NULL::VARCHAR,
+          '${alphaUuid}', '${betaUuid}', NULL::VARCHAR, NULL::VARCHAR)
+      ) AS t(event_type, source_commit, uuid, itsc, retired_uuid, survivor_uuid, source_uuid, new_uuid)`,
+      );
+      await copy(
+        "instructor-split-affected-associations.parquet",
+        `SELECT * FROM (VALUES
+        ('calibration', '${correctionSourceCommit}', '${betaUuid}', 'Calibrated Name', '2510', 'COMP 2000')
+      ) AS t(correction_type, source_commit, target_uuid, source_name, term_code, course_code)`,
+      );
+    },
+  );
 }
 
 type Malformation =

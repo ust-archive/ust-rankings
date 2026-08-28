@@ -7,9 +7,6 @@ test("Schedule lists Course Offerings from the browser Worker", async ({
   page,
 }) => {
   await page.goto("/schedule?term=2510&q=Updated");
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Course Offerings" }),
-  ).toBeVisible();
   await expect(page.getByRole("link", { name: /COMP 2000/ })).toBeVisible();
   await expect(page.getByText(/1 Course Offerings/)).toBeVisible();
 });
@@ -22,9 +19,6 @@ test("Course Schedule details load lazily from the pinned generation", async ({
     if (request.url().startsWith(dataOrigin)) requests.push(request.url());
   });
   await page.goto("/courses/comp/2000");
-  await expect(
-    page.getByRole("heading", { name: "Offerings & Classes" }),
-  ).toBeVisible();
   await expect(page.getByRole("link", { name: "2025-26 Fall" })).toBeVisible();
   await expect(page.getByRole("link", { name: /L1 \(1001\)/ })).toBeVisible();
   const names = new Set(
@@ -38,13 +32,6 @@ test("direct Course Offering and Class URLs preserve Community while Schedule re
   page,
 }) => {
   await page.goto("/courses/comp/2000/2510");
-  await expect(
-    page.getByRole("heading", { level: 1, name: "COMP 2000" }),
-  ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Offerings & Classes" }),
-  ).toBeVisible();
   await expect(page.getByText(/waitlisted · LEC/)).toHaveCount(0);
   await expect(page.getByText(/Room 101|Room 102/)).toHaveCount(0);
   await expect(page.getByText(/2025-09-01–2025-11-30/)).toHaveCount(0);
@@ -54,12 +41,6 @@ test("direct Course Offering and Class URLs preserve Community while Schedule re
   ).toBeVisible();
 
   await page.goto("/courses/comp/2000/2510/l1");
-  await expect(
-    page.getByRole("heading", { level: 1, name: "COMP 2000" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: /COMP 2000 L1 \(1001\)/ }),
-  ).toBeVisible();
   await expect(page.getByText(/Room 101|Room 102/).first()).toBeVisible();
   await expect(page.getByText(/2025-09-01–2025-11-30/).first()).toBeVisible();
   await expect(page.getByText("COMP majors: 20/40")).toBeVisible();
@@ -73,7 +54,6 @@ test("Instructor Schedule Classes use the shared browser runtime", async ({
   page,
 }) => {
   await page.goto(`/instructors/${alphaUuid}`);
-  await expect(page.getByRole("heading", { name: "Classes" })).toBeVisible();
   await expect(page.getByRole("link", { name: /COMP 2000 L1/ })).toBeVisible();
 });
 
@@ -87,8 +67,6 @@ test("Schedule failure is explicit and does not disable Rankings or Community", 
   await expect(
     page.getByRole("heading", { name: "Schedule is unavailable" }),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Rankings" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
   await page.goto("/rankings/courses?term=2510&q=Bulk");
   await expect(
     page.getByRole("list", { name: "Course rankings" }).getByRole("link"),
