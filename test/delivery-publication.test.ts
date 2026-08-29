@@ -22,7 +22,7 @@ function manifest(value = generation): DeliveryManifest {
     waitlistEvidence: {
       artifact: "waitlist-evidence.parquet",
       schemaVersion: 1,
-      modelVersion: "joint-baseline-v3",
+      modelVersion: "joint-baseline-v4",
       sourceArtifact: "canonical/class_records.parquet",
       sourceRevision: "2".repeat(40),
       sourceAvailable: true,

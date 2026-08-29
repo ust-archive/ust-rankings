@@ -83,6 +83,41 @@ test("joint outcome requires every selected component to clear its position", ()
   );
 });
 
+test("selected Classes match their ordinals within a larger historical offering", () => {
+  const [bundle] = bundleTrajectories([
+    trajectory("L1", "LEC", [0, 30, 25]),
+    trajectory("L2", "LEC", [0, 30, 0]),
+    trajectory("L3", "LEC", [0, 30, 25]),
+    trajectory("T1", "TUT", [0, 20, 15]),
+    trajectory("T2", "TUT", [0, 20, 15]),
+    trajectory("T3", "TUT", [0, 20, 0]),
+  ]);
+  if (!bundle) throw new Error("fixture bundle missing");
+  const result = jointOutcome(bundle, {
+    components: [
+      {
+        section: "L2",
+        type: "LEC",
+        ordinal: 1,
+        position: 20,
+        activationHours: 0,
+      },
+      {
+        section: "T3",
+        type: "TUT",
+        ordinal: 2,
+        position: 15,
+        activationHours: 0,
+      },
+    ],
+  });
+  assert.equal(result?.success, true);
+  assert.deepEqual(
+    result?.components.map(({ net }) => net),
+    [30, 20],
+  );
+});
+
 test("distinct Classes with the same component type remain separate", () => {
   const [bundle] = bundleTrajectories([
     trajectory("L1", "LEC", [0, 30, 10]),
