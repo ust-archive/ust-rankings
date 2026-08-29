@@ -1,9 +1,11 @@
 import { unstable_cache } from "next/cache";
 import {
   ContributionsUnavailableError,
+  normalizePublicReview,
   type PublicReview,
   type ReviewListQuery,
   type ReviewOrder,
+  readWithReviewCache,
 } from "@/lib/contributions/reviews";
 
 type ReadReviews = (
@@ -37,10 +39,13 @@ export async function loadReviews(
 ) {
   const viewerUserId = await identify().catch(() => undefined);
   try {
+    const reviews = await readWithReviewCache(
+      read === readReviews,
+      () => readCachedReviews(query, viewerUserId),
+      () => read(query, viewerUserId),
+    );
     return {
-      reviews: await (read === readReviews
-        ? readCachedReviews(query, viewerUserId)
-        : read(query, viewerUserId)),
+      reviews: reviews.map(normalizePublicReview),
       signedIn: Boolean(viewerUserId),
       unavailable: false as const,
     };

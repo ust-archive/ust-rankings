@@ -3,6 +3,7 @@ import { loadCourseReviews, loadReviews } from "@/app/courses/review-data";
 import { loadReview } from "@/app/reviews/review-data";
 import {
   ContributionsUnavailableError,
+  normalizeContributionDate,
   reviewOrder,
 } from "@/lib/contributions/reviews";
 
@@ -80,6 +81,67 @@ test("Review reads cross one contribution seam and distinguish provider unavaila
       throw programmingError;
     }),
   ).rejects.toBe(programmingError);
+});
+
+test("Review reads normalize cached timestamp strings", async () => {
+  const serializedPublishedAt = "2026-08-20T12:00:00.000Z";
+  postgresListReviews.mockReset();
+  postgresListReviews.mockResolvedValue([
+    { ...review, publishedAt: serializedPublishedAt as unknown as Date },
+  ]);
+  const list = await loadCourseReviews("COMP", "2000");
+  expect(list.reviews[0]?.publishedAt).toEqual(review.publishedAt);
+  expect(list.reviews[0]?.publishedAt).toBeInstanceOf(Date);
+
+  postgresGetReview.mockReset();
+  postgresGetReview.mockResolvedValue({
+    ...review,
+    publishedAt: serializedPublishedAt as unknown as Date,
+  });
+  const detail = await loadReview(review.id);
+  expect(detail.review?.publishedAt).toEqual(review.publishedAt);
+  expect(detail.review?.publishedAt).toBeInstanceOf(Date);
+});
+
+test("Review reads report invalid cached timestamps as unavailable", async () => {
+  postgresListReviews.mockReset();
+  postgresListReviews.mockResolvedValue([
+    { ...review, publishedAt: "not-a-timestamp" as unknown as Date },
+  ]);
+
+  await expect(loadCourseReviews("COMP", "9999")).resolves.toEqual({
+    reviews: [],
+    signedIn: false,
+    unavailable: true,
+  });
+});
+
+test("Review reads bypass cached values in development", async () => {
+  vi.stubEnv("NODE_ENV", "development");
+  postgresListReviews.mockReset();
+  postgresListReviews.mockResolvedValue([review]);
+  const query = {
+    type: "course" as const,
+    coursePrefix: "COMP",
+    courseNumber: "4000",
+  };
+
+  try {
+    await loadReviews(query);
+    await loadReviews(query);
+    expect(postgresListReviews).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+test("Contribution dates normalize serialized values", () => {
+  expect(normalizeContributionDate("2026-08-20T12:00:00.000Z")).toEqual(
+    review.publishedAt,
+  );
+  expect(normalizeContributionDate(new Date(review.publishedAt))).toEqual(
+    review.publishedAt,
+  );
 });
 
 test("Review reads reveal edit capability only to the authenticated author query", async () => {
