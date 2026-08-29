@@ -1,9 +1,53 @@
+import postgres from "postgres";
 import { expect, test, vi } from "vitest";
 import { HKUST_CONNECT_ISSUER } from "@/lib/auth/policy";
 import { createAccountService } from "@/lib/contributions/accounts";
+import { PostgresAccountRepository } from "@/lib/contributions/postgres";
 import { withPostgresSchema } from "./postgres-fixture";
 
 vi.mock("server-only", () => ({}));
+
+test("account contribution reads normalize serialized timestamp strings", async () => {
+  const sql = vi
+    .fn()
+    .mockResolvedValueOnce([
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        publicationState: "active",
+        coursePrefix: "COMP",
+        courseNumber: "2000",
+        instructorUuid: null,
+        publishedAt: "2026-08-20T12:00:00.000Z",
+      },
+    ])
+    .mockResolvedValueOnce([
+      {
+        targetType: "review",
+        coursePrefix: "COMP",
+        courseNumber: "2000",
+        instructorUuid: null,
+        reviewId: "00000000-0000-4000-8000-000000000002",
+        reviewAuthor: null,
+        kind: "emoji",
+        code: "love",
+        createdAt: "2026-08-21T12:00:00.000Z",
+      },
+    ]);
+  const repository = new PostgresAccountRepository(
+    sql as unknown as ReturnType<typeof postgres>,
+  );
+
+  const contributions = await repository.findContributions(
+    "00000000-0000-4000-8000-000000000003",
+  );
+
+  expect(contributions.reviews[0]?.publishedAt).toEqual(
+    new Date("2026-08-20T12:00:00.000Z"),
+  );
+  expect(contributions.reactions[0]?.createdAt).toEqual(
+    new Date("2026-08-21T12:00:00.000Z"),
+  );
+});
 
 const connection = process.env.TEST_CONTRIBUTIONS_POSTGRES_URL;
 

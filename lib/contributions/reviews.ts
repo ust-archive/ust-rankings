@@ -136,16 +136,19 @@ export class ContributionsUnavailableError extends Error {
   }
 }
 
-export function normalizeReviewDate(value: unknown): Date {
+export function normalizeContributionDate(value: unknown): Date {
   const date =
     value instanceof Date ? new Date(value.getTime()) : new Date(String(value));
   if (Number.isNaN(date.getTime()))
-    throw new ContributionsUnavailableError("Invalid Review timestamp");
+    throw new ContributionsUnavailableError("Invalid contribution timestamp");
   return date;
 }
 
 export function normalizePublicReview(review: PublicReview): PublicReview {
-  return { ...review, publishedAt: normalizeReviewDate(review.publishedAt) };
+  return {
+    ...review,
+    publishedAt: normalizeContributionDate(review.publishedAt),
+  };
 }
 
 export function readWithReviewCache<T>(

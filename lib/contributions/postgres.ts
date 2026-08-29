@@ -29,7 +29,7 @@ import {
   ContributionsUnavailableError,
   createReviewService,
   type EditReviewRecord,
-  normalizeReviewDate,
+  normalizeContributionDate,
   type PublicReview,
   type PublishReviewRecord,
   type ReviewListQuery,
@@ -187,11 +187,11 @@ export class PostgresAccountRepository implements AccountRepository {
     return {
       reviews: reviews.map((review) => ({
         ...review,
-        publishedAt: normalizeReviewDate(review.publishedAt),
+        publishedAt: normalizeContributionDate(review.publishedAt),
       })),
       reactions: reactions.map((reaction) => ({
         ...reaction,
-        createdAt: normalizeReviewDate(reaction.createdAt),
+        createdAt: normalizeContributionDate(reaction.createdAt),
       })),
     };
   }
@@ -323,7 +323,7 @@ function publicReview(row: ReviewDatabaseRow): PublicReview {
       ? { capturedDisplayName: row.capturedDisplayName }
       : {}),
     license: "CC BY 4.0",
-    publishedAt: normalizeReviewDate(row.publishedAt),
+    publishedAt: normalizeContributionDate(row.publishedAt),
     ...(row.viewerCanEdit ? { viewerCanEdit: true } : {}),
     ...(row.instructorAssociationStatus
       ? { instructorAssociationStatus: row.instructorAssociationStatus }
