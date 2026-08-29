@@ -474,6 +474,9 @@ SELECT DISTINCT
   round(num_invites * response_rate)::BIGINT AS samples,
   (num_invites * response_rate)::DOUBLE AS sfq_weight_base,
   response_rate::DOUBLE AS sfq_response_rate,
+  num_invites::BIGINT AS sfq_num_invites,
+  course_overall_sd::DOUBLE AS source_stddev,
+  sha256 AS acquisition_sha256,
   version,
   school_code,
   section
@@ -512,6 +515,13 @@ SELECT DISTINCT
   round(num_invites * response_rate)::BIGINT AS samples,
   (num_invites * response_rate)::DOUBLE AS sfq_weight_base,
   response_rate::DOUBLE AS sfq_response_rate,
+  num_invites::BIGINT AS sfq_num_invites,
+  course_overall_mean::DOUBLE AS paired_course_rating,
+  instructor_overall_sd::DOUBLE AS source_stddev,
+  sha256 AS acquisition_sha256,
+  version,
+  school_code,
+  section,
   instructor_name
 FROM source_sfq_instructors
 WHERE num_invites > 0
@@ -530,13 +540,23 @@ SELECT * EXCLUDE (
   school_code,
   section,
   sfq_weight_base,
-  sfq_response_rate
+  sfq_response_rate,
+  sfq_num_invites,
+  source_stddev,
+  acquisition_sha256
 ) FROM sfq_course_observations
 UNION ALL BY NAME
 SELECT * EXCLUDE (
+  version,
+  school_code,
+  section,
   instructor_name,
   sfq_weight_base,
-  sfq_response_rate
+  sfq_response_rate,
+  sfq_num_invites,
+  paired_course_rating,
+  source_stddev,
+  acquisition_sha256
 ) FROM sfq_instructor_observations;
 
 -- Many-to-many bridge from evidence to people. The third branch reattaches a
