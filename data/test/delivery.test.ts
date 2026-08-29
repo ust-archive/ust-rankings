@@ -374,7 +374,7 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
     assert.deepEqual(first.manifest.waitlistEvidence, {
       artifact: "waitlist-evidence.parquet",
       schemaVersion: 1,
-      modelVersion: "joint-baseline-v3",
+      modelVersion: "joint-baseline-v4",
       sourceArtifact: "canonical/class_records.parquet",
       sourceRevision: scheduleRevision,
       sourceAvailable: true,

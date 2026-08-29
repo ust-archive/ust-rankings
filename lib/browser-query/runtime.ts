@@ -2253,6 +2253,7 @@ function waitlistHistoricalData(rows: readonly Row[]): WaitlistHistoricalData {
 function waitlistCandidate(
   term: WaitlistTerm,
   courseCode: string,
+  current: readonly WaitlistCurrentClass[],
   selected: readonly WaitlistCurrentClass[],
   positions: ReadonlyMap<string, number>,
 ): WaitlistPlanCandidate {
@@ -2271,6 +2272,12 @@ function waitlistCandidate(
               ),
             }),
         features: item.features,
+        ordinal: current
+          .filter(({ value }) => value.classType === item.value.classType)
+          .sort((left, right) =>
+            left.value.section.localeCompare(right.value.section),
+          )
+          .findIndex(({ value }) => value.section === item.value.section),
         position: positions.get(item.value.section) as number,
         section: item.value.section,
         type: item.value.classType,
@@ -2418,6 +2425,7 @@ async function waitlistPlan(
   const candidate = waitlistCandidate(
     term,
     requestedCourse,
+    current,
     selected,
     new Map(entries.map(({ section, position }) => [section, position])),
   );
