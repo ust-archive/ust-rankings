@@ -1,7 +1,15 @@
 import { expect, test } from "@playwright/test";
 
+const courseOffering = (
+  page: import("@playwright/test").Page,
+  courseCode: string,
+) =>
+  page.getByRole("listitem").filter({
+    has: page.getByRole("heading", { exact: true, name: courseCode }),
+  });
+
 const waitlistCard = (page: import("@playwright/test").Page) =>
-  page.locator("[data-waitlist-course='WAIT 3000']");
+  courseOffering(page, "WAIT 3000");
 
 test("WL Compass calculates independent browser-only Course Plans", async ({
   page,
@@ -33,7 +41,7 @@ test("WL Compass calculates independent browser-only Course Plans", async ({
   const result = card.getByRole("region", { name: "WL Compass result" });
   await expect(result).toBeVisible();
 
-  const math = page.locator("[data-waitlist-course='MATH 1000']");
+  const math = courseOffering(page, "MATH 1000");
   await math.getByRole("button", { name: "Require L1" }).click();
   await math
     .getByRole("spinbutton", { name: "WL Position for MATH 1000 L1" })
@@ -68,6 +76,17 @@ test("WL Compass calculates independent browser-only Course Plans", async ({
         /queue.?position/i.test(url) || /queue.?position/i.test(postData ?? ""),
     ),
   ).toBe(false);
+});
+
+test("WL Compass search accepts compact Course Codes", async ({ page }) => {
+  await page.goto("/waitlist");
+  const search = page.getByRole("searchbox", {
+    name: "Search WL Compass Courses",
+  });
+  await search.fill("WAIT3000");
+  expect(new URL(page.url()).searchParams.get("q")).toBe("WAIT3000");
+  await expect(waitlistCard(page)).toBeVisible();
+  await expect(courseOffering(page, "MATH 1000")).toHaveCount(0);
 });
 
 test("WL Compass supports keyboard use at 390px without horizontal overflow", async ({

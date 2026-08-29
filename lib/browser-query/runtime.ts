@@ -542,6 +542,10 @@ function resolvedIdentity(runtime: Runtime, uuid: string) {
   return runtime.identities.get(runtime.identityHistory.resolveUuid(uuid));
 }
 
+function courseCodeSearchValues(courseCode: string) {
+  return [courseCode, courseCode.replace(" ", "")];
+}
+
 async function catalog(
   runtime: Runtime,
   input: CourseQueryOperations["catalog"]["input"],
@@ -707,7 +711,7 @@ async function courseRankings(
       searchText: [
         prefix,
         courseNumber,
-        code,
+        ...courseCodeSearchValues(code),
         courseMetadata?.title,
         ...associated.flatMap((identity) => [
           identity.uuid,
@@ -1141,7 +1145,7 @@ async function instructorRankings(
       searchText: [
         ...(familySearchValues.get(identity.uuid) ?? []),
         ...[...courseCodes].flatMap((code) => [
-          code,
+          ...courseCodeSearchValues(code),
           runtime.courses.get(code)?.title,
         ]),
       ]
@@ -2071,7 +2075,7 @@ function waitlistOfferings(rows: readonly Row[]): WaitlistCourseOffering[] {
 
 function waitlistSearchText(offering: WaitlistCourseOffering) {
   return [
-    offering.courseCode,
+    ...courseCodeSearchValues(offering.courseCode),
     offering.title,
     ...offering.classes.flatMap((item) => [
       item.section,
