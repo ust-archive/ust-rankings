@@ -2,6 +2,10 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
+import {
+  prepareBacktestAnalysis,
+  writeBacktestAnalysis,
+} from "./backtest-analysis.ts";
 import { assignInstructorIdentities } from "./identities.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -138,6 +142,14 @@ const sources = {
   schedule_courses: source(
     "schedule/courses.parquet",
     `hf://datasets/ust-archive/schedule@${revisions.schedule}/courses.parquet`,
+  ),
+  schedule_class_records: source(
+    "schedule/canonical/class_records.parquet",
+    `hf://datasets/ust-archive/schedule@${revisions.schedule}/canonical/class_records.parquet`,
+  ),
+  schedule_course_records: source(
+    "schedule/canonical/course_records.parquet",
+    `hf://datasets/ust-archive/schedule@${revisions.schedule}/canonical/course_records.parquet`,
   ),
   reviews: source(
     "ust-space/reviews.parquet",
@@ -353,6 +365,11 @@ try {
       sourceCommit: process.env.RANKINGS_IDENTITY_COMMIT ?? "local",
       correctionsPath: process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE,
     });
+    await prepareBacktestAnalysis(
+      connection,
+      sources.schedule_class_records,
+      sources.schedule_course_records,
+    );
     for (const candidate of backtestCandidates) {
       await setVariables(connection, candidateModelSettings(candidate));
       await executeFile(connection, "11_backtest_weights.sql");
@@ -366,6 +383,7 @@ try {
         connection,
         join(directory, "course-ratings.parquet"),
       );
+      await writeBacktestAnalysis(connection, directory);
     }
   } else {
     await executeFile(connection, "10_observations.sql");

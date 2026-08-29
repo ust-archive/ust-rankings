@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
+import {
+  type BacktestAnalysisSummary,
+  pairedBacktestIntervals,
+  summarizeBacktestAnalysis,
+} from "./backtest-analysis-report.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const previousGeneration = process.env.RANKINGS_PREVIOUS_GENERATION_DIR;
@@ -78,6 +83,8 @@ const localSourceFiles = [
   "catalog/courses.parquet",
   "schedule/classes.parquet",
   "schedule/courses.parquet",
+  "schedule/canonical/class_records.parquet",
+  "schedule/canonical/course_records.parquet",
   "ust-space/reviews.parquet",
   "sfq/canonical/instructor_records.parquet",
   "sfq/canonical/section_records.parquet",
@@ -137,6 +144,14 @@ const candidates: readonly Candidate[] = [
     id: "votes-unweighted",
     timelinessBase: 0.65,
     courseInstructorMultiplier: 12,
+    reviewVoteScale: 0,
+    sfqRatePenalty: 1,
+    contextAffectsUncertainty: true,
+  },
+  {
+    id: "votes-unweighted-context-4",
+    timelinessBase: 0.65,
+    courseInstructorMultiplier: 4,
     reviewVoteScale: 0,
     sfqRatePenalty: 1,
     contextAffectsUncertainty: true,
@@ -307,6 +322,7 @@ async function metrics(
 type CandidateResult = Awaited<ReturnType<typeof metrics>> & {
   id: string;
   parameters: Omit<Candidate, "id">;
+  analysis: BacktestAnalysisSummary;
 };
 
 const temp = await mkdtemp(join(tmpdir(), "ust-ranking-backtest-"));
@@ -355,6 +371,10 @@ try {
         rowsPath,
         join(directory, "course-ratings.parquet"),
       )),
+      analysis: await summarizeBacktestAnalysis(
+        metricsConnection as DuckDBConnection,
+        directory,
+      ),
     });
   }
 
@@ -371,11 +391,21 @@ try {
           )
         : maximum;
     }, 0);
-  const reportedResults = results.map((candidate) => ({
-    ...candidate,
-    maximumCutoffPredictionRegression:
-      maximumCutoffPredictionRegression(candidate),
-  }));
+  const reportedResults = await Promise.all(
+    results.map(async (candidate) => ({
+      ...candidate,
+      maximumCutoffPredictionRegression:
+        maximumCutoffPredictionRegression(candidate),
+      pairedIntervals:
+        candidate.id === baseline.id
+          ? null
+          : await pairedBacktestIntervals(
+              metricsConnection as DuckDBConnection,
+              join(temp, baseline.id),
+              join(temp, candidate.id),
+            ),
+    })),
+  );
   const winner = reportedResults
     .slice(1)
     .sort((left, right) => left.predictionError - right.predictionError)
@@ -428,6 +458,17 @@ try {
           ),
         },
     predictionScale: "source-rating",
+    analysis: {
+      usedForCandidateSelection: false,
+      primaryCourseMetric:
+        "Equal Course Code × outcome Term × criterion mean absolute error",
+      primaryInstructorMetric:
+        "Equal Instructor UUID × outcome Term mean absolute error",
+      evaluationWeight:
+        "Each aggregated Course or Instructor outcome unit has equal primary weight. Source weights affect fitting and the named secondary metric only.",
+      intervals:
+        "Deterministic paired 95% intervals resample Courses, Instructors, or outcome Terms with seed 100 and 2,000 draws.",
+    },
     uncertaintyTarget: "future-observation",
     uncertaintyCriteria: [
       "content",

@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "status": "frozen-before-outcomes",
+  "frozenAt": "2026-08-29T16:23:26Z",
+  "issue": "https://github.com/ust-archive/ust-rankings/issues/168",
+  "purpose": "Independent confirmation only. This manifest does not authorize an automatic production change.",
+  "historyMode": "prospective",
+  "developmentOutcomeCeilingTerm": 102,
+  "holdout": {
+    "firstOutcomeTerm": 103,
+    "sealWhen": {
+      "minimumDistinctOutcomeTerms": 4,
+      "minimumCourseUnits": 1000,
+      "minimumDistinctCourses": 300,
+      "minimumInstructorUnits": 500,
+      "minimumDistinctInstructors": 100
+    },
+    "sourceRule": "Seal immutable source revisions and SHA-256 values before any holdout metric is calculated.",
+    "identityRule": "Use only accepted Instructor UUID mappings that were known at the prediction cutoff. A display name is never an evaluation identity.",
+    "forecastRule": "Use the last sealed prediction cutoff before each outcome Term. One holdout outcome unit has one forecast.",
+    "lateDataRule": "Exclude corrections or records acquired after the holdout source revision is sealed. Report them in a later holdout instead."
+  },
+  "trainingSources": {
+    "catalog": "fd704a74bfc9fd9076680da3d80d0a7e304c7164",
+    "schedule": "8710e83979c989401aab91972234659adbeaba0a",
+    "ustSpace": "1069ca3822f00da12a22fee8f7ea4fc87dfe8344",
+    "sfq": "880e90dbd3af759e1e91c85a1bb721197a79bd8d",
+    "rankingGeneration": "3022bc5cc38cfc584ca14009eac3bee55a4892f9"
+  },
+  "candidateRegistry": [
+    {
+      "id": "current",
+      "role": "control",
+      "parameters": {
+        "timelinessBase": 0.65,
+        "courseInstructorMultiplier": 12,
+        "reviewVoteScale": 1,
+        "sfqRatePenalty": 1,
+        "contextAffectsUncertainty": true
+      }
+    },
+    {
+      "id": "votes-unweighted-context-4",
+      "role": "challenger",
+      "parameters": {
+        "timelinessBase": 0.65,
+        "courseInstructorMultiplier": 4,
+        "reviewVoteScale": 0,
+        "sfqRatePenalty": 1,
+        "contextAffectsUncertainty": true
+      }
+    }
+  ],
+  "courseEvaluation": {
+    "outcomes": [
+      "Course-role SFQ Course rating",
+      "Review-role content rating",
+      "Review-role teaching rating",
+      "Review-role grading rating",
+      "Review-role workload rating"
+    ],
+    "primaryUnit": "Course Code × outcome Term × criterion",
+    "primaryMetric": "Equal-unit mean absolute error on the source rating scale",
+    "secondaryMetrics": [
+      "Equal-Course mean absolute error",
+      "Equal-criterion mean absolute error",
+      "Raw-observation mean absolute error",
+      "Source-weighted mean absolute error",
+      "Respondent-count-weighted mean absolute error",
+      "Signed error",
+      "50%, 80%, 90%, and 95% predictive-interval coverage"
+    ],
+    "pairedIntervals": [
+      "Course-cluster bootstrap",
+      "outcome-Term block bootstrap"
+    ]
+  },
+  "instructorEvaluation": {
+    "outcome": "Instructor-role SFQ Instructor rating",
+    "primaryUnit": "accepted Instructor UUID × outcome Term",
+    "primaryMetric": "Equal-unit mean absolute error on the source rating scale",
+    "secondaryStrata": [
+      "cold Instructor",
+      "cold Course",
+      "solo-taught Class",
+      "team-taught Class",
+      "Instructor with more than one historical Course"
+    ],
+    "pairedIntervals": [
+      "Instructor-cluster bootstrap",
+      "outcome-Term block bootstrap"
+    ]
+  },
+  "acceptance": {
+    "course": {
+      "minimumRelativePrimaryImprovement": 0.02,
+      "maximumRelativeRegressionInAnyPredeclaredCriterionOrSource": 0.02,
+      "requireCourseClusterUpper95BelowZero": true,
+      "requireTermBlockUpper95BelowZero": true
+    },
+    "instructor": {
+      "rule": "No Course-only challenger can claim an Instructor improvement. Any future Instructor challenger requires a new manifest before outcomes are inspected."
+    },
+    "invariants": [
+      "One evidence observation has one context row.",
+      "Instructor-role evidence maps to exactly one accepted Instructor UUID.",
+      "Shared Course-role or Review-role evidence has total allocation 1 across a teaching team.",
+      "Changing team size does not change total samples or total confidence.",
+      "Production defaults and exports do not change until a separate reviewed decision accepts a sealed holdout."
+    ]
+  }
+}
