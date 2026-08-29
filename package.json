@@ -27,6 +27,7 @@
     "test:browser": "node scripts/generate-browser-fixture.ts && playwright test",
     "test:contracts": "vitest run --test-timeout 30000 test/account-postgres.test.ts test/attachment-postgres.test.ts test/moderation-postgres.test.ts test/review-postgres.test.ts test/signal-postgres.test.ts",
     "data:run": "npm run run --workspace data",
+    "data:backtest": "npm run backtest --workspace data",
     "data:check": "npm run type-check --workspace data && npm test --workspace data",
     "toolchain:check": "node scripts/check-toolchain.ts",
     "contributions:migrate": "node scripts/migrate-contributions.ts",
