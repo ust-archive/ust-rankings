@@ -210,8 +210,15 @@ function DetailItem({
   valueClassName?: string;
 }) {
   return (
-    <div className={cn("flex flex-col gap-1", className)}>
-      <dt>{title}</dt>
+    <div
+      className={cn(
+        "flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50/60 p-3",
+        className,
+      )}
+    >
+      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+        {title}
+      </dt>
       <dd className={cn("font-semibold text-slate-950", valueClassName)}>
         {value}
       </dd>
@@ -263,9 +270,9 @@ function WaitlistEvidenceResult({ result }: { result: SupportedPlan }) {
       aria-live="polite"
       className="flex flex-col gap-5 text-sm text-slate-700"
     >
-      <p className="m-0 text-slate-950">
+      <p className="m-0 bg-slate-50 px-4 py-3 text-base leading-relaxed text-slate-950 sm:px-5">
         The clearance rate is{" "}
-        <strong className="font-semibold tabular-nums">
+        <strong className="font-bold tabular-nums">
           {`${percent(result.estimate)} ±${pp(result.margin)} (${percent(result.range.low)}–${percent(result.range.high)})`}
         </strong>
         .
@@ -323,11 +330,11 @@ function WaitlistEvidenceResult({ result }: { result: SupportedPlan }) {
             Per-Section Evidence
           </h4>
           <ul
-            className="mt-2 flex list-none flex-col p-0"
+            className="mt-2 flex list-none flex-col divide-y divide-slate-200 p-0"
             style={{ listStyle: "none", marginInlineStart: 0 }}
           >
             {result.components.map((component) => (
-              <li className="py-4" key={component.section}>
+              <li className="py-4 first:pt-0 last:pb-0" key={component.section}>
                 <p className="font-semibold text-slate-950">
                   {component.section} · {component.type} · position{" "}
                   {component.position}
@@ -457,6 +464,7 @@ function WaitlistEvidenceResult({ result }: { result: SupportedPlan }) {
 }
 
 function WaitlistClassChoice({
+  calculating,
   classItem,
   courseCode,
   positions,
@@ -464,6 +472,7 @@ function WaitlistClassChoice({
   onChange,
   showError,
 }: {
+  calculating: boolean;
   classItem: WaitlistClass;
   courseCode: string;
   positions: Record<string, string>;
@@ -517,29 +526,29 @@ function WaitlistClassChoice({
           aria-label={`Require ${classItem.section}`}
           aria-pressed={selected}
           className={cn(
-            "min-h-12 w-full rounded-md border px-3 py-2 text-center font-mono tabular-nums transition-colors",
+            "min-h-12 w-full rounded-md border px-0.5 py-2 text-center font-mono text-xs leading-tight tabular-nums transition-colors sm:px-3 sm:text-sm",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2",
             selected
               ? "border-slate-950 bg-slate-950 text-white"
-              : "border-slate-200 bg-slate-50 text-slate-950 hover:bg-slate-100",
+              : "border-slate-200 bg-slate-50 text-slate-950 hover:border-slate-400 hover:bg-slate-100",
             !classItem.eligible && "cursor-not-allowed opacity-60",
           )}
           disabled={!classItem.eligible}
           onClick={toggleSelection}
           type="button"
         >
-          {classItem.section}({classItem.classNumber})
+          {classItem.section} ({classItem.classNumber})
         </button>
       </td>
       {classItem.eligible ? (
         <>
-          <td className="border border-slate-200 px-1 py-2 text-center font-mono tabular-nums sm:px-2">
+          <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
             {numberFormatter.format(classItem.capacity)}
           </td>
-          <td className="border border-slate-200 px-1 py-2 text-center font-mono tabular-nums sm:px-2">
+          <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
             {numberFormatter.format(availableSeats(classItem))}
           </td>
-          <td className="border border-slate-200 px-1 py-2 text-center font-mono tabular-nums sm:px-2">
+          <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
             {numberFormatter.format(classItem.waitlist)}
           </td>
           <td className="border border-slate-200 p-1 text-center align-middle">
@@ -552,7 +561,8 @@ function WaitlistClassChoice({
                   aria-invalid={Boolean(error)}
                   aria-label={`WL Position for ${courseCode} ${classItem.section}`}
                   autoComplete="off"
-                  className="h-9 min-w-0 border-slate-200 bg-white px-2 text-center font-mono text-xs tabular-nums shadow-none focus-visible:ring-1 focus-visible:ring-slate-400 focus-visible:ring-offset-0 aria-invalid:border-red-700 aria-invalid:text-red-700 aria-invalid:focus-visible:ring-red-700 sm:px-3 sm:text-sm"
+                  data-loading={calculating ? "true" : undefined}
+                  className="waitlist-position-input h-9 min-w-0 appearance-none border-slate-200 bg-white px-2 text-center font-mono text-xs tabular-nums shadow-none focus-visible:ring-1 focus-visible:ring-slate-400 focus-visible:ring-offset-0 aria-invalid:border-red-700 aria-invalid:text-red-700 aria-invalid:focus-visible:ring-red-700 sm:px-3 sm:text-sm"
                   id={inputId}
                   inputMode="numeric"
                   max={classItem.waitlist}
@@ -695,36 +705,38 @@ function WaitlistCardSkeletons() {
       {waitlistSkeletonCards.map((card) => (
         <Card
           aria-hidden="true"
-          className="animate-pulse overflow-hidden bg-white motion-reduce:animate-none"
+          className="animate-pulse overflow-hidden border-slate-300 bg-white shadow-sm motion-reduce:animate-none"
           data-waitlist-card-skeleton
           key={card}
         >
-          <CardHeader className="gap-1.5 p-6">
+          <CardHeader className="gap-1.5 p-4 sm:p-6">
             <div className="h-7 w-32 rounded bg-slate-200" />
             <div className="h-4 w-56 max-w-full rounded bg-slate-100" />
           </CardHeader>
-          <CardContent className="p-6 pt-0">
-            <div className="overflow-hidden rounded-md bg-slate-50">
-              <div className="grid grid-cols-[30%_12%_12%_12%_20%_14%]">
-                {waitlistSkeletonColumns.map((column) => (
-                  <div
-                    className="h-10 border border-slate-200 bg-slate-100"
-                    key={column}
-                  />
-                ))}
-              </div>
-              {waitlistSkeletonRows.map((row) => (
-                <div
-                  className="grid grid-cols-[30%_12%_12%_12%_20%_14%]"
-                  key={row}
-                >
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            <div className="min-w-0 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50">
+              <div className="w-full">
+                <div className="grid grid-cols-[30%_12%_12%_12%_20%_14%]">
                   {waitlistSkeletonColumns.map((column) => (
-                    <div className="border border-slate-200 p-1" key={column}>
-                      <div className="h-8 rounded bg-slate-100" />
-                    </div>
+                    <div
+                      className="h-10 border border-slate-200 bg-slate-100"
+                      key={column}
+                    />
                   ))}
                 </div>
-              ))}
+                {waitlistSkeletonRows.map((row) => (
+                  <div
+                    className="grid grid-cols-[30%_12%_12%_12%_20%_14%]"
+                    key={row}
+                  >
+                    {waitlistSkeletonColumns.map((column) => (
+                      <div className="border border-slate-200 p-1" key={column}>
+                        <div className="h-8 rounded bg-slate-100" />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -824,44 +836,47 @@ function WaitlistCourseCard({
   }, [planInput, planKey, runPlan, state.submittedKey]);
   const headingId = `waitlist-${offering.courseCode.replaceAll(" ", "-").toLowerCase()}-summary-heading`;
   return (
-    <li data-waitlist-course={offering.courseCode}>
-      <Card aria-busy={calculating} className="overflow-hidden bg-white">
-        <CardHeader className="relative gap-1.5 p-6">
-          <div className="min-w-0 pr-8">
+    <li className="min-w-0" data-waitlist-course={offering.courseCode}>
+      <Card
+        aria-busy={calculating}
+        className="min-w-0 overflow-hidden border-slate-300 bg-white shadow-sm"
+      >
+        <CardHeader className="relative gap-1.5 p-4 sm:p-6">
+          <div className="min-w-0 pr-10 sm:pr-12">
             <CardTitle asChild>
-              <h2 className="wrap-break-word" id={headingId}>
+              <h2 className="wrap-break-word tracking-tight" id={headingId}>
                 {offering.courseCode}
               </h2>
             </CardTitle>
-            <CardDescription className="truncate">
+            <CardDescription className="break-words text-pretty leading-relaxed">
               {offering.title}
             </CardDescription>
           </div>
           {calculating ? (
             <Spinner
               aria-label="Calculating WL Compass"
-              className="absolute right-6 top-6 size-5 text-slate-600"
+              className="absolute right-4 top-4 size-5 text-slate-600 sm:right-6 sm:top-6"
             />
           ) : null}
         </CardHeader>
-        <CardContent className="flex flex-col gap-5 bg-white p-6 pt-0">
-          <section aria-label="Course components">
+        <CardContent className="flex flex-col gap-5 p-4 pt-0 sm:p-6 sm:pt-0">
+          <section aria-label="Course components" className="min-w-0">
             <TooltipProvider delayDuration={300}>
-              <div className="overflow-x-auto rounded-md bg-slate-50">
+              <div className="min-w-0 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50">
                 <table className="w-full table-fixed border-collapse text-xs sm:text-sm">
                   <caption className="sr-only">
                     Select the course components you need and enter a WL
                     position for each selected component.
                   </caption>
                   <colgroup>
-                    <col className="w-[30%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[20%]" />
+                    <col className="w-[28%] sm:w-[30%]" />
+                    <col className="w-[13%] sm:w-[12%]" />
+                    <col className="w-[13%] sm:w-[12%]" />
+                    <col className="w-[13%] sm:w-[12%]" />
+                    <col className="w-[19%] sm:w-[20%]" />
                     <col className="w-[14%]" />
                   </colgroup>
-                  <thead className="bg-slate-50">
+                  <thead className="bg-slate-100">
                     <tr>
                       {[
                         "Section",
@@ -872,7 +887,7 @@ function WaitlistCourseCard({
                         "",
                       ].map((label) => (
                         <th
-                          className="border border-slate-200 px-1 py-3 text-center font-mono text-xs font-semibold leading-tight sm:px-2 sm:text-sm"
+                          className="border border-slate-200 px-0.5 py-3 text-center font-mono text-xs font-semibold leading-tight sm:px-2 sm:text-sm"
                           key={label || "details"}
                           scope="col"
                         >
@@ -884,6 +899,7 @@ function WaitlistCourseCard({
                   <tbody>
                     {offering.classes.map((classItem) => (
                       <WaitlistClassChoice
+                        calculating={calculating}
                         classItem={classItem}
                         courseCode={offering.courseCode}
                         key={classItem.section}
@@ -1031,7 +1047,7 @@ export function WaitlistPage() {
   return (
     <div className="flex w-full max-w-2xl flex-col gap-8 text-left text-slate-900">
       <header className="text-center">
-        <h1 className="text-logo-gradient text-6xl font-bold tracking-tighter sm:text-7xl">
+        <h1 className="text-logo-gradient text-balance text-5xl font-bold leading-none tracking-tighter sm:text-7xl">
           WL Compass
         </h1>
       </header>
@@ -1045,9 +1061,15 @@ export function WaitlistPage() {
           </Field>
         </div>
         {page ? (
-          <p className="text-sm text-slate-700">
-            {page.term.termName} · {numberFormatter.format(page.total)} Course
-            Offering{page.total === 1 ? "" : "s"}
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-700">
+            <span>{page.term.termName}</span>
+            <span aria-hidden="true" className="text-slate-400">
+              ·
+            </span>
+            <span className="tabular-nums">
+              {numberFormatter.format(page.total)} Course Offering
+              {page.total === 1 ? "" : "s"}
+            </span>
           </p>
         ) : null}
       </div>
@@ -1112,7 +1134,7 @@ export function WaitlistPage() {
           ) : null}
         </>
       ) : (
-        <Empty className="border bg-white">
+        <Empty className="border border-slate-300 bg-white shadow-sm">
           <EmptyHeader>
             <EmptyTitle>No Courses Found</EmptyTitle>
             <EmptyDescription>

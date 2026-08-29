@@ -148,6 +148,39 @@ body {
   @apply bg-gradient-to-br from-[#CC9900] to-[#996600] bg-clip-text text-transparent;
 }
 
+.waitlist-position-input {
+  -moz-appearance: textfield;
+}
+
+.waitlist-position-input::-webkit-inner-spin-button,
+.waitlist-position-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+@keyframes waitlist-position-loading {
+  0%,
+  100% {
+    border-color: #cbd5e1;
+  }
+
+  50% {
+    border-color: #2b6297;
+  }
+}
+
+.waitlist-position-input[data-loading="true"] {
+  animation: waitlist-position-loading 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waitlist-position-input[data-loading="true"] {
+    animation: none;
+    border-color: #2b6297;
+  }
+}
+
 a {
   @apply cursor-pointer underline;
 }
