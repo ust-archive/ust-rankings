@@ -103,8 +103,8 @@ ORDER BY r.rank, a.subject, a.code;
 ```
 
 Run `npm run type-check` and `npm run test` for static analysis and the
-end-to-end pipeline test. Deferred model validation is tracked in
-[#99](https://github.com/ust-archive/ust-rankings/issues/99).
+end-to-end pipeline test. Walk-forward model validation is available through
+[`npm run data:backtest`](../docs/data-pipeline.md#walk-forward-model-validation).
 
 The upstream dataset cards declare `license: other`; two inputs are private.
 
