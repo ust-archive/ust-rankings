@@ -83,6 +83,22 @@ test("Instructor search accepts compact Course Codes", async ({ page }) => {
   await expect(results).toContainText("Alpha Instructor");
 });
 
+test("Instructor search ignores punctuation in names", async ({ page }) => {
+  await page.goto("/rankings/instructors?term=2510&activity=all");
+  const search = page.getByRole("searchbox", {
+    name: "Search Instructors",
+  });
+  const results = page
+    .getByRole("list", { name: "Instructor rankings" })
+    .getByRole("link");
+
+  for (const value of ["LI, Xin", "li, xin", "li xin"]) {
+    await search.fill(value);
+    await expect(results).toHaveCount(1);
+    await expect(results).toContainText("LI, Xin");
+  }
+});
+
 test("Instructor details retain identity history, corrections, relations, and zero-sample Rank", async ({
   page,
 }) => {

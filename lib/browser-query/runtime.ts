@@ -546,19 +546,32 @@ function courseCodeSearchValues(courseCode: string) {
   return [courseCode, courseCode.replace(" ", "")];
 }
 
+function normalizeSearch(value: string) {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function searchQuery(value?: string) {
+  const input = value?.trim() ?? "";
+  if (input.length > 100)
+    throw new QueryError("invalid", "Search is limited to 100 characters.");
+  return normalizeSearch(input) || undefined;
+}
+
 async function catalog(
   runtime: Runtime,
   input: CourseQueryOperations["catalog"]["input"],
 ) {
-  const search = input.search?.trim().toLocaleLowerCase() ?? "";
-  if (search.length > 100)
-    throw new QueryError("invalid", "Search is limited to 100 characters.");
+  const search = searchQuery(input.search) ?? "";
   const limit = Math.min(Math.max(Math.floor(input.limit ?? 20), 1), 100);
   return [...runtime.courses.values()]
     .filter((course) =>
-      `${course.prefix} ${course.number} ${course.title}`
-        .toLocaleLowerCase()
-        .includes(search),
+      normalizeSearch(
+        `${course.prefix} ${course.number} ${course.title}`,
+      ).includes(search),
     )
     .slice(0, limit)
     .map((course) => ({
@@ -576,9 +589,7 @@ async function courseRankings(
   const activity = query.activity ?? "current";
   if (activity !== "current" && activity !== "all")
     throw new QueryError("invalid", "Invalid activity mode.");
-  const search = query.search?.trim().toLocaleLowerCase() || undefined;
-  if (search && search.length > 100)
-    throw new QueryError("invalid", "Search is limited to 100 characters.");
+  const search = searchQuery(query.search);
   const coursePrefix = query.coursePrefix?.trim().toUpperCase() || undefined;
   if (coursePrefix && !/^[A-Z]{2,8}$/.test(coursePrefix))
     throw new QueryError("invalid", "Invalid Course Prefix.");
@@ -708,21 +719,22 @@ async function courseRankings(
         ustSpaceSamples: values.content?.samples ?? 0,
         sfqSamples: values.course?.samples ?? 0,
       },
-      searchText: [
-        prefix,
-        courseNumber,
-        ...courseCodeSearchValues(code),
-        courseMetadata?.title,
-        ...associated.flatMap((identity) => [
-          identity.uuid,
-          identity.canonicalName,
-          identity.itsc,
-          ...identity.aliases.map((alias) => alias.name),
-        ]),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLocaleLowerCase(),
+      searchText: normalizeSearch(
+        [
+          prefix,
+          courseNumber,
+          ...courseCodeSearchValues(code),
+          courseMetadata?.title,
+          ...associated.flatMap((identity) => [
+            identity.uuid,
+            identity.canonicalName,
+            identity.itsc,
+            ...identity.aliases.map((alias) => alias.name),
+          ]),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      ),
       result: {
         entity: "course",
         coursePrefix: prefix,
@@ -1014,9 +1026,7 @@ async function instructorRankings(
     throw new QueryError("invalid", "Invalid activity mode.");
   if (query.commonCore?.length || query.commonCoreScheme)
     throw new QueryError("invalid", "Filter does not apply to this entity.");
-  const search = query.search?.trim().toLocaleLowerCase() || undefined;
-  if (search && search.length > 100)
-    throw new QueryError("invalid", "Search is limited to 100 characters.");
+  const search = searchQuery(query.search);
   const coursePrefix = query.coursePrefix?.trim().toUpperCase() || undefined;
   if (coursePrefix && !/^[A-Z]{2,8}$/.test(coursePrefix))
     throw new QueryError("invalid", "Invalid Course Prefix.");
@@ -1142,16 +1152,17 @@ async function instructorRankings(
       active: active.has(observedUuid),
       score: retired ? undefined : rankingScore(values, configuration.weights),
       courseCodes,
-      searchText: [
-        ...(familySearchValues.get(identity.uuid) ?? []),
-        ...[...courseCodes].flatMap((code) => [
-          ...courseCodeSearchValues(code),
-          runtime.courses.get(code)?.title,
-        ]),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLocaleLowerCase(),
+      searchText: normalizeSearch(
+        [
+          ...(familySearchValues.get(identity.uuid) ?? []),
+          ...[...courseCodes].flatMap((code) => [
+            ...courseCodeSearchValues(code),
+            runtime.courses.get(code)?.title,
+          ]),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      ),
       result: {
         entity: "instructor",
         uuid: identity.uuid,
@@ -1588,9 +1599,7 @@ function scheduleSearchText(offering: CourseOffering) {
         ...meeting.instructors.map((instructor) => instructor.sourceName),
       ]),
     ]),
-  ]
-    .join(" ")
-    .toLowerCase();
+  ].join(" ");
 }
 
 async function schedulePage(
@@ -1610,8 +1619,7 @@ async function schedulePage(
   const term = terms.find((candidate) => candidate.termCode === termCode);
   if (!term) throw new QueryError("invalid", "Unknown Term Code.");
   const search = input.search?.trim();
-  if (search && search.length > 100)
-    throw new QueryError("invalid", "Search is limited to 100 characters.");
+  const normalizedSearch = searchQuery(search);
   const limit = Math.min(Math.max(Math.floor(input.limit ?? 100), 1), 100);
   const rows = await queryRows(
     runtime,
@@ -1619,10 +1627,9 @@ async function schedulePage(
     [termCode],
   );
   let offerings = await mapScheduleRows(runtime, rows);
-  if (search) {
-    const normalized = search.toLowerCase();
+  if (normalizedSearch) {
     offerings = offerings.filter((offering) =>
-      scheduleSearchText(offering).includes(normalized),
+      normalizeSearch(scheduleSearchText(offering)).includes(normalizedSearch),
     );
   }
   return {
@@ -2082,9 +2089,7 @@ function waitlistSearchText(offering: WaitlistCourseOffering) {
       String(item.classNumber),
       item.classType,
     ]),
-  ]
-    .join(" ")
-    .toLocaleLowerCase();
+  ].join(" ");
 }
 
 async function waitlistClassStatus(
@@ -2132,8 +2137,7 @@ async function waitlistSearch(
         : (() => {
             throw new QueryError("invalid", "Invalid Waitlist search.");
           })();
-  if (search && search.length > 100)
-    throw new QueryError("invalid", "Search is limited to 100 characters.");
+  const normalizedSearch = searchQuery(search);
   const limitValue = input?.limit ?? 100;
   const limit =
     typeof limitValue === "number" ? Math.floor(limitValue) : Number.NaN;
@@ -2155,9 +2159,11 @@ async function waitlistSearch(
     [term.termCode],
   );
   const offerings = waitlistOfferings(rows);
-  const results = search
+  const results = normalizedSearch
     ? offerings.filter((offering) =>
-        waitlistSearchText(offering).includes(search.toLocaleLowerCase()),
+        normalizeSearch(waitlistSearchText(offering)).includes(
+          normalizedSearch,
+        ),
       )
     : offerings;
   return {

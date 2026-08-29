@@ -88,6 +88,7 @@ export async function generateBrowserFixtures() {
       ],
       includePriorOnly: true,
       includeScheduleCourse: true,
+      punctuatedInstructor: true,
       sameNameAssociations: true,
     }),
     makeScheduleGeneration(scheduleRoot, undefined, scheduleFixtureSha, true),
