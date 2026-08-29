@@ -390,7 +390,9 @@ JOIN instructor_name_anchors AS alias
 LEFT JOIN instructor_name_anchors AS anchor
   ON anchor.name_key = resolved.anchor_key;
 
--- Reviews expand from one source row to four criterion observations.
+-- Reviews expand from one source row to four criterion observations. The raw
+-- vote and response-rate inputs remain in these intermediate tables so the
+-- shared backtest can reweight them without rebuilding identity relations.
 -- net_votes = upvotes - downvotes = 2 * upvotes - total votes.
 -- Net votes adjust confidence linearly, with a floor of 0.25. Votes are not
 -- additional respondents, so the sample count remains one review.
@@ -438,6 +440,7 @@ SELECT
     1 + net_votes * getvariable('review_vote_scale')::DOUBLE
   )::DOUBLE AS weight,
   1::BIGINT AS samples,
+  net_votes AS review_net_votes,
   hash AS source_id
 FROM criteria
 WHERE rating BETWEEN 1 AND 5
@@ -469,6 +472,8 @@ SELECT DISTINCT
     )
   )::DOUBLE AS weight,
   round(num_invites * response_rate)::BIGINT AS samples,
+  (num_invites * response_rate)::DOUBLE AS sfq_weight_base,
+  response_rate::DOUBLE AS sfq_response_rate,
   version,
   school_code,
   section
@@ -505,6 +510,8 @@ SELECT DISTINCT
     )
   )::DOUBLE AS weight,
   round(num_invites * response_rate)::BIGINT AS samples,
+  (num_invites * response_rate)::DOUBLE AS sfq_weight_base,
+  response_rate::DOUBLE AS sfq_response_rate,
   instructor_name
 FROM source_sfq_instructors
 WHERE num_invites > 0
@@ -516,11 +523,21 @@ WHERE num_invites > 0
 
 -- Shared long-form contract used by every downstream calculation.
 CREATE OR REPLACE TABLE observations AS
-SELECT * EXCLUDE (source_id) FROM review_observations
+SELECT * EXCLUDE (source_id, review_net_votes) FROM review_observations
 UNION ALL BY NAME
-SELECT * EXCLUDE (version, school_code, section) FROM sfq_course_observations
+SELECT * EXCLUDE (
+  version,
+  school_code,
+  section,
+  sfq_weight_base,
+  sfq_response_rate
+) FROM sfq_course_observations
 UNION ALL BY NAME
-SELECT * EXCLUDE (instructor_name) FROM sfq_instructor_observations;
+SELECT * EXCLUDE (
+  instructor_name,
+  sfq_weight_base,
+  sfq_response_rate
+) FROM sfq_instructor_observations;
 
 -- Many-to-many bridge from evidence to people. The third branch reattaches a
 -- section-level course score to its instructors for course-context weighting;

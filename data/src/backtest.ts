@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DuckDBInstance } from "@duckdb/node-api";
+import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const previousGeneration = process.env.RANKINGS_PREVIOUS_GENERATION_DIR;
@@ -83,7 +83,16 @@ const localSourceFiles = [
   "sfq/canonical/section_records.parquet",
 ] as const;
 
-const candidates = [
+type Candidate = {
+  id: string;
+  timelinessBase: number;
+  courseInstructorMultiplier: number;
+  reviewVoteScale: number;
+  sfqRatePenalty: number;
+  contextAffectsUncertainty: boolean;
+};
+
+const candidates: readonly Candidate[] = [
   {
     id: "current",
     timelinessBase: 0.65,
@@ -148,18 +157,22 @@ const candidates = [
     sfqRatePenalty: 1,
     contextAffectsUncertainty: false,
   },
-] as const;
+];
+
+const initialCandidate = candidates[0];
+if (!initialCandidate) throw new Error("Current model was not evaluated");
 
 type MetricRow = Record<string, number | bigint | null>;
 
-async function metrics(rowsPath: string, ratingsPath: string) {
-  const instance = await DuckDBInstance.create(":memory:");
-  const connection = await instance.connect();
+async function metrics(
+  connection: DuckDBConnection,
+  rowsPath: string,
+  ratingsPath: string,
+) {
   const escapeSqlPath = (value: string) =>
     value.replaceAll("\\", "/").replaceAll("'", "''");
-  try {
-    const cutoffRows = (
-      await connection.runAndReadAll(`
+  const cutoffRows = (
+    await connection.runAndReadAll(`
         WITH comparisons AS (
           SELECT *, min(cumulative_samples) OVER (PARTITION BY cutoff_term)
             AS minimum_samples
@@ -184,24 +197,24 @@ async function metrics(rowsPath: string, ratingsPath: string) {
         GROUP BY cutoff_term
         ORDER BY cutoff_term
       `)
-    ).getRowObjectsJS() as MetricRow[];
-    const criterionRows = (
-      await connection.runAndReadAll(`
+  ).getRowObjectsJS() as MetricRow[];
+  const criterionRows = (
+    await connection.runAndReadAll(`
         SELECT criterion, count(DISTINCT cutoff_term)::INTEGER AS cutoffs
         FROM read_parquet('${escapeSqlPath(rowsPath)}')
         GROUP BY criterion
       `)
-    ).getRowObjectsJS() as Array<MetricRow & { criterion: string }>;
-    if (
-      criterionRows.some((row) => Number(row.cutoffs) < 2) ||
-      criterionRows.length < 6
-    )
-      throw new Error(
-        "Every criterion requires outcomes across multiple cutoffs",
-      );
+  ).getRowObjectsJS() as Array<MetricRow & { criterion: string }>;
+  if (
+    criterionRows.some((row) => Number(row.cutoffs) < 2) ||
+    criterionRows.length < 6
+  )
+    throw new Error(
+      "Every criterion requires outcomes across multiple cutoffs",
+    );
 
-    const stabilityRows = (
-      await connection.runAndReadAll(`
+  const stabilityRows = (
+    await connection.runAndReadAll(`
         WITH courses AS (
           SELECT
             subject AS prefix,
@@ -235,95 +248,99 @@ async function metrics(rowsPath: string, ratingsPath: string) {
          AND prior.term_num = current.term_num - 1
         GROUP BY current.term_num
       `)
-    ).getRowObjectsJS() as MetricRow[];
-    const stability = new Map(
-      stabilityRows.map((row) => [
-        Number(row.cutoff_term),
-        Number(row.ranking_stability),
-      ]),
-    );
-    const cutoffs = cutoffRows.map((row) => {
-      if (row.uncertainty_calibration_error === null)
-        throw new Error("Every cutoff requires later outcomes");
-      if (Number(row.evidence_levels) < 2)
-        throw new Error("Every cutoff requires sparse and denser evidence");
-      return {
-        termNumber: Number(row.cutoff_term),
-        comparisons: Number(row.comparisons),
-        predictionError: Number(row.prediction_error),
-        rankingStability: stability.get(Number(row.cutoff_term)) ?? null,
-        uncertaintyCalibrationError: Number(row.uncertainty_calibration_error),
-        sparseEvidenceSensitivity:
-          row.sparse_evidence_sensitivity === null
-            ? null
-            : Number(row.sparse_evidence_sensitivity),
-      };
-    });
-    if (cutoffs.length < 2)
-      throw new Error(
-        "Backtest requires future evidence for at least two cutoff Terms",
-      );
-    const average = (values: number[]) =>
-      values.reduce((total, value) => total + value, 0) / values.length;
-    const sparseValues = cutoffs.flatMap((row) =>
-      row.sparseEvidenceSensitivity === null
-        ? []
-        : [row.sparseEvidenceSensitivity],
-    );
-    if (!sparseValues.length)
-      throw new Error("Backtest requires both sparse and dense evidence");
-    const stabilityValues = cutoffs.flatMap((row) =>
-      row.rankingStability === null ? [] : [row.rankingStability],
-    );
-    if (!stabilityValues.length)
-      throw new Error("Backtest requires consecutive cutoff Terms");
+  ).getRowObjectsJS() as MetricRow[];
+  const stability = new Map(
+    stabilityRows.map((row) => [
+      Number(row.cutoff_term),
+      Number(row.ranking_stability),
+    ]),
+  );
+  const cutoffs = cutoffRows.map((row) => {
+    if (row.uncertainty_calibration_error === null)
+      throw new Error("Every cutoff requires later outcomes");
+    if (Number(row.evidence_levels) < 2)
+      throw new Error("Every cutoff requires sparse and denser evidence");
     return {
-      cutoffs,
-      criterionCutoffs: Object.fromEntries(
-        criterionRows.map((row) => [row.criterion, Number(row.cutoffs)]),
-      ),
-      predictionError: average(cutoffs.map((row) => row.predictionError)),
-      rankingStability: average(stabilityValues),
-      uncertaintyCalibrationError: average(
-        cutoffs.map((row) => row.uncertaintyCalibrationError),
-      ),
-      sparseEvidenceSensitivity: average(sparseValues),
+      termNumber: Number(row.cutoff_term),
+      comparisons: Number(row.comparisons),
+      predictionError: Number(row.prediction_error),
+      rankingStability: stability.get(Number(row.cutoff_term)) ?? null,
+      uncertaintyCalibrationError: Number(row.uncertainty_calibration_error),
+      sparseEvidenceSensitivity:
+        row.sparse_evidence_sensitivity === null
+          ? null
+          : Number(row.sparse_evidence_sensitivity),
     };
-  } finally {
-    connection.closeSync();
-    instance.closeSync();
-  }
+  });
+  if (cutoffs.length < 2)
+    throw new Error(
+      "Backtest requires future evidence for at least two cutoff Terms",
+    );
+  const average = (values: number[]) =>
+    values.reduce((total, value) => total + value, 0) / values.length;
+  const sparseValues = cutoffs.flatMap((row) =>
+    row.sparseEvidenceSensitivity === null
+      ? []
+      : [row.sparseEvidenceSensitivity],
+  );
+  if (!sparseValues.length)
+    throw new Error("Backtest requires both sparse and dense evidence");
+  const stabilityValues = cutoffs.flatMap((row) =>
+    row.rankingStability === null ? [] : [row.rankingStability],
+  );
+  if (!stabilityValues.length)
+    throw new Error("Backtest requires consecutive cutoff Terms");
+  return {
+    cutoffs,
+    criterionCutoffs: Object.fromEntries(
+      criterionRows.map((row) => [row.criterion, Number(row.cutoffs)]),
+    ),
+    predictionError: average(cutoffs.map((row) => row.predictionError)),
+    rankingStability: average(stabilityValues),
+    uncertaintyCalibrationError: average(
+      cutoffs.map((row) => row.uncertaintyCalibrationError),
+    ),
+    sparseEvidenceSensitivity: average(sparseValues),
+  };
 }
 
+type CandidateResult = Awaited<ReturnType<typeof metrics>> & {
+  id: string;
+  parameters: Omit<Candidate, "id">;
+};
+
 const temp = await mkdtemp(join(tmpdir(), "ust-ranking-backtest-"));
+let metricsInstance: DuckDBInstance | undefined;
+let metricsConnection: DuckDBConnection | undefined;
 try {
-  const results = [];
+  const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024,
+    env: {
+      ...process.env,
+      RANKINGS_OUTPUT_DIR: join(temp, "output"),
+      RANKINGS_BACKTEST_DIRECTORY: temp,
+      RANKINGS_BACKTEST_CANDIDATES: JSON.stringify(candidates),
+      RANKINGS_TIMELINESS_BASE: String(initialCandidate.timelinessBase),
+      RANKINGS_COURSE_INSTRUCTOR_MULTIPLIER: String(
+        initialCandidate.courseInstructorMultiplier,
+      ),
+      RANKINGS_REVIEW_VOTE_SCALE: String(initialCandidate.reviewVoteScale),
+      RANKINGS_SFQ_RATE_PENALTY: String(initialCandidate.sfqRatePenalty),
+      RANKINGS_CONTEXT_AFFECTS_UNCERTAINTY: String(
+        initialCandidate.contextAffectsUncertainty,
+      ),
+    },
+  });
+  if (result.status !== 0)
+    throw new Error(result.stderr || result.stdout || "Backtest failed");
+  metricsInstance = await DuckDBInstance.create(":memory:");
+  metricsConnection = await metricsInstance.connect();
+  const results: CandidateResult[] = [];
   for (const candidate of candidates) {
     const directory = join(temp, candidate.id);
     const rowsPath = join(directory, "comparisons.parquet");
-    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
-      cwd: root,
-      encoding: "utf8",
-      maxBuffer: 10 * 1024 * 1024,
-      env: {
-        ...process.env,
-        RANKINGS_OUTPUT_DIR: directory,
-        RANKINGS_BACKTEST_ROWS: rowsPath,
-        RANKINGS_TIMELINESS_BASE: String(candidate.timelinessBase),
-        RANKINGS_COURSE_INSTRUCTOR_MULTIPLIER: String(
-          candidate.courseInstructorMultiplier,
-        ),
-        RANKINGS_REVIEW_VOTE_SCALE: String(candidate.reviewVoteScale),
-        RANKINGS_SFQ_RATE_PENALTY: String(candidate.sfqRatePenalty),
-        RANKINGS_CONTEXT_AFFECTS_UNCERTAINTY: String(
-          candidate.contextAffectsUncertainty,
-        ),
-      },
-    });
-    if (result.status !== 0)
-      throw new Error(
-        result.stderr || result.stdout || `Candidate ${candidate.id} failed`,
-      );
     results.push({
       id: candidate.id,
       parameters: {
@@ -333,13 +350,33 @@ try {
         sfqRatePenalty: candidate.sfqRatePenalty,
         contextAffectsUncertainty: candidate.contextAffectsUncertainty,
       },
-      ...(await metrics(rowsPath, join(directory, "course-ratings.parquet"))),
+      ...(await metrics(
+        metricsConnection as DuckDBConnection,
+        rowsPath,
+        join(directory, "course-ratings.parquet"),
+      )),
     });
   }
 
   const baseline = results[0];
   if (!baseline) throw new Error("Current model was not evaluated");
-  const winner = results
+  const maximumAllowedCutoffPredictionRegression = 0.02;
+  const maximumCutoffPredictionRegression = (candidate: CandidateResult) =>
+    candidate.cutoffs.reduce((maximum, cutoff, index) => {
+      const current = baseline.cutoffs[index];
+      return current
+        ? Math.max(
+            maximum,
+            cutoff.predictionError / current.predictionError - 1,
+          )
+        : maximum;
+    }, 0);
+  const reportedResults = results.map((candidate) => ({
+    ...candidate,
+    maximumCutoffPredictionRegression:
+      maximumCutoffPredictionRegression(candidate),
+  }));
+  const winner = reportedResults
     .slice(1)
     .sort((left, right) => left.predictionError - right.predictionError)
     .find((candidate) => {
@@ -356,6 +393,8 @@ try {
         candidate.rankingStability <= baseline.rankingStability * 1.02 &&
         candidate.uncertaintyCalibrationError <=
           baseline.uncertaintyCalibrationError * 1.02 &&
+        candidate.maximumCutoffPredictionRegression <=
+          maximumAllowedCutoffPredictionRegression &&
         sparseOkay
       );
     });
@@ -408,7 +447,11 @@ try {
     },
     sfqComparability:
       "The supplied, hashed comparability evidence was required before respondent counts were used for confidence and interval calibration.",
-    candidates: results,
+    selectionGuardrails: {
+      maximumCutoffPredictionRegression:
+        maximumAllowedCutoffPredictionRegression,
+    },
+    candidates: reportedResults,
     selected: {
       id: selected.id,
       parameters: selected.parameters,
@@ -428,5 +471,7 @@ try {
   await writeFile(output, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`Wrote ${output}`);
 } finally {
+  metricsConnection?.closeSync();
+  metricsInstance?.closeSync();
   await rm(temp, { recursive: true, force: true });
 }

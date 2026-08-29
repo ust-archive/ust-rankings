@@ -713,6 +713,66 @@ test("walk-forward backtests reject unestablished SFQ comparability", async () =
   }
 });
 
+test("shared backtest candidates match the production model", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-backtest-current-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { backtestHistory: true });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const production = runPipeline(dataDir, join(temp, "production"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    const candidates = [
+      {
+        id: "current",
+        timelinessBase: 0.65,
+        courseInstructorMultiplier: 12,
+        reviewVoteScale: 1,
+        sfqRatePenalty: 1,
+        contextAffectsUncertainty: true,
+      },
+    ];
+    const backtestDirectory = join(temp, "backtest");
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "unused"),
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+        RANKINGS_BACKTEST_DIRECTORY: backtestDirectory,
+        RANKINGS_BACKTEST_CANDIDATES: JSON.stringify(candidates),
+      },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const productionRatings = parquet(production, "course-ratings");
+    const candidateRatings = join(
+      backtestDirectory,
+      "current",
+      "course-ratings.parquet",
+    )
+      .replaceAll("\\", "/")
+      .replaceAll("'", "''");
+    assert.deepEqual(
+      await rows(`
+        WITH production AS (
+          SELECT subject, code, term_num, criterion, bayesian, is_offered
+          FROM read_parquet('${productionRatings}')
+        ), candidate AS (
+          SELECT * FROM read_parquet('${candidateRatings}')
+        )
+        SELECT * FROM production EXCEPT ALL SELECT * FROM candidate
+        UNION ALL
+        SELECT * FROM candidate EXCEPT ALL SELECT * FROM production
+      `),
+      [],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
 test("walk-forward backtests compare candidates across historical cutoffs", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-backtest-"));
   try {
@@ -757,6 +817,10 @@ test("walk-forward backtests compare candidates across historical cutoffs", asyn
       ),
     );
     assert.ok(report.candidates.length >= 8);
+    assert.equal(
+      report.selectionGuardrails.maximumCutoffPredictionRegression,
+      0.02,
+    );
     assert.ok(
       report.candidates.every(
         (candidate: { cutoffs: unknown[] }) => candidate.cutoffs.length >= 2,
