@@ -1,12 +1,31 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   agentRules: false,
+  allowedDevOrigins: ["127.0.0.1"],
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
   output: "standalone",
-  outputFileTracingIncludes: {
-    "/*": ["./node_modules/@duckdb/node-bindings-linux-x64-musl/**/*"],
+  async headers() {
+    return [
+      {
+        source: "/duckdb/1.32.0/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "worker-src 'self' blob:",
+          },
+        ],
+      },
+    ];
   },
-  serverExternalPackages: ["@duckdb/node-api"],
   typescript: { tsconfigPath: "tsconfig.runtime.json" },
 };
 

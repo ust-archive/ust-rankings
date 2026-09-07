@@ -7,7 +7,9 @@ let publicationError: unknown;
 const published: unknown[] = [];
 const edited: unknown[] = [];
 const withdrawn: unknown[] = [];
+const { updateTag } = vi.hoisted(() => ({ updateTag: vi.fn() }));
 
+vi.mock("next/cache", () => ({ updateTag }));
 vi.mock("next/headers", () => ({
   headers: async () =>
     new Headers({
@@ -122,6 +124,7 @@ test("Review action publishes for an authenticated User and routes onboarding fa
   userId = "00000000-0000-4000-8000-000000000044";
   publicationError = undefined;
   published.length = 0;
+  updateTag.mockClear();
   expect(await redirectOf(() => publishReview(null, form()))).toContain(
     "/courses/COMP/2000?review=published#reviews",
   );
@@ -137,6 +140,7 @@ test("Review action publishes for an authenticated User and routes onboarding fa
       },
     },
   ]);
+  expect(updateTag).toHaveBeenCalledWith("contributions");
 
   publicationError = new ReviewWriteError(
     "onboarding-required",
@@ -171,6 +175,7 @@ test("Review actions edit optimistically and withdraw through the authorizing co
   publicationError = undefined;
   edited.length = 0;
   withdrawn.length = 0;
+  updateTag.mockClear();
   const reviewId = "00000000-0000-4000-8000-000000000144";
   const expectedRevisionId = "00000000-0000-4000-8000-000000000244";
   const editForm = form("Edited text.");
@@ -204,6 +209,8 @@ test("Review actions edit optimistically and withdraw through the authorizing co
     "/courses/COMP/2000?review=withdrawn#reviews",
   );
   expect(withdrawn).toEqual([{ id: userId, reviewId, expectedRevisionId }]);
+  expect(updateTag).toHaveBeenCalledTimes(2);
+  expect(updateTag).toHaveBeenCalledWith("contributions");
 });
 
 test("Review edit and withdrawal actions reject cross-origin, malformed, and wrong-owner writes", async () => {

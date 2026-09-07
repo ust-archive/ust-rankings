@@ -106,18 +106,6 @@ export function buildScheduleUrl(state: PlannerState) {
   return `/schedule?${parameters}`;
 }
 
-export function buildCalendarUrl(
-  termCode: string,
-  classNumbers: ReadonlyArray<number>,
-) {
-  const parameters = new URLSearchParams({ term: termCode });
-  for (const classNumber of [...new Set(classNumbers)].sort(
-    (left, right) => left - right,
-  ))
-    parameters.append("class", String(classNumber));
-  return `/schedule/calendar.ics?${parameters}`;
-}
-
 type ConflictClass = {
   classNumber: number;
   meetings: Array<{
@@ -132,6 +120,44 @@ type ConflictClass = {
 export function findPlannerConflicts(
   classes: ReadonlyArray<ConflictClass>,
 ): Array<readonly [number, number]> {
+  // All meetings use Hong Kong wall time. UTC arithmetic here avoids the viewer's timezone.
+  const day = 86_400_000;
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const intervals = classes.map((item) =>
+    item.meetings.flatMap((meeting) => {
+      if (
+        !meeting.dateFrom ||
+        !meeting.dateTo ||
+        !meeting.timeFrom ||
+        !meeting.timeTo
+      )
+        return [];
+      const weekday = weekdays.indexOf(meeting.weekday);
+      const from = Date.parse(`${meeting.dateFrom}T00:00:00Z`);
+      const until = Date.parse(`${meeting.dateTo}T00:00:00Z`);
+      const startTime =
+        Date.parse(`2000-01-01T${meeting.timeFrom}:00Z`) -
+        Date.parse("2000-01-01T00:00:00Z");
+      let endTime =
+        Date.parse(`2000-01-01T${meeting.timeTo}:00Z`) -
+        Date.parse("2000-01-01T00:00:00Z");
+      if (
+        weekday < 0 ||
+        ![from, until, startTime, endTime].every(Number.isFinite)
+      )
+        return [];
+      if (endTime <= startTime) endTime += day;
+      const ranges: Array<readonly [number, number]> = [];
+      for (
+        let date =
+          from + ((weekday - new Date(from).getUTCDay() + 7) % 7) * day;
+        date <= until;
+        date += 7 * day
+      )
+        ranges.push([date + startTime, date + endTime]);
+      return ranges;
+    }),
+  );
   const conflicts: Array<readonly [number, number]> = [];
   for (let leftIndex = 0; leftIndex < classes.length; leftIndex++) {
     const left = classes[leftIndex];
@@ -144,22 +170,10 @@ export function findPlannerConflicts(
       const right = classes[rightIndex];
       if (
         right &&
-        left.meetings.some((leftMeeting) =>
-          right.meetings.some(
-            (rightMeeting) =>
-              leftMeeting.weekday === rightMeeting.weekday &&
-              leftMeeting.dateFrom &&
-              leftMeeting.dateTo &&
-              rightMeeting.dateFrom &&
-              rightMeeting.dateTo &&
-              leftMeeting.dateFrom <= rightMeeting.dateTo &&
-              rightMeeting.dateFrom <= leftMeeting.dateTo &&
-              leftMeeting.timeFrom &&
-              leftMeeting.timeTo &&
-              rightMeeting.timeFrom &&
-              rightMeeting.timeTo &&
-              leftMeeting.timeFrom < rightMeeting.timeTo &&
-              rightMeeting.timeFrom < leftMeeting.timeTo,
+        intervals[leftIndex]?.some(([leftStart, leftEnd]) =>
+          intervals[rightIndex]?.some(
+            ([rightStart, rightEnd]) =>
+              leftStart < rightEnd && rightStart < leftEnd,
           ),
         )
       )
@@ -178,7 +192,9 @@ export function parseSisImport(text: string): {
       classNumbers: [],
       message: `SIS text is limited to ${MAX_SIS_TEXT_LENGTH.toLocaleString("en-US")} characters.`,
     };
-  const classNumbers = [...text.matchAll(/^\w{3} \(([1-9][0-9]{0,5})\)$/gm)]
+  const classNumbers = [
+    ...text.matchAll(/^[\t ]*\w{3} \(([1-9][0-9]{0,5})\)[\t ]*\r?$/gm),
+  ]
     .map((match) => Number(match[1]))
     .filter((number, index, values) => values.indexOf(number) === index)
     .sort((left, right) => left - right);

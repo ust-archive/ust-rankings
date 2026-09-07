@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import type { PublicReview } from "@/lib/contributions/reviews";
 import {
   gradeColor,
+  histogramPercentiles,
   letterGrade,
   rankingTermName,
 } from "@/lib/rankings/presentation";
@@ -22,6 +23,7 @@ import { Reviews } from "./course-reviews";
 import styles from "./details.module.css";
 import { DetailsTrend } from "./details-trend";
 import { ReviewNotice } from "./review-notice";
+import { ReviewOrderSelect } from "./review-order-select";
 
 const criteria = [
   ["content", "Content"],
@@ -51,11 +53,32 @@ type DetailRankings = Pick<
   "configuration" | "population" | "ranking" | "terms"
 >;
 
+function DetailsRankingsLoading() {
+  return (
+    <Card
+      aria-label="Loading Rankings"
+      className="animate-pulse border-slate-300 p-5 shadow-sm sm:p-6"
+      data-details-rankings-skeleton
+      role="status"
+    >
+      <div className="h-7 w-32 rounded bg-slate-200" />
+      <div className="mt-2 h-4 w-24 rounded bg-slate-100" />
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="col-span-2 h-28 rounded-lg bg-slate-100 sm:col-span-2 xl:col-span-1" />
+        <div className="h-28 rounded-lg bg-slate-100" />
+        <div className="h-28 rounded-lg bg-slate-100" />
+      </div>
+    </Card>
+  );
+}
+
 export function DetailsHeader({
   eyebrow,
   title,
   subtitle,
+  subtitleLoading = false,
   termName,
+  termLoading = false,
   description,
   notice,
   transitionName,
@@ -63,7 +86,9 @@ export function DetailsHeader({
   eyebrow: string;
   title: string;
   subtitle?: string;
+  subtitleLoading?: boolean;
   termName?: string;
+  termLoading?: boolean;
   description?: string;
   notice?: ReactNode;
   transitionName?: string;
@@ -74,16 +99,28 @@ export function DetailsHeader({
         {eyebrow}
       </p>
       <EntityTitleTransition name={transitionName}>
-        <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900 sm:text-6xl">
+        <h1 className="mt-2 text-balance text-4xl font-bold tracking-tight text-slate-900 sm:text-6xl">
           {title}
         </h1>
       </EntityTitleTransition>
-      {subtitle ? (
+      {subtitleLoading ? (
+        <div
+          aria-label="Loading subtitle"
+          className="mt-3 h-6 w-64 max-w-full animate-pulse rounded bg-slate-200"
+          role="status"
+        />
+      ) : subtitle ? (
         <p className="mt-2 max-w-3xl text-lg font-medium text-slate-700">
           {subtitle}
         </p>
       ) : null}
-      {termName ? (
+      {termLoading ? (
+        <div
+          aria-label="Loading Term"
+          className="mt-3 h-4 w-28 animate-pulse rounded bg-slate-100"
+          role="status"
+        />
+      ) : termName ? (
         <p className="mt-2 text-sm font-medium text-slate-600">{termName}</p>
       ) : null}
       {description ? (
@@ -110,6 +147,10 @@ function ScoreHistogram({
   const gap = 2;
   const barWidth = width / distribution.bins.length - gap;
   const maximumBin = Math.max(...distribution.bins, 1);
+  const binPercentiles = histogramPercentiles(
+    distribution.bins,
+    distribution.count,
+  );
   const position =
     ((value - distribution.minimum) /
       (distribution.maximum - distribution.minimum || 1)) *
@@ -125,11 +166,7 @@ function ScoreHistogram({
         <title>{`${entity} score distribution`}</title>
         {distribution.bins.map((count, index) => {
           const barHeight = Math.max(2, (count / maximumBin) * (height - 6));
-          const color = gradeColor(
-            distribution.bins.length === 1
-              ? 1
-              : index / (distribution.bins.length - 1),
-          );
+          const color = gradeColor(binPercentiles[index] ?? 0);
           return (
             <rect
               fill={`rgb(${color.join(", ")})`}
@@ -174,7 +211,7 @@ function RankMetric({
   unavailable?: string;
 }) {
   return (
-    <span className="block rounded-lg border border-slate-200 bg-white p-4 text-slate-900">
+    <span className="block rounded-lg border border-slate-200 bg-slate-50/70 p-4 text-slate-900">
       <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">
         {label}
       </span>
@@ -187,7 +224,7 @@ function RankMetric({
         </>
       ) : (
         <>
-          <span className="mt-1 block text-xl font-bold tabular-nums">
+          <span className="mt-1 block whitespace-nowrap text-lg font-bold tabular-nums sm:text-xl">
             #{integer.format(rank)} of {integer.format(population)}
           </span>
           <span className="mt-1 block text-sm text-slate-700 tabular-nums">
@@ -200,16 +237,19 @@ function RankMetric({
 }
 
 export function DetailsRankings({
+  loading = false,
   rankings,
   selectedTermCode,
   scoreDistribution,
   termNames = new Map(),
 }: {
+  loading?: boolean;
   rankings?: DetailRankings;
   selectedTermCode?: string;
   scoreDistribution?: ScoreDistribution;
   termNames?: Map<string, string>;
 }) {
+  if (loading && !rankings) return <DetailsRankingsLoading />;
   const evidence = rankings?.terms.find(
     (term) => term.termCode === selectedTermCode,
   );
@@ -223,7 +263,10 @@ export function DetailsRankings({
       )
     : undefined;
   return (
-    <details className="group overflow-hidden rounded-lg border border-gray-200 bg-white text-gray-950 shadow-sm">
+    <details
+      aria-busy={loading}
+      className="group overflow-hidden rounded-lg border border-slate-300 bg-white text-gray-950 shadow-sm"
+    >
       <summary className="relative cursor-pointer list-none p-5 focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[#003366] sm:p-6">
         <h2 className={`block pr-24 text-2xl text-slate-900 ${styles.heading}`}>
           Rankings
@@ -238,8 +281,8 @@ export function DetailsRankings({
           </span>
         ) : null}
         {selectedRanking && grade ? (
-          <span className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <span className="block rounded-lg border border-slate-200 bg-white p-4 text-slate-900 sm:col-span-2">
+          <span className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <span className="col-span-2 block rounded-lg border border-slate-200 bg-slate-50/70 p-4 text-slate-900 sm:col-span-2 xl:col-span-1">
               <span className="flex items-center gap-3">
                 <span className="shrink-0">
                   <span className="block text-xs font-bold uppercase tracking-wide text-slate-600">
@@ -292,7 +335,9 @@ export function DetailsRankings({
           >
             {rankings
               ? "Rank and score are unavailable for this population."
-              : "Rankings are unavailable. Other Details remain available."}
+              : loading
+                ? "Loading Rankings… Other Details remain available."
+                : "Rankings are unavailable. Other Details remain available."}
           </span>
         )}
         <span className="absolute right-4 top-4 inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium text-slate-700 sm:right-5 sm:top-5">
@@ -304,7 +349,7 @@ export function DetailsRankings({
           />
         </span>
       </summary>
-      <div className="flex flex-col gap-6 border-t border-gray-200 bg-gray-50 p-5 sm:p-6">
+      <div className="flex flex-col gap-6 border-t border-slate-200 bg-slate-50 p-5 sm:p-6">
         <section
           aria-labelledby="criterion-evidence"
           className="flex flex-col gap-4"
@@ -413,6 +458,26 @@ export function ExpandCardTrigger({
   );
 }
 
+export function DetailsCommunityLoading() {
+  return (
+    <Card
+      aria-label="Loading Community"
+      className="animate-pulse border-slate-300 shadow-sm"
+      data-details-community-skeleton
+      role="status"
+    >
+      <CardHeader>
+        <div className="h-7 w-40 rounded bg-slate-200" />
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="h-4 w-full rounded bg-slate-100" />
+        <div className="h-4 w-4/5 rounded bg-slate-100" />
+        <div className="h-20 rounded-lg bg-slate-100" />
+      </CardContent>
+    </Card>
+  );
+}
+
 export function DetailsCommunity({
   description,
   signalControls,
@@ -437,7 +502,7 @@ export function DetailsCommunity({
   error?: string;
 }) {
   return (
-    <Card id="reviews">
+    <Card className="overflow-hidden border-slate-300 shadow-sm" id="reviews">
       <CardHeader className={description ? undefined : "pb-3"}>
         <CardTitle
           asChild
@@ -461,18 +526,21 @@ export function DetailsCommunity({
           aria-labelledby="community-reviews"
           className="flex flex-col gap-5"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3
               className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600"
               id="community-reviews"
             >
               Reviews
             </h3>
-            {signedIn ? (
-              reviewComposer
-            ) : (
-              <LoginLink>Login to create a review</LoginLink>
-            )}
+            <div className="flex w-full flex-col items-start gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+              <ReviewOrderSelect />
+              {signedIn ? (
+                reviewComposer
+              ) : (
+                <LoginLink>Login to create a review</LoginLink>
+              )}
+            </div>
           </div>
           {reviewsUnavailable ? (
             <p

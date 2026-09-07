@@ -39,7 +39,7 @@ All outputs are Parquet relations in `data/out/`:
 | `instructor-identities.parquet` | Current Canonical Instructor Name and optional ITSC by Instructor UUID. |
 | `instructor-aliases.parquet` | Source-observed Instructor names and provenance by Instructor UUID. |
 | `instructor-identity-events.parquet` | Append-only ITSC, merge, and split history. |
-| `instructor-split-affected-associations.parquet` | Associations affected by an Instructor split. |
+| `instructor-split-affected-associations.parquet` | Append-only typed Instructor Association Corrections; columns are `correction_type`, `source_commit`, `target_uuid`, `source_name`, optional `term_code`, and `course_code`. The filename is retained for storage compatibility. |
 
 The rating relations contain dense longitudinal history. The ranking relations contain the same measures for the latest source Term; they do not contain a precomputed Rank, percentile, or population size. Consumers select a criterion and population, then rank `bayesian` dynamically.
 
@@ -47,7 +47,23 @@ The rating relations contain dense longitudinal history. The ranking relations c
 
 The pipeline never mints identity during a normal publication. It loads all four identity relations from the previous identity-aware Ranking Generation and fails when any are missing. `--init` permits missing event and split-association relations only for an intentional first identity-history publication; identities and aliases remain required.
 
-Current source spellings are clustered conservatively. Token and initial matches require supporting Course-Term evidence, co-Instructor collisions are rejected, and unresolved names fail rather than receiving a new UUID. Schedule and UST Space spellings are preferred for the Canonical Instructor Name; SFQ is the fallback. TBA and program labels are not Instructors.
+Current source spellings are clustered conservatively. Token and initial matches require supporting Course Offering evidence, co-Instructor co-occurrence blocks automatic clustering, and unresolved names fail rather than receiving a new UUID. Explicit merge history can override that guard when an upstream source duplicated one person. Canonical Instructor Names and aliases are display data and may be shared. Same-name Instructors remain distinct only when a prior UUID association or split history identifies the Course Offering association; otherwise publication fails closed. Schedule and UST Space spellings are preferred for the Canonical Instructor Name; SFQ is the fallback. TBA and program labels are not Instructors.
+
+The daily build applies [`data/instructor-identity-corrections.json`](../data/instructor-identity-corrections.json) idempotently, then carries its events and calibrations forward in the Ranking Generation. Complete Schedule history preserves every already-resolved Course Offering. A new ambiguous same-name Course Offering still stops publication until an operator records exact evidence; the pipeline does not guess from cross-Term similarity.
+
+Instructor Identity History is the shared projection of append-only ITSC, merge, split, and Instructor Association Correction records. It owns merge redirects and cycle detection, ITSC history, scoped matching, Term-specific-over-Course specificity, and equal-specificity conflict rejection.
+
+An Instructor Association Calibration assigns one source-observed name on a Course to an existing Instructor UUID without merging identities. Omit `termCode` to calibrate every Term of that Course; include it to calibrate only that Course Offering. A Term-specific calibration takes precedence over a Course-wide calibration, and conflicting corrections stop publication. A split correction remains unresolved when a different UUID is presented; a Calibration resolves directly to its target. The observed spelling remains alias evidence; its Course scope supplies the identity evidence.
+
+```json
+{
+  "sourceName": "YAN, Dengfeng",
+  "courseCode": "CIVL 3420",
+  "termCode": "2430",
+  "instructorUuid": "b0c68636-93ef-4245-b3ec-c201f151fcfb",
+  "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+}
+```
 
 ## Model semantics
 
@@ -81,4 +97,163 @@ Course history taught by any Instructor in the current Course Term receives a 12
 
 For each criterion and output Term, DuckDB calculates the confidence-weighted population mean and standard deviation from observations available through that Term. Course and Instructor families are adjusted separately. Every entity in a family shrinks toward one inclusive population prior; zero-sample entities receive that prior without changing it.
 
-Outputs include standardized `rating`, posterior `bayesian`, confidence, current and cumulative samples, effective samples, reliability, and posterior standard deviation. Criteria remain separate. Deferred model validation is tracked in [#99](https://github.com/ust-archive/ust-rankings/issues/99).
+Outputs include standardized `rating`, posterior `bayesian`, confidence, current and cumulative samples, effective samples, reliability, and posterior standard deviation. Criteria remain separate.
+
+## Browser Delivery Dataset and Server Index
+
+`data/src/delivery.ts` exposes `buildDeliveryGeneration()`, and
+`data/src/build-delivery.ts` provides the `npm run build-delivery --workspace data -- ...`
+CLI. It accepts separate Ranking and Schedule archive directories plus their
+immutable 40-hex revisions and stages one generation under the configured
+output directory. Mutable revisions such as `main` are rejected. Each input
+directory must include the source manifest produced from the pinned Hugging
+Face tree, declaring the revision, byte size, and SHA-256 of every consumed
+artifact; the derivation verifies those declarations before reading data.
+
+The derivation leaves the full-fidelity archive inputs untouched. It writes the
+browser Delivery Dataset as the eleven Parquet relations `courses.parquet`,
+`course-ratings.parquet`, `instructors.parquet`, `instructor-ratings.parquet`,
+`relation.parquet`, `instructor-aliases.parquet`,
+`instructor-identity-events.parquet`, `instructor-split-associations.parquet`,
+`schedule-courses.parquet`, `schedule-classes.parquet`, and
+`waitlist-evidence.parquet`. Rating projections retain every historical row
+while keeping only the browser contract columns; Instructor names remain in
+`instructors.parquet` rather than the rating rows.
+
+`waitlist-evidence.parquet` is a narrow, aggregate-only projection of the
+pinned Schedule unified `canonical/class_records.parquet` view. Older Schedule revisions may use `classes_legacy.parquet` as a fallback. It retains supported
+Fall/Spring observations, component type, Course Offering association,
+capacity/enrollment/wait counts, timestamps, reservations, schedules, and
+source order. DuckDB removes unchanged wait observations before publication.
+It contains no student identity or individual queue outcome.
+When neither source is available, the derivation emits a schema-only artifact
+and marks `waitlistEvidence.sourceAvailable` false; it does not infer historical
+evidence from the current snapshot.
+
+The same generation writes a compressed `server-index.json.gz` containing the
+Course, Instructor identity/history, relation, active Course Offering, active
+Class, and resolvable Class–Instructor facts needed by community-write
+validation. It reuses the Instructor Identity History projection for redirects
+and scoped Instructor Association Corrections.
+
+`manifest.json` records schema version, the pinned `rankings` and `schedule`
+revisions, every Delivery artifact's immutable Spaces CDN URL, byte size, and
+SHA-256, the versioned `waitlistEvidence` model/timing/tuning metadata, plus
+the Server Index's relative staged URL and declaration. The generation SHA is a SHA-256 of the schema version, pinned revisions,
+ordered Delivery artifact hashes, and the compressed Server Index with its
+embedded generation blanked. The manifest records that canonical Server Index
+identity hash so browser clients can verify the same non-circular identity.
+Output directories are generation-named and
+installed by atomic rename, so failed builds cannot promote partial data and
+older generations remain available for rollback.
+
+The application activates a staged Server Index through the authenticated
+`POST /api/server-index/activate` operation. The request declares the generation,
+immutable Spaces generation URL, compressed byte size, and SHA-256. The same
+artifact remains canonical on Hugging Face; the service reads its public mirror
+without credentials. The service bounds the download and decompression, verifies the complete index
+and its identity history, builds immutable lookup Sets/Maps, and only then swaps
+the active reference. Repeating the active generation is idempotent; any failed
+replacement leaves the previous reference active.
+
+At process startup the service resolves `latest.json`, verifies its matching
+Delivery manifest, and loads that manifest's immutable Server Index URL. Static
+Instructor identity and Review and Signal writes use the active index for
+Course, Instructor, relation, Course Offering, Class, redirect, and scoped
+correction lookup or validation. Community reads continue querying PostgreSQL
+directly. A manifest without a Server Index is rejected. Unresolved, failed, or
+in-progress activation fails closed when no previous index exists; once an
+index is active, it is authoritative. The service has no native-DuckDB or
+public-query fallback.
+
+## Browser Course queries
+
+Each browser tab resolves `latest.json` once, verifies the content-derived
+Delivery manifest, and pins that immutable generation for the tab lifetime.
+One process-wide query Worker is created outside React lifecycles; it owns the
+DuckDB-Wasm worker and keeps ranking/filtering work off the main thread. Pinned
+Worker and Wasm assets are copied from the locked npm package into the
+application image and restricted to the same origin by CSP. The runtime
+registers every immutable artifact immediately, preloads only Catalog
+and Instructor identity data, and lets DuckDB fetch Course rating and
+`relation.parquet` ranges when typed Catalog, Course Ranking, or Course detail
+operations need them.
+
+Course Ranking controls, pagination, search, presets, structured filters,
+historical evidence, and Course–Instructor relations call that typed browser
+interface; UI modules contain no SQL. Course routes server-render Course Code,
+Schedule identity when available, Reviews, and Signals independently, then
+fill the Ranking section from the pinned generation. Manifest, Worker,
+WebAssembly, CDN, or query failure produces an explicit unavailable state and
+never calls a server Course-query fallback.
+
+Instructor Ranking and detail operations use the same tab-pinned Worker. They
+load `instructor-ratings.parquet` and the shared `relation.parquet` lazily,
+resolve UUID merge families and scoped correction history from the preloaded
+identity relations, and preserve zero-sample Rank behavior. Instructor list
+pagination, filters, presets, alias/ITSC search, identity history, historical
+rating evidence, and Course relations have no server Ranking-query fallback.
+Static identity and Community content remain server-rendered while the Worker
+section loads or reports unavailable.
+
+Schedule Course, Course Offering, Class, and Instructor-Class operations also
+use the tab-pinned Worker. `schedule-courses.parquet` and
+`schedule-classes.parquet` stay unrequested until a Schedule view needs them;
+latest active events are projected into typed meetings, venues, enrollment,
+reservations, and Instructor associations through `relation.parquet`. Failure
+shows an explicit Schedule-unavailable state while Rankings and Community stay
+usable. Calendar subscription UI and both `.ics` routes are removed; no
+server-side calendar query path remains.
+
+Waitlist search reuses those lazy current Schedule relations. A typed Waitlist
+Plan operation validates required Class/position pairs and only then registers
+`waitlist-evidence.parquet`. It calculates one Course-Offering-correlated AND
+outcome with the versioned shared model and returns the headline, bounded
+estimated uncertainty, exact/broader counts, smoothing operands, per-Class
+diagnostics, and capacity scenarios. Queue Activation ignores positive waits
+before normal Class enrollment. Positions exist only in page state and a Worker
+message; they never enter a URL, server request, or persistent storage.
+Waitlist artifact/query failure is isolated from Rankings, Schedule, static
+identity, and Community. Maintenance and held-out validation are documented in
+[`waitlist-evidence.md`](waitlist-evidence.md).
+
+## Publication and rollback
+
+The `Update data` workflow resolves every source `main` pointer to a 40-hex
+revision before building. It publishes the unchanged full-fidelity Ranking
+archive at the Hugging Face repository root, derives the paired browser
+projection from that pinned commit and the pinned Schedule archive, and uploads
+the immutable generation under `browser/<generation>/` on Hugging Face.
+
+The publisher mirrors the generation to `ust-rankings-data`, confirms every
+object with `HEAD`, calls the authenticated Server Index activation operation,
+and only then writes `latest.json`. A failed upload or activation never changes
+latest. Immutable generation objects use year-long cache metadata and remain in
+both stores.
+
+Rollback accepts only an existing paired 64-hex Delivery generation. Dispatch
+`Update data` with `action=rollback` and that generation:
+
+```sh
+gh workflow run update-data.yml --ref master \
+  -f action=rollback -f generation=<generation>
+```
+
+The workflow reactivates its immutable Server Index first, repoints
+`latest.json` second, and verifies the manifest plus a real CDN Parquet byte
+range. It never restores server query compute or deletes newer generations.
+## Walk-forward model validation
+
+Run `npm run data:backtest` with `RANKINGS_PREVIOUS_GENERATION_DIR`, `RANKINGS_SFQ_COMPARABILITY_EVIDENCE` pointing to a completed JSON record, and either `DATA_DIR` or immutable Catalog, Schedule, Reviews, and SFQ revisions. The record must declare `schemaVersion: 1`, `conclusion: "comparable"`, `ratingScale: "1-5"`, a non-empty `basis`, and at least two unique `sourceVersions`; remote backtests require the selected `SFQ_REVISION` among those versions. The command executes the production SQL for the current model and focused alternatives across every cutoff Term with later evidence, then writes `data/out/model-validation.json` (or `RANKINGS_BACKTEST_OUTPUT`).
+
+The backtest loads source tables once and evaluates all candidates in one shared DuckDB pipeline connection. It reuses the candidate-independent observation and identity stages and writes only the Parquet needed for validation. Production `npm run data:run` keeps its existing path. The report compares prediction error on the shared 1–5 source-rating scale, Ranking stability among offered Courses where a prior cutoff exists, future-observation interval calibration, and the prediction-error gap between each cutoff's least-evidenced rows and its full population. Every criterion must have later outcomes across multiple cutoffs, and every cutoff must contain at least two evidence levels. Alternatives cover annual decay, Course–Instructor context, Review vote confidence, SFQ response-rate confidence, and separating contextual weighting from statistical uncertainty. The current parameters remain selected unless another candidate improves prediction error by at least 2% across most cutoffs, stays within 2% of the current prediction error on every cutoff, and does not materially worsen the other measures.
+
+Results are marked `retrospective` because current source snapshots do not reconstruct the source versions, votes, edits, and withdrawals visible at each historical cutoff. The command never presents these results as as-of history. The backtest fails unless the SFQ version-comparability record satisfies that contract and records its SHA-256 digest and covered versions. Respondent counts then remain explicit confidence and future-observation measurement-error inputs. SFQ standard deviations stay excluded from the production model, but the analysis relation retains them. The report records the evidence together with the selected parameters and uncertainty semantics.
+
+The backtest also calculates balanced analysis-only results. The primary Course unit is one `Course Code × outcome Term × criterion`. The primary Instructor unit is one `accepted Instructor UUID × outcome Term`. The retrospective analysis averages errors from the eligible forecast cutoffs inside each unit. It then gives each unit equal primary evaluation weight. Source weights affect model fitting and a named secondary metric only. Secondary results include equal-entity, equal-criterion, raw-observation, source-weighted, and respondent-count-weighted errors. The report also includes unshrunk, population, latest-observation, and rolling-mean baselines.
+
+Canonical Schedule Class records retain Course Offering, Class, Section, enrollment, capacity, utilization, and teaching-team context. The temporary analysis relations keep one context row for one evidence observation. Shared Course-role or Review-role evidence with accepted identities has allocations that sum to 1 across a teaching team. Evidence without an accepted identity stays unallocated and is counted in the report. Instructor-role evidence maps to one accepted UUID. Invariant checks reject duplicate context, duplicate allocation, invalid allocation sums, allocated sample or weight changes, missing Instructor allocation, and Instructor-evidence fan-out.
+
+Candidate comparisons include deterministic paired 95% intervals. The Course analysis resamples Courses and outcome Terms. The Instructor analysis resamples Instructor UUIDs and outcome Terms. The seed is 100 and the report uses 2,000 draws. These intervals measure retrospective stability. They are not independent confirmation and do not change candidate selection.
+
+`data/validation/future-holdout.json` freezes the next prospective decision. It declares the candidate registry, evaluation units, metrics, minimum sample sizes, identity rule, source-sealing rule, intervals, and acceptance guardrails before new outcomes are inspected. A holdout result cannot change production defaults or exports without a separate reviewed decision.

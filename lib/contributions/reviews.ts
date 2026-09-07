@@ -4,7 +4,10 @@ import {
   normalizeAttachmentDescription,
   normalizeAttachmentFilename,
 } from "@/lib/attachments/attachments";
+import { type ReviewOrder, reviewOrder } from "./review-order";
 import type { SignalSummary } from "./signals";
+
+export { type ReviewOrder, reviewOrder } from "./review-order";
 
 export type CourseBasis = {
   coursePrefix: string;
@@ -68,11 +71,16 @@ export type WithdrawReviewRecord = {
 };
 
 export type ReviewListQuery =
-  | ({ type: "course" } & CourseBasis & { termCode?: string; section?: string })
+  | ({ type: "course" } & CourseBasis & {
+        termCode?: string;
+        section?: string;
+        order?: ReviewOrder;
+      })
   | {
       type: "instructor";
       instructorUuids: string[];
       termCode?: string;
+      order?: ReviewOrder;
     };
 
 export interface ReviewRepository {
@@ -126,6 +134,31 @@ export class ContributionsUnavailableError extends Error {
     super(message, options);
     this.name = "ContributionsUnavailableError";
   }
+}
+
+export function normalizeContributionDate(value: unknown): Date {
+  const date =
+    value instanceof Date ? new Date(value.getTime()) : new Date(String(value));
+  if (Number.isNaN(date.getTime()))
+    throw new ContributionsUnavailableError("Invalid contribution timestamp");
+  return date;
+}
+
+export function normalizePublicReview(review: PublicReview): PublicReview {
+  return {
+    ...review,
+    publishedAt: normalizeContributionDate(review.publishedAt),
+  };
+}
+
+export function readWithReviewCache<T>(
+  useCache: boolean,
+  cachedRead: () => Promise<T>,
+  uncachedRead: () => Promise<T>,
+) {
+  return useCache && process.env.NODE_ENV !== "development"
+    ? cachedRead()
+    : uncachedRead();
 }
 
 const UUID =
@@ -383,6 +416,7 @@ export function createReviewService(
     },
 
     async listReviews(query: ReviewListQuery, viewerUserId?: string) {
+      const order = reviewOrder(query.order);
       const instructorUuids =
         query.type === "instructor" && Array.isArray(query.instructorUuids)
           ? [
@@ -417,6 +451,7 @@ export function createReviewService(
             ...context.course,
             termCode: context.termCode,
             section: context.section,
+            order,
           },
           viewerUserId && UUID.test(viewerUserId) ? viewerUserId : undefined,
         );
@@ -432,6 +467,7 @@ export function createReviewService(
             type: "instructor",
             instructorUuids,
             termCode: context.termCode,
+            order,
           },
           viewerUserId && UUID.test(viewerUserId) ? viewerUserId : undefined,
         );

@@ -4,6 +4,7 @@ node_modules
 .playwright
 coverage
 playwright-report
+public/duckdb
 test-results
 .env
 .env.*

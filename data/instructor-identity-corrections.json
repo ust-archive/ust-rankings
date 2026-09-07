@@ -1,0 +1,972 @@
+{
+  "calibrations": [
+    {
+      "sourceName": "LI, Xi",
+      "courseCode": "COMP 2011",
+      "instructorUuid": "77aad6a2-f1dc-4e84-acdb-cdd4a16b6f7a",
+      "instructorName": "LI, Xin",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "sourceName": "LI, Xi",
+      "courseCode": "COMP 2611",
+      "instructorUuid": "77aad6a2-f1dc-4e84-acdb-cdd4a16b6f7a",
+      "instructorName": "LI, Xin",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "sourceName": "YAN, Dengfeng",
+      "courseCode": "CIVL 3420",
+      "termCode": "2430",
+      "instructorUuid": "b0c68636-93ef-4245-b3ec-c201f151fcfb",
+      "instructorName": "DENG, Yangfan",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "sourceName": "ZHOU, Chao",
+      "courseCode": "ACCT 2010",
+      "termCode": "2040",
+      "instructorUuid": "c70c607f-52c2-4407-bf60-17567cc197ad",
+      "instructorName": "JIN, Chao",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    }
+  ],
+  "events": [
+    {
+      "type": "merge",
+      "retiredUuid": "62e44c3b-54d8-4df3-9669-09290124ae93",
+      "retiredName": "AU, Anita",
+      "survivorUuid": "5e7ef0a8-6d5d-4a78-b3b4-7ae7659744c3",
+      "survivorName": "AU, Anita C H",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "326eae41-a027-4d26-bb46-33fff092c3dc",
+      "retiredName": "BEDFORD, Charles Ellwood",
+      "survivorUuid": "7bf2eba9-8d26-4497-a726-bc8e5564ea72",
+      "survivorName": "BEDFORD, Charles E.",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "9f65b58e-dd05-424f-ac50-68b997b6a962",
+      "retiredName": "BRAUD, Tristan",
+      "survivorUuid": "259dc5bf-3e05-411d-924e-75683a07ff2d",
+      "survivorName": "BRAUD, Tristan Camille",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "9a4e461a-6712-4e36-a045-0e109743d6ae",
+      "retiredName": "CAMPBELL, Cameron Dougall",
+      "survivorUuid": "eb21fef7-a4df-4520-87bc-25d5861d7b61",
+      "survivorName": "CAMPBELL, Cameron",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "28b4f4ee-872f-4ea0-bf59-42080884cec9",
+      "retiredName": "CHAN, Chris",
+      "survivorUuid": "809c53f0-50d1-4c02-aa98-a198037dc626",
+      "survivorName": "CHAN, CHRIS WH",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "d3a02648-8098-4348-a9e4-0aa4236935a9",
+      "retiredName": "CHAN, Ho Wai",
+      "survivorUuid": "35f0386f-f8c2-47c5-8657-80a259cd0c9d",
+      "survivorName": "CHAN, Dennis Ho Wai",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "f22adbda-436f-48e7-81a2-ddc30b22f9c3",
+      "retiredName": "CHAN, Jimmy",
+      "survivorUuid": "b03719ce-33c4-4647-b917-4e0940ea4b86",
+      "survivorName": "CHAN, Jimmy Wai Man",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "4ebf927a-9402-40b4-bd76-2bcc39ed3a75",
+      "retiredName": "CHAN, Kin H",
+      "survivorUuid": "a460b0dc-d472-448b-ad8b-8d3fa5fb225c",
+      "survivorName": "CHAN, Kin Hang",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "75e2b99a-03b6-4d4e-b6d4-7575adc697be",
+      "retiredName": "CHAN, Man Sun",
+      "survivorUuid": "512d24b7-428f-4262-ab9f-9ecfa26fc6ad",
+      "survivorName": "CHAN, Mansun",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "311ece16-6e1f-4061-9783-3b12a6f515c6",
+      "retiredName": "CHAN, Mariah P Y",
+      "survivorUuid": "bd11205c-9ca7-448e-b07c-980bc93b8542",
+      "survivorName": "CHAN, Mariah",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "1218d0e2-3523-4501-8c2d-be9fc6ebfb4b",
+      "retiredName": "CHAO, Melody Man Chi",
+      "survivorUuid": "c73307a3-5a2e-451e-a50b-3fa234ac94aa",
+      "survivorName": "CHAO, Melody Manchi",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "01c38dc8-dde5-4e40-8ac6-d66ce600f9e5",
+      "retiredName": "CHEN, Jasmine K K",
+      "survivorUuid": "a9db0efb-b8f0-4a0a-b6f8-4febe91529b8",
+      "survivorName": "CHEN, Jasmine",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "872f8865-2f91-4258-9bc6-47a7e30d1cef",
+      "retiredName": "CHENG, Jack CP",
+      "survivorUuid": "4befb2c1-573c-42f6-84b3-d9c8d824437e",
+      "survivorName": "CHENG, Jack Chin Pang",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "33a67473-9eee-4ccc-8538-dd13cc3420fb",
+      "retiredName": "CHENG, Tat Fan",
+      "survivorUuid": "2d9d69b7-a554-48aa-a6ae-09beb13b5ab1",
+      "survivorName": "CHENG, Tat Fan Franklin",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "ceafa03b-d25a-4711-adc9-187c99494cf1",
+      "retiredName": "CHENG, Wa Yi Rosita",
+      "survivorUuid": "7e00f7db-1b7c-487a-b99e-f0daae37647b",
+      "survivorName": "CHENG, Wai Yi Rosita",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "47d3290c-6a0c-4597-a7d3-134545a1cf6a",
+      "retiredName": "Hilary CHEUNG Chun Lok",
+      "survivorUuid": "8ecf7208-586d-45f9-a874-6ec23f336ab1",
+      "survivorName": "CHEUNG, Chun Lok (Hilary)",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "c1bf2518-5f13-417a-af7a-fefbedafc96c",
+      "retiredName": "CHING, Vincent Siu Ming",
+      "survivorUuid": "ab231570-d02e-46c4-8e7e-ef17b53c4c9d",
+      "survivorName": "CHING, Vincent",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "1f239fa2-5e68-4819-8c65-9c52c6127c86",
+      "retiredName": "CHO, Jaee",
+      "survivorUuid": "7dda8baf-ea35-44cd-b2f0-8a7bb37a1b25",
+      "survivorName": "CHO, Ja Ee",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "92f06ccc-9010-462f-9da1-dd9a4dcd061e",
+      "retiredName": "CHONG, Carsten",
+      "survivorUuid": "d4d185be-ea70-416e-b6fc-c4c59bcfe7c8",
+      "survivorName": "CHONG, Carsten Hao Ye",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "a2525645-923a-4076-9a42-9dec7d9faa8c",
+      "retiredName": "CHONG, Doreen Ka Ki",
+      "survivorUuid": "1f03cd17-4bb5-49fb-bc59-2948778b85f3",
+      "survivorName": "CHONG, Doreen",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "05b1f94b-23ed-4600-a448-d3ffe174bd32",
+      "retiredName": "CHONG, Donald Wing Kit",
+      "survivorUuid": "ef208252-454f-4ee0-a5d6-57d43e524adb",
+      "survivorName": "CHONG, Wing Kit Donald",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "28844e9f-34f0-4ccd-9fe7-e97984af9109",
+      "retiredName": "CHUNG, Kenny Ka Kin",
+      "survivorUuid": "d00b5f12-7e4d-40e3-914b-8008cb292aee",
+      "survivorName": "CHUNG, Kenny K",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "f26f4615-825c-46eb-a5f6-a3bd29a921d5",
+      "retiredName": "KO, Chia",
+      "survivorUuid": "cd131882-49a2-4a31-b791-d53583edd2f7",
+      "survivorName": "Chia, KO",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "a2749deb-0070-41f3-ab71-e5ace35a4439",
+      "retiredName": "DANIELS, David",
+      "survivorUuid": "79dba8b4-5895-4719-82fa-f78656b9ee2a",
+      "survivorName": "DANIELS, David Peter",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "61264dd6-4373-4d7c-aa06-77a51ba3e9d9",
+      "retiredName": "DELINA, Laurence",
+      "survivorUuid": "5f66a189-0fad-453d-9755-4794ab72917e",
+      "survivorName": "DELINA, Laurence L.",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "894765ac-9c11-465a-bf06-17990f60e225",
+      "retiredName": "DELINA, Laurence Laurencio",
+      "survivorUuid": "5f66a189-0fad-453d-9755-4794ab72917e",
+      "survivorName": "DELINA, Laurence L.",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "25d2c548-c131-4325-9f26-4827c93c1eef",
+      "retiredName": "DROSCHA, Isaac",
+      "survivorUuid": "c8c57c71-2aad-4c3b-b441-e357340d1a15",
+      "survivorName": "DROSCHA, Isaac David",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "6265eca1-5350-4feb-b847-a9dcd6e386ca",
+      "retiredName": "EASTWOOD, Martin",
+      "survivorUuid": "f0a3f020-ba4a-4e58-912d-37935bbef6b5",
+      "survivorName": "EASTWOOD, Martin Antony",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "bda6e0e5-daeb-461b-93af-e2ddabd9f03d",
+      "retiredName": "FAN, Linying Sophie",
+      "survivorUuid": "85d24643-5226-4345-a726-e2acea32da71",
+      "survivorName": "FAN, Linying",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "12127d6b-12a1-41af-a1cb-8bc511b43dfe",
+      "retiredName": "FUNG, Pascale Ngan",
+      "survivorUuid": "57045cc1-a545-4b98-abe2-dab793019b9f",
+      "survivorName": "FUNG, Pascale",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "c6ed1b2a-1ba1-4116-b229-dab15d07c929",
+      "retiredName": "GARG, Sam S",
+      "survivorUuid": "cd3a436a-39fe-488b-8119-b7e14aa8443c",
+      "survivorName": "GARG, Sam",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "8f042a7f-cc72-4b4c-8301-23a9dde4e997",
+      "retiredName": "GHIDAOUI, Mohamed Salah Ben Habib",
+      "survivorUuid": "0c393d0d-76cd-4483-8166-dbd627d1a4e4",
+      "survivorName": "GHIDAOUI, Mohamed Salah",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "06a145d5-a033-4e04-8095-826b6543169f",
+      "retiredName": "GIETEL BASTEN, Stuart",
+      "survivorUuid": "6dda0a78-da7f-4052-a260-f1cfa7fa934f",
+      "survivorName": "GIETEL-BASTEN, Stuart Arthur",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "78178067-1c9d-4523-8319-bd416a7935a5",
+      "retiredName": "GLOFCHESKI, Masie",
+      "survivorUuid": "1990c852-4a07-421d-a92c-fa3f0674b409",
+      "survivorName": "GLOFCHESKI, Maisie",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "faba9f77-cb74-4978-8583-3a78ccdb3a1f",
+      "retiredName": "GOLIN, Mordecai J.",
+      "survivorUuid": "b5fb9a36-718e-4638-a9a9-477d77375657",
+      "survivorName": "GOLIN, Mordecai Jay",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "7dc95581-d4b0-4ccd-9abc-6e082ad4425a",
+      "retiredName": "HALPERT, Jonathan",
+      "survivorUuid": "62f19c8d-7323-4f8e-8876-0f5bada0bb44",
+      "survivorName": "HALPERT, Jonathan Eugene",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "fd19c0aa-887b-46e0-89bc-320479e642dc",
+      "retiredName": "HENDRY, David",
+      "survivorUuid": "a7b69780-d8d5-40e2-b567-61fe2bb7d401",
+      "survivorName": "HENDRY, David James",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "6140bd44-b369-437d-bcdd-382d29651169",
+      "retiredName": "HO, Jason MW",
+      "survivorUuid": "4b9fee98-a92c-4a47-b324-2676ac2f96b9",
+      "survivorName": "HO, Jason Man Wai",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "afa497b4-6bec-4f4a-a9e2-194c93fb19f4",
+      "retiredName": "HO, Quoc Phu",
+      "survivorUuid": "d8c852ab-7405-4370-b5a0-d11274473322",
+      "survivorName": "HO, Quoc",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "2dbc8e7c-0a61-461d-be5a-05dae33eee4e",
+      "retiredName": "HORNER, Andrew Brian",
+      "survivorUuid": "13949f41-ac94-4792-892b-f406ad06e89c",
+      "survivorName": "HORNER, Andrew",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "3b96ad06-9b14-40c4-9eea-f1b7d72eef3a",
+      "retiredName": "HUANG, Allen Hao",
+      "survivorUuid": "97c9e4e8-ff4c-4a6f-8f7d-90cdf6c90f5e",
+      "survivorName": "HUANG, Allen",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "0e97873a-4acc-4db1-9368-e86885e200fe",
+      "retiredName": "HUANG, SETH H",
+      "survivorUuid": "32e44e5d-26d2-4842-856d-a9faa86a75e4",
+      "survivorName": "HUANG, Seth",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "164784fa-9c22-409a-b46f-ca1a581fba47",
+      "retiredName": "KAILA, Ilari Julius",
+      "survivorUuid": "20307311-50c0-436d-afab-393077b60cd7",
+      "survivorName": "KAILA, Ilari",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "0a4d6c0e-bdf0-4537-9d89-cf90535bca9d",
+      "retiredName": "SUNADA, Kohei",
+      "survivorUuid": "00f1ade8-8c8d-495f-ba5d-9a23abb225d1",
+      "survivorName": "KAWAGUCHI, Kohei",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "be911c84-d4c9-433a-91a3-51af059f062d",
+      "retiredName": "KAPADIA, Chaitali",
+      "survivorUuid": "110983ab-0692-4161-aa18-00cb341dacaf",
+      "survivorName": "KAPADIA, Chaitali Paresh",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "baaa3ab5-9f9b-4eef-876e-b901097b344a",
+      "retiredName": "KARHADE, Prasanna P",
+      "survivorUuid": "7805eddd-2dc2-407b-bf00-a0fd0557d79a",
+      "survivorName": "KARHADE, Prasanna",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "84858581-6b73-4b19-85f8-823cb0325be2",
+      "retiredName": "Rose, Kay",
+      "survivorUuid": "e44ce83f-9c91-49a5-b70d-96a1e85d323d",
+      "survivorName": "KAY, Rose",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "188529fd-1951-412d-aac1-0138ff52b460",
+      "retiredName": "KELLER, Franziska Barbara",
+      "survivorUuid": "664c4d47-f263-4c67-9bee-3b1dbe98210d",
+      "survivorName": "KELLER, Franziska",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "d55bfeae-1792-40f4-8a93-c33366f1a866",
+      "retiredName": "KIM, Yong H",
+      "survivorUuid": "a7d3b849-8022-440d-9f2e-63e4d1c63184",
+      "survivorName": "KIM, Yong",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "b9eebdc2-ccc1-48b9-ad2e-adf0ecef608b",
+      "retiredName": "KO, Ice WP",
+      "survivorUuid": "e2af4669-2e1f-4987-b067-534e643591e5",
+      "survivorName": "KO, Ice Wai Ping",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "e748d121-acd5-4036-9a5e-e3613a4b8d09",
+      "retiredName": "KOC, Joseph K",
+      "survivorUuid": "aa2d78a0-bfc9-4ac0-b23c-e3750c935560",
+      "survivorName": "KOC, Joseph",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "9f0a80bb-764c-4797-a1bb-1f04b04cedeb",
+      "retiredName": "KREJCI, Pavel",
+      "survivorUuid": "2d18ce8c-bafb-4e82-b2b2-003ce7ba0c09",
+      "survivorName": "KREJCI, Pav",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "e3ae081f-78db-4375-a629-5a3423c6bd3a",
+      "retiredName": "KWAN, Calvin",
+      "survivorUuid": "3d7ea835-7618-4191-b8dd-8f64e0c6d22c",
+      "survivorName": "KWAN, Calvin Lee",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "db3d0c12-52e1-4ee1-a044-988b5e638047",
+      "retiredName": "KWONG, Anna Yee Ngan",
+      "survivorUuid": "883cada4-e6b6-4785-84ee-459e9307ccbe",
+      "survivorName": "KWONG, Anna Y N",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "49f88944-e8cc-4846-946b-46ad78d27674",
+      "retiredName": "LAI, Edwin L C",
+      "survivorUuid": "d9e42121-15e9-490f-843f-976892a0d4e6",
+      "survivorName": "LAI, Edwin",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "ec8f5b69-b6e9-413a-9a29-01847541a75a",
+      "retiredName": "LAU, Arthur",
+      "survivorUuid": "9f09b678-62f3-4d9b-86f9-9e203cc2451f",
+      "survivorName": "LAU, Arthur P S",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "23dd905d-11ed-4b5b-8089-76ebafdf1c42",
+      "retiredName": "LAU, Alexis",
+      "survivorUuid": "ce8d15d0-ce10-43c7-8cdd-1377fac5c402",
+      "survivorName": "LAU, Kai Hon Alexis",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "19bae448-c78a-48a3-b9f7-310da10beaf9",
+      "retiredName": "LAU, Alexis Kai Hon",
+      "survivorUuid": "ce8d15d0-ce10-43c7-8cdd-1377fac5c402",
+      "survivorName": "LAU, Kai Hon Alexis",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "81d7acec-516e-43b4-b897-db7326619e19",
+      "retiredName": "LAU, Ronald Siu Man",
+      "survivorUuid": "44b91752-94c5-4782-a6b0-a90a1293f5e3",
+      "survivorName": "LAU, Ronald",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "2bed21d6-c36f-4db5-81bb-b581c6028c97",
+      "retiredName": "LAU, Stanley Chun Kwan",
+      "survivorUuid": "2e4103cd-b32c-4426-8e75-db7324e7b9de",
+      "survivorName": "LAU, Stanley C K",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "26e94882-4978-4f77-8ade-497facf58f8d",
+      "retiredName": "LEE, Eric P C",
+      "survivorUuid": "023d9d30-b5dc-4131-acff-c722b5f95b51",
+      "survivorName": "LEE, Ping Chung Eric",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "504113a1-fd4e-46e2-aed0-a56dcfade0a7",
+      "retiredName": "LEE, William",
+      "survivorUuid": "8002e279-1a9e-4a3e-91d2-40f44aedd2f5",
+      "survivorName": "LEE, William W L",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "d6553cab-9e38-4932-b020-908eccf28d03",
+      "retiredName": "LEE, William Wai Lam",
+      "survivorUuid": "8002e279-1a9e-4a3e-91d2-40f44aedd2f5",
+      "survivorName": "LEE, William W L",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "ef5a0e70-4ff2-415a-95e0-c5680958b081",
+      "retiredName": "Lee, Yonghoon G",
+      "survivorUuid": "4ae35f3d-98fd-4f47-8b95-2c6734a4280f",
+      "survivorName": "LEE, Yonghoon",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "bec76fdf-6f83-4daa-ad34-41308345bb9d",
+      "retiredName": "LEJANO, Raul P.",
+      "survivorUuid": "d6305af6-e761-4014-8b8c-1a2d06888cdb",
+      "survivorName": "LEJANO, Raul Perez",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "5a4f4bed-0404-4454-8ab7-e8edd4c936da",
+      "retiredName": "LEUNG, Chi Kin Tommy",
+      "survivorUuid": "2d336b83-5652-4a42-b9b0-136ec273935c",
+      "survivorName": "LEUNG, Chi Kin",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "42a57639-03c2-4dbc-ae7f-5050722b3019",
+      "retiredName": "LEUNG, Ka Lok (Jac)",
+      "survivorUuid": "76fc1a50-c452-43c8-8885-758166f3f978",
+      "survivorName": "LEUNG, Jac Ka Lok",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "b902485d-bd39-476d-b3d3-74bec3a8841d",
+      "retiredName": "LI, Jensen Tsan Hang Li",
+      "survivorUuid": "d8a111cc-ec68-4d17-96e2-d6d35c3b9d92",
+      "survivorName": "LI, Jensen Tsan Hang",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "40564abd-18b9-4c21-8828-56071e36e60c",
+      "retiredName": "LI, Laam Amy",
+      "survivorUuid": "67130df8-1be6-4f22-82cd-31ec19a73040",
+      "survivorName": "LI, Laam",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "8edb71e5-722d-4920-b062-1350561262a3",
+      "retiredName": "LI, Shuo-hui",
+      "survivorUuid": "0fe990a4-c264-4271-904f-4b15478a37d2",
+      "survivorName": "LI, Shuohui",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "35e60f9b-91f1-4572-844f-7aa9fa5d4afa",
+      "retiredName": "LIANG, Shixin",
+      "survivorUuid": "d3fb2ee8-7863-4072-8773-5b3201fe3898",
+      "survivorName": "LIANG, Shixin Phyllis",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "73ab964b-413d-4761-8861-86855e4421f2",
+      "retiredName": "LIN, Yimin",
+      "survivorUuid": "862924f3-b23a-4638-8d02-f639665f86da",
+      "survivorName": "LIN, Yi-Min",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "7c2df094-fec3-4b37-a9c8-059e4351091c",
+      "retiredName": "LO, Yichin",
+      "survivorUuid": "b32ca412-f2f3-445f-8797-1de1fc974d84",
+      "survivorName": "LO, Yi-chin",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "cdc10b5d-3845-4cb4-86f4-68e5ef7962b8",
+      "retiredName": "MACKAY, Peter Ian",
+      "survivorUuid": "1ad8e71e-c7ec-4c79-a519-cd547dbbfe2b",
+      "survivorName": "MACKAY, Peter",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "1c557008-f432-4882-aa94-a4d4c7e13dec",
+      "retiredName": "Ketty Maisonrouge",
+      "survivorUuid": "3b86e199-64b4-4943-b668-046d3f4966bc",
+      "survivorName": "MAISONROUGE, Ketty",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "423ca9f2-5598-4b33-bdf8-d7979bc0f73c",
+      "retiredName": "MAK, Andrew Tsz Chung",
+      "survivorUuid": "112e620b-dbce-47b2-bbe5-b67f1415e2f1",
+      "survivorName": "MAK, Andrew T C",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "345c70d0-8e5d-4e8d-a0b1-f5e803131646",
+      "retiredName": "MAK, Linda Y O",
+      "survivorUuid": "419ae576-c38c-41ba-be1c-38e8a270160b",
+      "survivorName": "MAK, Linda Yeung Oi",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "f4c6767d-7063-459d-8501-205cef8654af",
+      "retiredName": "MARBERG, Eric",
+      "survivorUuid": "f5222b7e-c399-4d7d-a493-923bd09bff32",
+      "survivorName": "MARBERG, Eric Paul",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "17eb178c-189c-4351-98dd-c12b5b37b24d",
+      "retiredName": "McKAY, Matthew",
+      "survivorUuid": "5c00a3cb-33a4-4423-8d5c-5ff8b50df4de",
+      "survivorName": "MCKAY, Matthew Robert",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "b28ed44f-a267-4f43-b040-f2c9ebc6d34f",
+      "retiredName": "MORRIS, Arthur Kent",
+      "survivorUuid": "49d17ca9-9eef-43d1-bb8e-1f680687b176",
+      "survivorName": "MORRIS, Arthur",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "14082b75-a6e7-426b-ad68-c5cd479d61e3",
+      "retiredName": "NEW, Christopher",
+      "survivorUuid": "d84755bf-842c-46f3-983b-7a0b2be21ef5",
+      "survivorName": "NEW, Christopher Mitya",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "b3eeeda5-6fd6-40a9-b483-7c7f1b79a345",
+      "retiredName": "PANAYOTOV, George",
+      "survivorUuid": "b8105b91-1bd5-4f9a-9568-f493612f1588",
+      "survivorName": "PANAYOTOV, George Kamenov",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "7bff272b-9ef9-47ef-8cc8-ac621f28453b",
+      "retiredName": "PAPADIAS, Dimitris",
+      "survivorUuid": "385e77ee-120e-47c6-b4ae-1d6b48301df1",
+      "survivorName": "PAPADIAS, Dimitrios",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "c40bf2f4-5893-41f9-b988-b09be57b4fc4",
+      "retiredName": "RAHMEL, Juergen",
+      "survivorUuid": "021c3262-f751-4cb4-99ce-0b318b6d6603",
+      "survivorName": "RAHMEL, Juergen Harald",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "79282757-b50a-433a-aa98-5592208c48bf",
+      "retiredName": "SANGEETHA, Ramalingam",
+      "survivorUuid": "31d20331-72e9-4a95-bf76-d04f5a6cd1c2",
+      "survivorName": "RAMALINGAM, Sangeetha",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "bf67455f-964f-43fb-a2d8-26167b355f6d",
+      "retiredName": "REWHORN, Thomas",
+      "survivorUuid": "64382c91-ea40-4e22-aeb5-f3e82ab16184",
+      "survivorName": "REWHORN, Thomas Jay",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "a4f9023e-a175-4d88-956b-f088fe076913",
+      "retiredName": "SADHWANI, Dinesh",
+      "survivorUuid": "dec9c1b7-f544-4463-8d9c-2aa7a6796e85",
+      "survivorName": "SADHWANI, Dinesh Arjan",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "69d2ad91-4129-44bf-9edf-dd3c2665589d",
+      "retiredName": "SANDER, Pedro Vieira",
+      "survivorUuid": "f98f5448-c6a2-41a1-8c99-3345d98638d2",
+      "survivorName": "SANDER, Pedro",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "2d3da8af-7ec1-4b58-87ce-438096dcb7f2",
+      "retiredName": "SAUTMAN, Barry Victor",
+      "survivorUuid": "4011a1d9-da2f-4572-af6a-869a645a914e",
+      "survivorName": "SAUTMAN, Barry",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "47bbf97f-e1ff-4258-be14-833a0176b172",
+      "retiredName": "SHARIF, Nau Bahar",
+      "survivorUuid": "bfc75ed5-1d83-4997-bf9c-89212b79e167",
+      "survivorName": "SHARIF, Naubahar",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "55e18db5-07ce-482a-8176-50d9245148f8",
+      "retiredName": "SHI, Zijun June",
+      "survivorUuid": "55566436-b788-4306-aa46-7fba28c733e0",
+      "survivorName": "SHI, Zijun",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "a2fa7ec6-05d7-47b8-9d3d-fe7afbc38953",
+      "retiredName": "SHIH, Stephen L",
+      "survivorUuid": "e7360e98-0d4e-4c18-accf-5b3bbf6759c9",
+      "survivorName": "SHIH, Stephen",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "aec99e33-9bf0-4dda-aa56-1f870884f1a4",
+      "retiredName": "SIN, Johnny",
+      "survivorUuid": "cebae6be-f9dc-4ab6-83fc-00f3f9ac620b",
+      "survivorName": "SIN, Johnny Kin On",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "67ee78cb-e54e-4879-b5af-58404a2cc272",
+      "retiredName": "SMITH, Jenny",
+      "survivorUuid": "3909b1e2-1031-4b13-8ac8-6680f61cc11b",
+      "survivorName": "SMITH, Jenny Leigh",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "7842214f-0f40-4ba0-85fe-c2e7fd34b8f1",
+      "retiredName": "STICE, Derrald E",
+      "survivorUuid": "4b9a0b81-31da-4494-8946-dd433ce308e1",
+      "survivorName": "STICE, Derrald",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "323c0d36-8bbb-4dfe-b665-0efb9ede7774",
+      "retiredName": "SUEN, Karina H Y",
+      "survivorUuid": "51fe593d-69b4-4373-82a5-ee7e9e1ed8b1",
+      "survivorName": "SUEN, Karina",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "c5d87836-db72-498b-b6ab-275c43ced035",
+      "retiredName": "SUEN, Shu Kwan",
+      "survivorUuid": "592785af-ad42-4194-978b-2ba6dfbec255",
+      "survivorName": "SUEN, Shu Kwan Lioniman",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "69c61b22-85b7-4d8e-8af5-75abd4a87c77",
+      "retiredName": "TOMMASINI, Matthew",
+      "survivorUuid": "8f40bf1d-6e9d-4908-93da-1ae8f05c0807",
+      "survivorName": "TOMMASINI, Matthew William",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "0d33146f-3ee2-4c7f-be84-c47bcf6c4871",
+      "retiredName": "TSUI, Ophelia",
+      "survivorUuid": "62519bb8-18e9-450e-9065-92cfff579330",
+      "survivorName": "TSUI, Ophelia K. C.",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "4464c9f1-46b1-48b2-8d93-aaba591c165b",
+      "retiredName": "VAN DER LANS, Ralf J A",
+      "survivorUuid": "6afc6a54-f763-4a7f-a725-92e8ac5afece",
+      "survivorName": "VAN DER LANS, Ralf",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "634195f3-aa48-4daf-ba42-c89e47144c40",
+      "retiredName": "Penelope Van Niel",
+      "survivorUuid": "0e2af1aa-fa41-4baa-8581-e754193d0ded",
+      "survivorName": "VAN NIEL, Penelope",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "c7e61afd-2d27-4a69-ab5b-9261e4790d0a",
+      "retiredName": "WAI, Yau Hang Andre",
+      "survivorUuid": "6949ac5d-50cd-426e-8bd5-2cac8a7c87ce",
+      "survivorName": "WAI, Yau Hang",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "26c8e58f-2497-4ca5-bfef-d90c85ef3367",
+      "retiredName": "WAYE, Miu Yee Mary",
+      "survivorUuid": "6c215754-afe2-433b-b3df-bac7b62defb5",
+      "survivorName": "WAYE, Mary Miu Yee",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "25d2c57c-228d-4fed-9c58-72b47ef6ec75",
+      "retiredName": "WO, Bernardette",
+      "survivorUuid": "18880aeb-6bf5-4356-9060-90091a1811a6",
+      "survivorName": "WO, Bernadette Wan-Lan",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "41ab858d-8134-461e-a7f6-bc60f9b86b1f",
+      "retiredName": "Chak WONG",
+      "survivorUuid": "53fde6c5-6bd6-40f0-a224-389117d2946a",
+      "survivorName": "WONG, Chak",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "35658ba4-6e7e-46dc-8c2d-e2af81acb073",
+      "retiredName": "WONG, Michael Kwok Yee",
+      "survivorUuid": "ba7c10aa-ebf1-4de3-b1e0-051a5cf28562",
+      "survivorName": "WONG, Kwok Yee Michael",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "a98180b5-b13f-4a81-bbdc-89db8c3c0a12",
+      "retiredName": "WONG, Wan Keung Raymond",
+      "survivorUuid": "d677f996-90b1-444e-8377-ba50f5380979",
+      "survivorName": "WONG, Wan Keung",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "37fffb4c-5c47-447b-b9d2-413692df0981",
+      "retiredName": "WU, Angela",
+      "survivorUuid": "8632ac96-73cc-4ae2-b186-4e86882628df",
+      "survivorName": "WU, Angela Ruohao",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "7a2af834-0997-4213-868e-bd5f7898604d",
+      "retiredName": "WU, Chenguang Allen",
+      "survivorUuid": "b9e00112-0e3c-4912-ac66-7b2864c26401",
+      "survivorName": "WU, Chenguang",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "3bda2bd5-f65e-49f5-abe9-10628d325682",
+      "retiredName": "WU, Shaule",
+      "survivorUuid": "22c3e1f2-7a31-4d4c-a2ba-de3e95982797",
+      "survivorName": "WU, Shanle",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "84d6d046-46f2-480c-ab65-813ac049d6d0",
+      "retiredName": "XUE, Tian Ju",
+      "survivorUuid": "dbad57e1-a195-44bd-9e4d-541002652bf0",
+      "survivorName": "XUE, Tianju",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "adbbb400-353f-40a4-a786-cd3f3df12c26",
+      "retiredName": "YAN, Dickson Yuk Shing",
+      "survivorUuid": "6a40e3bd-e392-4f25-85fb-a5fce0cb870d",
+      "survivorName": "YAN, Yuk Shing Dickson",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "5fe152c0-b28f-44c9-a1d9-cad20d40478f",
+      "retiredName": "YANG, Daniel",
+      "survivorUuid": "b470993b-cd66-47a5-99ce-c00eb8eb260b",
+      "survivorName": "YANG, Daniel G.",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "31ca1164-b893-4c7f-8196-88be6dd0b43c",
+      "retiredName": "YEE, Lei Chun Johnny",
+      "survivorUuid": "9f6a2775-21ee-4dfe-896f-0831c9c6bd5d",
+      "survivorName": "YEE, Lek Chun Johnny",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "15c0fb8d-f521-46a7-abd6-46b1b7b32b61",
+      "retiredName": "YUEN, Matthew",
+      "survivorUuid": "be29d318-ba51-4aae-887e-d4251b940805",
+      "survivorName": "YUEN, Matthew Ming Fai",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "76a6193d-e56d-477b-8a6b-55dbe1e6d674",
+      "retiredName": "ZHANG, Pinghe",
+      "survivorUuid": "9ecc35c1-b6c4-44be-a5da-79d0c217318a",
+      "survivorName": "ZHANG, Ping He",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    },
+    {
+      "type": "merge",
+      "retiredUuid": "4865e75a-9a20-4544-b2ba-78b2fd5ab971",
+      "retiredName": "ZHANG, Wei Zhong",
+      "survivorUuid": "3275b6b4-a761-48bd-8f5b-6725038100f0",
+      "survivorName": "ZHANG, Weizhong",
+      "sourceCommit": "49563e8584fa70d836c634a663db0ad52c1b25dd"
+    }
+  ]
+}

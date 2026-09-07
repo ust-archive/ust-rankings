@@ -1,8 +1,0 @@
-import { handleScheduleCalendar } from "@/lib/schedule/calendar";
-
-export const dynamic = "force-dynamic";
-
-/** Compatibility adapter for established /api/calendar subscriptions. */
-export function GET(request: Request) {
-  return handleScheduleCalendar(request, "number");
-}

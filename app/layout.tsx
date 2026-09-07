@@ -9,6 +9,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import Link from "next/link";
 import type React from "react";
+import { EntityLink } from "@/app/entity-navigation";
 import { Toaster } from "@/components/ui/sonner";
 import { authenticatedUserId } from "@/lib/auth/user";
 import { getAccountService } from "@/lib/contributions/postgres";
@@ -23,6 +24,7 @@ const roboto_mono = Roboto_Mono({
 const forwardTransition = ["nav-forward"];
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://ust-rankings.com"),
   title: "UST Rankings",
   description: "Course and Instructor rankings for HKUST students.",
 };
@@ -44,18 +46,30 @@ function FooterLinks({
       <h2 className="text-sm font-semibold text-slate-950" id={id}>
         {heading}
       </h2>
-      {links.map(([label, href]) => (
-        <Link
-          className="w-fit text-sm underline-offset-4 hover:text-slate-950"
-          href={href}
-          key={href}
-          transitionTypes={
-            href.startsWith("/rankings/") ? forwardTransition : undefined
-          }
-        >
-          {label}
-        </Link>
-      ))}
+      {links.map(([label, href]) =>
+        href.startsWith("/rankings/") ? (
+          <EntityLink
+            className="w-fit text-sm underline-offset-4 hover:text-slate-950"
+            href={href}
+            key={href}
+            transitionTypes={forwardTransition}
+          >
+            {label}
+          </EntityLink>
+        ) : (
+          <Link
+            className="w-fit text-sm underline-offset-4 hover:text-slate-950"
+            href={href}
+            key={href}
+            prefetch={href === "/account" ? false : undefined}
+            transitionTypes={
+              href.startsWith("/rankings/") ? forwardTransition : undefined
+            }
+          >
+            {label}
+          </Link>
+        ),
+      )}
     </nav>
   );
 }
@@ -73,7 +87,7 @@ async function HeaderAuth() {
   const userId = await authenticatedUserId();
   if (!userId)
     return (
-      <Link className={pill} href="/auth/login?r=%2Faccount">
+      <Link className={pill} href="/auth/login?r=%2Faccount" prefetch={false}>
         Login
       </Link>
     );
@@ -86,7 +100,7 @@ async function HeaderAuth() {
       // Keep public pages independent from contribution storage.
     }
   return (
-    <Link className={pill} href="/account">
+    <Link className={pill} href="/account" prefetch={false}>
       {label}
     </Link>
   );
@@ -134,19 +148,26 @@ export default function RootLayout({
               aria-label="Primary navigation"
               className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm font-semibold sm:gap-6 sm:text-base"
             >
-              <Link
+              <EntityLink
                 className="no-underline underline-offset-4 hover:underline"
                 href="/rankings/instructors"
                 transitionTypes={forwardTransition}
               >
                 Instructors
-              </Link>
-              <Link
+              </EntityLink>
+              <EntityLink
                 className="no-underline underline-offset-4 hover:underline"
                 href="/rankings/courses"
                 transitionTypes={forwardTransition}
               >
                 Courses
+              </EntityLink>
+              <Link
+                className="hidden no-underline underline-offset-4 hover:underline sm:inline"
+                href="/waitlist"
+                transitionTypes={forwardTransition}
+              >
+                WL Compass
               </Link>
               <Link
                 className="no-underline underline-offset-4 hover:underline"
@@ -197,6 +218,7 @@ export default function RootLayout({
                 ["Instructor Rankings", "/rankings/instructors"],
                 ["Course Rankings", "/rankings/courses"],
                 ["UST Schedule", "/schedule"],
+                ["WL Compass", "/waitlist"],
               ]}
             />
             <FooterLinks

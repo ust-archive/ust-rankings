@@ -103,7 +103,46 @@ test("planner conflicts require overlapping dates, weekday, and times", () => {
   ).toEqual([[1001, 2001]]);
 });
 
+test("planner conflicts use actual meeting occurrences, including overnight Classes", () => {
+  const meeting = {
+    weekday: "Mon",
+    dateFrom: "2025-09-01",
+    dateTo: "2025-09-02",
+    timeFrom: "23:30",
+    timeTo: "00:30",
+  };
+  expect(
+    findPlannerConflicts([
+      { classNumber: 1001, meetings: [meeting] },
+      {
+        classNumber: 2001,
+        meetings: [
+          { ...meeting, weekday: "Tue", timeFrom: "00:00", timeTo: "01:00" },
+        ],
+      },
+      {
+        classNumber: 3001,
+        meetings: [
+          { ...meeting, weekday: "Tue", timeFrom: "00:30", timeTo: "01:30" },
+        ],
+      },
+      {
+        classNumber: 4001,
+        meetings: [
+          { ...meeting, dateFrom: "2025-09-02", dateTo: "2025-09-08" },
+        ],
+      },
+    ]),
+  ).toEqual([
+    [1001, 2001],
+    [2001, 3001],
+  ]);
+});
+
 test("SIS import is bounded and produces Class Numbers for the same URL state", () => {
+  expect(parseSisImport("LEC (2001)\r\nTUT (1001)\r\n").classNumbers).toEqual([
+    1001, 2001,
+  ]);
   expect(parseSisImport("LEC (2001)\nTUT (1001)\nLEC (2001)")).toEqual({
     classNumbers: [1001, 2001],
     message: undefined,

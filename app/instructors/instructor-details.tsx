@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   ReviewComposer,
   type ReviewEditorOptions,
@@ -202,7 +203,7 @@ function TeachingCards({
   );
 }
 
-function IdentityCard({
+export function IdentityCard({
   identity,
   rankings,
 }: {
@@ -257,11 +258,42 @@ function IdentityCard({
             ))}
           </ul>
         </section>
-        {identity.identityHistory.affectedAssociations.length ? (
-          <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-            Some historical associations were affected by an Instructor split.
-            They remain unassigned rather than being guessed.
-          </p>
+        {identity.identityHistory.associationCorrections.length ? (
+          <section className="flex flex-col gap-3">
+            <h3 className="font-semibold">Association Corrections</h3>
+            <ul className="flex list-none flex-col gap-2 ms-0 text-sm">
+              {identity.identityHistory.associationCorrections.map(
+                (correction) => (
+                  <li
+                    className={
+                      correction.correctionType === "split"
+                        ? "break-words rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950"
+                        : "break-words rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-950"
+                    }
+                    key={`${correction.correctionType}-${correction.sourceCommit}-${correction.targetUuid}-${correction.sourceName}-${correction.termCode ?? "all"}-${correction.courseCode}`}
+                  >
+                    <span className="font-medium">
+                      {correction.correctionType === "split"
+                        ? "Split scope needs resolution"
+                        : "Calibration applied"}
+                    </span>
+                    <span
+                      className={
+                        correction.correctionType === "split"
+                          ? "block text-xs text-amber-800"
+                          : "block text-xs text-emerald-800"
+                      }
+                    >
+                      {correction.sourceName} · {correction.courseCode} ·{" "}
+                      {correction.termCode
+                        ? rankingTermName(correction.termCode)
+                        : "Every Term"}
+                    </span>
+                  </li>
+                ),
+              )}
+            </ul>
+          </section>
         ) : null}
         {rankings?.historicalEvidence.length ? (
           <section className="flex flex-col gap-3 border-t border-slate-200 pt-4">
@@ -291,28 +323,19 @@ function IdentityCard({
   );
 }
 
-export function InstructorDetails({
-  identity,
-  rankings,
-  classes,
-  scheduleUnavailable,
-  selectedTermCode,
-  invalidTermCode,
-  signals,
-  signalsUnavailable = true,
-  signedIn = false,
-  signalError,
-  reviews = [],
-  reviewsUnavailable = true,
-  reviewPublished,
-  reviewWithdrawn,
-  reviewError,
-}: {
+export type InstructorDetailsProps = {
   identity: InstructorIdentityLookup;
   rankings?: Rankings;
+  identityContent?: ReactNode;
+  communityInstructorUuid?: string;
+  rankingsContent?: ReactNode;
+  reviewComposerContent?: ReactNode;
+  communityContent?: ReactNode;
+  teachingContent?: ReactNode;
   classes: ScheduleClass[];
   scheduleUnavailable: boolean;
   selectedTermCode?: string;
+  termLoading?: boolean;
   invalidTermCode?: string;
   signals?: SignalSummary;
   signalsUnavailable?: boolean;
@@ -323,7 +346,32 @@ export function InstructorDetails({
   reviewPublished?: boolean;
   reviewWithdrawn?: boolean;
   reviewError?: string;
-}) {
+};
+
+export function InstructorDetails({
+  identity,
+  rankings,
+  identityContent,
+  communityInstructorUuid = identity.instructor.uuid,
+  rankingsContent,
+  reviewComposerContent,
+  communityContent,
+  teachingContent,
+  classes,
+  scheduleUnavailable,
+  selectedTermCode,
+  termLoading = false,
+  invalidTermCode,
+  signals,
+  signalsUnavailable = true,
+  signedIn = false,
+  signalError,
+  reviews = [],
+  reviewsUnavailable = true,
+  reviewPublished,
+  reviewWithdrawn,
+  reviewError,
+}: InstructorDetailsProps) {
   const courses = [
     ...new Set([
       ...(rankings?.courses.map((item) => item.courseCode) ?? []),
@@ -333,11 +381,17 @@ export function InstructorDetails({
     ...splitCourseCode(courseCode),
     label: courseCode,
   }));
-  const contexts = [
+  const contextRows: ReviewEditorOptions["contexts"] = [
     ...(rankings?.terms.map((term) => ({
       instructorUuid: identity.instructor.uuid,
       termCode: term.termCode,
       termName: rankingTermName(term.termCode),
+    })) ?? []),
+    ...(rankings?.courses.map((association) => ({
+      course: splitCourseCode(association.courseCode),
+      instructorUuid: identity.instructor.uuid,
+      termCode: association.termCode,
+      termName: rankingTermName(association.termCode),
     })) ?? []),
     ...classes.flatMap((item) => [
       {
@@ -360,6 +414,11 @@ export function InstructorDetails({
         section: item.section,
       },
     ]),
+  ];
+  const contexts = [
+    ...new Map(
+      contextRows.map((context) => [JSON.stringify(context), context]),
+    ).values(),
   ];
   const reviewEditor: ReviewEditorOptions = {
     courses,
@@ -391,7 +450,8 @@ export function InstructorDetails({
             ? `ITSC ${identity.instructor.itsc}`
             : undefined
         }
-        termName={rankingTermName(selectedTermCode)}
+        termLoading={termLoading}
+        termName={termLoading ? undefined : rankingTermName(selectedTermCode)}
         title={identity.instructor.canonicalName}
         transitionName={instructorTitleTransitionName(identity.instructor.uuid)}
       />
@@ -400,49 +460,59 @@ export function InstructorDetails({
           aria-label="Rankings and Community"
           className="flex min-w-0 flex-col gap-6"
         >
-          <DetailsRankings
-            rankings={rankings}
-            scoreDistribution={rankings?.scoreDistribution}
-            selectedTermCode={selectedTermCode}
-          />
-          <DetailsCommunity
-            editor={reviewEditor}
-            error={reviewError}
-            published={reviewPublished}
-            reviewComposer={
-              <ReviewComposer
-                {...reviewEditor}
-                displayTermNames
-                initialInstructorUuid={identity.instructor.uuid}
-                initialTermCode={selectedTermCode}
-              />
-            }
-            reviews={reviews}
-            reviewsUnavailable={reviewsUnavailable}
-            signedIn={signedIn}
-            signalControls={
-              <SignalControls
-                error={signalError}
-                signedIn={signedIn}
-                summary={signals}
-                target={{
-                  type: "instructor",
-                  instructorUuid: identity.instructor.uuid,
-                }}
-                unavailable={signalsUnavailable}
-              />
-            }
-            withdrawn={reviewWithdrawn}
-          />
+          {rankingsContent ?? (
+            <DetailsRankings
+              rankings={rankings}
+              scoreDistribution={rankings?.scoreDistribution}
+              selectedTermCode={selectedTermCode}
+            />
+          )}
+          {communityContent ?? (
+            <DetailsCommunity
+              editor={reviewEditor}
+              error={reviewError}
+              published={reviewPublished}
+              reviewComposer={
+                reviewComposerContent ?? (
+                  <ReviewComposer
+                    {...reviewEditor}
+                    displayTermNames
+                    initialInstructorUuid={identity.instructor.uuid}
+                    initialTermCode={selectedTermCode}
+                  />
+                )
+              }
+              reviews={reviews}
+              reviewsUnavailable={reviewsUnavailable}
+              signedIn={signedIn}
+              signalControls={
+                <SignalControls
+                  error={signalError}
+                  signedIn={signedIn}
+                  summary={signals}
+                  target={{
+                    type: "instructor",
+                    instructorUuid: communityInstructorUuid,
+                  }}
+                  unavailable={signalsUnavailable}
+                />
+              }
+              withdrawn={reviewWithdrawn}
+            />
+          )}
         </section>
         <aside className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-6">
-          <TeachingCards
-            classes={classes}
-            rankings={rankings}
-            scheduleUnavailable={scheduleUnavailable}
-            selectedTermCode={selectedTermCode}
-          />
-          <IdentityCard identity={identity} rankings={rankings} />
+          {teachingContent ?? (
+            <TeachingCards
+              classes={classes}
+              rankings={rankings}
+              scheduleUnavailable={scheduleUnavailable}
+              selectedTermCode={selectedTermCode}
+            />
+          )}
+          {identityContent ?? (
+            <IdentityCard identity={identity} rankings={rankings} />
+          )}
         </aside>
       </div>
     </div>

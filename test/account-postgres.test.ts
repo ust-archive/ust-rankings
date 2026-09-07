@@ -1,11 +1,53 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import postgres from "postgres";
 import { expect, test, vi } from "vitest";
 import { HKUST_CONNECT_ISSUER } from "@/lib/auth/policy";
 import { createAccountService } from "@/lib/contributions/accounts";
+import { PostgresAccountRepository } from "@/lib/contributions/postgres";
+import { withPostgresSchema } from "./postgres-fixture";
 
 vi.mock("server-only", () => ({}));
+
+test("account contribution reads normalize serialized timestamp strings", async () => {
+  const sql = vi
+    .fn()
+    .mockResolvedValueOnce([
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        publicationState: "active",
+        coursePrefix: "COMP",
+        courseNumber: "2000",
+        instructorUuid: null,
+        publishedAt: "2026-08-20T12:00:00.000Z",
+      },
+    ])
+    .mockResolvedValueOnce([
+      {
+        targetType: "review",
+        coursePrefix: "COMP",
+        courseNumber: "2000",
+        instructorUuid: null,
+        reviewId: "00000000-0000-4000-8000-000000000002",
+        reviewAuthor: null,
+        kind: "emoji",
+        code: "love",
+        createdAt: "2026-08-21T12:00:00.000Z",
+      },
+    ]);
+  const repository = new PostgresAccountRepository(
+    sql as unknown as ReturnType<typeof postgres>,
+  );
+
+  const contributions = await repository.findContributions(
+    "00000000-0000-4000-8000-000000000003",
+  );
+
+  expect(contributions.reviews[0]?.publishedAt).toEqual(
+    new Date("2026-08-20T12:00:00.000Z"),
+  );
+  expect(contributions.reactions[0]?.createdAt).toEqual(
+    new Date("2026-08-21T12:00:00.000Z"),
+  );
+});
 
 const connection = process.env.TEST_CONTRIBUTIONS_POSTGRES_URL;
 
@@ -13,27 +55,7 @@ if (!connection) {
   test.skip("account PostgreSQL contract (TEST_CONTRIBUTIONS_POSTGRES_URL is not configured)", () => {});
 } else {
   test("account PostgreSQL contract preserves identity uniqueness and current status", async () => {
-    const schema = `account_test_${crypto.randomUUID().replaceAll("-", "")}`;
-    const admin = postgres(connection, { max: 1, onnotice: () => {} });
-    await admin.unsafe(`CREATE SCHEMA ${schema}`);
-    await admin.end();
-    const sql = postgres(connection, {
-      max: 2,
-      connection: { search_path: schema },
-      onnotice: () => {},
-    });
-    try {
-      await sql.unsafe(
-        await readFile(
-          join(
-            process.cwd(),
-            "contributions",
-            "migrations",
-            "0001_accounts.sql",
-          ),
-          "utf8",
-        ),
-      );
+    await withPostgresSchema("account", async ({ sql }) => {
       const { PostgresAccountRepository } = await import(
         "@/lib/contributions/postgres"
       );
@@ -79,25 +101,6 @@ if (!connection) {
         "External Identity bindings are immutable",
       );
 
-      for (const migration of [
-        "0002_course_reviews.sql",
-        "0003_signals.sql",
-        "0004_complete_review_associations.sql",
-        "0005_review_lifecycle.sql",
-        "0006_raster_attachments.sql",
-        "0007_document_attachments.sql",
-        "0008_moderation.sql",
-        "0009_rights_requests.sql",
-        "0010_active_review_basis_set.sql",
-        "0011_review_signals.sql",
-      ]) {
-        await sql.unsafe(
-          await readFile(
-            join(process.cwd(), "contributions", "migrations", migration),
-            "utf8",
-          ),
-        );
-      }
       await sql`UPDATE contribution_users SET status = 'active' WHERE id = ${first.id}`;
       const reviewId = crypto.randomUUID();
       const reviewRevisionId = crypto.randomUUID();
@@ -219,9 +222,6 @@ if (!connection) {
       await expect(accounts.requireActiveUser(first.id)).rejects.toMatchObject({
         code: "account-closed",
       });
-    } finally {
-      await sql.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-      await sql.end();
-    }
+    });
   });
 }

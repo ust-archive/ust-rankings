@@ -6,7 +6,9 @@ let referer: string | undefined;
 let userId: string | undefined;
 let mutationError: unknown;
 const mutations: unknown[] = [];
+const { updateTag } = vi.hoisted(() => ({ updateTag: vi.fn() }));
 
+vi.mock("next/cache", () => ({ updateTag }));
 vi.mock("next/headers", () => ({
   headers: async () =>
     new Headers({
@@ -93,6 +95,7 @@ test("signal actions send desired Thumbs and Emoji states and route onboarding",
   userId = "00000000-0000-4000-8000-000000000047";
   mutationError = undefined;
   mutations.length = 0;
+  updateTag.mockClear();
 
   const thumbs = courseForm();
   thumbs.set("state", "none");
@@ -127,6 +130,8 @@ test("signal actions send desired Thumbs and Emoji states and route onboarding",
       },
     },
   ]);
+  expect(updateTag).toHaveBeenCalledTimes(2);
+  expect(updateTag).toHaveBeenCalledWith("contributions");
 
   mutationError = new SignalWriteError("onboarding-required", "Onboard first");
   const onboarding = courseForm();

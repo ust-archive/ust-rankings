@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { EntityLink } from "@/app/entity-navigation";
 import { instructorPath } from "@/app/instructors/routes";
 import { SignalControls } from "@/app/signals/signal-controls";
@@ -34,13 +35,7 @@ function uniqueInstructors(
   for (const offering of offerings)
     for (const meeting of offering.classes.flatMap((item) => item.meetings))
       for (const instructor of meeting.instructors) {
-        const resolvedUuid = rankings?.instructors.some(
-          (association) =>
-            association.termCode === offering.termCode &&
-            association.instructor.uuid === instructor.uuid,
-        )
-          ? instructor.uuid
-          : undefined;
+        const resolvedUuid = instructor.uuid;
         const key = resolvedUuid ?? instructor.sourceName;
         const current = instructors.get(key) ?? {
           name: instructor.sourceName,
@@ -129,7 +124,12 @@ export function CourseDetails({
   courseNumber,
   schedule,
   rankings,
+  rankingsContent,
+  reviewComposerContent,
+  communityContent,
+  scheduleContent,
   selectedTermCode,
+  detailsLoading = false,
   reviews = [],
   reviewsUnavailable = true,
   reviewPublished,
@@ -144,7 +144,12 @@ export function CourseDetails({
   courseNumber: string;
   schedule?: Extract<ScheduleDetails, { type: "course" }>;
   rankings?: CourseRankings;
+  rankingsContent?: ReactNode;
+  reviewComposerContent?: ReactNode;
+  communityContent?: ReactNode;
+  scheduleContent?: ReactNode;
   selectedTermCode?: string;
+  detailsLoading?: boolean;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
   reviewPublished?: boolean;
@@ -333,10 +338,14 @@ export function CourseDetails({
       <DetailsHeader
         description={currentOffering?.description}
         eyebrow="Course"
-        subtitle={title}
+        subtitle={detailsLoading ? undefined : title}
+        subtitleLoading={detailsLoading}
+        termLoading={detailsLoading && !evidenceTermCode}
         termName={
           termNames.get(evidenceTermCode ?? "") ??
-          rankingTermName(evidenceTermCode)
+          (evidenceTermCode
+            ? rankingTermName(evidenceTermCode)
+            : rankingTermName())
         }
         title={`${coursePrefix} ${courseNumber}`}
         transitionName={courseTitleTransitionName(coursePrefix, courseNumber)}
@@ -346,99 +355,110 @@ export function CourseDetails({
           aria-label="Rankings and Community"
           className="flex min-w-0 flex-col gap-6"
         >
-          <DetailsRankings
-            rankings={rankings}
-            scoreDistribution={rankings?.scoreDistribution}
-            selectedTermCode={evidenceTermCode}
-            termNames={termNames}
-          />
-          <DetailsCommunity
-            description="Published experiences and signals for this Course."
-            editor={reviewEditor}
-            error={reviewError}
-            published={reviewPublished}
-            reviewComposer={
-              <ReviewComposer
-                {...reviewEditor}
-                displayTermNames
-                initialCourse={{ coursePrefix, courseNumber }}
-                initialTermCode={evidenceTermCode}
-              />
-            }
-            reviews={reviews}
-            reviewsUnavailable={reviewsUnavailable}
-            signedIn={signedIn}
-            signalControls={
-              <SignalControls
-                error={signalError}
-                signedIn={signedIn}
-                summary={signals}
-                target={{ type: "course", coursePrefix, courseNumber }}
-                unavailable={signalsUnavailable}
-              />
-            }
-            withdrawn={reviewWithdrawn}
-          />
+          {rankingsContent ?? (
+            <DetailsRankings
+              rankings={rankings}
+              scoreDistribution={rankings?.scoreDistribution}
+              selectedTermCode={evidenceTermCode}
+              termNames={termNames}
+            />
+          )}
+          {communityContent ?? (
+            <DetailsCommunity
+              description="Published experiences and signals for this Course."
+              editor={reviewEditor}
+              error={reviewError}
+              published={reviewPublished}
+              reviewComposer={
+                reviewComposerContent ?? (
+                  <ReviewComposer
+                    {...reviewEditor}
+                    displayTermNames
+                    initialCourse={{ coursePrefix, courseNumber }}
+                    initialTermCode={evidenceTermCode}
+                  />
+                )
+              }
+              reviews={reviews}
+              reviewsUnavailable={reviewsUnavailable}
+              signedIn={signedIn}
+              signalControls={
+                <SignalControls
+                  error={signalError}
+                  signedIn={signedIn}
+                  summary={signals}
+                  target={{ type: "course", coursePrefix, courseNumber }}
+                  unavailable={signalsUnavailable}
+                />
+              }
+              withdrawn={reviewWithdrawn}
+            />
+          )}
         </section>
         <aside className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-6">
-          <Collapsible className="group">
-            <Card>
-              <CardHeader className="flex-row items-center justify-between gap-3">
-                <CardTitle asChild className={styles.heading}>
-                  <h2>Teachings</h2>
-                </CardTitle>
-                <ExpandCardTrigger
-                  count={earlierTeachings.length}
-                  label="Teachings"
-                />
-              </CardHeader>
-              <CardContent className="flex flex-col gap-5">
-                {currentInstructors.length ? (
-                  currentInstructors.map((instructor) =>
-                    instructorEntry(
-                      instructor,
-                      evidenceTermCode ? [evidenceTermCode] : [],
-                    ),
-                  )
-                ) : (
-                  <p className="text-sm text-slate-700">
-                    No teaching is reported for this Term.
-                  </p>
-                )}
-                <CollapsibleContent className="flex flex-col gap-5">
-                  {earlierTeachings.map(({ instructor, terms }) =>
-                    instructorEntry(instructor, terms),
-                  )}
-                </CollapsibleContent>
-              </CardContent>
-            </Card>
-          </Collapsible>
-          <Collapsible className="group">
-            <Card>
-              <CardHeader className="flex-row items-center justify-between gap-3">
-                <CardTitle asChild className={styles.heading}>
-                  <h2>Offerings</h2>
-                </CardTitle>
-                <ExpandCardTrigger
-                  count={earlierOfferings.length}
-                  label="Offerings"
-                />
-              </CardHeader>
-              <CardContent className="flex flex-col gap-6">
-                {currentOffering ? (
-                  offeringEntry(currentOffering)
-                ) : (
-                  <p className="text-sm text-amber-900">
-                    Offerings are unavailable. Rankings and Community remain
-                    available.
-                  </p>
-                )}
-                <CollapsibleContent className="flex flex-col gap-6">
-                  {[...earlierOfferings].reverse().map(offeringEntry)}
-                </CollapsibleContent>
-              </CardContent>
-            </Card>
-          </Collapsible>
+          {scheduleContent}
+          {!scheduleContent ? (
+            <>
+              <Collapsible className="group">
+                <Card>
+                  <CardHeader className="flex-row items-center justify-between gap-3">
+                    <CardTitle asChild className={styles.heading}>
+                      <h2>Teachings</h2>
+                    </CardTitle>
+                    <ExpandCardTrigger
+                      count={earlierTeachings.length}
+                      label="Teachings"
+                    />
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-5">
+                    {currentInstructors.length ? (
+                      currentInstructors.map((instructor) =>
+                        instructorEntry(
+                          instructor,
+                          evidenceTermCode ? [evidenceTermCode] : [],
+                        ),
+                      )
+                    ) : (
+                      <p className="text-sm text-slate-700">
+                        No teaching is reported for this Term.
+                      </p>
+                    )}
+                    <CollapsibleContent className="flex flex-col gap-5">
+                      {earlierTeachings.map(({ instructor, terms }) =>
+                        instructorEntry(instructor, terms),
+                      )}
+                    </CollapsibleContent>
+                  </CardContent>
+                </Card>
+              </Collapsible>
+              <Collapsible className="group">
+                <Card>
+                  <CardHeader className="flex-row items-center justify-between gap-3">
+                    <CardTitle asChild className={styles.heading}>
+                      <h2>Offerings</h2>
+                    </CardTitle>
+                    <ExpandCardTrigger
+                      count={earlierOfferings.length}
+                      label="Offerings"
+                    />
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-6">
+                    {currentOffering ? (
+                      offeringEntry(currentOffering)
+                    ) : (
+                      <p className="text-sm text-amber-900">
+                        Offerings are unavailable. Rankings and Community remain
+                        available.
+                      </p>
+                    )}
+                    <CollapsibleContent className="flex flex-col gap-6">
+                      {[...earlierOfferings].reverse().map(offeringEntry)}
+                    </CollapsibleContent>
+                  </CardContent>
+                </Card>
+              </Collapsible>
+            </>
+          ) : null}
         </aside>
       </div>
     </div>
@@ -448,12 +468,14 @@ export function CourseDetails({
 export function CourseOfferingDetails({
   offering,
   rankings,
+  rankingsContent,
   reviews = [],
   reviewsUnavailable = true,
   signedIn = false,
 }: {
   offering: Extract<ScheduleDetails, { type: "course-offering" }>;
   rankings?: CourseRankings;
+  rankingsContent?: ReactNode;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
   signedIn?: boolean;
@@ -511,12 +533,14 @@ export function CourseOfferingDetails({
           aria-label="Rankings and Community"
           className="flex min-w-0 flex-col gap-6"
         >
-          <DetailsRankings
-            rankings={rankings}
-            scoreDistribution={rankings?.scoreDistribution}
-            selectedTermCode={offering.termCode}
-            termNames={new Map([[offering.termCode, offering.termName]])}
-          />
+          {rankingsContent ?? (
+            <DetailsRankings
+              rankings={rankings}
+              scoreDistribution={rankings?.scoreDistribution}
+              selectedTermCode={offering.termCode}
+              termNames={new Map([[offering.termCode, offering.termName]])}
+            />
+          )}
           <DetailsCommunity
             description="Published experiences for this Course Offering and its Review Bases."
             editor={reviewEditor}
@@ -627,12 +651,14 @@ function meetingLabel(meeting: ScheduleMeeting) {
 export function ClassDetails({
   scheduleClass,
   rankings,
+  rankingsContent,
   reviews = [],
   reviewsUnavailable = true,
   signedIn = false,
 }: {
   scheduleClass: Extract<ScheduleDetails, { type: "class" }>;
   rankings?: CourseRankings;
+  rankingsContent?: ReactNode;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
   signedIn?: boolean;
@@ -640,13 +666,7 @@ export function ClassDetails({
   const instructors = new Map<string, { name: string; uuid?: string }>();
   for (const meeting of scheduleClass.meetings)
     for (const instructor of meeting.instructors) {
-      const resolvedUuid = rankings?.instructors.some(
-        (association) =>
-          association.termCode === scheduleClass.termCode &&
-          association.instructor.uuid === instructor.uuid,
-      )
-        ? instructor.uuid
-        : undefined;
+      const resolvedUuid = instructor.uuid;
       instructors.set(resolvedUuid ?? instructor.sourceName, {
         name: instructor.sourceName,
         uuid: resolvedUuid,
@@ -696,12 +716,14 @@ export function ClassDetails({
           aria-label="Rankings and Community"
           className="flex min-w-0 flex-col gap-6"
         >
-          <DetailsRankings
-            rankings={rankings}
-            scoreDistribution={rankings?.scoreDistribution}
-            selectedTermCode={scheduleClass.termCode}
-            termNames={new Map([[scheduleClass.termCode, termName]])}
-          />
+          {rankingsContent ?? (
+            <DetailsRankings
+              rankings={rankings}
+              scoreDistribution={rankings?.scoreDistribution}
+              selectedTermCode={scheduleClass.termCode}
+              termNames={new Map([[scheduleClass.termCode, termName]])}
+            />
+          )}
           <DetailsCommunity
             description="Published experiences for this Class context and its Review Bases."
             editor={reviewEditor}

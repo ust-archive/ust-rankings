@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,42 @@ import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { test } from "vitest";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const fixtureCommit = "0123456789abcdef0123456789abcdef01234567";
+
+test("freezes the future holdout before outcomes", async () => {
+  const manifest = JSON.parse(
+    await readFile(resolve(root, "validation", "future-holdout.json"), "utf8"),
+  );
+  assert.equal(manifest.status, "frozen-before-outcomes");
+  assert.equal(manifest.developmentOutcomeCeilingTerm, 102);
+  assert.equal(manifest.holdout.firstOutcomeTerm, 103);
+  assert.deepEqual(
+    manifest.candidateRegistry.map((candidate: { id: string }) => candidate.id),
+    ["current", "votes-unweighted-context-4"],
+  );
+  assert.deepEqual(manifest.candidateRegistry[0].parameters, {
+    timelinessBase: 0.65,
+    courseInstructorMultiplier: 12,
+    reviewVoteScale: 1,
+    sfqRatePenalty: 1,
+    contextAffectsUncertainty: true,
+  });
+  assert.deepEqual(manifest.candidateRegistry[1].parameters, {
+    timelinessBase: 0.65,
+    courseInstructorMultiplier: 4,
+    reviewVoteScale: 0,
+    sfqRatePenalty: 1,
+    contextAffectsUncertainty: true,
+  });
+  assert.equal(
+    manifest.courseEvaluation.primaryUnit,
+    "Course Code × outcome Term × criterion",
+  );
+  assert.equal(
+    manifest.instructorEvaluation.primaryUnit,
+    "accepted Instructor UUID × outcome Term",
+  );
+});
 
 async function copyQuery(
   connection: DuckDBConnection,
@@ -25,9 +61,17 @@ async function copyQuery(
 
 async function makeFixtures(
   dataDir: string,
-  { conflictingCatalog = false } = {},
+  {
+    conflictingCatalog = false,
+    sameName = false,
+    extraSameName = false,
+    falseReview = false,
+    lowInstructor = "Cara Gamma",
+    backtestHistory = false,
+  } = {},
 ): Promise<void> {
   const instance = await DuckDBInstance.create(":memory:");
+  const escapedLowInstructor = lowInstructor.replaceAll("'", "''");
   const connection = await instance.connect();
 
   try {
@@ -36,6 +80,14 @@ async function makeFixtures(
       join(dataDir, "schedule", "courses.parquet"),
       `
       SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `(98, 'high', TIMESTAMP '2024-01-01', 'ACTIVE', 'COMP', '1000', '2430'),
+        (98, 'low', TIMESTAMP '2024-01-01', 'ACTIVE', 'COMP', '2000', '2430'),
+        (99, 'high', TIMESTAMP '2024-06-01', 'ACTIVE', 'COMP', '1000', '2440'),
+        (99, 'low', TIMESTAMP '2024-06-01', 'ACTIVE', 'COMP', '2000', '2440'),`
+            : ""
+        }
         (100, 'high', TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '1000', '2510'),
         (100, 'low',  TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '2000', '2510'),
         (100, 'prior', TIMESTAMP '2025-01-01', 'ACTIVE', 'COMP', '3000', '2510')
@@ -76,16 +128,94 @@ async function makeFixtures(
       join(dataDir, "schedule", "classes.parquet"),
       `
       SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `(98, 'class-high', TIMESTAMP '2024-01-01', 'ACTIVE',
+          [{'instructors': ['ALPHA, Alice Beatrice']}], 'high', 'E', 'LEC'),
+        (98, 'class-low', TIMESTAMP '2024-01-01', 'ACTIVE',
+          [{'instructors': ['Cara Gamma']}], 'low', 'E', 'LEC'),
+        (99, 'class-high', TIMESTAMP '2024-06-01', 'ACTIVE',
+          [{'instructors': ['ALPHA, Alice Beatrice']}], 'high', 'E', 'LEC'),
+        (99, 'class-low', TIMESTAMP '2024-06-01', 'ACTIVE',
+          [{'instructors': ['Cara Gamma']}], 'low', 'E', 'LEC'),`
+            : ""
+        }
         (100, 'class-high', TIMESTAMP '2025-01-01', 'ACTIVE',
           [{'instructors': [
             'ALPHA, Alice Beatrice', 'Adam Blake DELTA',
             'WANG, Wei', 'WEI, Wang', 'TBA', 'MSC(TLE) PROGRAM, .'
+            ${sameName ? ", 'Alex Lee'" : ""}
           ]}], 'high', 'E', 'LEC'),
         (100, 'class-low', TIMESTAMP '2025-01-01', 'ACTIVE',
-          [{'instructors': ['Cara Gamma']}], 'low', 'E', 'LEC'),
+          [{'instructors': ['${escapedLowInstructor}'${sameName ? ", 'Alex Lee'" : ""}]}], 'low', 'E', 'LEC'),
         (100, 'class-prior', TIMESTAMP '2025-01-01', 'ACTIVE',
-          [{'instructors': ['Eve Epsilon']}], 'prior', 'E', 'LEC')
+          [{'instructors': ['Eve Epsilon'${extraSameName ? ", 'Alex Lee'" : ""}]}], 'prior', 'E', 'LEC')
       ) AS classes(term_num, number, "timestamp", status, schedules, course_id, role, type)
+    `,
+    );
+
+    await copyQuery(
+      connection,
+      join(dataDir, "schedule", "canonical", "class_records.parquet"),
+      `
+      SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `('api', NULL, NULL, 98, 'course-high', 'COMP', '1000', 'L1',
+          981, 'E', 'LEC', 100, 80,
+          [{'instructors': ['ALPHA, Alice Beatrice']}], 'ACTIVE', TIMESTAMP '2024-01-01'),
+        ('api', NULL, NULL, 98, 'course-low', 'COMP', '2000', 'L1',
+          982, 'E', 'LEC', 80, 40,
+          [{'instructors': ['Cara Gamma']}], 'ACTIVE', TIMESTAMP '2024-01-01'),
+        ('api', NULL, NULL, 99, 'course-high', 'COMP', '1000', 'L1',
+          991, 'E', 'LEC', 100, 90,
+          [{'instructors': ['ALPHA, Alice Beatrice']}], 'ACTIVE', TIMESTAMP '2024-06-01'),
+        ('api', NULL, NULL, 99, 'course-low', 'COMP', '2000', 'L1',
+          992, 'E', 'LEC', 80, 35,
+          [{'instructors': ['Cara Gamma']}], 'ACTIVE', TIMESTAMP '2024-06-01'),`
+            : ""
+        }
+        ('api', NULL, NULL, 100, 'course-high', 'COMP', '1000', 'L1',
+          1001, 'E', 'LEC', 120, 100,
+          [{'instructors': ['ALPHA, Alice Beatrice', 'Adam Blake DELTA']}],
+          'ACTIVE', TIMESTAMP '2025-01-01'),
+        ('api', NULL, NULL, 100, 'course-low', 'COMP', '2000', 'L1',
+          1002, 'E', 'LEC', 80, 60,
+          [{'instructors': ['${escapedLowInstructor}']}],
+          'ACTIVE', TIMESTAMP '2025-01-01')
+      ) AS classes(
+        version, source_commit, source_order, term_num, course_id, prefix,
+        course_number, section, number, "role", "type", capacity, enroll,
+        schedules, status, "timestamp"
+      )
+    `,
+    );
+
+    await copyQuery(
+      connection,
+      join(dataDir, "schedule", "canonical", "course_records.parquet"),
+      `
+      SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `('api', NULL, NULL, 98, 'course-high', 'COMP', '1000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2024-01-01'),
+        ('api', NULL, NULL, 98, 'course-low', 'COMP', '2000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2024-01-01'),
+        ('api', NULL, NULL, 99, 'course-high', 'COMP', '1000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2024-06-01'),
+        ('api', NULL, NULL, 99, 'course-low', 'COMP', '2000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2024-06-01'),`
+            : ""
+        }
+        ('api', NULL, NULL, 100, 'course-high', 'COMP', '1000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2025-01-01'),
+        ('api', NULL, NULL, 100, 'course-low', 'COMP', '2000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2025-01-01')
+      ) AS courses(
+        version, source_commit, source_order, term_num, id, prefix, number,
+        career, credits, status, "timestamp"
+      )
     `,
     );
 
@@ -94,16 +224,36 @@ async function makeFixtures(
       join(dataDir, "ust-space", "reviews.parquet"),
       `
       SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `('high-review-98', TIMESTAMP '2024-01-01', 'ACTIVE', '2024-25 Spring', 1, 1,
+          4.0, 4.0, 4.0, 4.0, 'COMP', '1000', [{'name': 'ALPHA, Alice Beatrice'}]),
+        ('high-extra-98', TIMESTAMP '2024-01-02', 'ACTIVE', '2024-25 Spring', 0, 0,
+          3.5, 3.5, 3.5, 3.5, 'COMP', '1000', [{'name': 'ALPHA, Alice Beatrice'}]),
+        ('low-review-98', TIMESTAMP '2024-01-01', 'ACTIVE', '2024-25 Spring', 0, 1,
+          2.0, 2.0, 2.0, 2.0, 'COMP', '2000', [{'name': 'Cara Gamma'}]),
+        ('high-review-99', TIMESTAMP '2024-06-01', 'ACTIVE', '2024-25 Summer', 2, 2,
+          4.5, 4.5, 4.5, 4.5, 'COMP', '1000', [{'name': 'ALPHA, Alice Beatrice'}]),
+        ('low-review-99', TIMESTAMP '2024-06-01', 'ACTIVE', '2024-25 Summer', 0, 2,
+          1.5, 1.5, 1.5, 1.5, 'COMP', '2000', [{'name': 'Cara Gamma'}]),`
+            : ""
+        }
         ('high-review', TIMESTAMP '2025-01-01', 'ACTIVE', '2025-26 Fall', 3, 4,
           5.0, 5.0, 5.0, 4.0, 'COMP', '1000', [{'name': 'ALPHA, ALICE BEATRICE'}]),
         ('low-review', TIMESTAMP '2025-01-01', 'ACTIVE', '2025-26 Fall', 0, 2,
-          1.0, 1.0, 1.0, 2.0, 'COMP', '2000', [{'name': 'Cara Gamma'}]),
+          1.0, 1.0, 1.0, 2.0, 'COMP', '2000', [{'name': '${escapedLowInstructor}'}]),
         ('history-review', TIMESTAMP '2024-08-01', 'ACTIVE', '2024-25 Summer', 0, 0,
           3.0, 3.0, 3.0, 3.0, 'HIST', '3000', [{'name': 'Dora Delta'}]),
         ('deleted-review', TIMESTAMP '2025-01-01', 'ACTIVE', '2025-26 Fall', 1, 1,
           5.0, 5.0, 5.0, 5.0, 'GONE', '9999', [{'name': 'TBA'}]),
         ('deleted-review', TIMESTAMP '2025-02-01', 'INACTIVE', '2025-26 Fall', 1, 1,
           5.0, 5.0, 5.0, 5.0, 'GONE', '9999', [{'name': 'TBA'}])
+        ${
+          falseReview
+            ? `,('PfqhaZDjE3u5fJvqPS0Gd1u5FNsJ8lnc', TIMESTAMP '2025-08-01', 'ACTIVE', '2025-26 Fall', 0, 0,
+          1.0, 1.0, 1.0, 1.0, 'LANG', '1402', [{'name': 'LAI, Priscilla'}])`
+            : ""
+        }
       ) AS reviews(
         hash, "timestamp", status, semester, upvote_count, vote_count,
         content_rating, teaching_rating, grading_rating, workload_rating,
@@ -124,6 +274,18 @@ async function makeFixtures(
       join(dataDir, "sfq", "canonical", "instructor_records.parquet"),
       `
       SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `('v1', 98, '2430', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'Alice Beatrice ALPHA', 981,
+          50, false, 0.8, 4.0, 0.2, 4.1, 0.2, DATE '2024-01-01', TIMESTAMP '2024-01-01', 'ACTIVE', 'ia98'),
+        ('v1', 98, '2430', 'SENG', 'CSE', 'COMP', '2000', 'L1', 'Cara Gamma', 982,
+          50, true, 0.5, 2.0, 0.2, 2.0, 0.2, DATE '2024-01-01', TIMESTAMP '2024-01-01', 'ACTIVE', 'ic98'),
+        ('v1', 99, '2440', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'Alice Beatrice ALPHA', 991,
+          60, false, 0.9, 4.5, 0.2, 4.6, 0.2, DATE '2024-06-01', TIMESTAMP '2024-06-01', 'ACTIVE', 'ia99'),
+        ('v1', 99, '2440', 'SENG', 'CSE', 'COMP', '2000', 'L1', 'Cara Gamma', 992,
+          60, true, 0.4, 1.5, 0.2, 1.5, 0.2, DATE '2024-06-01', TIMESTAMP '2024-06-01', 'ACTIVE', 'ic99'),`
+            : ""
+        }
         ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'Alice Beatrice ALPHA', 1,
           100, false, 0.8, 4.8, 0.2, 4.9, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ia'),
         ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '1000', 'L1', 'Alice Beatrice ALPHA', 99,
@@ -132,10 +294,18 @@ async function makeFixtures(
           100, false, 0.8, 4.8, 0.2, 4.7, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ib'),
         ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'DELTA, A B', 4,
           100, false, 0.8, 4.8, 0.2, 4.6, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'id'),
-        ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '2000', 'L1', 'Cara Gamma', 3,
+        ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '2000', 'L1', '${escapedLowInstructor}', 3,
           100, false, 0.8, 2.0, 0.2, 2.0, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ic'),
-        ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '2000', 'L1', 'Cara Gamma', 33,
+        ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '2000', 'L1', '${escapedLowInstructor}', 33,
           100, false, 0.8, 2.1, 0.2, 2.1, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'ic')
+        ${
+          sameName
+            ? `,('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '1000', 'L1', 'Alex Lee', 40,
+          100, false, 0.8, 4.8, 0.2, 4.8, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'same-high'),
+        ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '2000', 'L1', 'Alex Lee', 41,
+          100, false, 0.8, 1.2, 0.2, 1.2, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'same-low')`
+            : ""
+        }
       ) AS sfq(${sfqColumns})
     `,
     );
@@ -151,6 +321,18 @@ async function makeFixtures(
       join(dataDir, "sfq", "canonical", "section_records.parquet"),
       `
       SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `('v1', 98, '2430', 'SENG', 'CSE', 'COMP', '1000', 'L1',
+          50, false, 0.8, 4.0, 0.2, 4.1, 0.2, DATE '2024-01-01', TIMESTAMP '2024-01-01', 'ACTIVE', 'sa98'),
+        ('v1', 98, '2430', 'SENG', 'CSE', 'COMP', '2000', 'L1',
+          50, true, 0.5, 2.0, 0.2, 2.0, 0.2, DATE '2024-01-01', TIMESTAMP '2024-01-01', 'ACTIVE', 'sb98'),
+        ('v1', 99, '2440', 'SENG', 'CSE', 'COMP', '1000', 'L1',
+          60, false, 0.9, 4.5, 0.2, 4.6, 0.2, DATE '2024-06-01', TIMESTAMP '2024-06-01', 'ACTIVE', 'sa99'),
+        ('v1', 99, '2440', 'SENG', 'CSE', 'COMP', '2000', 'L1',
+          60, true, 0.4, 1.5, 0.2, 1.5, 0.2, DATE '2024-06-01', TIMESTAMP '2024-06-01', 'ACTIVE', 'sb99'),`
+            : ""
+        }
         ('v1', 100, '2510', 'SENG', 'CSE', 'COMP', '1000', 'L1',
           100, false, 0.8, 4.8, 0.2, 4.8, 0.2, DATE '2025-01-01', TIMESTAMP '2025-01-01', 'ACTIVE', 'sa'),
         ('v1', 100, '2510', 'SENG', 'ECE', 'COMP', '1000', 'L1',
@@ -172,6 +354,8 @@ async function makePreviousGeneration(
   directory: string,
   omittedName?: string,
   sharedIdentityNames?: readonly [string, string],
+  sameName?: "resolved" | "ambiguous" | "merged" | "wildcard",
+  itscByName: Readonly<Record<string, string>> = {},
 ): Promise<string> {
   const names = [
     "ALPHA, Alice Beatrice",
@@ -193,11 +377,23 @@ async function makePreviousGeneration(
           : index + 1,
       ).padStart(12, "0")}`,
     }));
+  if (sameName) {
+    rows.push(
+      {
+        name: "Alex Lee",
+        uuid: "00000000-0000-4000-8000-000000000091",
+      },
+      {
+        name: "Alex Lee",
+        uuid: "00000000-0000-4000-8000-000000000092",
+      },
+    );
+  }
   const values = rows
-    .map(
-      ({ name, uuid }) =>
-        `('${uuid}', '${name.replaceAll("'", "''")}', NULL::VARCHAR)`,
-    )
+    .map(({ name, uuid }) => {
+      const itsc = itscByName[name];
+      return `('${uuid}', '${name.replaceAll("'", "''")}', ${itsc ? `'${itsc.replaceAll("'", "''")}'` : "NULL::VARCHAR"})`;
+    })
     .join(",");
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
@@ -214,18 +410,35 @@ async function makePreviousGeneration(
     await copyQuery(
       connection,
       join(directory, "instructor-aliases.parquet"),
-      `SELECT uuid, canonical_name AS name, 'fixture' AS source, 'fixture' AS source_commit, NULL::VARCHAR AS source_file FROM read_parquet('${parquet(directory, "instructor-identities")}')`,
+      `SELECT uuid, canonical_name AS name, 'fixture' AS source, '${fixtureCommit}' AS source_commit, NULL::VARCHAR AS source_file FROM read_parquet('${parquet(directory, "instructor-identities")}')`,
     );
     await copyQuery(
       connection,
       join(directory, "instructor-identity-events.parquet"),
-      "SELECT NULL::VARCHAR AS event_type, NULL::VARCHAR AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, NULL::VARCHAR AS retired_uuid, NULL::VARCHAR AS survivor_uuid, NULL::VARCHAR AS source_uuid, NULL::VARCHAR AS new_uuid WHERE false",
+      sameName === "resolved" || sameName === "wildcard"
+        ? `SELECT 'split' AS event_type, '${fixtureCommit}' AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, NULL::VARCHAR AS retired_uuid, NULL::VARCHAR AS survivor_uuid, '00000000-0000-4000-8000-000000000091' AS source_uuid, '00000000-0000-4000-8000-000000000092' AS new_uuid`
+        : sameName === "merged"
+          ? `SELECT 'merge' AS event_type, '${fixtureCommit}' AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, '00000000-0000-4000-8000-000000000092' AS retired_uuid, '00000000-0000-4000-8000-000000000091' AS survivor_uuid, NULL::VARCHAR AS source_uuid, NULL::VARCHAR AS new_uuid`
+          : "SELECT NULL::VARCHAR AS event_type, NULL::VARCHAR AS source_commit, NULL::VARCHAR AS uuid, NULL::VARCHAR AS itsc, NULL::VARCHAR AS retired_uuid, NULL::VARCHAR AS survivor_uuid, NULL::VARCHAR AS source_uuid, NULL::VARCHAR AS new_uuid WHERE false",
     );
     await copyQuery(
       connection,
       join(directory, "instructor-split-affected-associations.parquet"),
-      "SELECT NULL::VARCHAR AS source_commit, NULL::VARCHAR AS new_uuid, NULL::VARCHAR AS source_name, NULL::VARCHAR AS term_code, NULL::VARCHAR AS course_code WHERE false",
+      sameName === "resolved"
+        ? `SELECT '${fixtureCommit}' AS source_commit, '00000000-0000-4000-8000-000000000092' AS new_uuid, 'Alex Lee' AS source_name, '2510' AS term_code, 'COMP 2000' AS course_code`
+        : sameName === "wildcard"
+          ? `SELECT '${fixtureCommit}' AS source_commit, '00000000-0000-4000-8000-000000000092' AS new_uuid, 'Alex Lee' AS source_name, NULL::VARCHAR AS term_code, NULL::VARCHAR AS course_code`
+          : "SELECT NULL::VARCHAR AS source_commit, NULL::VARCHAR AS new_uuid, NULL::VARCHAR AS source_name, NULL::VARCHAR AS term_code, NULL::VARCHAR AS course_code WHERE false",
     );
+    if (sameName === "resolved")
+      await copyQuery(
+        connection,
+        join(directory, "course-instructors.parquet"),
+        `SELECT * FROM (VALUES
+          ('00000000-0000-4000-8000-000000000091', 'Alex Lee', 100, '2510', 'COMP', '1000'),
+          ('00000000-0000-4000-8000-000000000092', 'Alex Lee', 100, '2510', 'COMP', '2000')
+        ) AS associations(uuid, name, term_num, term_code, subject, code)`,
+      );
   } finally {
     connection.closeSync();
     instance.closeSync();
@@ -571,12 +784,358 @@ test("DuckDB pipeline writes reproducible relational marts", async () => {
   }
 });
 
-test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () => {
+test("walk-forward backtests reject unestablished SFQ comparability", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-backtest-evidence-"));
+  try {
+    const sfqEvidencePath = join(temp, "sfq-comparability.json");
+    await writeFile(sfqEvidencePath, "{}\n");
+    const result = spawnSync(
+      process.execPath,
+      [join(root, "src", "backtest.ts")],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          DATA_DIR: temp,
+          RANKINGS_PREVIOUS_GENERATION_DIR: temp,
+          RANKINGS_SFQ_COMPARABILITY_EVIDENCE: sfqEvidencePath,
+        },
+      },
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.stderr,
+      /must establish one 1-5 scale across at least two source versions/,
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("shared backtest candidates match the production model", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-backtest-current-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { backtestHistory: true });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const production = runPipeline(dataDir, join(temp, "production"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    const candidates = [
+      {
+        id: "current",
+        timelinessBase: 0.65,
+        courseInstructorMultiplier: 12,
+        reviewVoteScale: 1,
+        sfqRatePenalty: 1,
+        contextAffectsUncertainty: true,
+      },
+    ];
+    const backtestDirectory = join(temp, "backtest");
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "unused"),
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+        RANKINGS_BACKTEST_DIRECTORY: backtestDirectory,
+        RANKINGS_BACKTEST_CANDIDATES: JSON.stringify(candidates),
+      },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const productionRatings = parquet(production, "course-ratings");
+    const candidateRatings = join(
+      backtestDirectory,
+      "current",
+      "course-ratings.parquet",
+    )
+      .replaceAll("\\", "/")
+      .replaceAll("'", "''");
+    assert.deepEqual(
+      await rows(`
+        WITH production AS (
+          SELECT subject, code, term_num, criterion, bayesian, is_offered
+          FROM read_parquet('${productionRatings}')
+        ), candidate AS (
+          SELECT * FROM read_parquet('${candidateRatings}')
+        )
+        SELECT * FROM production EXCEPT ALL SELECT * FROM candidate
+        UNION ALL
+        SELECT * FROM candidate EXCEPT ALL SELECT * FROM production
+      `),
+      [],
+    );
+    const contexts = parquet(
+      join(backtestDirectory, "current"),
+      "evidence-context",
+    );
+    const allocations = parquet(
+      join(backtestDirectory, "current"),
+      "evidence-allocations",
+    );
+    const courseAnalysis = parquet(
+      join(backtestDirectory, "current"),
+      "course-analysis",
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT
+          bool_and(section IS NULL AND section_id IS NULL AND class_id IS NULL)
+            FILTER (WHERE evidence_role = 'review') AS reviews_have_no_class,
+          count(*) FILTER (
+            WHERE evidence_role = 'course'
+              AND schedule_class_number IS NOT NULL
+              AND schedule_course_id IS NOT NULL
+          ) > 0 AS canonical_context_exists
+        FROM read_parquet('${contexts}')
+      `),
+      [{ reviews_have_no_class: true, canonical_context_exists: true }],
+    );
+    assert.deepEqual(
+      await rows(`
+        WITH allocation_sums AS (
+          SELECT
+            observation_id,
+            sum(allocation) AS allocation,
+            sum(allocated_samples) AS samples,
+            sum(allocated_weight) AS weight
+          FROM read_parquet('${allocations}')
+          GROUP BY observation_id
+        )
+        SELECT bool_and(
+          abs(allocation_sums.allocation - 1) < 1e-12
+          AND abs(allocation_sums.samples - contexts.source_samples) < 1e-12
+          AND abs(allocation_sums.weight - contexts.source_weight) < 1e-12
+        ) AS evidence_is_conserved
+        FROM allocation_sums
+        JOIN read_parquet('${contexts}') AS contexts USING (observation_id)
+      `),
+      [{ evidence_is_conserved: true }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT bool_and(criterion = outcome_criterion) AS criteria_match
+        FROM read_parquet('${courseAnalysis}')
+      `),
+      [{ criteria_match: true }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("walk-forward backtests compare candidates across historical cutoffs", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-backtest-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { backtestHistory: true });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const reportPath = join(temp, "model-validation.json");
+    const sfqEvidencePath = join(temp, "sfq-comparability.json");
+    await writeFile(
+      sfqEvidencePath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        conclusion: "comparable",
+        ratingScale: "1-5",
+        basis: "Generated SFQ fixtures use one stable survey scale.",
+        sourceVersions: ["fixture-v1", "fixture-v2"],
+      })}\n`,
+    );
+    const result = spawnSync(
+      process.execPath,
+      [join(root, "src", "backtest.ts")],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          DATA_DIR: dataDir,
+          RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+          RANKINGS_BACKTEST_OUTPUT: reportPath,
+          RANKINGS_SFQ_COMPARABILITY_EVIDENCE: sfqEvidencePath,
+        },
+      },
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    const repeatedReportPath = join(temp, "model-validation-repeated.json");
+    const repeated = spawnSync(
+      process.execPath,
+      [join(root, "src", "backtest.ts")],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          DATA_DIR: dataDir,
+          RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+          RANKINGS_BACKTEST_OUTPUT: repeatedReportPath,
+          RANKINGS_SFQ_COMPARABILITY_EVIDENCE: sfqEvidencePath,
+        },
+      },
+    );
+    assert.equal(repeated.status, 0, repeated.stderr || repeated.stdout);
+    const repeatedReport = JSON.parse(
+      await readFile(repeatedReportPath, "utf8"),
+    );
+    assert.deepEqual(
+      report.candidates.map(
+        (candidate: { pairedIntervals: unknown }) => candidate.pairedIntervals,
+      ),
+      repeatedReport.candidates.map(
+        (candidate: { pairedIntervals: unknown }) => candidate.pairedIntervals,
+      ),
+    );
+    assert.equal(report.historyMode, "retrospective");
+    assert.equal(report.asOfAvailable, false);
+    assert.equal(report.sources.mode, "local");
+    assert.ok(
+      Object.values(report.sources.files).every((hash) =>
+        /^[0-9a-f]{64}$/.test(String(hash)),
+      ),
+    );
+    assert.ok(report.candidates.length >= 9);
+    assert.ok(
+      report.candidates.some(
+        (candidate: { id: string }) =>
+          candidate.id === "votes-unweighted-context-4",
+      ),
+    );
+    assert.equal(
+      report.selectionGuardrails.maximumCutoffPredictionRegression,
+      0.02,
+    );
+    assert.ok(
+      report.candidates.every(
+        (candidate: { cutoffs: unknown[] }) => candidate.cutoffs.length >= 2,
+      ),
+    );
+    assert.ok(
+      report.candidates.every(
+        (candidate: {
+          criterionCutoffs: Record<string, number>;
+          sparseEvidenceSensitivity: number | null;
+        }) =>
+          candidate.sparseEvidenceSensitivity !== null &&
+          Object.values(candidate.criterionCutoffs).every(
+            (cutoffs) => cutoffs >= 2,
+          ),
+      ),
+    );
+    assert.ok(
+      report.candidates.every(
+        (candidate: {
+          cutoffs: Array<{ uncertaintyCalibrationError: number }>;
+        }) =>
+          candidate.cutoffs.every((cutoff) =>
+            Number.isFinite(cutoff.uncertaintyCalibrationError),
+          ),
+      ),
+    );
+    assert.ok(report.selected.parameters);
+    assert.equal(report.predictionScale, "source-rating");
+    assert.equal(report.analysis.usedForCandidateSelection, false);
+    assert.match(report.analysis.primaryCourseMetric, /Course Code/);
+    assert.match(report.analysis.primaryInstructorMetric, /Instructor UUID/);
+    assert.ok(
+      report.candidates.every(
+        (candidate: {
+          analysis: {
+            course: {
+              evaluationUnits: number;
+              entities: number;
+              criteria: number;
+              criterionMismatches: number;
+              sourceWeightedError: number;
+              respondentWeightedError: number;
+            };
+            instructor: {
+              evaluationUnits: number;
+              entities: number;
+              sourceWeightedError: number;
+              respondentWeightedError: number;
+            };
+            context: {
+              invalidAllocationSums: number;
+              invalidAllocatedSamples: number;
+              invalidAllocatedWeights: number;
+              missingInstructorAllocations: number;
+              instructorEvidenceFanout: number;
+              maximumAllocationSumError: number;
+            };
+          };
+        }) =>
+          candidate.analysis.course.evaluationUnits === 20 &&
+          candidate.analysis.course.entities === 2 &&
+          candidate.analysis.course.criteria === 5 &&
+          candidate.analysis.course.criterionMismatches === 0 &&
+          Number.isFinite(candidate.analysis.course.sourceWeightedError) &&
+          Number.isFinite(candidate.analysis.course.respondentWeightedError) &&
+          candidate.analysis.instructor.evaluationUnits === 4 &&
+          candidate.analysis.instructor.entities === 2 &&
+          Number.isFinite(candidate.analysis.instructor.sourceWeightedError) &&
+          Number.isFinite(
+            candidate.analysis.instructor.respondentWeightedError,
+          ) &&
+          candidate.analysis.context.invalidAllocationSums === 0 &&
+          candidate.analysis.context.invalidAllocatedSamples === 0 &&
+          candidate.analysis.context.invalidAllocatedWeights === 0 &&
+          candidate.analysis.context.missingInstructorAllocations === 0 &&
+          candidate.analysis.context.instructorEvidenceFanout === 0 &&
+          candidate.analysis.context.maximumAllocationSumError < 1e-12,
+      ),
+    );
+    assert.ok(
+      report.candidates.slice(1).every(
+        (candidate: {
+          pairedIntervals: {
+            course: { byCourse: unknown; byTerm: unknown };
+            instructor: { byInstructor: unknown; byTerm: unknown };
+          };
+        }) =>
+          candidate.pairedIntervals.course.byCourse &&
+          candidate.pairedIntervals.course.byTerm &&
+          candidate.pairedIntervals.instructor.byInstructor &&
+          candidate.pairedIntervals.instructor.byTerm,
+      ),
+    );
+    assert.equal(report.uncertaintyTarget, "future-observation");
+    assert.deepEqual(report.uncertaintyCriteria, [
+      "content",
+      "teaching",
+      "grading",
+      "workload",
+      "course",
+      "instructor",
+    ]);
+    assert.equal(report.sfqStandardDeviationsUsed, false);
+    assert.equal(report.sfqRespondentCountsUsedAsMeasurementError, true);
+    assert.equal(report.sfqUncertaintyCalibrationAvailable, true);
+    assert.equal(report.sfqComparabilityEstablished, true);
+    assert.match(report.sfqComparabilityEvidence.sha256, /^[0-9a-f]{64}$/);
+    assert.deepEqual(report.sfqComparabilityEvidence.sourceVersions, [
+      "fixture-v1",
+      "fixture-v2",
+    ]);
+    assert.equal(report.candidates[0].cutoffs[0].rankingStability, null);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("new Instructor UUIDs are stable across pipeline runs and omit TBA", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir);
-    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      "Cara Gamma",
+    );
     const first = runPipeline(dataDir, join(temp, "first"), {
       RANKINGS_PREVIOUS_GENERATION_DIR: previous,
     });
@@ -605,6 +1164,471 @@ test("Instructor UUIDs are stable across pipeline runs and omit TBA", async () =
       ),
       [{ count: 0 }],
     );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("merge corrections preserve aliases, ITSC history, and apply only once", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-merge-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      undefined,
+      { "Dora Delta": "dora" },
+    );
+    const corrections = join(temp, "corrections.json");
+    await writeFile(
+      corrections,
+      JSON.stringify({
+        events: [
+          {
+            type: "merge",
+            retiredUuid: "00000000-0000-4000-8000-000000000005",
+            survivorUuid: "00000000-0000-4000-8000-000000000003",
+            sourceCommit: "0123456789abcdef0123456789abcdef01234567",
+          },
+        ],
+      }),
+    );
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+
+    assert.deepEqual(
+      await rows(`
+        SELECT DISTINCT uuid
+        FROM read_parquet('${parquet(second, "course-instructors")}')
+        WHERE name IN ('Cara Gamma', 'Dora Delta')
+      `),
+      [{ uuid: "00000000-0000-4000-8000-000000000003" }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT count(*)::INTEGER AS count
+        FROM read_parquet('${parquet(second, "instructor-identity-events")}')
+        WHERE event_type = 'merge'
+      `),
+      [{ count: 1 }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT name
+        FROM read_parquet('${parquet(second, "instructor-aliases")}')
+        WHERE uuid = '00000000-0000-4000-8000-000000000003'
+          AND name IN ('Cara Gamma', 'Dora Delta')
+        ORDER BY name
+      `),
+      [{ name: "Cara Gamma" }, { name: "Dora Delta" }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT itsc
+        FROM read_parquet('${parquet(second, "instructor-identities")}')
+        WHERE uuid = '00000000-0000-4000-8000-000000000005'
+      `),
+      [{ itsc: "dora" }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("split corrections preserve their identity and association once", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-split-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { lowInstructor: "Cara Split" });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    const sourceCommit = "0123456789abcdef0123456789abcdef01234567";
+    const newUuid = "00000000-0000-4000-8000-000000000099";
+    await writeFile(
+      corrections,
+      JSON.stringify({
+        events: [
+          {
+            type: "split",
+            sourceUuid: "00000000-0000-4000-8000-000000000003",
+            newUuid,
+            sourceCommit,
+            newIdentity: {
+              uuid: newUuid,
+              canonicalName: "Cara Gamma",
+              aliases: [
+                {
+                  name: "Cara Split",
+                  source: "ranking-generation",
+                  sourceCommit,
+                  sourceFile: "instructor-ratings.parquet",
+                },
+              ],
+            },
+            affectedAssociations: [
+              {
+                sourceName: "Cara Split",
+                termCode: "2510",
+                courseCode: "COMP 2000",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+
+    assert.deepEqual(
+      await rows(`
+        SELECT DISTINCT uuid
+        FROM read_parquet('${parquet(second, "course-instructors")}')
+        WHERE subject = 'COMP' AND code = '2000'
+      `),
+      [{ uuid: newUuid }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-identity-events")}') WHERE event_type = 'split')::INTEGER AS events,
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}'))::INTEGER AS associations,
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}') WHERE correction_type = 'split' AND target_uuid = '${newUuid}')::INTEGER AS typed_split,
+          (SELECT count(*) FROM read_parquet('${parquet(second, "instructor-aliases")}') WHERE uuid = '${newUuid}')::INTEGER AS aliases
+      `),
+      [{ events: 1, associations: 1, typed_split: 1, aliases: 1 }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("a split correction without target evidence fails publication", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-split-fail-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    const sourceCommit = "0123456789abcdef0123456789abcdef01234567";
+    const newUuid = "00000000-0000-4000-8000-000000000099";
+    await writeFile(
+      corrections,
+      JSON.stringify({
+        events: [
+          {
+            type: "split",
+            sourceUuid: "00000000-0000-4000-8000-000000000003",
+            newUuid,
+            sourceCommit,
+            newIdentity: {
+              uuid: newUuid,
+              canonicalName: "Cara Gamma",
+              aliases: [
+                {
+                  name: "Cara Gamma",
+                  source: "ranking-generation",
+                  sourceCommit,
+                },
+              ],
+            },
+            affectedAssociations: [
+              {
+                sourceName: "Cara Gamma",
+                termCode: "2510",
+                courseCode: "COMP 2000",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    assert.throws(
+      () =>
+        runPipeline(dataDir, join(temp, "failed"), {
+          RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+          RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+        }),
+      /Ambiguous Instructor identity: Cara Gamma, 2510, COMP 2000/,
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("association calibrations reassign names within Course scopes", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-calibration-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    await writeFile(
+      corrections,
+      JSON.stringify({
+        calibrations: [
+          {
+            sourceName: "Cara Gamma",
+            courseCode: "COMP 2000",
+            instructorUuid: "00000000-0000-4000-8000-000000000006",
+            sourceCommit: "0123456789abcdef0123456789abcdef01234567",
+          },
+          {
+            sourceName: "Alice Beatrice ALPHA",
+            courseCode: "COMP 1000",
+            termCode: "2510",
+            instructorUuid: "00000000-0000-4000-8000-000000000006",
+            sourceCommit: "0123456789abcdef0123456789abcdef01234567",
+          },
+        ],
+      }),
+    );
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+    });
+
+    assert.deepEqual(
+      await rows(`
+        SELECT DISTINCT code, uuid, name
+        FROM read_parquet('${parquet(second, "course-instructors")}')
+        WHERE subject = 'COMP' AND code IN ('1000', '2000')
+          AND uuid IN (
+            '00000000-0000-4000-8000-000000000001',
+            '00000000-0000-4000-8000-000000000003',
+            '00000000-0000-4000-8000-000000000006'
+          )
+        ORDER BY code
+      `),
+      [
+        {
+          code: "1000",
+          uuid: "00000000-0000-4000-8000-000000000006",
+          name: "Eve Epsilon",
+        },
+        {
+          code: "2000",
+          uuid: "00000000-0000-4000-8000-000000000006",
+          name: "Eve Epsilon",
+        },
+      ],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT count(DISTINCT lower(name))::INTEGER AS count
+        FROM read_parquet('${parquet(second, "instructor-aliases")}')
+        WHERE uuid = '00000000-0000-4000-8000-000000000006'
+          AND lower(name) IN (
+            'alpha, alice beatrice',
+            'alice beatrice alpha',
+            'cara gamma'
+          )
+      `),
+      [{ count: 3 }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT correction_type, target_uuid, term_code, course_code
+        FROM read_parquet('${parquet(second, "instructor-split-affected-associations")}')
+        ORDER BY correction_type, target_uuid, term_code NULLS LAST
+      `),
+      [
+        {
+          correction_type: "calibration",
+          target_uuid: "00000000-0000-4000-8000-000000000006",
+          term_code: "2510",
+          course_code: "COMP 1000",
+        },
+        {
+          correction_type: "calibration",
+          target_uuid: "00000000-0000-4000-8000-000000000006",
+          term_code: null,
+          course_code: "COMP 2000",
+        },
+      ],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("same-name Instructors stay distinct when split history identifies their associations", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true });
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      "resolved",
+    );
+    const output = runPipeline(dataDir, join(temp, "out"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+
+    assert.deepEqual(
+      await rows(`
+        SELECT uuid, code
+        FROM read_parquet('${parquet(output, "course-instructors")}')
+        WHERE name = 'Alex Lee'
+        ORDER BY code
+      `),
+      [
+        {
+          uuid: "00000000-0000-4000-8000-000000000091",
+          code: "1000",
+        },
+        {
+          uuid: "00000000-0000-4000-8000-000000000092",
+          code: "2000",
+        },
+      ],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT
+          max(bayesian) FILTER (
+            WHERE uuid = '00000000-0000-4000-8000-000000000091'
+          ) > max(bayesian) FILTER (
+            WHERE uuid = '00000000-0000-4000-8000-000000000092'
+          ) AS evidence_stays_distinct
+        FROM read_parquet('${parquet(output, "instructor-ratings")}')
+        WHERE name = 'Alex Lee' AND criterion = 'instructor'
+      `),
+      [{ evidence_stays_distinct: true }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("same-name merge history resolves new associations to the survivor UUID", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true });
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      "merged",
+    );
+    const output = runPipeline(dataDir, join(temp, "out"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    assert.deepEqual(
+      await rows(`
+        SELECT DISTINCT uuid
+        FROM read_parquet('${parquet(output, "course-instructors")}')
+        WHERE name = 'Alex Lee'
+      `),
+      [{ uuid: "00000000-0000-4000-8000-000000000091" }],
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("new same-name associations fail closed without durable evidence", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true, extraSameName: true });
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      "resolved",
+    );
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "out"),
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stderr}${result.stdout}`, /Ambiguous Instructor/);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("name-only split evidence does not assign same-name Instructor UUIDs", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true });
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      "wildcard",
+    );
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "out"),
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(
+      `${result.stderr}${result.stdout}`,
+      /Invalid Instructor association correction/,
+    );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("same-name Instructors fail closed without distinguishing history", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-same-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true });
+    const previous = await makePreviousGeneration(
+      join(temp, "previous"),
+      undefined,
+      undefined,
+      "ambiguous",
+    );
+    const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        RANKINGS_OUTPUT_DIR: join(temp, "out"),
+        RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stderr}${result.stdout}`, /Ambiguous Instructor/);
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
@@ -687,14 +1711,34 @@ test("the pipeline rejects conflicting cross-campus Course metadata", async () =
   }
 });
 
-test("the pipeline rejects unmatched Instructor names", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-unmatched-"));
+test("the pipeline excludes the roster-disproved UST Space review", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-false-review-"));
   try {
     const dataDir = join(temp, "data");
-    await makeFixtures(dataDir);
+    await makeFixtures(dataDir, { falseReview: true });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const outputDir = runPipeline(dataDir, temp, {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    const associations = await rows(
+      `SELECT * FROM read_parquet('${parquet(outputDir, "course-instructors")}') WHERE name = 'LAI, Priscilla'`,
+    );
+    assert.deepEqual(associations, []);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("the pipeline reports all ambiguous Instructor associations", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-report-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { sameName: true });
     const previous = await makePreviousGeneration(
       join(temp, "previous"),
       "Cara Gamma",
+      undefined,
+      "ambiguous",
     );
     const result = spawnSync(process.execPath, [join(root, "src", "run.ts")], {
       cwd: root,
@@ -706,10 +1750,19 @@ test("the pipeline rejects unmatched Instructor names", async () => {
         RANKINGS_PREVIOUS_GENERATION_DIR: previous,
       },
     });
+    const output = `${result.stderr}${result.stdout}`;
     assert.notEqual(result.status, 0);
     assert.match(
-      `${result.stderr}${result.stdout}`,
-      /Unmatched Instructor identity/,
+      output,
+      /Instructor identity validation failed with 2 errors:/,
+    );
+    assert.match(
+      output,
+      /Ambiguous Instructor identity: Alex Lee, 2510, COMP 1000/,
+    );
+    assert.match(
+      output,
+      /Ambiguous Instructor identity: Alex Lee, 2510, COMP 2000/,
     );
   } finally {
     await rm(temp, { recursive: true, force: true });

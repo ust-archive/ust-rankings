@@ -27,3 +27,7 @@ Triage uses the five default canonical labels. See `docs/agents/triage-labels.md
 ### Domain docs
 
 Domain documentation uses the single-context layout. See `docs/agents/domain.md`.
+
+### Preview data
+
+When running a preview for review, use real immutable Hugging Face data and the unified Schedule view, not fixtures. See `docs/agents/preview-data.md`.

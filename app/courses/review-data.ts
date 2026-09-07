@@ -1,7 +1,11 @@
+import { unstable_cache } from "next/cache";
 import {
   ContributionsUnavailableError,
+  normalizePublicReview,
   type PublicReview,
   type ReviewListQuery,
+  type ReviewOrder,
+  readWithReviewCache,
 } from "@/lib/contributions/reviews";
 
 type ReadReviews = (
@@ -13,6 +17,11 @@ const readReviews: ReadReviews = async (query, viewerUserId) =>
   (await import("@/lib/contributions/postgres"))
     .getReviewService()
     .listReviews(query, viewerUserId);
+
+const readCachedReviews = unstable_cache(readReviews, ["reviews"], {
+  revalidate: 3600,
+  tags: ["contributions"],
+});
 
 async function optionalAuthenticatedUserId() {
   if (!process.env.AUTH_SECRET) return undefined;
@@ -30,8 +39,13 @@ export async function loadReviews(
 ) {
   const viewerUserId = await identify().catch(() => undefined);
   try {
+    const reviews = await readWithReviewCache(
+      read === readReviews,
+      () => readCachedReviews(query, viewerUserId),
+      () => read(query, viewerUserId),
+    );
     return {
-      reviews: await read(query, viewerUserId),
+      reviews: reviews.map(normalizePublicReview),
       signedIn: Boolean(viewerUserId),
       unavailable: false as const,
     };
@@ -50,6 +64,10 @@ export function loadCourseReviews(
   coursePrefix: string,
   courseNumber: string,
   read?: ReadReviews,
+  order?: ReviewOrder,
 ) {
-  return loadReviews({ type: "course", coursePrefix, courseNumber }, read);
+  return loadReviews(
+    { type: "course", coursePrefix, courseNumber, order },
+    read,
+  );
 }

@@ -1,17 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { loadMoreRankings } from "@/app/rankings/actions";
-import { RankingResultCard } from "@/app/rankings/ranking-result-card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
-import type {
-  CourseRanking,
-  InstructorRanking,
-  RankingsQuery,
-} from "@/lib/rankings/server";
-
-type Ranking = CourseRanking | InstructorRanking;
+import type { RankingsQuery } from "@/lib/rankings/server";
 
 export function RankingPagination({
   fallbackHref,
@@ -26,7 +18,6 @@ export function RankingPagination({
   initialResultCount: number;
   query: RankingsQuery;
 }) {
-  const [additionalResults, setAdditionalResults] = useState<Ranking[]>([]);
   const [nextCursor, setNextCursor] = useState(initialNextCursor);
   const [pageCount, setPageCount] = useState(initialPages);
   const [resultCount, setResultCount] = useState(initialResultCount);
@@ -45,11 +36,35 @@ export function RankingPagination({
         loadingCursor.current = nextCursor;
         startTransition(async () => {
           try {
-            const page = await loadMoreRankings({
-              ...query,
-              cursor: nextCursor,
-            });
-            setAdditionalResults((current) => [...current, ...page.results]);
+            const nextQuery = { ...query, cursor: nextCursor };
+            const page =
+              query.entity === "course"
+                ? await import("@/lib/browser-query/client").then(
+                    async ({ queryCourseRankings }) => {
+                      const result = await queryCourseRankings({
+                        ...nextQuery,
+                        entity: "course",
+                      });
+                      return {
+                        nextCursor: result.nextCursor,
+                        results: result.results,
+                        termCode: result.population.termCode,
+                      };
+                    },
+                  )
+                : await import("@/lib/browser-query/client").then(
+                    async ({ queryInstructorRankings }) => {
+                      const result = await queryInstructorRankings({
+                        ...nextQuery,
+                        entity: "instructor",
+                      });
+                      return {
+                        nextCursor: result.nextCursor,
+                        results: result.results,
+                        termCode: result.population.termCode,
+                      };
+                    },
+                  );
             setResultCount((current) => current + page.results.length);
             setError(false);
             setNextCursor(page.nextCursor);
@@ -74,44 +89,36 @@ export function RankingPagination({
   }, [nextCursor, pageCount, query]);
 
   return (
-    <>
-      {additionalResults.map((result) => (
-        <RankingResultCard
-          key={result.entity === "course" ? result.courseCode : result.uuid}
-          result={result}
-        />
-      ))}
-      <li className="list-none">
-        {error ? (
-          <Alert variant="destructive">
-            <h2 className="font-medium leading-none tracking-tight">
-              More rankings could not be loaded
-            </h2>
-            <AlertDescription>
-              Reload the page to continue from the current cursor.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <div aria-hidden="true" className="h-px" ref={sentinel} />
-        {isPending ? (
-          <div className="flex items-center justify-center gap-2 py-4 text-sm text-slate-600">
-            <Spinner aria-hidden="true" />
-            Loading more rankings…
-          </div>
-        ) : null}
-        <p aria-live="polite" className="sr-only">
-          {isPending
-            ? "Loading more rankings…"
-            : nextCursor
-              ? `${resultCount} rankings loaded. More load automatically while scrolling.`
-              : `All ${resultCount} rankings loaded.`}
-        </p>
-        {fallbackHref ? (
-          <noscript>
-            <a href={fallbackHref}>Next 100 Results</a>
-          </noscript>
-        ) : null}
-      </li>
-    </>
+    <li className="list-none">
+      {error ? (
+        <Alert variant="destructive">
+          <h2 className="font-medium leading-none tracking-tight">
+            More rankings could not be loaded
+          </h2>
+          <AlertDescription>
+            Reload the page to continue from the current cursor.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <div aria-hidden="true" className="h-px" ref={sentinel} />
+      {isPending ? (
+        <div className="flex items-center justify-center gap-2 py-4 text-sm text-slate-600">
+          <Spinner aria-hidden="true" />
+          Loading more rankings…
+        </div>
+      ) : null}
+      <p aria-live="polite" className="sr-only">
+        {isPending
+          ? "Loading more rankings…"
+          : nextCursor
+            ? `${resultCount} rankings loaded. More load automatically while scrolling.`
+            : `All ${resultCount} rankings loaded.`}
+      </p>
+      {fallbackHref ? (
+        <noscript>
+          <a href={fallbackHref}>Next 100 Results</a>
+        </noscript>
+      ) : null}
+    </li>
   );
 }

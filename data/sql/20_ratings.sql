@@ -4,13 +4,16 @@
 -- Outputs: criterion_stats, course_ratings, instructor_ratings, and the two
 --          current-term snapshot views.
 --
--- Rating parameters are kept together so the model constants are visible and
--- can be evaluated by the deferred walk-forward backtest.
+-- Rating parameters are kept together so production and walk-forward
+-- validation execute the same calculation with explicit candidate settings.
 CREATE OR REPLACE TABLE ranking_parameters AS
 SELECT
-  0.65::DOUBLE AS timeliness_base,
+  getvariable('timeliness_base')::DOUBLE AS timeliness_base,
   4::INTEGER AS timeliness_term_span,
-  12::DOUBLE AS course_instructor_multiplier;
+  getvariable('course_instructor_multiplier')::DOUBLE
+    AS course_instructor_multiplier,
+  getvariable('context_affects_uncertainty')::BOOLEAN
+    AS context_affects_uncertainty;
 
 -- Rolling weighted source distributions prevent future terms from influencing
 -- historical standardized scores.
@@ -83,13 +86,15 @@ WITH expanded AS (
     ) AS timeliness,
     CASE WHEN EXISTS (
       SELECT 1
-      FROM observation_instructors
-      JOIN course_term_instructors USING (name)
-      WHERE observation_instructors.observation_id = observations.observation_id
-        AND course_term_instructors.subject = course_terms.subject
-        AND course_term_instructors.code = course_terms.code
-        AND course_term_instructors.term_num = course_terms.term_num
-    ) THEN parameters.course_instructor_multiplier ELSE 1 END AS instructor_multiplier
+      FROM observation_instructor_identities AS evidence
+      JOIN instructor_identity_assignments AS current
+        ON current.uuid = evidence.uuid
+      WHERE evidence.observation_id = observations.observation_id
+        AND current.subject = course_terms.subject
+        AND current.code = course_terms.code
+        AND current.term_num = course_terms.term_num
+    ) THEN parameters.course_instructor_multiplier ELSE 1 END AS instructor_multiplier,
+    parameters.context_affects_uncertainty
   FROM course_terms
   JOIN observations
     ON observations.subject = course_terms.subject
@@ -99,7 +104,11 @@ WITH expanded AS (
 ), weighted AS (
   SELECT
     *,
-    weight * timeliness * instructor_multiplier AS effective_weight
+    weight * timeliness * instructor_multiplier AS rating_weight,
+    weight * timeliness * CASE
+      WHEN context_affects_uncertainty THEN instructor_multiplier
+      ELSE 1
+    END AS confidence_weight
   FROM expanded
 )
 SELECT
@@ -107,24 +116,30 @@ SELECT
   code,
   term_num,
   criterion,
-  sum(rating * effective_weight) / nullif(sum(effective_weight), 0) AS raw_rating,
-  sum(effective_weight) AS confidence,
+  sum(rating * rating_weight) / nullif(sum(rating_weight), 0) AS raw_rating,
+  sum(confidence_weight) AS confidence,
   sum(samples) FILTER (WHERE observation_term_num = term_num) AS samples,
   sum(samples) AS cumulative_samples,
-  sum(samples * timeliness * instructor_multiplier) AS effective_samples
+  sum(
+    samples * timeliness * CASE
+      WHEN context_affects_uncertainty THEN instructor_multiplier
+      ELSE 1
+    END
+  ) AS effective_samples
 FROM weighted
 GROUP BY subject, code, term_num, criterion
-HAVING sum(effective_weight) > 0;
+HAVING sum(rating_weight) > 0;
 
 -- Instructor histories use the same time decay but no course-context multiplier.
 CREATE OR REPLACE TABLE instructor_terms AS
-SELECT entities.name, terms.term_num
-FROM instructor_entities AS entities
+SELECT entities.uuid, entities.name, terms.term_num
+FROM resolved_instructor_entities AS entities
 JOIN terms ON terms.term_num >= entities.min_term_num;
 
 CREATE OR REPLACE TABLE instructor_rating_base AS
 WITH expanded AS (
   SELECT
+    instructor_terms.uuid,
     instructor_terms.name,
     instructor_terms.term_num,
     observations.criterion,
@@ -138,7 +153,7 @@ WITH expanded AS (
         / parameters.timeliness_term_span
     ) AS timeliness
   FROM instructor_terms
-  JOIN observation_instructors USING (name)
+  JOIN observation_instructor_identities USING (uuid)
   JOIN observations USING (observation_id)
   CROSS JOIN ranking_parameters AS parameters
   WHERE observations.term_num <= instructor_terms.term_num
@@ -147,6 +162,7 @@ WITH expanded AS (
   FROM expanded
 )
 SELECT
+  uuid,
   name,
   term_num,
   criterion,
@@ -156,7 +172,7 @@ SELECT
   sum(samples) AS cumulative_samples,
   sum(samples * timeliness) AS effective_samples
 FROM weighted
-GROUP BY name, term_num, criterion
+GROUP BY uuid, name, term_num, criterion
 HAVING sum(effective_weight) > 0;
 
 -- Standardization is an affine transform shared by a criterion/output term, so
@@ -181,7 +197,7 @@ WHERE stats.stddev > 0
 UNION ALL
 SELECT
   'instructor',
-  base.name,
+  base.uuid,
   NULL,
   NULL,
   base.name,
@@ -294,13 +310,13 @@ WITH evidence_priors AS (
 ), instructor_grid AS (
   SELECT
     'instructor' AS family,
-    entities.name AS entity_id,
+    entities.uuid AS entity_id,
     NULL::VARCHAR AS subject,
     NULL::VARCHAR AS code,
     entities.name,
     terms.term_num,
     criteria.criterion
-  FROM instructor_entities AS entities
+  FROM resolved_instructor_entities AS entities
   JOIN terms ON terms.term_num >= entities.min_term_num
   JOIN evidence_priors AS criteria
     ON criteria.family = 'instructor' AND criteria.term_num = terms.term_num
@@ -365,9 +381,10 @@ WHERE family = 'course';
 
 CREATE OR REPLACE TABLE instructor_ratings AS
 SELECT
+  ratings.entity_id AS uuid,
   ratings.name,
   ratings.term_num,
-  schedule.name IS NOT NULL AS is_teaching,
+  schedule.uuid IS NOT NULL AS is_teaching,
   ratings.criterion,
   ratings.rating,
   ratings.bayesian,
@@ -378,10 +395,9 @@ SELECT
   ratings.reliability,
   ratings.posterior_stddev
 FROM scored_entity_ratings AS ratings
-LEFT JOIN (
-  SELECT DISTINCT name, term_num
-  FROM schedule_teaching_assignments
-) AS schedule USING (name, term_num)
+LEFT JOIN resolved_schedule_teaching_assignments AS schedule
+  ON schedule.uuid = ratings.entity_id
+ AND schedule.term_num = ratings.term_num
 WHERE ratings.family = 'instructor';
 
 -- Snapshot exports are the latest dense term only; history remains in the marts.

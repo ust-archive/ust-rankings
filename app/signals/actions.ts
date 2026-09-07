@@ -1,5 +1,6 @@
 "use server";
 
+import { updateTag } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { authenticatedUserId } from "@/lib/auth/user";
@@ -162,6 +163,7 @@ export async function setThumbsSignal(formData: FormData) {
   } catch (error) {
     handleWriteError(error, path, target);
   }
+  updateTag("contributions");
   redirect(destination(path, target, { type: "signal", value: "updated" }));
 }
 
@@ -193,5 +195,6 @@ export async function setEmojiSignal(formData: FormData) {
   } catch (error) {
     handleWriteError(error, path, target);
   }
+  updateTag("contributions");
   redirect(destination(path, target, { type: "signal", value: "updated" }));
 }

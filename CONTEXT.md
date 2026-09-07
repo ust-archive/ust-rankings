@@ -56,6 +56,22 @@ _Avoid_: Course, Course Offering, Section
 A numeric identifier assigned to a Class, unique within a Term, such as 1004. It may be shortened to Number when the class context is clear.
 _Avoid_: Section
 
+**Pre-enrollment**:
+Enrollment in a Class assigned by the Academic Registry or a School or Program Office before normal Class enrollment.
+
+**Queue Activation**:
+The moment a Class's waitlist first becomes non-empty during normal Class enrollment. Earlier Pre-enrollment is baseline occupancy, not Queue Activation.
+
+**Reserved Quota**:
+Places within a Class's capacity set aside for an eligible student population.
+
+**Historical Queue Evidence**:
+A confidence-qualified estimate of how often comparable Classes had sufficient aggregate waitlist reduction for a given queue position by the add/drop deadline. It does not estimate an individual student's enrollment likelihood.
+_Avoid_: Enrollment Probability, Enrollment Likelihood
+
+**Waitlist Plan**:
+One Course Offering together with the Classes and queue positions a student requires. A Waitlist Plan has favorable joint Historical Queue Evidence only when every selected Class has sufficient aggregate waitlist reduction. Alternative section combinations are separate Waitlist Plans.
+
 **Instructor**:
 A person who teaches a Class, distinct from any name or identifier used to refer to them.
 _Avoid_: Professor, Teacher
@@ -67,10 +83,20 @@ An immutable opaque identifier assigned to every Instructor. It remains the Inst
 The HKUST account identifier used, when available, to distinguish an Instructor. An Instructor has at most one current ITSC.
 
 **Canonical Instructor Name**:
-The preferred public display spelling of an Instructor's name. Schedule and UST Space spellings take precedence; an SFQ spelling is used only when neither is available.
+The preferred public display spelling of an Instructor's name. Schedule and UST Space spellings take precedence; an SFQ spelling is used only when neither is available. Several Instructors may share one Canonical Instructor Name; the name never establishes identity.
 
 **Instructor Alias**:
-A source-observed spelling associated with an Instructor. An alias is not globally unique and does not alone establish Instructor identity.
+A source-observed spelling associated with an Instructor. An alias is not globally unique and does not alone establish Instructor identity. When names collide, identity requires durable evidence such as an ITSC or identity-history association to a specific Course and Term.
+
+**Instructor Identity History**:
+The append-only record of ITSC additions, merges, splits, and Instructor Association Corrections carried across Ranking Generations.
+
+**Instructor Association Correction**:
+An append-only Course or Course Offering scope connecting an Instructor Alias to an Instructor UUID. It records either an association affected by a split or an Instructor Association Calibration.
+
+**Instructor Association Calibration**:
+An operator-reviewed Instructor Association Correction. A Course calibration applies to every Term; a Course Offering calibration applies only to its Term. It corrects source spelling or association evidence without merging the Instructors who otherwise use that alias.
+_Avoid_: Instructor Merge when only an association is corrected
 
 **TBA**:
 A special value indicating that no Instructor is specified for a Class. It does not identify an Instructor.
@@ -117,6 +143,9 @@ An optional Term and Section that make a Review more specific. A Term qualifies 
 
 **Review Revision**:
 An immutable version of a Review created whenever its author publishes an edit. A Review points to one current Review Revision while retaining its earlier Revisions internally.
+
+**Review Order**:
+The User-selected ordering of a multi-Review list: Top, Popular, or Recent. Top is the default.
 
 **Identity-Hidden Review Revision**:
 A Review Revision that displays no author publicly while retaining its internal User link for authorized moderation, security, and legal purposes.

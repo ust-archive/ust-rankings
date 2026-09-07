@@ -29,6 +29,14 @@ export function letterGrade(percentile: number) {
   return "F";
 }
 
+export function histogramPercentiles(bins: number[], count: number) {
+  let cumulative = 0;
+  return bins.map((bin) => {
+    cumulative += bin;
+    return count ? cumulative / count : 0;
+  });
+}
+
 export function gradeColor(ratio: number): RankingColor {
   const stops = [
     { ratio: 0, color: [237, 27, 47] as RankingColor },

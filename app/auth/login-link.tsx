@@ -10,6 +10,7 @@ export function LoginLink({ children }: { children: ReactNode }) {
     <Link
       className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600"
       href={`/auth/login?r=${encodeURIComponent(pathname)}`}
+      prefetch={false}
     >
       {children}
     </Link>

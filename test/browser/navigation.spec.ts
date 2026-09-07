@@ -2,7 +2,10 @@ import { expect, type Page, test } from "@playwright/test";
 
 declare global {
   interface Window {
+    navigationClickAt: number;
+    navigationFeedbackDelay: number;
     viewTransitionCount: number;
+    viewTransitionDelay: number;
   }
 }
 
@@ -45,7 +48,64 @@ async function expectRankingRestored(
     .toBeGreaterThan(rankingScroll - 300);
 }
 
+test("entity navigation does not wait for destination browser data", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const startViewTransition = document.startViewTransition.bind(document);
+    window.viewTransitionDelay = Number.POSITIVE_INFINITY;
+    document.startViewTransition = (...args) => {
+      window.viewTransitionDelay = performance.now() - window.navigationClickAt;
+      return startViewTransition(...args);
+    };
+  });
+  await page.route("**/courses/**", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    await route.continue();
+  });
+  await page.route("**/schedule-courses.parquet", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    await route.continue();
+  });
+  await page.goto(rankingsUrl);
+  const target = rankingLinks(page).first();
+  await expect(target).toBeVisible();
+  const href = await target.getAttribute("href");
+
+  await target.evaluate((link) => {
+    window.navigationClickAt = performance.now();
+    window.navigationFeedbackDelay = Number.POSITIVE_INFINITY;
+    const progress = document.getElementById("navigation-progress");
+    new MutationObserver((_, observer) => {
+      if (!progress?.querySelector('[role="progressbar"]')) return;
+      window.navigationFeedbackDelay =
+        performance.now() - window.navigationClickAt;
+      observer.disconnect();
+    }).observe(progress as HTMLElement, { childList: true, subtree: true });
+    (link as HTMLElement).click();
+  });
+
+  await expect
+    .poll(() => page.evaluate(() => window.navigationFeedbackDelay), {
+      timeout: 1_000,
+    })
+    .not.toBe(Number.POSITIVE_INFINITY);
+  expect(
+    await page.evaluate(() => window.navigationFeedbackDelay),
+  ).toBeLessThan(100);
+  await expect
+    .poll(() => page.evaluate(() => window.viewTransitionDelay), {
+      timeout: 5_000,
+    })
+    .not.toBe(Number.POSITIVE_INFINITY);
+  expect(await page.evaluate(() => window.viewTransitionDelay)).toBeLessThan(
+    2_500,
+  );
+  await expect(page).toHaveURL(href ?? "");
+});
+
 test("entity navigation preserves Ranking history and provenance", async ({
+  browserName,
   context,
   page,
 }) => {
@@ -82,9 +142,10 @@ test("entity navigation preserves Ranking history and provenance", async ({
     { times: 1 },
   );
   const navigation = target.click();
-  await expect(
-    page.getByRole("progressbar", { name: "Loading page" }),
-  ).toBeVisible();
+  if (browserName === "chromium")
+    await expect(
+      page.getByRole("progressbar", { name: "Loading page" }),
+    ).toBeVisible();
   await expect(
     page.getByRole("heading", { level: 1, name: "UST Rankings" }),
   ).toBeVisible();
@@ -139,6 +200,25 @@ test("direct, modified, reloaded, and restored Details visits have truthful prov
   await expect(page.getByRole("button", { name: "Back" })).toHaveCount(0);
 });
 
+test("authentication links do not prefetch sign-in routes", async ({
+  page,
+}) => {
+  const authenticationPrefetches: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (
+      request.headers()["next-router-prefetch"] === "1" &&
+      ["/account", "/auth/login"].includes(path)
+    )
+      authenticationPrefetches.push(request.url());
+  });
+  await page.goto("/courses/comp/2000");
+  await expect(page.getByRole("heading", { name: "Community" })).toBeVisible();
+  await page.getByRole("link", { name: "Account" }).hover();
+  await page.waitForTimeout(500);
+  expect(authenticationPrefetches).toEqual([]);
+});
+
 test("Details hierarchy receives a vertical transition", async ({ page }) => {
   await page.goto("/courses/comp/2000");
   await page.addStyleTag({
@@ -177,6 +257,59 @@ test("hierarchical navigation works without View Transitions", async ({
   await expect(page).toHaveURL(/\/courses\/comp\/2000\/2510\/l1/i);
   await expect(page.getByRole("button", { name: "Back" })).toBeVisible();
   await context.close();
+});
+
+test("SEO discovery routes expose the canonical sitemap", async ({
+  request,
+}) => {
+  const robots = await request.get("/robots.txt");
+  expect(robots.status()).toBe(200);
+  expect(await robots.text()).toContain(
+    "Sitemap: https://ust-rankings.com/sitemap.xml",
+  );
+
+  const sitemap = await request.get("/sitemap.xml");
+  expect(sitemap.status()).toBe(200);
+  const xml = await sitemap.text();
+  for (const path of [
+    "/rankings/instructors",
+    "/rankings/courses",
+    "/schedule",
+    "/waitlist",
+    "/faq",
+    "/privacy",
+  ])
+    expect(xml).toContain(`<loc>https://ust-rankings.com${path}</loc>`);
+  expect(xml).toContain(
+    "<loc>https://ust-rankings.com/courses/COMP/2000</loc>",
+  );
+  expect(xml).toContain(
+    "<loc>https://ust-rankings.com/instructors/00000000-0000-4000-8000-000000000001</loc>",
+  );
+  expect(xml).not.toContain(
+    "<loc>https://ust-rankings.com/instructors/00000000-0000-4000-8000-000000000002</loc>",
+  );
+  expect(xml).not.toContain("/account");
+
+  for (const [path, title, description] of [
+    [
+      "/rankings/instructors",
+      "Instructor Rankings | UST Rankings",
+      "Compare HKUST Instructor rankings using student reviews and official SFQ evidence.",
+    ],
+    [
+      "/rankings/courses",
+      "Course Rankings | UST Rankings",
+      "Compare HKUST Course rankings using student reviews and official SFQ evidence.",
+    ],
+  ]) {
+    const html = await (await request.get(path)).text();
+    expect(html).toContain(`<title>${title}</title>`);
+    expect(html).toContain(`<meta name="description" content="${description}"`);
+    expect(html).toContain(
+      `<link rel="canonical" href="https://ust-rankings.com${path}"`,
+    );
+  }
 });
 
 test("reduced motion keeps navigation functional without effective animation", async ({

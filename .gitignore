@@ -13,8 +13,11 @@
 # generated output
 /.next/
 /.next-playwright/
+/.next-preview/
+/.preview/
 /out/
 /data/out/
+/public/duckdb/
 
 # production
 /build

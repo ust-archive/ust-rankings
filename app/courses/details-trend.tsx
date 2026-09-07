@@ -29,6 +29,16 @@ const criteria: Array<[RankingCriterion, string, string]> = [
   ["instructor", "Instructor SFQ", "#0891b2"],
 ];
 
+function CriterionMarker({ color }: { color: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="size-2 shrink-0 rounded-full"
+      style={{ backgroundColor: color }}
+    />
+  );
+}
+
 const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const count = new Intl.NumberFormat("en-US");
 
@@ -103,10 +113,12 @@ export function DetailsTrend({
         variant="outline"
       >
         {criteria.map(([criterion, label, color]) => (
-          <ToggleGroupItem className="gap-2" key={criterion} value={criterion}>
-            <span aria-hidden="true" style={{ color }}>
-              ●
-            </span>
+          <ToggleGroupItem
+            className="gap-2 data-[state=on]:border-slate-950 data-[state=on]:bg-slate-950 data-[state=on]:text-white"
+            key={criterion}
+            value={criterion}
+          >
+            <CriterionMarker color={color} />
             <span>{label}</span>
           </ToggleGroupItem>
         ))}
@@ -118,7 +130,8 @@ export function DetailsTrend({
         >
           <svg
             aria-hidden="true"
-            className="h-auto w-full"
+            className="h-44 w-full sm:h-auto"
+            preserveAspectRatio="none"
             viewBox={`0 0 ${width} ${height}`}
           >
             {[0, 0.5, 1].map((step) => {
@@ -135,7 +148,7 @@ export function DetailsTrend({
                   />
                   <text
                     fill="#64748b"
-                    fontSize="11"
+                    fontSize="12"
                     textAnchor="end"
                     x={left - 7}
                     y={y + 4}
@@ -156,7 +169,7 @@ export function DetailsTrend({
             />
             <text
               fill="#475569"
-              fontSize="10"
+              fontSize="11"
               textAnchor="end"
               x={width - right - 4}
               y={Math.max(top + 11, averageY - 5)}
@@ -247,9 +260,7 @@ export function DetailsTrend({
                 return (
                   <th className="px-3 py-2" key={criterion} scope="col">
                     <span className="inline-flex items-center gap-2">
-                      <span aria-hidden="true" style={{ color }}>
-                        ●
-                      </span>
+                      <CriterionMarker color={color} />
                       {label}
                     </span>
                   </th>

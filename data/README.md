@@ -34,6 +34,7 @@ layout; authentication is then unnecessary:
 ```text
 catalog/courses.parquet
 schedule/{classes,courses}.parquet
+schedule/canonical/{class_records,course_records}.parquet # data:backtest only
 ust-space/reviews.parquet
 sfq/canonical/{section_records,instructor_records}.parquet
 ```
@@ -103,7 +104,15 @@ ORDER BY r.rank, a.subject, a.code;
 ```
 
 Run `npm run type-check` and `npm run test` for static analysis and the
-end-to-end pipeline test. Deferred model validation is tracked in
-[#99](https://github.com/ust-archive/ust-rankings/issues/99).
+end-to-end pipeline test. Walk-forward model validation is available through
+[`npm run data:backtest`](../docs/data-pipeline.md#walk-forward-model-validation).
+The backtest report also contains analysis-only Course and Instructor results.
+The primary Course unit gives equal weight to each
+`Course Code × outcome Term × criterion`. The primary Instructor unit gives
+equal weight to each `Instructor UUID × outcome Term`. Canonical Schedule Class
+records add enrollment, capacity, Section, and teaching-team context. These
+fields do not change the production output files.
 
 The upstream dataset cards declare `license: other`; two inputs are private.
+
+Identity history is projected by the shared `lib/instructor-identity.ts` module. The fourth identity artifact retains its storage filename but now contains typed Instructor Association Corrections: `correction_type`, `source_commit`, `target_uuid`, `source_name`, optional `term_code`, and `course_code`. Accepted Course–Instructor UUIDs are authoritative; the `name` column is display data.

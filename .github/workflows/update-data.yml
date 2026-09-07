@@ -1,12 +1,22 @@
 name: Update data
 
 on:
-  push:
-    branches: [master]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   schedule:
-    # 04:21 HKT daily.
     - cron: "21 20 * * *"
   workflow_dispatch:
+    inputs:
+      action:
+        description: Publish current sources or roll back pointers
+        type: choice
+        options: [publish, rollback]
+        default: publish
+      generation:
+        description: Existing generation SHA required for rollback
+        type: string
+        required: false
 
 concurrency:
   group: update-data
@@ -14,10 +24,17 @@ concurrency:
 
 jobs:
   update:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'master')
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-node@v6
         with:
@@ -33,61 +50,120 @@ jobs:
           npm install --global npm@12.0.2
           npm ci
 
-      - name: Load previous Instructor identities
+      - name: Roll back Server Index and Delivery pointer
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'rollback'
+        env:
+          DATA_SPACES_ACCESS_KEY_ID: ${{ secrets.DATA_SPACES_ACCESS_KEY_ID }}
+          DATA_SPACES_SECRET_ACCESS_KEY: ${{ secrets.DATA_SPACES_SECRET_ACCESS_KEY }}
+          DATA_SPACES_BUCKET: ${{ vars.DATA_SPACES_BUCKET }}
+          DATA_SPACES_CDN_BASE_URL: ${{ vars.DATA_SPACES_CDN_BASE_URL }}
+          DATA_SPACES_ENDPOINT: ${{ vars.DATA_SPACES_ENDPOINT }}
+          DATA_SPACES_REGION: ${{ vars.DATA_SPACES_REGION }}
+          RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
+          SERVER_INDEX_ACTIVATION_URL: ${{ vars.SERVER_INDEX_ACTIVATION_URL }}
+          ROLLBACK_GENERATION: ${{ inputs.generation }}
+        run: node scripts/publish-delivery.ts rollback "$ROLLBACK_GENERATION"
+
+      - name: Resolve immutable source revisions
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          sha="$(curl --fail --silent --show-error \
-            https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main \
-            | jq -r .sha)"
+          resolve() {
+            curl --fail --silent --show-error --header "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/datasets/$1/revision/main" | jq -r .sha
+          }
+          for source in catalog schedule ust-space sfq; do
+            sha="$(resolve "ust-archive/$source")"
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+            case "$source" in
+              catalog) key=CATALOG_REVISION ;;
+              schedule) key=SCHEDULE_REVISION ;;
+              ust-space) key=REVIEWS_REVISION ;;
+              sfq) key=SFQ_REVISION ;;
+            esac
+            echo "$key=$sha" >> "$GITHUB_ENV"
+          done
+
+      - name: Load previous Instructor identities
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          sha="$(curl --fail --silent --show-error --header "Authorization: Bearer $HF_TOKEN" https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main | jq -r .sha)"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           echo "RANKINGS_IDENTITY_COMMIT=$sha" >> "$GITHUB_ENV"
-          uvx hf download ust-archive/ust-rankings \
-            --type dataset \
-            --revision "$sha" \
-            --local-dir "$RUNNER_TEMP/previous-rankings"
+          uvx hf download ust-archive/ust-rankings --type dataset --revision "$sha" --local-dir "$RUNNER_TEMP/previous-rankings" --include course-instructors.parquet --include instructor-identities.parquet --include instructor-aliases.parquet --include instructor-identity-events.parquet --include instructor-split-affected-associations.parquet
           test -f "$RUNNER_TEMP/previous-rankings/instructor-identities.parquet"
           echo "RANKINGS_PREVIOUS_GENERATION_DIR=$RUNNER_TEMP/previous-rankings" >> "$GITHUB_ENV"
 
-      - name: Build data
+      - name: Build full-fidelity Ranking archive
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
         working-directory: data
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           npm run type-check
           RANKINGS_PREVIOUS_GENERATION_DIR= npm test
-          npm run run
+          RANKINGS_INSTRUCTOR_REGISTRY_FILE=instructor-identity-corrections.json npm run run
           cp dataset/README.md out/README.md
 
-      - name: Create dataset if missing
+      - name: Publish full-fidelity Ranking archive
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          uvx hf repos create ust-archive/ust-rankings \
-            --type dataset \
-            --exist-ok
-
-      - name: Upload data
-        working-directory: data
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          uvx hf upload ust-archive/ust-rankings out . \
-            --type dataset \
-            --delete "*.parquet" \
-            --commit-message "update(v0): $(TZ='Asia/Hong_Kong' date --iso-8601=seconds)"
-
-      - name: Trigger commit-pinned runtime refresh
-        env:
-          RANKINGS_REFRESH_URL: ${{ secrets.RANKINGS_REFRESH_URL }}
-          RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
-        run: |
-          if [[ -z "$RANKINGS_REFRESH_URL" || -z "$RANKINGS_REFRESH_SECRET" ]]; then
-            echo "Runtime refresh secrets are not configured; the daily fallback remains active."
-            exit 0
-          fi
-          sha="$(curl --fail --silent --show-error \
-            https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main \
-            | jq -r .sha)"
+          uvx hf repos create ust-archive/ust-rankings --type dataset --exist-ok
+          uvx hf upload ust-archive/ust-rankings data/out . --type dataset --commit-message "update(v0): $(TZ='Asia/Hong_Kong' date --iso-8601=seconds)"
+          sha="$(curl --fail --silent --show-error --header "Authorization: Bearer $HF_TOKEN" https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main | jq -r .sha)"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
-          node scripts/refresh-rankings-runtime.ts "$sha"
+          echo "RANKING_GENERATION_SHA=$sha" >> "$GITHUB_ENV"
+
+      - name: Download pinned canonical archives
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          uvx hf download ust-archive/ust-rankings --type dataset --revision "$RANKING_GENERATION_SHA" --local-dir "$RUNNER_TEMP/rankings" --include courses.parquet --include course-ratings.parquet --include instructor-ratings.parquet --include course-instructors.parquet --include instructor-identities.parquet --include instructor-aliases.parquet --include instructor-identity-events.parquet --include instructor-split-affected-associations.parquet
+          schedule_tree="$(curl --fail --silent --show-error --header "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/datasets/ust-archive/schedule/tree/$SCHEDULE_REVISION?recursive=true")"
+          uvx hf download ust-archive/schedule --type dataset --revision "$SCHEDULE_REVISION" --local-dir "$RUNNER_TEMP/schedule" --include courses.parquet --include classes.parquet
+          schedule_files=(courses.parquet classes.parquet)
+          if jq -e '.[] | select(.type == "file" and .path == "canonical/class_records.parquet")' <<<"$schedule_tree" >/dev/null; then
+            uvx hf download ust-archive/schedule --type dataset --revision "$SCHEDULE_REVISION" --local-dir "$RUNNER_TEMP/schedule" --include canonical/class_records.parquet
+            schedule_files+=(canonical/class_records.parquet)
+          elif jq -e '.[] | select(.type == "file" and .path == "classes_legacy.parquet")' <<<"$schedule_tree" >/dev/null; then
+            uvx hf download ust-archive/schedule --type dataset --revision "$SCHEDULE_REVISION" --local-dir "$RUNNER_TEMP/schedule" --include classes_legacy.parquet
+            schedule_files+=(classes_legacy.parquet)
+          else
+            echo "::warning::Schedule archive has no canonical/class_records.parquet or classes_legacy.parquet; Waitlist Evidence will be unavailable."
+          fi
+          node scripts/write-source-manifest.ts "$RUNNER_TEMP/rankings" "$RANKING_GENERATION_SHA" courses.parquet course-ratings.parquet instructor-ratings.parquet course-instructors.parquet instructor-identities.parquet instructor-aliases.parquet instructor-identity-events.parquet instructor-split-affected-associations.parquet
+          node scripts/write-source-manifest.ts "$RUNNER_TEMP/schedule" "$SCHEDULE_REVISION" "${schedule_files[@]}"
+
+      - name: Build paired Delivery Dataset and Server Index
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        run: |
+          npm run build-delivery --workspace data -- --ranking-dir "$RUNNER_TEMP/rankings" --schedule-dir "$RUNNER_TEMP/schedule" --ranking-revision "$RANKING_GENERATION_SHA" --schedule-revision "$SCHEDULE_REVISION" --output-dir "$RUNNER_TEMP/delivery"
+          generation="$(find "$RUNNER_TEMP/delivery" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')"
+          [[ "$generation" =~ ^[0-9a-f]{64}$ ]]
+          echo "DELIVERY_GENERATION=$generation" >> "$GITHUB_ENV"
+          echo "DELIVERY_DIRECTORY=$RUNNER_TEMP/delivery/$generation" >> "$GITHUB_ENV"
+
+      - name: Publish derived generation canonically to Hugging Face
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          uvx hf upload ust-archive/ust-rankings "$DELIVERY_DIRECTORY" "browser/$DELIVERY_GENERATION" --type dataset --commit-message "publish browser generation $DELIVERY_GENERATION"
+
+      - name: Mirror, activate, and promote Delivery generation
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        env:
+          DATA_SPACES_ACCESS_KEY_ID: ${{ secrets.DATA_SPACES_ACCESS_KEY_ID }}
+          DATA_SPACES_SECRET_ACCESS_KEY: ${{ secrets.DATA_SPACES_SECRET_ACCESS_KEY }}
+          DATA_SPACES_BUCKET: ${{ vars.DATA_SPACES_BUCKET }}
+          DATA_SPACES_CDN_BASE_URL: ${{ vars.DATA_SPACES_CDN_BASE_URL }}
+          DATA_SPACES_ENDPOINT: ${{ vars.DATA_SPACES_ENDPOINT }}
+          DATA_SPACES_REGION: ${{ vars.DATA_SPACES_REGION }}
+          RANKINGS_REFRESH_SECRET: ${{ secrets.RANKINGS_REFRESH_SECRET }}
+          SERVER_INDEX_ACTIVATION_URL: ${{ vars.SERVER_INDEX_ACTIVATION_URL }}
+        run: node scripts/publish-delivery.ts publish "$DELIVERY_DIRECTORY"

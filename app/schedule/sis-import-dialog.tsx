@@ -62,7 +62,7 @@ export function SisImportDialog({ state }: { state: PlannerState }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline">
+        <Button className="gap-2" variant="outline">
           <ImportIcon data-icon="inline-start" />
           Import from SIS
         </Button>
