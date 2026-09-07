@@ -121,6 +121,10 @@ includes equal-unit error by criterion, source, evidence density, cold-start
 state, teaching team, and number of historical Courses, plus raw-pair Gaussian
 coverage at 50%, 80%, 90%, and 95%. These diagnostics do not select production
 parameters or establish an independent holdout.
+The report also fits empirical residual quantiles on outcome Terms through 91
+and checks coverage on Terms 92-102, explicitly as a retrospective diagnostic.
+Schedule-backed Ranking Population follow-up counts show how many eligible
+Courses receive later evidence; final four-Term windows may be incomplete.
 
 The upstream dataset cards declare `license: other`; two inputs are private.
 

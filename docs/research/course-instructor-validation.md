@@ -60,15 +60,46 @@ Gaussian diagnostics, not development-fitted empirical/conformal intervals.
 | Course (601,332 pairs) | 52.49% | 80.41% | 88.13% | 91.82% |
 | Instructor (96,449 pairs) | 50.23% | 77.78% | 86.61% | 91.35% |
 
-High-target undercoverage remains visible. Issue #167 remains open for sealed
-future validation, development-fitted interval calibration, Ranking Population
-follow-up coverage, and the remaining crossed-model negative controls. The
-existing crossed prototype remains isolated and unpromoted.
+Empirical interval diagnostics now fit absolute normalized-residual quantiles
+using only outcome Terms through 91, then evaluate Terms 92-102. This split was
+specified in the original issue, but it remains retrospective and provides no
+exchangeability, conformal, or independent-holdout guarantee. No evaluation
+outcome changes the fitted multiplier; an end-to-end artifact test verifies it.
 
-Verification: 33 data tests and data type checking passed, including rejection
-of reserved outcomes in both export modes and finite Review interval checks.
+| Empirical intervals, evaluation Terms 92-102 | 50% target | 80% target | 90% target | 95% target |
+| --- | ---: | ---: | ---: | ---: |
+| Current Course | 47.20% | 77.59% | 88.31% | 93.96% |
+| Advisory candidate Course | 46.21% | 77.84% | 88.67% | 94.05% |
+| Current Instructor | 51.43% | 82.46% | 92.19% | 96.65% |
+
+Course calibration used 411,394 development pairs and 189,938 evaluation pairs;
+Instructor calibration used 63,872 and 32,577 pairs respectively. The fitted
+95% multipliers were 2.371812 for current Course and 2.495005 for current
+Instructor. Coverage still varies by family and target, so these are useful
+diagnostics rather than validated production interval settings.
+
+Ranking Population follow-up is available only for the two Schedule-backed
+cutoffs with later outcomes: 250 of 1,436 eligible Courses at Term 100 (17.41%),
+and 16 of 96 at Term 101 (16.67%). These counts use any later Course-role SFQ or
+Review evidence within the next four retained Terms. The development copy ends at Term
+102, so these windows are right-censored; the rates are not eventual coverage.
+
+Additional end-to-end invariance checks duplicate Schedule/Review team members,
+add a Catalog `previous` link between two Course Codes, and append later-Term
+SFQ evidence with the accepted identities unchanged. Course and Instructor
+ratings remain exactly equal for existing prediction Terms. This checks new
+future-Term observations, not the unavailable history of later edits to old
+observations or later identity corrections.
+
+Issue #167 remains open for independently sealed future validation and the
+unvalidated crossed-model production criteria. The existing crossed prototype
+remains isolated and unpromoted.
+
+Verification: 34 data tests and data type checking passed, including rejection
+of reserved outcomes in both export modes, finite Review interval checks,
+development-only calibration, population denominators, and the invariances above.
 The report SHA-256 is
-`33c74027683fc410e21c577f0e1e76f2e5481894a390c4c690f35112518f412f`.
+`4974e9fc32a286f5f14dce07a14d956bb7150d920e5df513916383ece266a557`.
 The frozen manifest SHA-256 remains
 `81cab9eb43d0dd6b62dd012e7bec9159d92a63c4d0752aa67df722d6755f0c47`.
 

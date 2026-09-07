@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { test } from "vitest";
+import { summarizeBacktestAnalysis } from "../src/backtest-analysis-report.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureCommit = "0123456789abcdef0123456789abcdef01234567";
@@ -924,6 +925,70 @@ test("shared backtest candidates match the production model", async () => {
       `),
       [{ criteria_match: true, review_intervals_available: true }],
     );
+    const instance = await DuckDBInstance.create(":memory:");
+    const connection = await instance.connect();
+    try {
+      const directory = join(backtestDirectory, "current");
+      const original = await summarizeBacktestAnalysis(connection, directory);
+      assert.equal(original.course.populationFollowup.length, 2);
+      assert.ok(
+        original.course.populationFollowup.every(
+          (row) =>
+            row.eligibleCourses === 2 &&
+            row.coursesWithLaterEvidence === 2 &&
+            row.rate === 1,
+        ),
+      );
+      assert.ok(
+        original.course.empiricalIntervals.every(
+          (row) => row.multiplier === null,
+        ),
+      );
+      for (const family of ["course", "instructor"]) {
+        const path = join(directory, `${family}-analysis.parquet`);
+        await connection.run(`CREATE OR REPLACE TABLE calibration_rows AS
+          SELECT * FROM read_parquet('${path.replaceAll("\\", "/")}')`);
+        await copyQuery(
+          connection,
+          path,
+          `SELECT * REPLACE (
+          outcome_term - 8 AS outcome_term
+        ) FROM calibration_rows`,
+        );
+      }
+      const fitted = await summarizeBacktestAnalysis(connection, directory);
+      assert.ok(
+        fitted.course.empiricalIntervals.every(
+          (row) =>
+            row.developmentComparisons > 0 && row.evaluationComparisons > 0,
+        ),
+      );
+      for (const family of ["course", "instructor"]) {
+        const path = join(directory, `${family}-analysis.parquet`);
+        await connection.run(`CREATE OR REPLACE TABLE calibration_rows AS
+          SELECT * FROM read_parquet('${path.replaceAll("\\", "/")}')`);
+        await copyQuery(
+          connection,
+          path,
+          `SELECT * REPLACE (
+          CASE WHEN outcome_term > 91 THEN 100 ELSE outcome END AS outcome
+        ) FROM calibration_rows`,
+        );
+      }
+      const changed = await summarizeBacktestAnalysis(connection, directory);
+      for (const family of ["course", "instructor"] as const) {
+        assert.deepEqual(
+          changed[family].empiricalIntervals.map((row) => row.multiplier),
+          fitted[family].empiricalIntervals.map((row) => row.multiplier),
+        );
+        assert.ok(
+          changed[family].empiricalIntervals.every((row) => row.coverage === 0),
+        );
+      }
+    } finally {
+      connection.closeSync();
+      instance.closeSync();
+    }
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
@@ -1154,12 +1219,91 @@ test("walk-forward backtests compare candidates across historical cutoffs", asyn
   }
 }, 30_000);
 
+test("duplicate team membership and Catalog previous links preserve distinct ratings", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-invariance-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const original = runPipeline(dataDir, join(temp, "original"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    const instance = await DuckDBInstance.create(":memory:");
+    const connection = await instance.connect();
+    try {
+      for (const [file, replacement] of [
+        [
+          "schedule/classes.parquet",
+          "list_transform(schedules, meeting -> struct_pack(instructors := list_concat(meeting.instructors, meeting.instructors))) AS schedules",
+        ],
+        [
+          "ust-space/reviews.parquet",
+          "list_concat(instructors, instructors) AS instructors",
+        ],
+      ]) {
+        const path = join(dataDir, file as string);
+        await connection.run(`CREATE OR REPLACE TABLE source_rows AS
+          SELECT * FROM read_parquet('${path.replaceAll("\\", "/")}')`);
+        await copyQuery(
+          connection,
+          path,
+          `SELECT * REPLACE (${replacement}) FROM source_rows`,
+        );
+      }
+      const path = join(dataDir, "catalog", "courses.parquet");
+      await connection.run(`CREATE OR REPLACE TABLE source_rows AS
+        SELECT * FROM read_parquet('${path.replaceAll("\\", "/")}')`);
+      await copyQuery(
+        connection,
+        path,
+        `
+        SELECT *, NULL::VARCHAR AS previous FROM source_rows
+        UNION ALL
+        SELECT * REPLACE ('catalog-renamed' AS id, '2000' AS number),
+          'COMP 1000' AS previous
+        FROM source_rows WHERE id = 'catalog-main'
+      `,
+      );
+    } finally {
+      connection.closeSync();
+      instance.closeSync();
+    }
+    const changed = runPipeline(dataDir, join(temp, "changed"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    assert.deepEqual(
+      await rows(`
+      SELECT number FROM read_parquet('${parquet(changed, "courses")}')
+      WHERE prefix = 'COMP' ORDER BY number
+    `),
+      [{ number: "1000" }, { number: "2000" }],
+    );
+    for (const family of ["course", "instructor"]) {
+      assert.deepEqual(
+        await rows(`
+        (SELECT * FROM read_parquet('${parquet(original, `${family}-ratings`)}')
+         EXCEPT ALL SELECT * FROM read_parquet('${parquet(changed, `${family}-ratings`)}'))
+        UNION ALL
+        (SELECT * FROM read_parquet('${parquet(changed, `${family}-ratings`)}')
+         EXCEPT ALL SELECT * FROM read_parquet('${parquet(original, `${family}-ratings`)}'))
+      `),
+        [],
+      );
+    }
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
 test("retrospective backtests reject reserved future outcomes before scoring", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-holdout-"));
   try {
     const dataDir = join(temp, "data");
     await makeFixtures(dataDir, { backtestHistory: true });
     const previous = await makePreviousGeneration(join(temp, "previous"));
+    const original = runPipeline(dataDir, join(temp, "original"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
     const instance = await DuckDBInstance.create(":memory:");
     const connection = await instance.connect();
     try {
@@ -1180,6 +1324,25 @@ test("retrospective backtests reject reserved future outcomes before scoring", a
     } finally {
       connection.closeSync();
       instance.closeSync();
+    }
+    const extended = runPipeline(dataDir, join(temp, "extended"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    for (const family of ["course", "instructor"]) {
+      assert.deepEqual(
+        await rows(`
+        (SELECT * FROM read_parquet('${parquet(original, `${family}-ratings`)}')
+          WHERE term_num <= 100
+         EXCEPT ALL SELECT * FROM read_parquet('${parquet(extended, `${family}-ratings`)}')
+          WHERE term_num <= 100)
+        UNION ALL
+        (SELECT * FROM read_parquet('${parquet(extended, `${family}-ratings`)}')
+          WHERE term_num <= 100
+         EXCEPT ALL SELECT * FROM read_parquet('${parquet(original, `${family}-ratings`)}')
+          WHERE term_num <= 100)
+      `),
+        [],
+      );
     }
     for (const mode of ["legacy", "candidates"]) {
       assert.throws(
