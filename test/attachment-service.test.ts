@@ -110,7 +110,13 @@ function memory(options?: {
       if (!userId || file.ownerUserId === userId) stored += file.byteSize;
     }
     for (const intent of intents.values()) {
-      if (intent.storedFileId) continue;
+      if (
+        [...files.values()].some(
+          (file) =>
+            file.objectKey === intent.objectKey && !removed.has(file.id),
+        )
+      )
+        continue;
       if (!userId || intent.ownerUserId === userId)
         pending += intent.declaredByteSize;
     }
@@ -760,7 +766,7 @@ test("usage alerts fire before the 128 GiB cap without disabling Review text", a
   expect(alerts[0]?.globalUsedBytes).toBeGreaterThanOrEqual(USAGE_ALERT_BYTES);
 });
 
-test("operator byte removal leaves a Tombstone and releases quota after confirmed absence", async () => {
+test("operator byte removal releases Stored File bytes while replayable intents remain reserved", async () => {
   const world = memory();
   const stored = await accept(world, jpegBytes());
   const [attachment] = await world.attachments.attachToRevision({
@@ -785,10 +791,18 @@ test("operator byte removal leaves a Tombstone and releases quota after confirme
   await expect(
     world.attachments.signPublicRead(attachment.id),
   ).rejects.toMatchObject({ code: "attachment-unavailable" });
+  await expect(
+    world.attachments.reserveUpload({
+      userId: USER_ID,
+      byteSize: USER_QUOTA_BYTES,
+      filename: "full.jpg",
+      contentType: "image/jpeg",
+    }),
+  ).rejects.toMatchObject({ code: "quota-exceeded" });
   const again = await world.attachments.reserveUpload({
     userId: USER_ID,
-    byteSize: USER_QUOTA_BYTES,
-    filename: "full.jpg",
+    byteSize: USER_QUOTA_BYTES - jpegBytes().byteLength,
+    filename: "remaining.jpg",
     contentType: "image/jpeg",
   });
   expect(again.quotaUsedBytes).toBe(USER_QUOTA_BYTES);

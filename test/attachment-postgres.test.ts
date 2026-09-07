@@ -145,6 +145,9 @@ if (!connection) {
         userId: userA,
         intentId: reservation.intentId,
       });
+      await sql`UPDATE upload_intents SET expires_at = now() - interval '1 minute'
+                WHERE id = ${reservation.intentId}`;
+      await attachments.cleanupExpired();
       const copy = await attachments.reserveUpload({
         userId: userA,
         byteSize: bytes.byteLength,
@@ -158,6 +161,25 @@ if (!connection) {
       });
       expect(reused).toMatchObject({ id: stored.id, reused: true });
       expect(objects.has(copy.objectKey)).toBe(false);
+
+      // An accepted duplicate's signed PUT can recreate its staging bytes.
+      objects.set(copy.objectKey, bytes);
+      await expect(
+        attachments.reserveUpload({
+          userId: userA,
+          byteSize: 100 - 2 * bytes.byteLength + 1,
+          filename: "another.jpg",
+          contentType: "image/jpeg",
+        }),
+      ).rejects.toMatchObject({ code: "quota-exceeded" });
+      await expect(
+        attachments.reserveUpload({
+          userId: userB,
+          byteSize: 150 - 2 * bytes.byteLength + 1,
+          filename: "another.jpg",
+          contentType: "image/jpeg",
+        }),
+      ).rejects.toMatchObject({ code: "global-quota-exceeded" });
 
       const reviewId = crypto.randomUUID();
       const revisionId = crypto.randomUUID();
