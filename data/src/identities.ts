@@ -635,13 +635,27 @@ export async function assignInstructorIdentities(
       `Instructor identity validation failed with ${errors.size} ${errors.size === 1 ? "error" : "errors"}:\n${[...errors].map((error) => `- ${error}`).join("\n")}`,
     );
 
+  const namePriorities = new Map(
+    (
+      await connection.runAndReadAll(
+        "SELECT name, source_priority FROM instructor_name_anchors",
+      )
+    )
+      .getRowObjectsJson()
+      .map((row) => [String(row.name), Number(row.source_priority)]),
+  );
   for (const [uuid, names] of currentNamesByUuid) {
     const current = identities.get(uuid) as IdentityRow;
     identities.set(uuid, {
       ...current,
-      canonical_name: names.has(current.canonical_name)
-        ? current.canonical_name
-        : ([...names].sort()[0] as string),
+      // A merge chooses identity; source priority still chooses display spelling.
+      canonical_name: [...names].sort(
+        (left, right) =>
+          (namePriorities.get(right) ?? 0) - (namePriorities.get(left) ?? 0) ||
+          Number(right === current.canonical_name) -
+            Number(left === current.canonical_name) ||
+          (left < right ? -1 : left > right ? 1 : 0),
+      )[0] as string,
     });
   }
 

@@ -1243,6 +1243,48 @@ test("merge corrections preserve aliases, ITSC history, and apply only once", as
   }
 });
 
+test("merges preserve the survivor UUID while preferring the Schedule name", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-merge-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    await writeFile(
+      corrections,
+      JSON.stringify({
+        events: [
+          {
+            type: "merge",
+            retiredUuid: "00000000-0000-4000-8000-000000000006",
+            survivorUuid: "00000000-0000-4000-8000-000000000004",
+            sourceCommit: fixtureCommit,
+          },
+        ],
+      }),
+    );
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    for (const output of [first, second]) {
+      assert.deepEqual(
+        await rows(`
+        SELECT DISTINCT uuid, name FROM read_parquet('${parquet(output, "course-instructors")}')
+        WHERE uuid = '00000000-0000-4000-8000-000000000004'
+      `),
+        [{ uuid: "00000000-0000-4000-8000-000000000004", name: "Eve Epsilon" }],
+      );
+    }
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
 test("split corrections preserve their identity and association once", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-split-"));
   try {
