@@ -81,7 +81,7 @@ diagnostics rather than validated production interval settings.
 Ranking Population follow-up is available only for the two Schedule-backed
 cutoffs with later outcomes: 250 of 1,436 eligible Courses at Term 100 (17.41%),
 and 16 of 96 at Term 101 (16.67%). These counts use any later Course-role SFQ or
-Review evidence within the next four retained Terms. The development copy ends at Term
+Review evidence within the next four Terms. The development copy ends at Term
 102, so these windows are right-censored; the rates are not eventual coverage.
 
 Additional end-to-end invariance checks duplicate Schedule/Review team members,
@@ -283,6 +283,23 @@ The crossed Instructor change versus raw Instructor history was `+0.007733`. Its
 
 The prototype did not show a reliable gain. The result supports the simpler current structure for now. It does not show that context has no value. It shows that this small model and this post-hoc split did not validate the added terms.
 
+The [development-only negative controls in PR #183](https://github.com/ust-archive/ust-rankings/pull/183),
+with [frozen code and results](https://github.com/ust-archive/ust-rankings/blob/0382d64515f100560d93fae309b3c4614b28ef12/data/prototypes/course-instructor-negative-control.md),
+replicated the original development crossed-model MAE exactly (0.32942133039949745).
+All ten within-Term Instructor-label shuffles improved on the real-label residual
+and crossed models. A label-free, training-only population Instructor-minus-Course
+offset was better still: development MAE 0.301314 versus 0.322365 for the
+Instructor residual, and 0.305443 versus 0.329421 for the crossed model. These
+results do not establish Instructor-specific predictive signal. They do not
+select a new production model.
+
+Splitting each source SFQ record into two identical half-respondent fragments
+before canonical aggregation preserved all 28,130 model rows within floating-point
+precision and evaluation metrics within `6 × 10^-17`. Duplicating already
+aggregated model units changed the fitter's predictions; that input violates its
+documented canonical-unit boundary. The controls remain on the isolated prototype
+branch and scored no outcomes after Term 102.
+
 ## Future holdout
 
 `data/validation/future-holdout.json` records the intended protocol for the next
@@ -304,6 +321,37 @@ The manifest freezes `current` and `votes-unweighted-context-4`. It freezes the 
 
 A production change requires a separate reviewed decision after the holdout is sealed. The backtest does not update production parameters automatically.
 
+### Fresh prospective protocol
+
+The existing retrospective backtest is not a prospective forecast writer: it
+reads outcome tables and averages errors over historical cutoffs. Its empirical
+intervals also use a retrospective development split. It must not be run on
+reserved outcomes to implement this protocol.
+
+Before a fresh attempt, record the latest inspected outcome Term and all known
+source revisions, including the 169 already-present reserved-Term Review events.
+Choose a genuinely new outcome window after that boundary and commit a new
+protocol before acquiring its outcomes; merely changing the old manifest's
+start Term cannot restore independence. Freeze the two candidates, metric units,
+interval rule, eligibility and missing-forecast rules, minimum counts, bootstrap
+rules, and regression guardrails together.
+
+Code work can provide a forecast-only writer over pinned past-only sources and
+accepted cutoff identity mappings, seal the candidate parameters, implementation,
+source hashes, identities and source-scale forecasts, and provide a separate
+one-use evaluator. That evaluator must use the latest shared sealed cutoff before
+each outcome Term, reject duplicate or reused outcome observations, preserve
+identical candidate comparison units, report unknown identity and forecast
+coverage, and seal outcome bytes before calculating metrics. Those tools are
+separate from the retrospective artifacts delivered here.
+
+External requirements remain: independently support the acquisition history and
+absence of prior outcome inspection, publish the protocol and forecast seals
+before outcomes become available, then wait for genuinely new outcomes meeting
+all minimum Term and unit counts. Local timestamps and SHA-256 hashes establish
+byte integrity, not historical independence. A reviewed future decision is still
+required before any production change.
+
 ## Risks and limits
 
 - Historical Review votes, edits, withdrawals, and identity knowledge cannot be reconstructed at every old cutoff. The current report is retrospective.
@@ -316,7 +364,7 @@ A production change requires a separate reviewed decision after the holdout is s
 ## Recommended integration order
 
 1. Keep the balanced analysis and context artifacts separate from production exports.
-2. Use the frozen future-holdout manifest before any new outcome is scored.
+2. Commit a fresh prospective protocol and forecast seals before acquiring genuinely new outcomes.
 3. Seal immutable Hugging Face revisions and file hashes before each holdout evaluation.
 4. Keep Course-role and Instructor-role outcomes in separate tables.
 5. Keep the one-observation, one-total-allocation invariant.
