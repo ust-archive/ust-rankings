@@ -7,7 +7,8 @@
     "run": "node src/run.ts",
     "build-delivery": "node src/build-delivery.ts",
     "backtest": "node src/backtest.ts",
-    "test": "vitest run test/pipeline.test.ts test/delivery.test.ts test/waitlist-evidence.test.ts",
+    "prospective": "node src/prospective.ts",
+    "test": "vitest run test/pipeline.test.ts test/delivery.test.ts test/waitlist-evidence.test.ts test/prospective-seal.test.ts test/prospective-evaluate.test.ts",
     "type-check": "tsc --noEmit"
   },
   "license": "MIT",

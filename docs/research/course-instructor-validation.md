@@ -336,14 +336,22 @@ start Term cannot restore independence. Freeze the two candidates, metric units,
 interval rule, eligibility and missing-forecast rules, minimum counts, bootstrap
 rules, and regression guardrails together.
 
-Code work can provide a forecast-only writer over pinned past-only sources and
-accepted cutoff identity mappings, seal the candidate parameters, implementation,
-source hashes, identities and source-scale forecasts, and provide a separate
-one-use evaluator. That evaluator must use the latest shared sealed cutoff before
-each outcome Term, reject duplicate or reused outcome observations, preserve
-identical candidate comparison units, report unknown identity and forecast
-coverage, and seal outcome bytes before calculating metrics. Those tools are
-separate from the retrospective artifacts delivered here.
+The separate [prospective tooling](../../data/validation/PROSPECTIVE.md) now
+provides a forecast-only writer over pinned past-only sources and accepted cutoff
+identity mappings. It seals candidate parameters, implementation, source hashes,
+identities, source-scale forecasts, and four simple baselines. Its one-use evaluator
+selects the latest shared sealed cutoff before each outcome Term, rejects duplicate
+or reused observations and primary units, preserves identical comparison units,
+reports unknown identities and forecast coverage, and verifies registered outcome
+hashes before calculating metrics. A fresh protocol also freezes nominal interval
+coverage gates. Synthetic tests validate the complete workflow; no real prospective
+forecast or outcome seal was generated in this audit.
+
+Prospective seals also retain cutoff history density, historical Instructor Course
+counts, complete Schedule-backed population membership, and later canonical Class
+team context. Placeholder names such as TBA no longer count as team members in
+the shared context stage. This corrects newly generated retrospective team strata
+as well; the archived report counts and hashes above were not regenerated.
 
 External requirements remain: independently support the acquisition history and
 absence of prior outcome inspection, publish the protocol and forecast seals
