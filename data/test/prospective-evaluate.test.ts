@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
-  evaluateProspective,
+  evaluateProspective as evaluateSealed,
   type ForecastRow,
   type OutcomeRow,
 } from "../src/prospective-evaluate.ts";
@@ -60,6 +60,24 @@ const protocol: Protocol = {
   baselineAcceptanceRule: "strictly-lower-primary-mae-than-every-baseline",
 };
 const challenger = "votes-unweighted-context-4";
+// Ordinary unit fixtures use their forecasted Courses as a synthetic population.
+// Population-specific tests supply the separate sealed inventory explicitly.
+function evaluateProspective(
+  protocol: Protocol,
+  forecasts: ForecastRow[],
+  outcomes: OutcomeRow[],
+  identities: Record<string, string[]>,
+  populations = Object.fromEntries(
+    [...new Set(forecasts.map((row) => row.cutoffTerm))].map((cutoff) => [
+      cutoff,
+      forecasts
+        .filter((row) => row.cutoffTerm === cutoff && row.family === "course")
+        .map((row) => row.entityId),
+    ]),
+  ),
+) {
+  return evaluateSealed(protocol, forecasts, outcomes, identities, populations);
+}
 const outcome = (
   id: string,
   overrides: Partial<OutcomeRow> = {},
@@ -75,6 +93,11 @@ const outcome = (
   sourceStddev: null,
   samples: 10,
   weight: 10,
+  courseEntityId:
+    overrides.family === "instructor"
+      ? "COMP 1001"
+      : (overrides.entityId ?? "COMP 1001"),
+  teamSize: null,
   ...overrides,
 });
 const instructorOutcome = outcome("instructor", {
@@ -114,6 +137,8 @@ function forecastsFor(outcomes: OutcomeRow[], cutoffTerm = 103): ForecastRow[] {
       criterion: row.criterion,
       prediction: row.family === "instructor" ? 4 : id === challenger ? 4 : 3,
       modelStddev: 0,
+      historySamples: 10,
+      historicalCourseCount: row.family === "instructor" ? 1 : 0,
     })),
   );
 }
@@ -188,6 +213,7 @@ test("uses the latest shared cutoff and never falls back for a missing entity", 
   const newForecasts = forecastsFor(outcomes, 104).map((row) => ({
     ...row,
     prediction: 5,
+    historySamples: 0,
   }));
   const result = evaluateProspective(
     protocol,
@@ -196,8 +222,15 @@ test("uses the latest shared cutoff and never falls back for a missing entity", 
     { ...accepted, "104": [instructor] },
   );
   assert.equal(result.status, "evaluated");
-  if (result.status === "evaluated")
+  if (result.status === "evaluated") {
     assert.equal(result.results.current?.course.primaryMeanAbsoluteError, 1);
+    assert.equal(
+      result.results.current?.course.strata.find(
+        (row) => row.dimension === "evidence samples" && row.group === "0",
+      )?.evaluationUnits,
+      1,
+    );
+  }
   assert.throws(
     () =>
       evaluateProspective(
@@ -325,6 +358,9 @@ test("rejects duplicate, known, invalid, and role-mismatched evidence", () => {
     { weight: 0 },
     { samples: -1 },
     { sourceStddev: -0.1 },
+    { courseEntityId: "" },
+    { teamSize: -1 },
+    { teamSize: 1.5 },
     { criterion: "instructor" },
     { source: "review" },
   ])
@@ -507,4 +543,195 @@ test("missing predeclared outcome strata cannot pass the regression guardrails",
     comparison.guardrails.find((row) => row.value === "teaching")?.passed,
     false,
   );
+});
+
+test("secondary strata aggregate each primary unit within its own context group", () => {
+  const thirdInstructor = "00000000-0000-4000-8000-000000000003";
+  const rows = [
+    outcome("course-cold"),
+    outcome("course-warm", { entityId: "COMP 1002" }),
+    outcome("solo-low", {
+      ...instructorOutcome,
+      observationId: "solo-low",
+      rating: 1,
+      courseEntityId: "COMP 1001",
+      teamSize: 1,
+    }),
+    outcome("solo-high", {
+      ...instructorOutcome,
+      observationId: "solo-high",
+      rating: 5,
+      courseEntityId: "COMP 1002",
+      teamSize: 1,
+    }),
+    outcome("team", {
+      ...instructorOutcome,
+      observationId: "team",
+      rating: 3,
+      courseEntityId: "COMP 1001",
+      teamSize: 2,
+    }),
+    outcome("unknown-team", {
+      ...instructorOutcome,
+      observationId: "unknown-team",
+      entityId: otherInstructor,
+      rating: 4,
+      courseEntityId: "COMP 1002",
+      teamSize: null,
+    }),
+    outcome("unforecasted-course", {
+      ...instructorOutcome,
+      observationId: "unforecasted-course",
+      entityId: thirdInstructor,
+      rating: 3,
+      courseEntityId: "COMP 9999",
+      teamSize: 3,
+    }),
+  ];
+  const forecasts = forecastsFor(rows).map((row) =>
+    row.family === "course"
+      ? { ...row, historySamples: row.entityId === "COMP 1001" ? 0 : 10 }
+      : {
+          ...row,
+          prediction: 3,
+          historySamples:
+            row.entityId === instructor
+              ? 0
+              : row.entityId === otherInstructor
+                ? 3
+                : 9,
+          historicalCourseCount:
+            row.entityId === instructor
+              ? 0
+              : row.entityId === otherInstructor
+                ? 1
+                : 2,
+        },
+  );
+  const result = evaluateProspective(protocol, forecasts, rows, {
+    "103": [instructor, otherInstructor, thirdInstructor],
+  });
+  assert.equal(result.status, "evaluated");
+  if (result.status !== "evaluated") return;
+  for (const summary of Object.values(result.results)) {
+    const strata = summary.instructor.strata;
+    const group = (dimension: string, value: string) => {
+      const row = strata.find(
+        (row) => row.dimension === dimension && row.group === value,
+      );
+      assert(row);
+      return row;
+    };
+    assert.equal(summary.instructor.primaryMeanAbsoluteError, 1 / 3);
+    assert.equal(group("teaching team", "solo").predictionError, 0);
+    assert.equal(group("teaching team", "solo").rawObservations, 2);
+    assert.equal(group("teaching team", "team").evaluationUnits, 2);
+    assert.equal(group("teaching team", "unknown").predictionError, 1);
+    assert.equal(group("cold Course", "cold").predictionError, 1);
+    assert.equal(group("cold Course", "warm").predictionError, 1.5);
+    assert.equal(group("cold Course", "unknown").evaluationUnits, 1);
+    assert.equal(group("cold Course", "unknown").predictionError, 0);
+    assert.equal(group("cold Instructor", "cold").predictionError, 0);
+    assert.equal(group("cold Instructor", "warm").predictionError, 0.5);
+    assert.equal(group("evidence samples", "1-5").predictionError, 1);
+    assert.equal(group("evidence samples", "more than 5").predictionError, 0);
+    assert.equal(group("historical Courses", "none").evaluationUnits, 1);
+    assert.equal(group("historical Courses", "one").predictionError, 1);
+    assert.equal(group("historical Courses", "multiple").predictionError, 0);
+    assert.equal(group("entity", instructor).predictionError, 0);
+    assert.equal(summary.instructor.unknownTeamContextRawObservations, 1);
+  }
+  assert.equal(
+    result.diagnostics.coverage.instructor.unknownTeamContextRawOutcomes,
+    1,
+  );
+});
+
+test("population follow-up includes unforecasted Courses but excludes Instructor-only evidence", () => {
+  const forecastRows = [outcome("forecasted"), instructorOutcome];
+  const forecasts = forecastsFor(forecastRows);
+  const rows = [
+    outcome("course-1"),
+    outcome("course-2", { entityId: "COMP 1002" }),
+    outcome("review-2", {
+      entityId: "COMP 1002",
+      criterion: "content",
+      source: "review",
+    }),
+    { ...instructorOutcome, courseEntityId: "COMP 1003" },
+    outcome("outside-population", { entityId: "COMP 9999" }),
+  ];
+  const population = {
+    "103": ["COMP 1001", "COMP 1002", "COMP 1002", "COMP 1003", "COMP 1004"],
+  };
+  const initial = evaluateProspective(
+    protocol,
+    forecasts,
+    rows,
+    accepted,
+    population,
+  );
+  assert.deepEqual(initial.diagnostics.populationFollowup, [
+    {
+      cutoffTerm: 103,
+      horizonTerms: 4,
+      horizonEndTerm: 107,
+      latestSealedOutcomeTerm: 104,
+      eligibleCourses: 4,
+      coursesWithLaterEvidence: 2,
+      rate: 0.5,
+      rightCensored: true,
+    },
+  ]);
+  const later = evaluateProspective(
+    protocol,
+    forecasts,
+    [...rows, outcome("outside-horizon", { entityId: "COMP 1004", term: 108 })],
+    accepted,
+    population,
+  );
+  assert.equal(
+    later.diagnostics.populationFollowup[0]?.coursesWithLaterEvidence,
+    2,
+  );
+  assert.equal(later.diagnostics.populationFollowup[0]?.rightCensored, false);
+  const boundary = evaluateProspective(
+    protocol,
+    forecasts,
+    [...rows, outcome("inside-horizon", { entityId: "COMP 1004", term: 107 })],
+    accepted,
+    population,
+  );
+  assert.equal(
+    boundary.diagnostics.populationFollowup[0]?.coursesWithLaterEvidence,
+    3,
+  );
+  assert.throws(
+    () => evaluateSealed(protocol, forecasts, rows, accepted, {}),
+    /frozen Course Ranking Population/,
+  );
+  const empty = evaluateProspective(protocol, forecasts, [], accepted, {
+    "103": [],
+  });
+  assert.equal(empty.status, "diagnostics-only");
+  assert.equal(empty.diagnostics.populationFollowup[0]?.rate, null);
+});
+
+test("rejects invalid frozen history counts before stratifying", () => {
+  const rows = [outcome("course"), instructorOutcome];
+  const forecasts = forecastsFor(rows);
+  for (const changed of [
+    { historySamples: NaN },
+    { historySamples: -1 },
+    { historicalCourseCount: -1 },
+    { historicalCourseCount: 1.5 },
+  ])
+    assert.throws(() =>
+      evaluateProspective(
+        protocol,
+        forecasts.map((row) => ({ ...row, ...changed })),
+        rows,
+        accepted,
+      ),
+    );
 });

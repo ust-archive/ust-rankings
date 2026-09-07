@@ -9,6 +9,8 @@ export type ForecastRow = {
   criterion: string;
   prediction: number;
   modelStddev: number;
+  historySamples: number;
+  historicalCourseCount: number;
 };
 
 export type OutcomeRow = {
@@ -23,9 +25,16 @@ export type OutcomeRow = {
   sourceStddev: number | null;
   samples: number;
   weight: number;
+  courseEntityId: string;
+  teamSize: number | null;
 };
 
-type Pair = { outcome: OutcomeRow; forecast: ForecastRow; unit: string };
+type Pair = {
+  outcome: OutcomeRow;
+  forecast: ForecastRow;
+  unit: string;
+  courseHistorySamples: number | null;
+};
 const criteria = ["course", "content", "teaching", "grading", "workload"];
 const levels = [
   { target: 0.5, z: 0.6744897501960817 },
@@ -59,7 +68,12 @@ const unitKey = (row: OutcomeRow) =>
     row.term,
     row.family === "course" ? row.criterion : null,
   );
-const forecastKey = (row: Omit<ForecastRow, "prediction" | "modelStddev">) =>
+const forecastKey = (
+  row: Pick<
+    ForecastRow,
+    "candidateId" | "cutoffTerm" | "family" | "entityId" | "criterion"
+  >,
+) =>
   key(row.candidateId, row.cutoffTerm, row.family, row.entityId, row.criterion);
 const error = (pair: Pair) =>
   Math.abs(pair.forecast.prediction - pair.outcome.rating);
@@ -108,6 +122,82 @@ function summarize(pairs: Pair[]) {
         meanAbsoluteError: mean(unitErrors(rows).map((row) => row.error)),
       }))
       .sort((a, b) => a.value.localeCompare(b.value));
+  const dimensions: Array<[string, (pair: Pair) => string | null]> = [
+    ["entity", (pair) => pair.forecast.entityId],
+    ["criterion", (pair) => pair.outcome.criterion],
+    ["source", (pair) => pair.outcome.source],
+    [
+      "evidence samples",
+      (pair) =>
+        pair.forecast.historySamples === 0
+          ? "0"
+          : pair.forecast.historySamples <= 5
+            ? "1-5"
+            : "more than 5",
+    ],
+    [
+      "teaching team",
+      (pair) =>
+        pair.outcome.teamSize === null || pair.outcome.teamSize === 0
+          ? "unknown"
+          : pair.outcome.teamSize === 1
+            ? "solo"
+            : "team",
+    ],
+    [
+      "cold Instructor",
+      (pair) =>
+        pair.outcome.family === "instructor"
+          ? pair.forecast.historySamples === 0
+            ? "cold"
+            : "warm"
+          : null,
+    ],
+    [
+      "cold Course",
+      (pair) =>
+        pair.outcome.family === "instructor"
+          ? pair.courseHistorySamples === null
+            ? "unknown"
+            : pair.courseHistorySamples === 0
+              ? "cold"
+              : "warm"
+          : null,
+    ],
+    [
+      "historical Courses",
+      (pair) =>
+        pair.outcome.family === "instructor"
+          ? pair.forecast.historicalCourseCount === 0
+            ? "none"
+            : pair.forecast.historicalCourseCount === 1
+              ? "one"
+              : "multiple"
+          : null,
+    ],
+  ];
+  const strata = dimensions.flatMap(([dimension, label]) => {
+    const grouped = new Map<string, Pair[]>();
+    for (const pair of pairs) {
+      const group = label(pair);
+      if (group === null) continue;
+      const rows = grouped.get(group) ?? [];
+      rows.push(pair);
+      grouped.set(group, rows);
+    }
+    return [...grouped]
+      .map(([group, rows]) => {
+        const units = unitErrors(rows);
+        return {
+          dimension,
+          group,
+          evaluationUnits: units.length,
+          rawObservations: rows.length,
+          predictionError: mean(units.map((row) => row.error)),
+        };
+      })
+      .sort((a, b) => a.group.localeCompare(b.group));
+  });
   return {
     units: units.length,
     rawObservations: pairs.length,
@@ -128,6 +218,10 @@ function summarize(pairs: Pair[]) {
     equalUnitSignedError: mean(units.map((row) => row.signed)),
     byCriterion: groups("criterion"),
     bySource: groups("source"),
+    strata,
+    unknownTeamContextRawObservations: pairs.filter(
+      (pair) => pair.outcome.teamSize === null || pair.outcome.teamSize === 0,
+    ).length,
     intervalCoverage: levels.map(({ target, z }) => ({
       target,
       pairs: pairs.length,
@@ -204,6 +298,7 @@ export function evaluateProspective(
   forecasts: ForecastRow[],
   outcomes: OutcomeRow[],
   acceptedIdentitiesByCutoff: Record<string, string[]>,
+  populationsByCutoff: Record<string, string[]>,
 ) {
   const evaluatedCandidateIds = protocol.candidateRegistry.map(
     (candidate) => candidate.id,
@@ -255,6 +350,16 @@ export function evaluateProspective(
     );
     finite(row.prediction, "forecast prediction", 1, 5);
     finite(row.modelStddev, "forecast standard deviation", 0);
+    finite(row.historySamples, "forecast history samples", 0);
+    assert(
+      Number.isSafeInteger(row.historicalCourseCount) &&
+        row.historicalCourseCount >= 0,
+      "Invalid historical Course count",
+    );
+    assert(
+      row.family !== "course" || row.historicalCourseCount === 0,
+      "Course forecasts do not have Instructor course-history counts",
+    );
     if (row.family === "instructor")
       assert(
         accepted.get(row.cutoffTerm)?.has(row.entityId),
@@ -274,6 +379,15 @@ export function evaluateProspective(
       "Every sealed cutoff requires the complete candidate set",
     );
   const cutoffs = [...cutoffCandidates.keys()].sort((a, b) => b - a);
+  const populations = new Map<number, Set<string>>();
+  for (const cutoff of cutoffs) {
+    const population = populationsByCutoff[cutoff];
+    assert(
+      Array.isArray(population) && population.every(nonempty),
+      "Every forecast cutoff requires its frozen Course Ranking Population",
+    );
+    populations.set(cutoff, new Set(population));
+  }
   const selectedCutoffsByOutcomeTerm: Record<string, number | null> = {};
   const pairs = new Map(candidateIds.map((id) => [id, [] as Pair[]]));
   const eligibleByCandidate = new Map(
@@ -285,6 +399,7 @@ export function evaluateProspective(
       family,
       {
         rawOutcomes: 0,
+        unknownTeamContextRawOutcomes: 0,
         commonMatchedOutcomes: 0,
         unknownIdentityOutcomes: 0,
         missingCutoffOutcomes: 0,
@@ -299,6 +414,7 @@ export function evaluateProspective(
     "course" | "instructor",
     {
       rawOutcomes: number;
+      unknownTeamContextRawOutcomes: number;
       commonMatchedOutcomes: number;
       unknownIdentityOutcomes: number;
       missingCutoffOutcomes: number;
@@ -339,6 +455,12 @@ export function evaluateProspective(
       row.entityId === null || nonempty(row.entityId),
       "Invalid outcome entity",
     );
+    assert(nonempty(row.courseEntityId), "Missing outcome Course Code");
+    assert(
+      row.teamSize === null ||
+        (Number.isSafeInteger(row.teamSize) && row.teamSize >= 0),
+      "Invalid outcome team size",
+    );
     finite(row.rating, "outcome rating", 1, 5);
     finite(row.samples, "outcome samples", 0);
     finite(row.weight, "outcome weight", Number.MIN_VALUE);
@@ -349,6 +471,8 @@ export function evaluateProspective(
     seen.add(observation);
     const counts = coverage[row.family];
     counts.rawOutcomes++;
+    if (row.teamSize === null || row.teamSize === 0)
+      counts.unknownTeamContextRawOutcomes++;
     const cutoff = cutoffs.find((value) => value < row.term);
     selectedCutoffsByOutcomeTerm[row.term] = cutoff ?? null;
     if (row.entityId !== null) inputUnits[row.family].add(unitKey(row));
@@ -369,6 +493,16 @@ export function evaluateProspective(
     }
     const unit = unitKey(row);
     const entityId = row.entityId;
+    const courseHistorySamples =
+      forecastMap.get(
+        forecastKey({
+          candidateId: controlId,
+          cutoffTerm: cutoff,
+          family: "course",
+          entityId: row.courseEntityId,
+          criterion: "course",
+        }),
+      )?.historySamples ?? null;
     const available = candidateIds.map((candidateId) =>
       forecastMap.get(
         forecastKey({
@@ -395,7 +529,9 @@ export function evaluateProspective(
     candidateIds.forEach((id, i) => {
       const forecast = available[i];
       assert(forecast);
-      pairs.get(id)?.push({ outcome: row, forecast, unit });
+      pairs
+        .get(id)
+        ?.push({ outcome: row, forecast, unit, courseHistorySamples });
     });
   }
   const common = pairs.get(controlId) ?? [];
@@ -433,12 +569,45 @@ export function evaluateProspective(
     nonemptyCourseAndInstructorUnits:
       counts.courseUnits > 0 && counts.instructorUnits > 0,
   };
+  const latestSealedOutcomeTerm = outcomes.reduce<number | null>(
+    (maximum, row) =>
+      maximum === null || row.term > maximum ? row.term : maximum,
+    null,
+  );
+  const populationFollowup = [...populations]
+    .sort(([a], [b]) => a - b)
+    .map(([cutoffTerm, population]) => {
+      const recipients = new Set(
+        outcomes
+          .filter(
+            (row) =>
+              row.family === "course" &&
+              row.term > cutoffTerm &&
+              row.term <= cutoffTerm + 4 &&
+              population.has(row.courseEntityId),
+          )
+          .map((row) => row.courseEntityId),
+      );
+      return {
+        cutoffTerm,
+        horizonTerms: 4,
+        horizonEndTerm: cutoffTerm + 4,
+        latestSealedOutcomeTerm,
+        eligibleCourses: population.size,
+        coursesWithLaterEvidence: recipients.size,
+        rate: population.size > 0 ? recipients.size / population.size : null,
+        rightCensored:
+          latestSealedOutcomeTerm === null ||
+          latestSealedOutcomeTerm < cutoffTerm + 4,
+      };
+    });
   const diagnostics = {
     counts,
     minimums,
     gates,
     selectedCutoffsByOutcomeTerm,
     coverage,
+    populationFollowup,
     knownEntityInputUnits: {
       course: inputUnits.course.size,
       instructor: inputUnits.instructor.size,

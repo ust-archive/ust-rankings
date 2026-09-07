@@ -32,6 +32,27 @@ test("seals synthetic past-only forecasts and later outcomes for one evaluation"
     process.env.GIT_DIR = join(temp, "receipt-repository", ".git");
     const dataDir = join(temp, "past");
     await makeFixtures(dataDir);
+    const pastInstance = await DuckDBInstance.create();
+    const pastConnection = await pastInstance.connect();
+    try {
+      for (const relative of [
+        "schedule/classes.parquet",
+        "schedule/courses.parquet",
+        "schedule/canonical/class_records.parquet",
+        "schedule/canonical/course_records.parquet",
+      ]) {
+        const path = join(dataDir, relative);
+        await pastConnection.run(
+          "CREATE OR REPLACE TEMP TABLE current_schedule AS SELECT * FROM read_parquet($path)",
+          { path },
+        );
+        await pastConnection.run("UPDATE current_schedule SET term_num = 103");
+        await copyQuery(pastConnection, path, "SELECT * FROM current_schedule");
+      }
+    } finally {
+      pastConnection.closeSync();
+      pastInstance.closeSync();
+    }
     const previous = await makePreviousGeneration(join(temp, "bootstrap"));
     const accepted = runPipeline(dataDir, join(temp, "accepted"), {
       RANKINGS_PREVIOUS_GENERATION_DIR: previous,
@@ -93,6 +114,16 @@ test("seals synthetic past-only forecasts and later outcomes for one evaluation"
     });
     assert(forecast.metadata.forecasts.length > 0);
     assert(
+      forecast.metadata.forecasts.some(
+        (row) =>
+          row.family === "instructor" &&
+          row.historySamples > 0 &&
+          row.historicalCourseCount > 0,
+      ),
+    );
+    assert(forecast.metadata.populationCourseIds.includes("COMP 1000"));
+    assert(forecast.metadata.populationCourseIds.includes("COMP 3000"));
+    assert(
       forecast.metadata.forecasts.every(
         (row) => row.cutoffTerm === 103 && Number.isFinite(row.prediction),
       ),
@@ -129,6 +160,10 @@ test("seals synthetic past-only forecasts and later outcomes for one evaluation"
             ? "UPDATE future_rows SET semester = '2026-27 Fall'"
             : "UPDATE future_rows SET term_num = term_num + 4",
         );
+        if (name === "schedule-class-records.parquet")
+          await connection.run(`UPDATE future_rows SET schedules = CASE
+            WHEN course_number = '1000' THEN [{'instructors': ['ALPHA, Alice Beatrice', 'TBA']}]
+            ELSE [{'instructors': ['TBA']}] END`);
         await copyQuery(connection, path, "SELECT * FROM future_rows");
       }
     } finally {
@@ -160,6 +195,29 @@ test("seals synthetic past-only forecasts and later outcomes for one evaluation"
       ),
     );
     assert(outcomeSeal.metadata.outcomes.every((row) => row.term >= 104));
+    assert(
+      outcomeSeal.metadata.outcomes.some(
+        (row) =>
+          row.family === "instructor" && row.courseEntityId === "COMP 1000",
+      ),
+    );
+    assert(outcomeSeal.metadata.outcomes.some((row) => row.teamSize !== null));
+    assert(
+      outcomeSeal.metadata.outcomes.some(
+        (row) =>
+          row.source === "sfq" &&
+          row.courseEntityId === "COMP 1000" &&
+          row.teamSize === 1,
+      ),
+    );
+    assert(
+      outcomeSeal.metadata.outcomes.some(
+        (row) =>
+          row.source === "sfq" &&
+          row.courseEntityId === "COMP 2000" &&
+          row.teamSize === null,
+      ),
+    );
     const outcomeBytes = await readFile(join(outcomeDirectory, "seal.json"));
     const changedOutcome = JSON.parse(outcomeBytes.toString());
     changedOutcome.metadata.outcomes[0].rating =
@@ -269,6 +327,18 @@ test("seals synthetic past-only forecasts and later outcomes for one evaluation"
     );
     assert.equal(result.status, "diagnostics-only");
     assert.equal(result.productionPromotion, false);
+    assert.deepEqual(result.diagnostics.populationFollowup, [
+      {
+        cutoffTerm: 103,
+        horizonTerms: 4,
+        horizonEndTerm: 107,
+        latestSealedOutcomeTerm: 104,
+        eligibleCourses: 3,
+        coursesWithLaterEvidence: 2,
+        rate: 2 / 3,
+        rightCensored: true,
+      },
+    ]);
     await assert.rejects(
       evaluateOutcomeSeal(
         protocolPath,

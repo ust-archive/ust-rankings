@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
+import { prepareObservationContexts } from "./backtest-analysis.ts";
 import { assignInstructorIdentities } from "./identities.ts";
 import {
   evaluateProspective,
@@ -65,12 +66,17 @@ function registryDirectory() {
 }
 
 type IdentitySnapshot = { uuids: string[]; aliases: Record<string, string> };
+type ModelForecast = Omit<
+  ForecastRow,
+  "historySamples" | "historicalCourseCount"
+>;
 type ForecastMetadata = {
   kind: "forecast";
   protocolSha256: string;
   cutoffTerm: number;
   forecasts: ForecastRow[];
   identities: IdentitySnapshot;
+  populationCourseIds: string[];
 };
 type OutcomeMetadata = {
   kind: "outcomes";
@@ -103,7 +109,10 @@ async function setVariables(
 
 async function withSources<T>(
   files: SourceFile[],
-  action: (connection: DuckDBConnection) => Promise<T>,
+  action: (
+    connection: DuckDBConnection,
+    sources: Record<string, string>,
+  ) => Promise<T>,
 ): Promise<T> {
   await verifySourceFiles(files);
   const snapshot = await mkdtemp(
@@ -136,7 +145,7 @@ async function withSources<T>(
         sfq_rate_penalty: 1,
         context_affects_uncertainty: true,
       });
-      const result = await action(connection);
+      const result = await action(connection, sources);
       // Recheck inputs after reading, before a seal can be accepted.
       await verifySourceFiles(files);
       return result;
@@ -284,7 +293,7 @@ export async function writeForecastSeal(
         HAVING count(DISTINCT uuid) = 1 ORDER BY name
       `)
         ).getRowObjectsJson() as Array<{ name: string; uuid: string }>;
-        const forecasts: ForecastRow[] = [];
+        const forecasts: ModelForecast[] = [];
         for (const candidate of protocol.candidateRegistry) {
           const settings = candidate.parameters;
           await setVariables(connection, {
@@ -316,7 +325,7 @@ export async function writeForecastSeal(
         `,
                 { candidate: candidate.id, cutoff: config.cutoffTerm },
               )
-            ).getRowObjectsJson() as ForecastRow[]),
+            ).getRowObjectsJson() as ModelForecast[]),
           );
           if (candidate.role === "control") {
             forecasts.push(
@@ -363,17 +372,67 @@ export async function writeForecastSeal(
           `,
                   { cutoff: config.cutoffTerm },
                 )
-              ).getRowObjectsJson() as ForecastRow[]),
+              ).getRowObjectsJson() as ModelForecast[]),
             );
           }
         }
         if (!forecasts.length)
           throw new Error("No finite forecasts at the selected cutoff");
+        const history = (
+          await connection.runAndReadAll(
+            `
+          SELECT 'course' AS family, subject || ' ' || code AS entity_id, criterion,
+            sum(samples)::DOUBLE AS "historySamples", 0::INTEGER AS "historicalCourseCount"
+          FROM observations WHERE criterion <> 'instructor' AND term_num <= $cutoff
+          GROUP BY subject, code, criterion
+          UNION ALL
+          SELECT 'instructor', identities.uuid, observations.criterion,
+            sum(observations.samples)::DOUBLE,
+            count(DISTINCT observations.subject || ' ' || observations.code)::INTEGER
+          FROM sfq_instructor_observations AS observations
+          JOIN observation_instructor_identities AS identities USING (observation_id)
+          WHERE observations.term_num <= $cutoff
+          GROUP BY identities.uuid, observations.criterion
+        `,
+            { cutoff: config.cutoffTerm },
+          )
+        ).getRowObjectsJson() as Array<{
+          family: string;
+          entity_id: string;
+          criterion: string;
+          historySamples: number;
+          historicalCourseCount: number;
+        }>;
+        const historyByEntity = new Map(
+          history.map((row) => [
+            JSON.stringify([row.family, row.entity_id, row.criterion]),
+            row,
+          ]),
+        );
+        const population = (
+          await connection.runAndReadAll(
+            `
+          SELECT DISTINCT subject || ' ' || code AS id FROM schedule_course_terms
+          WHERE term_num = $cutoff ORDER BY id
+        `,
+            { cutoff: config.cutoffTerm },
+          )
+        ).getRowObjectsJson() as Array<{ id: string }>;
         return {
           kind: "forecast",
           protocolSha256,
           cutoffTerm: config.cutoffTerm,
-          forecasts,
+          forecasts: forecasts.map((row) => {
+            const history = historyByEntity.get(
+              JSON.stringify([row.family, row.entityId, row.criterion]),
+            );
+            return {
+              ...row,
+              historySamples: history?.historySamples ?? 0,
+              historicalCourseCount: history?.historicalCourseCount ?? 0,
+            };
+          }),
+          populationCourseIds: population.map((row) => row.id),
           identities: {
             uuids: identityRows.map((row) => row.uuid),
             aliases: Object.fromEntries(
@@ -473,58 +532,63 @@ export async function writeOutcomeSeal(
     )
   )
     throw new Error("Outcome source revision was already inspected");
-  const outcomes = await withSources(config.files, async (connection) => {
-    // Source folding/normalization only: never fit a model using outcome values.
-    await sql(connection, "00_sources.sql");
-    await sql(connection, "10_observations.sql");
-    const raw = (
-      await connection.runAndReadAll(
-        `
-      SELECT observation_id AS "observationId", term_num AS term, 'course' AS family,
-        subject || ' ' || code AS "entityId", NULL::VARCHAR AS "instructorName",
-        criterion, source, rating, NULL::DOUBLE AS "sourceStddev", samples::DOUBLE AS samples, weight
-      FROM review_observations WHERE term_num >= $first
-      UNION ALL BY NAME
-      SELECT observation_id AS "observationId", term_num AS term, 'course' AS family,
-        subject || ' ' || code AS "entityId", NULL::VARCHAR AS "instructorName",
-        criterion, source, rating, source_stddev AS "sourceStddev", samples::DOUBLE AS samples, weight
-      FROM sfq_course_observations WHERE term_num >= $first
-      UNION ALL BY NAME
-      SELECT observation_id AS "observationId", term_num AS term, 'instructor' AS family,
-        NULL::VARCHAR AS "entityId", instructor_name AS "instructorName",
-        criterion, source, rating, source_stddev AS "sourceStddev", samples::DOUBLE AS samples, weight
-      FROM sfq_instructor_observations WHERE term_num >= $first
+  const outcomes = await withSources(
+    config.files,
+    async (connection, sources) => {
+      // Source folding/normalization only: never fit a model using outcome values.
+      await sql(connection, "00_sources.sql");
+      await sql(connection, "10_observations.sql");
+      await prepareObservationContexts(
+        connection,
+        sources.schedule_class_records,
+        sources.schedule_course_records,
+      );
+      const raw = (
+        await connection.runAndReadAll(
+          `
+      SELECT contexts.observation_id AS "observationId", contexts.term_num AS term,
+        CASE WHEN evidence_role = 'instructor' THEN 'instructor' ELSE 'course' END AS family,
+        contexts.subject || ' ' || contexts.code AS "courseEntityId",
+        CASE WHEN evidence_role <> 'instructor' THEN contexts.subject || ' ' || contexts.code END AS "entityId",
+        instructor_name AS "instructorName", contexts.criterion, contexts.source, contexts.rating,
+        contexts.source_stddev AS "sourceStddev", source_samples::DOUBLE AS samples,
+        source_weight AS weight,
+        CASE WHEN scheduled_team_size > 0 THEN scheduled_team_size END AS "teamSize"
+      FROM backtest_observation_contexts AS contexts
+      LEFT JOIN sfq_instructor_observations AS instructors USING (observation_id)
+      WHERE contexts.term_num >= $first
       ORDER BY term, family, "observationId"
     `,
-        { first: protocol.firstOutcomeTerm },
-      )
-    ).getRowObjectsJson() as Array<
-      Omit<OutcomeRow, "sourceRevision"> & { instructorName: string | null }
-    >;
-    return raw.map(({ instructorName, ...row }): OutcomeRow => {
-      const latest = seals
-        .filter((seal) => seal.metadata.cutoffTerm < row.term)
-        .sort((a, b) => b.metadata.cutoffTerm - a.metadata.cutoffTerm)[0];
-      const sourceName =
-        row.source === "review"
-          ? "reviews.parquet"
-          : row.family === "course"
-            ? "sfq-sections.parquet"
-            : "sfq-instructors.parquet";
-      const file = config.files.find((file) => file.name === sourceName);
-      if (!file) throw new Error(`Missing outcome source ${sourceName}`);
-      return {
-        ...row,
-        sourceRevision: file.revision,
-        entityId:
-          instructorName === null
-            ? row.entityId
-            : (latest?.metadata.identities.aliases[
-                instructorName.trim().toLowerCase()
-              ] ?? null),
-      };
-    });
-  });
+          { first: protocol.firstOutcomeTerm },
+        )
+      ).getRowObjectsJson() as Array<
+        Omit<OutcomeRow, "sourceRevision"> & { instructorName: string | null }
+      >;
+      return raw.map(({ instructorName, ...row }): OutcomeRow => {
+        const latest = seals
+          .filter((seal) => seal.metadata.cutoffTerm < row.term)
+          .sort((a, b) => b.metadata.cutoffTerm - a.metadata.cutoffTerm)[0];
+        const sourceName =
+          row.source === "review"
+            ? "reviews.parquet"
+            : row.family === "course"
+              ? "sfq-sections.parquet"
+              : "sfq-instructors.parquet";
+        const file = config.files.find((file) => file.name === sourceName);
+        if (!file) throw new Error(`Missing outcome source ${sourceName}`);
+        return {
+          ...row,
+          sourceRevision: file.revision,
+          entityId:
+            instructorName === null
+              ? row.entityId
+              : (latest?.metadata.identities.aliases[
+                  instructorName.trim().toLowerCase()
+                ] ?? null),
+        };
+      });
+    },
+  );
   const seal = await sealBundle<OutcomeMetadata>(
     directory,
     {
@@ -607,6 +671,12 @@ export async function evaluateOutcomeSeal(
         seals.map((seal) => [
           seal.metadata.cutoffTerm,
           seal.metadata.identities.uuids,
+        ]),
+      ),
+      Object.fromEntries(
+        seals.map((seal) => [
+          seal.metadata.cutoffTerm,
+          seal.metadata.populationCourseIds,
         ]),
       ),
     );

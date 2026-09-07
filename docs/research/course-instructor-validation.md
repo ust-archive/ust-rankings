@@ -347,6 +347,12 @@ hashes before calculating metrics. A fresh protocol also freezes nominal interva
 coverage gates. Synthetic tests validate the complete workflow; no real prospective
 forecast or outcome seal was generated in this audit.
 
+Prospective seals also retain cutoff history density, historical Instructor Course
+counts, complete Schedule-backed population membership, and later canonical Class
+team context. Placeholder names such as TBA no longer count as team members in
+the shared context stage. This corrects newly generated retrospective team strata
+as well; the archived report counts and hashes above were not regenerated.
+
 External requirements remain: independently support the acquisition history and
 absence of prior outcome inspection, publish the protocol and forecast seals
 before outcomes become available, then wait for genuinely new outcomes meeting
