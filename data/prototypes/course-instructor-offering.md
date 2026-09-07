@@ -4,6 +4,8 @@
 
 This prototype is for issue #167. It is not production code. Do not merge it into the production data path without an untouched holdout result and a separate design decision.
 
+The subsequent [development identity-shuffle control](course-instructor-negative-control.md) finds no incremental benefit from these Instructor identities: all ten shuffled runs outperform the real identities, and the population-offset baseline outperforms both. The source-fragment aggregation invariant passes. Keep this prototype isolated.
+
 ## Question
 
 Can a small crossed model reduce context misattribution with these terms?
