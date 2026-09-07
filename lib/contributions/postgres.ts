@@ -161,6 +161,7 @@ export class PostgresAccountRepository implements AccountRepository {
         SELECT 'review'::text, review.course_prefix, review.course_number,
                review.instructor_uuid, reaction.review_id,
                CASE WHEN revision.attribution = 'attributed'
+                 AND NOT review.attribution_suppressed
                  THEN revision.captured_display_name
                END,
                'emoji'::text, reaction.code, reaction.created_at
@@ -173,6 +174,7 @@ export class PostgresAccountRepository implements AccountRepository {
         SELECT 'review'::text, review.course_prefix, review.course_number,
                review.instructor_uuid, vote.review_id,
                CASE WHEN revision.attribution = 'attributed'
+                 AND NOT review.attribution_suppressed
                  THEN revision.captured_display_name
                END,
                'thumb'::text, vote.state, vote.updated_at
