@@ -78,6 +78,7 @@ export interface AttachmentStore {
     key: string,
   ): Promise<{ contentLength: number; contentType?: string } | undefined>;
   get(key: string, maxBytes: number): Promise<Uint8Array | undefined>;
+  put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
   exists(key: string): Promise<boolean>;
 }
@@ -124,7 +125,9 @@ export interface AttachmentRepository {
       }
     | undefined
   >;
-  listCleanupIntents(now: Date): Promise<UploadIntentRecord[]>;
+  listCleanupIntents(
+    now: Date,
+  ): Promise<Array<{ id: string; objectKeys: string[] }>>;
   deleteIntent(intentId: string): Promise<void>;
   requestRemoval(storedFileId: string): Promise<StoredFileRecord>;
   listRemovalQueue(): Promise<StoredFileRecord[]>;
@@ -518,24 +521,30 @@ export function createAttachmentService(
           ({
             id: randomUUID(),
             ownerUserId: input.userId,
-            objectKey: intent.objectKey,
+            objectKey: `verified/${intent.id}`,
             byteSize: bytes.byteLength,
             sha256: digest,
             detectedMime: detected.mime,
           } satisfies StoredFileRecord);
+        // The presigned PUT remains replayable until expiry. Publish only the
+        // exact bytes validated here, under a key the uploader cannot write.
+        if (!reused)
+          await store.put(storedFile.objectKey, bytes, detected.mime);
         const accepted = await repository.accept({
           intentId: intent.id,
           storedFile,
           reused: Boolean(reused),
         });
-        if (reused) await store.delete(intent.objectKey);
+        // Expiry cleanup retains this intent and retries deletion, including
+        // any replayed upload. A cleanup failure must not hide acceptance.
+        await store.delete(intent.objectKey).catch(() => {});
         return {
           id: accepted.id,
           sha256: accepted.sha256,
           byteSize: accepted.byteSize,
           mime: accepted.detectedMime,
           kind: attachmentKind(accepted.detectedMime),
-          reused: Boolean(reused),
+          reused: Boolean(reused) || accepted.id !== storedFile.id,
         };
       } catch (error) {
         const { AttachmentValidationError } = await import("./validation");
@@ -646,8 +655,11 @@ export function createAttachmentService(
       const stale = await repository.listCleanupIntents(now());
       let cleaned = 0;
       for (const intent of stale) {
-        await store.delete(intent.objectKey);
-        if (await store.exists(intent.objectKey)) continue;
+        for (const key of intent.objectKeys) await store.delete(key);
+        const remaining = await Promise.all(
+          intent.objectKeys.map((key) => store.exists(key)),
+        );
+        if (remaining.some(Boolean)) continue;
         await repository.deleteIntent(intent.id);
         cleaned++;
       }
