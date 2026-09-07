@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -7,9 +7,283 @@ import { fileURLToPath } from "node:url";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { test } from "vitest";
 import { summarizeBacktestAnalysis } from "../src/backtest-analysis-report.ts";
+import {
+  evaluateOutcomeSeal,
+  writeForecastSeal,
+  writeOutcomeSeal,
+} from "../src/prospective.ts";
+import {
+  createProtocol,
+  type SourceFile,
+  sha256,
+} from "../src/prospective-seal.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureCommit = "0123456789abcdef0123456789abcdef01234567";
+
+test("seals synthetic past-only forecasts and later outcomes for one evaluation", async () => {
+  const temp = await mkdtemp(
+    join(tmpdir(), "rankings-prospective-integration-"),
+  );
+  const oldGitDir = process.env.GIT_DIR;
+  try {
+    // Isolate the durable one-use receipt ledger, including repeated test runs.
+    execFileSync("git", ["init", "--quiet", join(temp, "receipt-repository")]);
+    process.env.GIT_DIR = join(temp, "receipt-repository", ".git");
+    const dataDir = join(temp, "past");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "bootstrap"));
+    const accepted = runPipeline(dataDir, join(temp, "accepted"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_IDENTITY_COMMIT: fixtureCommit,
+    });
+    const names = [
+      ["catalog-courses.parquet", "catalog/courses.parquet"],
+      ["schedule-classes.parquet", "schedule/classes.parquet"],
+      ["schedule-courses.parquet", "schedule/courses.parquet"],
+      [
+        "schedule-class-records.parquet",
+        "schedule/canonical/class_records.parquet",
+      ],
+      [
+        "schedule-course-records.parquet",
+        "schedule/canonical/course_records.parquet",
+      ],
+      ["reviews.parquet", "ust-space/reviews.parquet"],
+      ["sfq-instructors.parquet", "sfq/canonical/instructor_records.parquet"],
+      ["sfq-sections.parquet", "sfq/canonical/section_records.parquet"],
+    ];
+    const describe = async (
+      name: string,
+      path: string,
+      revision: string,
+    ): Promise<SourceFile> => ({
+      name,
+      path,
+      revision,
+      sha256: sha256(await readFile(path)),
+      acquiredAt: new Date().toISOString(),
+    });
+    const files = await Promise.all(
+      names.map(([name, path]) =>
+        describe(name, join(dataDir, path), fixtureCommit),
+      ),
+    );
+    for (const name of [
+      "instructor-identities.parquet",
+      "instructor-aliases.parquet",
+      "instructor-identity-events.parquet",
+      "instructor-split-affected-associations.parquet",
+      "course-instructors.parquet",
+    ])
+      files.push(
+        await describe(`previous-${name}`, join(accepted, name), fixtureCommit),
+      );
+    const protocolPath = join(temp, "protocol.json");
+    await createProtocol(protocolPath, {
+      knownOutcomeCeilingTerm: 103,
+      firstOutcomeTerm: 104,
+      inspectedSourceRevisions: [fixtureCommit],
+    });
+    const forecastDirectory = join(temp, "forecast");
+    const forecast = await writeForecastSeal(forecastDirectory, {
+      protocolPath,
+      cutoffTerm: 103,
+      files,
+    });
+    assert(forecast.metadata.forecasts.length > 0);
+    assert(
+      forecast.metadata.forecasts.every(
+        (row) => row.cutoffTerm === 103 && Number.isFinite(row.prediction),
+      ),
+    );
+    assert.deepEqual(
+      [
+        ...new Set(forecast.metadata.forecasts.map((row) => row.candidateId)),
+      ].sort(),
+      [
+        "current",
+        "latest",
+        "population",
+        "rolling",
+        "unshrunk",
+        "votes-unweighted-context-4",
+      ],
+    );
+    const forecastSeals = [
+      { directory: forecastDirectory, sha256: forecast.sha256 },
+    ];
+    const future = join(temp, "future");
+    await makeFixtures(future, { lowInstructor: "Future Unseen" });
+    const instance = await DuckDBInstance.create();
+    const connection = await instance.connect();
+    try {
+      for (const [name, relative] of names) {
+        const path = join(future, relative);
+        await connection.run(
+          "CREATE OR REPLACE TEMP TABLE future_rows AS SELECT * FROM read_parquet($path)",
+          { path },
+        );
+        await connection.run(
+          name === "reviews.parquet"
+            ? "UPDATE future_rows SET semester = '2026-27 Fall'"
+            : "UPDATE future_rows SET term_num = term_num + 4",
+        );
+        await copyQuery(connection, path, "SELECT * FROM future_rows");
+      }
+    } finally {
+      connection.closeSync();
+      instance.closeSync();
+    }
+    const futureFiles = await Promise.all(
+      names.map(([name, path]) =>
+        describe(name, join(future, path), "b".repeat(40)),
+      ),
+    );
+    await assert.rejects(
+      writeForecastSeal(join(temp, "leaked-forecast"), {
+        protocolPath,
+        cutoffTerm: 103,
+        files: [...futureFiles, ...files.slice(8)],
+      }),
+      /future training Terms/,
+    );
+    const outcomeDirectory = join(temp, "outcomes");
+    const outcomeSeal = await writeOutcomeSeal(outcomeDirectory, {
+      protocolPath,
+      forecastSeals,
+      files: futureFiles,
+    });
+    assert(
+      outcomeSeal.metadata.outcomes.some(
+        (row) => row.family === "instructor" && row.entityId === null,
+      ),
+    );
+    assert(outcomeSeal.metadata.outcomes.every((row) => row.term >= 104));
+    const outcomeBytes = await readFile(join(outcomeDirectory, "seal.json"));
+    const changedOutcome = JSON.parse(outcomeBytes.toString());
+    changedOutcome.metadata.outcomes[0].rating =
+      changedOutcome.metadata.outcomes[0].rating === 5 ? 1 : 5;
+    await writeFile(
+      join(outcomeDirectory, "seal.json"),
+      JSON.stringify(changedOutcome),
+    );
+    await assert.rejects(
+      evaluateOutcomeSeal(
+        protocolPath,
+        forecastSeals,
+        outcomeDirectory,
+        outcomeSeal.sha256,
+      ),
+      /Outcome seal hash mismatch/,
+    );
+    await assert.rejects(
+      evaluateOutcomeSeal(
+        protocolPath,
+        forecastSeals,
+        outcomeDirectory,
+        sha256(JSON.stringify(changedOutcome)),
+      ),
+      /ENOENT|register/i,
+    );
+    await writeFile(join(outcomeDirectory, "seal.json"), outcomeBytes);
+    const forecastBytes = await readFile(join(forecastDirectory, "seal.json"));
+    const changedForecast = JSON.parse(forecastBytes.toString());
+    changedForecast.metadata.forecasts[0].prediction += 0.01;
+    await writeFile(
+      join(forecastDirectory, "seal.json"),
+      JSON.stringify(changedForecast),
+    );
+    await assert.rejects(
+      evaluateOutcomeSeal(
+        protocolPath,
+        forecastSeals,
+        outcomeDirectory,
+        outcomeSeal.sha256,
+      ),
+      /Forecast seal hash mismatch/,
+    );
+    await assert.rejects(
+      evaluateOutcomeSeal(
+        protocolPath,
+        [
+          {
+            directory: forecastDirectory,
+            sha256: sha256(JSON.stringify(changedForecast)),
+          },
+        ],
+        outcomeDirectory,
+        outcomeSeal.sha256,
+      ),
+      /ENOENT|register/i,
+    );
+    await writeFile(join(forecastDirectory, "seal.json"), forecastBytes);
+    for (const name of [
+      "previous-instructor-identities.parquet",
+      "sfq-instructors.parquet",
+    ]) {
+      const path = join(forecastDirectory, name);
+      const bytes = await readFile(path);
+      await writeFile(path, "tampered");
+      await assert.rejects(
+        evaluateOutcomeSeal(
+          protocolPath,
+          forecastSeals,
+          outcomeDirectory,
+          outcomeSeal.sha256,
+        ),
+        /hash|SHA/i,
+      );
+      await writeFile(path, bytes);
+    }
+    const evaluationConfig = join(temp, "evaluation-config.json");
+    const existingReport = join(temp, "existing-report.json");
+    await writeFile(
+      evaluationConfig,
+      JSON.stringify({
+        protocolPath,
+        forecastSeals,
+        outcomeDirectory,
+        outcomeSha256: outcomeSeal.sha256,
+      }),
+    );
+    await writeFile(existingReport, "preserve");
+    const collision = spawnSync(
+      process.execPath,
+      [
+        join(root, "src", "prospective.ts"),
+        "evaluate",
+        evaluationConfig,
+        existingReport,
+      ],
+      { encoding: "utf8", env: process.env },
+    );
+    assert.notEqual(collision.status, 0);
+    assert.match(collision.stderr, /EEXIST/);
+    assert.equal(await readFile(existingReport, "utf8"), "preserve");
+    const result = await evaluateOutcomeSeal(
+      protocolPath,
+      forecastSeals,
+      outcomeDirectory,
+      outcomeSeal.sha256,
+    );
+    assert.equal(result.status, "diagnostics-only");
+    assert.equal(result.productionPromotion, false);
+    await assert.rejects(
+      evaluateOutcomeSeal(
+        protocolPath,
+        forecastSeals,
+        outcomeDirectory,
+        outcomeSeal.sha256,
+      ),
+      /already been consumed/,
+    );
+  } finally {
+    if (oldGitDir === undefined) delete process.env.GIT_DIR;
+    else process.env.GIT_DIR = oldGitDir;
+    await rm(temp, { recursive: true, force: true });
+  }
+}, 120_000);
 
 test("freezes the future holdout before outcomes", async () => {
   const manifest = JSON.parse(
