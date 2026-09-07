@@ -1,4 +1,6 @@
-import postgres from "postgres";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import type postgres from "postgres";
 import { expect, test, vi } from "vitest";
 import { HKUST_CONNECT_ISSUER } from "@/lib/auth/policy";
 import { createAccountService } from "@/lib/contributions/accounts";
@@ -54,6 +56,47 @@ const connection = process.env.TEST_CONTRIBUTIONS_POSTGRES_URL;
 if (!connection) {
   test.skip("account PostgreSQL contract (TEST_CONTRIBUTIONS_POSTGRES_URL is not configured)", () => {});
 } else {
+  test("operator account closure removes Review reactions and votes", async () => {
+    await withPostgresSchema("closure", async ({ sql, schemaUrl }) => {
+      const userId = crypto.randomUUID();
+      const authorId = crypto.randomUUID();
+      const reviewId = crypto.randomUUID();
+      const revisionId = crypto.randomUUID();
+      await sql`INSERT INTO contribution_users (id, status, public_display_name) VALUES (${userId}, 'active', 'Closing User'), (${authorId}, 'active', 'Author')`;
+      await sql`SELECT publish_review(${reviewId}, ${revisionId}, ${authorId}, 'COMP', '2000', NULL, NULL, NULL, 'Useful labs.', 'attributed', 'review-test-v1')`;
+      await sql`INSERT INTO review_thumbs_votes (user_id, review_id, state) VALUES (${userId}, ${reviewId}, 'up')`;
+      await sql`INSERT INTO review_emoji_reactions (user_id, review_id, code) VALUES (${userId}, ${reviewId}, 'love')`;
+      const { stdout } = await promisify(execFile)(
+        process.execPath,
+        [
+          "scripts/moderate.ts",
+          "close-account",
+          userId,
+          "test-operator",
+          "closure-request",
+        ],
+        {
+          env: { ...process.env, CONTRIBUTIONS_POSTGRES_URL: schemaUrl },
+        },
+      );
+      expect(stdout).toContain(`Closed account ${userId}`);
+      expect(
+        (
+          await sql`SELECT status FROM contribution_users WHERE id = ${userId}`
+        )[0].status,
+      ).toBe("closed");
+      expect(
+        await sql`SELECT user_id FROM review_thumbs_votes WHERE user_id = ${userId}`,
+      ).toHaveLength(0);
+      expect(
+        await sql`SELECT user_id FROM review_emoji_reactions WHERE user_id = ${userId}`,
+      ).toHaveLength(0);
+      expect(
+        await sql`SELECT id FROM rights_requests WHERE user_id = ${userId} AND kind = 'closure'`,
+      ).toHaveLength(1);
+    });
+  });
+
   test("account PostgreSQL contract preserves identity uniqueness and current status", async () => {
     await withPostgresSchema("account", async ({ sql }) => {
       const { PostgresAccountRepository } = await import(
