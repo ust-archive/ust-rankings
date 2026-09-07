@@ -151,16 +151,6 @@ export function normalizePublicReview(review: PublicReview): PublicReview {
   };
 }
 
-export function readWithReviewCache<T>(
-  useCache: boolean,
-  cachedRead: () => Promise<T>,
-  uncachedRead: () => Promise<T>,
-) {
-  return useCache && process.env.NODE_ENV !== "development"
-    ? cachedRead()
-    : uncachedRead();
-}
-
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const COURSE_PREFIX = /^[A-Z]{2,8}$/u;
