@@ -231,16 +231,24 @@ if (!connection) {
         },
       });
       objects.set(legacyIntent, bytes);
-      objects.set(reservation.objectKey, Buffer.alloc(bytes.length));
+      objects.set(copy.objectKey, Buffer.alloc(bytes.length));
       objects.set(`verified/${copy.intentId}`, bytes);
       expect(await attachments.cleanupExpired()).toBe(0);
       await sql`UPDATE upload_intents SET expires_at = now() - interval '1 minute'`;
-      expect(await attachments.cleanupExpired()).toBe(3);
-      expect(objects.has(reservation.objectKey)).toBe(false);
+      expect(await attachments.cleanupExpired()).toBe(2);
+      expect(objects.has(copy.objectKey)).toBe(false);
       expect(objects.has(`verified/${copy.intentId}`)).toBe(false);
       expect(objects.get(legacyIntent)).toEqual(bytes);
       const publishedKey = new URL(signed.url).pathname.slice(1);
       expect(objects.get(publishedKey)).toEqual(bytes);
+      await expect(
+        attachments.reserveUpload({
+          userId: userA,
+          byteSize: 100 - bytes.byteLength,
+          filename: "after-cleanup.jpg",
+          contentType: "image/jpeg",
+        }),
+      ).resolves.toMatchObject({ quotaUsedBytes: 100 });
       await sql`UPDATE reviews SET publication_state = 'withdrawn' WHERE id = ${reviewId}`;
       await expect(
         attachments.signPublicRead(attachment.id),
