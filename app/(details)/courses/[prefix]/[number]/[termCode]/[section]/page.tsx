@@ -30,7 +30,7 @@ export default async function ClassPage({
     normalizeCourseRoute(route, query);
   if (!termCode || !section) notFound();
   const [rankingPreference, community] = await Promise.all([
-    readRankingPreferenceQuery(),
+    readRankingPreferenceQuery(query),
     loadReviews({
       type: "course",
       coursePrefix,

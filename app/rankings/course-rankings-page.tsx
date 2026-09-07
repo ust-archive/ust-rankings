@@ -232,7 +232,12 @@ export function CourseRankingsPage({
             style={{ listStyle: "none", marginInlineStart: 0 }}
           >
             {rankings.results.map((result) => (
-              <RankingResultCard key={result.courseCode} result={result} />
+              <RankingResultCard
+                configuration={rankings.configuration}
+                key={result.courseCode}
+                result={result}
+                termCode={rankings.population.termCode}
+              />
             ))}
             {!current.loading ? (
               <RankingPagination

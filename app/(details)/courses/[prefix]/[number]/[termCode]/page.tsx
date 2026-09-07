@@ -27,7 +27,7 @@ export default async function CourseOfferingPage({
   );
   if (!termCode) notFound();
   const [rankingPreference, community] = await Promise.all([
-    readRankingPreferenceQuery(),
+    readRankingPreferenceQuery(query),
     loadReviews({
       type: "course",
       coursePrefix,

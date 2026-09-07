@@ -12,6 +12,48 @@ declare global {
 const rankingsUrl =
   "/rankings/courses?term=2510&preset=grade&activity=all&q=Bulk&settings=open";
 
+for (const [entity, search] of [
+  ["Course", "COMP 1000"],
+  ["Instructor", "LI, Xin"],
+] as const) {
+  test(`${entity} detail navigation preserves the displayed ranking configuration`, async ({
+    page,
+    context,
+  }) => {
+    await page.goto(
+      `/rankings/${entity === "Course" ? "courses" : "instructors"}?term=2510&preset=custom&weight_content=2&q=${encodeURIComponent(search)}`,
+    );
+    const result = page
+      .getByRole("list", { name: `${entity} rankings` })
+      .getByRole("link")
+      .first();
+    await expect(result).toBeVisible();
+    const href = await result.getAttribute("href");
+    const destination = new URL(href ?? "", page.url());
+    expect(destination.searchParams.get("term")).toBe("2510");
+    expect(destination.searchParams.get("preset")).toBe("custom");
+    expect(destination.searchParams.get("weight_content")).toBe("1");
+    await result.click();
+    await expect(page.getByText("Custom", { exact: true })).toBeAttached();
+    const fresh = await context.newPage();
+    await fresh.goto(destination.href);
+    await expect(fresh.getByText("Custom", { exact: true })).toBeAttached();
+    await fresh.close();
+  });
+}
+
+test("Course detail navigation retains a historical Term", async ({ page }) => {
+  await page.goto("/rankings/courses?term=2430&q=COMP%202000");
+  const result = page
+    .getByRole("list", { name: "Course rankings" })
+    .getByRole("link")
+    .first();
+  await expect(result).toBeVisible();
+  await result.click();
+  await expect(page).toHaveURL(/term=2430/);
+  await expect(page.getByText("2024-25 Spring").first()).toBeAttached();
+});
+
 function rankingLinks(page: Page) {
   return page.getByRole("list", { name: "Course rankings" }).getByRole("link");
 }

@@ -147,7 +147,7 @@ export async function renderInstructorPage(
         if (!(error instanceof ServerIndexUnavailableError)) throw error;
         return undefined;
       }),
-    readRankingPreferenceQuery(),
+    readRankingPreferenceQuery(query),
   ]);
   if (!identity)
     return (
