@@ -468,6 +468,12 @@ try {
         "Each aggregated Course or Instructor outcome unit has equal primary weight. Source weights affect fitting and the named secondary metric only.",
       intervals:
         "Deterministic paired 95% intervals resample Courses, Instructors, or outcome Terms with seed 100 and 2,000 draws.",
+      strata:
+        "Equal primary units within each reported group; a unit may appear in several groups when its Class contexts differ. Evidence density uses cumulative samples: 0, 1-5, or more than 5.",
+      intervalCoverage:
+        "50%, 80%, 90%, and 95% Gaussian coverage over raw forecast/outcome pairs with finite predictive standard deviations. This is diagnostic, not development-fitted conformal calibration or an outer holdout result.",
+      holdoutProtection:
+        "Reserved future outcomes are rejected before scoring, using the frozen development ceiling in data/validation/future-holdout.json.",
     },
     uncertaintyTarget: "future-observation",
     uncertaintyCriteria: [

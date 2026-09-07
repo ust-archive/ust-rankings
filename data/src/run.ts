@@ -202,6 +202,27 @@ async function executeFile(
   await connection.run(sql);
 }
 
+async function assertDevelopmentOutcomes(
+  connection: DuckDBConnection,
+): Promise<void> {
+  const manifest = JSON.parse(
+    await readFile(join(root, "validation", "future-holdout.json"), "utf8"),
+  );
+  const ceiling = manifest.developmentOutcomeCeilingTerm;
+  if (!Number.isSafeInteger(ceiling) || ceiling < 0)
+    throw new Error("Invalid frozen development outcome ceiling");
+  const reader = await connection.runAndReadAll(
+    "SELECT count(*) AS count FROM observations WHERE term_num > $ceiling",
+    { ceiling },
+  );
+  if (Number(reader.getRowObjectsJS()[0]?.count) > 0)
+    throw new Error(
+      `Retrospective backtests cannot inspect outcomes after Term ${ceiling}: ` +
+        "they are reserved by data/validation/future-holdout.json. " +
+        "Use pinned development sources; future outcomes require a separately sealed holdout evaluation.",
+    );
+}
+
 async function setVariables(
   connection: DuckDBConnection,
   values: Record<string, string | number | boolean>,
@@ -359,6 +380,7 @@ try {
     if (!backtestDirectory)
       throw new Error("RANKINGS_BACKTEST_DIRECTORY is required");
     await executeFile(connection, "10_observations.sql");
+    await assertDevelopmentOutcomes(connection);
     await assignInstructorIdentities(connection, {
       previousGenerationDir: process.env.RANKINGS_PREVIOUS_GENERATION_DIR,
       initialize: initializeIdentityHistory,
@@ -387,6 +409,7 @@ try {
     }
   } else {
     await executeFile(connection, "10_observations.sql");
+    if (backtestRowsPath) await assertDevelopmentOutcomes(connection);
     await assignInstructorIdentities(connection, {
       previousGenerationDir: process.env.RANKINGS_PREVIOUS_GENERATION_DIR,
       initialize: initializeIdentityHistory,

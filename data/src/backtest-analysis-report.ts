@@ -22,6 +22,18 @@ type ErrorSummary = {
     rolling: number;
     courseOnly?: number | null;
   };
+  strata: Array<{
+    dimension: string;
+    group: string;
+    evaluationUnits: number;
+    predictionError: number;
+  }>;
+  intervalCoverage: Array<{
+    target: number;
+    comparisons: number;
+    covered: number;
+    coverage: number | null;
+  }>;
 };
 
 export type BacktestAnalysisSummary = {
@@ -65,6 +77,79 @@ async function queryRows(
   sql: string,
 ): Promise<NumberRow[]> {
   return (await connection.runAndReadAll(sql)).getRowObjectsJS() as NumberRow[];
+}
+
+async function summarizeBreakdowns(
+  connection: DuckDBConnection,
+  path: string,
+  family: "course" | "instructor",
+): Promise<Pick<ErrorSummary, "strata" | "intervalCoverage">> {
+  const entity = family === "course" ? "course_id" : "uuid";
+  const criterion = family === "course" ? ", criterion" : "";
+  const groups =
+    family === "course"
+      ? "('criterion', criterion), ('source', outcome_source)"
+      : `('cold Instructor', CASE WHEN cold_instructor THEN 'cold' ELSE 'warm' END),
+       ('cold Course', CASE WHEN cold_course THEN 'cold' ELSE 'warm' END),
+       ('teaching team', CASE WHEN team_taught THEN 'team'
+          WHEN NOT team_taught THEN 'solo' ELSE 'unknown' END),
+       ('historical Courses', CASE WHEN historical_courses > 1 THEN 'multiple'
+          WHEN historical_courses = 1 THEN 'one' ELSE 'none' END)`;
+  const strata = await queryRows(
+    connection,
+    `
+    WITH raw AS (SELECT * FROM read_parquet('${path}')),
+    cutoff_units AS (
+      SELECT ${entity}, cutoff_term, outcome_term${criterion}, dimension, label,
+        min(prediction) AS prediction, avg(outcome) AS outcome
+      FROM raw, LATERAL (VALUES
+        ${groups},
+        ('evidence samples', CASE WHEN cumulative_samples = 0 THEN '0'
+          WHEN cumulative_samples <= 5 THEN '1-5' ELSE 'more than 5' END)
+      ) AS strata(dimension, label)
+      GROUP BY ${entity}, cutoff_term, outcome_term${criterion}, dimension, label
+    ), units AS (
+      SELECT ${entity}, outcome_term${criterion}, dimension, label,
+        avg(abs(prediction - outcome)) AS error
+      FROM cutoff_units
+      GROUP BY ${entity}, outcome_term${criterion}, dimension, label
+    )
+    SELECT dimension, label, count(*) AS evaluation_units,
+      avg(error) AS prediction_error
+    FROM units GROUP BY dimension, label ORDER BY dimension, label
+  `,
+  );
+  const coverage = await queryRows(
+    connection,
+    `
+    SELECT target, count(*) FILTER (WHERE predictive_stddev IS NOT NULL
+      AND isfinite(predictive_stddev) AND predictive_stddev >= 0) AS comparisons,
+      count(*) FILTER (WHERE isfinite(predictive_stddev) AND predictive_stddev >= 0
+        AND abs(prediction - outcome) <= multiplier * predictive_stddev) AS covered
+    FROM read_parquet('${path}'), (VALUES
+      (0.50, 0.6744897501960817), (0.80, 1.2815515655446004),
+      (0.90, 1.6448536269514722), (0.95, 1.959963984540054)
+    ) AS levels(target, multiplier)
+    GROUP BY target ORDER BY target
+  `,
+  );
+  return {
+    strata: strata.map((row) => ({
+      dimension: String(row.dimension),
+      group: String(row.label),
+      evaluationUnits: Number(row.evaluation_units),
+      predictionError: Number(row.prediction_error),
+    })),
+    intervalCoverage: coverage.map((row) => ({
+      target: Number(row.target),
+      comparisons: Number(row.comparisons),
+      covered: Number(row.covered),
+      coverage:
+        Number(row.comparisons) > 0
+          ? Number(row.covered) / Number(row.comparisons)
+          : null,
+    })),
+  };
 }
 
 export async function summarizeBacktestAnalysis(
@@ -276,6 +361,7 @@ export async function summarizeBacktestAnalysis(
   };
   return {
     course: {
+      ...(await summarizeBreakdowns(connection, coursePath, "course")),
       evaluationUnits: required(course.evaluation_units),
       entities: required(course.entities),
       criteria: required(course.criteria),
@@ -295,6 +381,7 @@ export async function summarizeBacktestAnalysis(
       },
     },
     instructor: {
+      ...(await summarizeBreakdowns(connection, instructorPath, "instructor")),
       evaluationUnits: required(instructor.evaluation_units),
       entities: required(instructor.entities),
       predictionError: required(instructor.prediction_error),

@@ -917,10 +917,12 @@ test("shared backtest candidates match the production model", async () => {
     );
     assert.deepEqual(
       await rows(`
-        SELECT bool_and(criterion = outcome_criterion) AS criteria_match
+        SELECT bool_and(criterion = outcome_criterion) AS criteria_match,
+          bool_and(predictive_stddev IS NOT NULL AND isfinite(predictive_stddev))
+            FILTER (WHERE evidence_role = 'review') AS review_intervals_available
         FROM read_parquet('${courseAnalysis}')
       `),
-      [{ criteria_match: true }],
+      [{ criteria_match: true, review_intervals_available: true }],
     );
   } finally {
     await rm(temp, { recursive: true, force: true });
@@ -1039,6 +1041,31 @@ test("walk-forward backtests compare candidates across historical cutoffs", asyn
     assert.ok(report.selected.parameters);
     assert.equal(report.predictionScale, "source-rating");
     assert.equal(report.analysis.usedForCandidateSelection, false);
+    for (const candidate of report.candidates) {
+      for (const family of ["course", "instructor"]) {
+        assert.deepEqual(
+          candidate.analysis[family].intervalCoverage.map(
+            (row: { target: number }) => row.target,
+          ),
+          [0.5, 0.8, 0.9, 0.95],
+        );
+        for (const row of candidate.analysis[family].intervalCoverage) {
+          assert.ok(row.comparisons > 0);
+          assert.ok(row.coverage >= 0 && row.coverage <= 1);
+        }
+      }
+      assert.ok(
+        candidate.analysis.instructor.strata.some(
+          (row: { dimension: string }) => row.dimension === "cold Course",
+        ),
+      );
+      assert.ok(
+        candidate.analysis.instructor.strata.some(
+          (row: { dimension: string; group: string }) =>
+            row.dimension === "historical Courses" && row.group === "one",
+        ),
+      );
+    }
     assert.match(report.analysis.primaryCourseMetric, /Course Code/);
     assert.match(report.analysis.primaryInstructorMetric, /Instructor UUID/);
     assert.ok(
@@ -1126,6 +1153,62 @@ test("walk-forward backtests compare candidates across historical cutoffs", asyn
     await rm(temp, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("retrospective backtests reject reserved future outcomes before scoring", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-holdout-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { backtestHistory: true });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const instance = await DuckDBInstance.create(":memory:");
+    const connection = await instance.connect();
+    try {
+      const path = join(dataDir, "sfq", "canonical", "section_records.parquet");
+      await connection.run(
+        `CREATE TABLE sections AS SELECT * FROM read_parquet('${path.replaceAll("\\", "/")}')`,
+      );
+      await copyQuery(
+        connection,
+        path,
+        `
+        SELECT * FROM sections
+        UNION ALL
+        SELECT * REPLACE (103 AS term_num, '2540' AS term_code)
+        FROM sections WHERE term_num = 100
+      `,
+      );
+    } finally {
+      connection.closeSync();
+      instance.closeSync();
+    }
+    for (const mode of ["legacy", "candidates"]) {
+      assert.throws(
+        () =>
+          runPipeline(dataDir, join(temp, mode), {
+            RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+            ...(mode === "legacy"
+              ? { RANKINGS_BACKTEST_ROWS: join(temp, "comparisons.parquet") }
+              : {
+                  RANKINGS_BACKTEST_DIRECTORY: join(temp, "candidates"),
+                  RANKINGS_BACKTEST_CANDIDATES: JSON.stringify([
+                    {
+                      id: "current",
+                      timelinessBase: 0.65,
+                      courseInstructorMultiplier: 12,
+                      reviewVoteScale: 1,
+                      sfqRatePenalty: 1,
+                      contextAffectsUncertainty: true,
+                    },
+                  ]),
+                }),
+          }),
+        /Retrospective backtests cannot inspect outcomes after Term 102/,
+      );
+    }
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
 
 test("new Instructor UUIDs are stable across pipeline runs and omit TBA", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-"));

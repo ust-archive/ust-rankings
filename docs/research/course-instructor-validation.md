@@ -14,7 +14,65 @@ The main findings are:
 - The crossed Course + Instructor + Course Offering prototype did not beat the simpler baselines on its post-hoc holdout.
 - A future holdout must confirm any production change. The frozen manifest is `data/validation/future-holdout.json`.
 
-## Question
+## 2026-09-07 validation audit
+
+The retrospective runner previously did not enforce the frozen development
+ceiling. It could score Term 103+ outcomes while reporting only a retrospective
+warning. Both the batched candidate runner and the legacy comparison export now
+reject such inputs before model scoring. The frozen manifest is unchanged.
+
+The pinned UST Space snapshot listed below already contains 169 raw Review
+events for Terms after 102. Therefore, a Term number alone does not prove that
+an outcome was unseen when the manifest was frozen. The earlier report must
+not certify those observations as untouched future evidence. A confirmatory
+evaluation still needs sealed forecasts, acquisition provenance, and outcomes
+not previously inspected. No reserved outcomes were scored in this audit.
+
+For a development-only rerun, local copies of the pinned source files were
+restricted to Term Numbers at or below 102 (Review Terms parsed from `semester`).
+This deliberately excludes future Schedule/Catalog context as well as future
+Review outcomes; it is still retrospective because earlier edits, votes, and
+identity knowledge cannot be reconstructed. The resulting report has 199,106
+observations, 54 cutoffs, 40,566 Course units, and 11,256 Instructor units.
+All evidence-allocation invariants passed.
+
+The nine-candidate run selected `votes-unweighted-context-4` for retrospective
+advice only: balanced Course error was 0.515812 versus 0.557199 for `current`.
+Current Instructor error was 0.280544; rolling history remained better at
+0.277570. These results do not authorize a production change.
+
+The report now includes equal-primary-unit errors within each criterion,
+source, cumulative-sample group (0, 1-5, more than 5), cold Instructor/Course
+state, solo/team/unknown teaching context, and zero/one/multiple historical
+Courses. Units can occur in more than one group when their Class contexts or
+cutoff states differ. Cold Instructor/Course means no cumulative samples in the
+corresponding Instructor/Course SFQ criterion at that cutoff; it does not assert
+that the entity has no other kind of historical evidence. The compatible older scalar Instructor strata remain
+raw-observation metrics; use the new `strata` arrays for balanced comparisons.
+
+It also reports raw forecast/outcome-pair coverage at all four target levels.
+Missing source standard deviations no longer erase Review predictive intervals;
+the model and inverse-source-weight variance terms remain available. These are
+Gaussian diagnostics, not development-fitted empirical/conformal intervals.
+
+| Current model | 50% target | 80% target | 90% target | 95% target |
+| --- | ---: | ---: | ---: | ---: |
+| Course (601,332 pairs) | 52.49% | 80.41% | 88.13% | 91.82% |
+| Instructor (96,449 pairs) | 50.23% | 77.78% | 86.61% | 91.35% |
+
+High-target undercoverage remains visible. Issue #167 remains open for sealed
+future validation, development-fitted interval calibration, Ranking Population
+follow-up coverage, and the remaining crossed-model negative controls. The
+existing crossed prototype remains isolated and unpromoted.
+
+Verification: 33 data tests and data type checking passed, including rejection
+of reserved outcomes in both export modes and finite Review interval checks.
+The report SHA-256 is
+`33c74027683fc410e21c577f0e1e76f2e5481894a390c4c690f35112518f412f`.
+The frozen manifest SHA-256 remains
+`81cab9eb43d0dd6b62dd012e7bec9159d92a63c4d0752aa67df722d6755f0c47`.
+
+## Research question
 
 Can the project evaluate Course and Instructor predictions without these errors?
 
@@ -196,7 +254,12 @@ The prototype did not show a reliable gain. The result supports the simpler curr
 
 ## Future holdout
 
-`data/validation/future-holdout.json` freezes the next decision before future outcomes are inspected. Its frozen SHA-256 is `81cab9eb43d0dd6b62dd012e7bec9159d92a63c4d0752aa67df722d6755f0c47`.
+`data/validation/future-holdout.json` records the intended protocol for the next
+decision. Its frozen SHA-256 is
+`81cab9eb43d0dd6b62dd012e7bec9159d92a63c4d0752aa67df722d6755f0c47`.
+The 2026-09-07 audit above found reserved-Term Review events already in the
+development snapshot, so this manifest alone does not establish independence.
+The protocol still requires sealed forecasts and genuinely unseen outcomes.
 
 The holdout starts at Term 103. It remains closed until it has at least:
 
