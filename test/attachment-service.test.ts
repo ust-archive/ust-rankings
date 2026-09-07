@@ -110,11 +110,7 @@ function memory(options?: {
       if (!userId || file.ownerUserId === userId) stored += file.byteSize;
     }
     for (const intent of intents.values()) {
-      if (
-        intent.storedFileId ||
-        !["reserved", "uploaded", "validating"].includes(intent.state)
-      )
-        continue;
+      if (intent.storedFileId) continue;
       if (!userId || intent.ownerUserId === userId)
         pending += intent.declaredByteSize;
     }

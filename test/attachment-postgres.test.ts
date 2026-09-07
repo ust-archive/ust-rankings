@@ -81,6 +81,42 @@ if (!connection) {
         code: "quota-exceeded",
       });
 
+      const reserved = (
+        succeeded[0] as PromiseFulfilledResult<{ intentId: string }>
+      ).value;
+      objects.set(reserved.intentId, new Uint8Array(80));
+      for (const state of ["rejected", "validation_error"] as const) {
+        await repository.markRejected(reserved.intentId, state);
+        await expect(
+          attachments.reserveUpload({
+            userId: userA,
+            byteSize: 21,
+            filename: "new.jpg",
+            contentType: "image/jpeg",
+          }),
+        ).rejects.toMatchObject({ code: "quota-exceeded" });
+        await expect(
+          attachments.reserveUpload({
+            userId: userB,
+            byteSize: 71,
+            filename: "new.jpg",
+            contentType: "image/jpeg",
+          }),
+        ).rejects.toMatchObject({ code: "global-quota-exceeded" });
+      }
+      expect(objects.has(reserved.intentId)).toBe(true);
+      await sql`UPDATE upload_intents SET expires_at = now() - interval '1 minute'`;
+      expect(await attachments.cleanupExpired()).toBe(1);
+      expect(objects.has(reserved.intentId)).toBe(false);
+      await expect(
+        attachments.reserveUpload({
+          userId: userA,
+          byteSize: 80,
+          filename: "new.jpg",
+          contentType: "image/jpeg",
+        }),
+      ).resolves.toMatchObject({ quotaUsedBytes: 80 });
+
       await sql`DELETE FROM upload_intents`;
       await attachments.reserveUpload({
         userId: userA,

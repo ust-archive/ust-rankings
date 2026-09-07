@@ -107,15 +107,13 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
                           AND removed_at IS NULL), 0)
               + COALESCE((SELECT sum(declared_byte_size) FROM upload_intents
                           WHERE owner_user_id = ${input.userId}
-                            AND stored_file_id IS NULL
-                            AND state IN ('reserved', 'uploaded', 'validating')), 0)
+                            AND stored_file_id IS NULL), 0)
             )::text AS "userBytes",
             (
               COALESCE((SELECT sum(byte_size) FROM stored_files
                         WHERE removed_at IS NULL), 0)
               + COALESCE((SELECT sum(declared_byte_size) FROM upload_intents
-                          WHERE stored_file_id IS NULL
-                            AND state IN ('reserved', 'uploaded', 'validating')), 0)
+                          WHERE stored_file_id IS NULL), 0)
             )::text AS "globalBytes"
         `;
         const userBytes = Number(usage.userBytes);
