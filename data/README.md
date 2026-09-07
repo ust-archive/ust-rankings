@@ -126,6 +126,12 @@ and checks coverage on Terms 92-102, explicitly as a retrospective diagnostic.
 Schedule-backed Ranking Population follow-up counts show how many eligible
 Courses receive later evidence; final four-Term windows may be incomplete.
 
+The separate [`prospective` workflow](validation/PROSPECTIVE.md) freezes past-only
+forecasts, accepted identities, simple baselines, interval rules, and source
+hashes before a later one-use outcome evaluation. It requires a fresh protocol;
+the old Term-103 manifest does not establish unseen outcomes. The tool reports
+frozen metric gates and never promotes production automatically.
+
 The upstream dataset cards declare `license: other`; two inputs are private.
 
 Identity history is projected by the shared `lib/instructor-identity.ts` module. The fourth identity artifact retains its storage filename but now contains typed Instructor Association Corrections: `correction_type`, `source_commit`, `target_uuid`, `source_name`, optional `term_code`, and `course_code`. Accepted Course–Instructor UUIDs are authoritative; the `name` column is display data.
