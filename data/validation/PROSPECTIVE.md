@@ -97,6 +97,12 @@ and rolling mean over all retained past observations. Missing entity history fal
 back to the population mean. Baseline interval widths reuse the current model's
 width and are diagnostics; candidate coverage gates apply to candidate intervals.
 
+Every forecast also freezes its past observation sample count and, for an
+Instructor, the number of distinct Courses with past Instructor-specific SFQ.
+The seal separately records the complete Schedule-backed Course Ranking Population
+at the cutoff, including Courses with no finite forecast. These are source-history
+features, not candidate-specific confidence weights.
+
 Publish the printed forecast hash before acquiring outcomes. The local shared Git
 directory also stores exclusive creation registrations under
 `rankings-prospective-receipts/seals`. Recomputing a modified seal's hash does not
@@ -123,6 +129,25 @@ unknown or ambiguous names remain unknown and are counted in coverage. Candidate
 and baseline comparisons use identical eligible units. Repeated raw observations
 within a primary unit are averaged to one outcome before calculating primary MAE;
 raw-observation metrics remain separate.
+
+The source Class context uses the same canonical Schedule reconstruction as the
+retrospective report. Outcomes seal their Course Code and known team size; Review
+outcomes and unmatched Classes retain unknown team context. Secondary reports show
+equal-unit errors by entity, evidence density, cold Instructor, cold Course,
+solo/team/unknown context, and zero/one/multiple historical Courses. A primary unit
+with several Classes can appear in more than one context stratum; their counts
+must not be added as independent units. No future context changes a forecast.
+Missing Course forecast history stays unknown, rather than being assigned zero
+evidence. Placeholder names such as TBA and Staff do not count as team members:
+TBA-only context is unknown, while one valid Instructor plus TBA is solo.
+The shared placeholder correction also applies to newly generated retrospective
+team diagnostics; previously archived research report counts were not regenerated.
+
+Population follow-up uses the independently frozen Schedule denominator and counts
+distinct member Courses receiving later Course-role SFQ or Review evidence within
+the next four numeric Terms, even if no candidate forecast was available. Reports
+state the observed outcome boundary and whether the window remains right-censored;
+absence of evidence is not a claim that the Course was not taught.
 
 An evaluation configuration contains `protocolPath`, the same `forecastSeals`,
 `outcomeDirectory`, and the printed `outcomeSha256`:
