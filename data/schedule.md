@@ -12,8 +12,20 @@ for Rankings. Instructor source names resolve through the paired identity
 relations and scoped corrections. There is no server Schedule fallback.
 
 If Schedule delivery fails, the Schedule section reports an unavailable state
-without disabling Rankings or Community. Calendar subscription routes remain
-removed because calendar clients cannot execute the browser runtime.
+without disabling Rankings or Community. Calendar subscriptions use
+`/api/calendar?term=2610&class=2229`: a narrow endpoint that reads precomputed
+meeting records from the active Server Index, without querying Schedule Parquet.
+Publish a new Delivery Generation containing those records when deploying this
+feature; older indices without calendar records return an explicit unavailable
+response. The Subscribe dialog checks the feed before offering its URL.
+
+The URL fixes the Term and selected Class Numbers. Calendar apps periodically
+fetch that URL and receive meeting updates from the currently active generation,
+with the same bundled HKUST holiday exclusions used by downloads. Changing the
+cart requires replacing the subscription URL; refresh timing belongs to the
+calendar app. See [Schedule calendar exports](../docs/schedule-calendar.md) for
+holiday sources, update procedures, and provider limitations.
+
 The planner can download an `.ics` snapshot directly from the selected Classes
 in that pinned generation. Calendar generation loads only on demand, preserves
 the former recurrence-slot UIDs, and reports meetings that cannot be exported.

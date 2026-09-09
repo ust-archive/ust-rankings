@@ -14,7 +14,7 @@ export function RankingSearch({
   entity,
   initialValue,
 }: {
-  entity: "course" | "instructor" | "waitlist";
+  entity: "course" | "instructor" | "waitlist" | "schedule";
   initialValue: string;
 }) {
   const pathname = usePathname();
@@ -41,7 +41,9 @@ export function RankingSearch({
       ? "Search Courses"
       : entity === "instructor"
         ? "Search Instructors"
-        : "Search WL Compass Courses";
+        : entity === "schedule"
+          ? "Search Schedule"
+          : "Search WL Compass Courses";
   return (
     <InputGroup className="h-12 min-w-0 flex-1 rounded-full bg-white">
       <InputGroupAddon className="cursor-default">
@@ -59,7 +61,9 @@ export function RankingSearch({
             ? "Search for courses by name / instructor / etc…"
             : entity === "instructor"
               ? "Search for instructors by name / course / etc…"
-              : "Search for courses by code / title…"
+              : entity === "schedule"
+                ? "Search by code / title / instructor…"
+                : "Search for courses by code / title…"
         }
         spellCheck={false}
         type="search"

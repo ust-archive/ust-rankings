@@ -1,18 +1,34 @@
 "use client";
 
 import { HelpCircleIcon } from "lucide-react";
-import Form from "next/form";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { coursePath } from "@/app/courses/routes";
 import { EntityLink } from "@/app/entity-navigation";
 import { instructorPath } from "@/app/instructors/routes";
+import { RankingSearch } from "@/app/rankings/ranking-search";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BrowserQueryError,
   querySchedulePage,
@@ -20,10 +36,9 @@ import {
 import { PathAdvisor } from "@/lib/schedule/path-advisor";
 import {
   buildScheduleUrl,
-  findPlannerConflicts,
   MAX_PLANNER_CLASSES,
   type PlannerState,
-  type parsePlannerQuery,
+  parsePlannerQuery,
 } from "@/lib/schedule/planner";
 import type {
   CourseOffering,
@@ -31,6 +46,7 @@ import type {
   SchedulePage,
 } from "@/lib/schedule/server";
 import { CalendarDownload } from "./calendar-download";
+import { CalendarSubscribe } from "./calendar-subscribe";
 import { SisImportDialog } from "./sis-import-dialog";
 
 type DisplayOffering = Pick<
@@ -42,64 +58,12 @@ function stateUrl(state: PlannerState, changes: Partial<PlannerState>) {
   return buildScheduleUrl({ ...state, ...changes });
 }
 
-function selectedOfferings(classes: ScheduleClass[]): DisplayOffering[] {
-  const offerings = new Map<string, DisplayOffering>();
-  for (const scheduleClass of classes) {
-    const existing = offerings.get(scheduleClass.courseCode) ?? {
-      coursePrefix: scheduleClass.coursePrefix,
-      courseNumber: scheduleClass.courseNumber,
-      courseCode: scheduleClass.courseCode,
-      title: scheduleClass.courseTitle,
-      classes: [],
-    };
-    existing.classes.push(scheduleClass);
-    offerings.set(scheduleClass.courseCode, existing);
-  }
-  return [...offerings.values()].sort((left, right) =>
-    left.courseCode.localeCompare(right.courseCode),
-  );
-}
-
-function Meeting({ meeting }: { meeting: ScheduleClass["meetings"][number] }) {
-  const roomUrl = meeting.room
-    ? PathAdvisor.findPathTo(meeting.room)
-    : undefined;
-  return (
-    <div className="flex min-w-48 flex-col gap-1">
-      <span>
-        {meeting.weekday} {meeting.timeFrom ?? "Time TBA"}
-        {meeting.timeTo ? `–${meeting.timeTo}` : ""}
-      </span>
-      <span className="text-xs text-slate-600">
-        {meeting.dateFrom ?? "Dates TBA"}
-        {meeting.dateTo ? `–${meeting.dateTo}` : ""}
-      </span>
-      {roomUrl ? (
-        <a href={roomUrl} rel="noopener noreferrer" target="_blank">
-          {meeting.room}
-        </a>
-      ) : (
-        <span>{meeting.room || "Room TBA"}</span>
-      )}
-      <span>
-        {meeting.instructors.length
-          ? meeting.instructors.map((instructor, index) => (
-              <span key={instructor.uuid ?? instructor.sourceName}>
-                {index ? ", " : ""}
-                {instructor.uuid ? (
-                  <EntityLink href={instructorPath(instructor.uuid)}>
-                    {instructor.sourceName}
-                  </EntityLink>
-                ) : (
-                  instructor.sourceName
-                )}
-              </span>
-            ))
-          : "Instructor TBA"}
-      </span>
-    </div>
-  );
-}
+type ScheduleCell = {
+  key: string;
+  content: ReactNode;
+  rowSpan: number;
+  hidden: boolean;
+};
 
 function CourseCard({
   offering,
@@ -108,151 +72,220 @@ function CourseCard({
   offering: DisplayOffering;
   state: PlannerState;
 }) {
-  const selected = new Set(state.classNumbers);
+  const rows = offering.classes.flatMap((clazz) => {
+    const multiplePeriods =
+      new Set(
+        clazz.meetings.map(
+          (meeting) => `${meeting.dateFrom}/${meeting.dateTo}`,
+        ),
+      ).size > 1;
+    const selected = state.classNumbers.includes(clazz.classNumber);
+    const full = !selected && state.classNumbers.length >= MAX_PLANNER_CLASSES;
+    const groups: {
+      meeting: ScheduleClass["meetings"][number];
+      days: string[];
+    }[] = [];
+    for (const meeting of clazz.meetings) {
+      const match = groups.find(
+        ({ meeting: other }) =>
+          other.timeFrom === meeting.timeFrom &&
+          other.timeTo === meeting.timeTo &&
+          other.dateFrom === meeting.dateFrom &&
+          other.dateTo === meeting.dateTo &&
+          other.room === meeting.room &&
+          JSON.stringify(other.instructors) ===
+            JSON.stringify(meeting.instructors),
+      );
+      if (match) match.days.push(meeting.weekday.slice(0, 2));
+      else groups.push({ meeting, days: [meeting.weekday.slice(0, 2)] });
+    }
+    return (groups.length ? groups : [undefined]).map((group) => {
+      const meeting = group?.meeting;
+      const cells: [string, ReactNode][] = [
+        [
+          String(clazz.classNumber),
+          <Button
+            key={clazz.classNumber}
+            disabled={full}
+            aria-pressed={selected}
+            aria-label={`${selected ? "Remove" : "Add"} ${offering.courseCode} ${clazz.section} (${clazz.classNumber})`}
+            variant={selected ? "default" : "secondary"}
+            className="h-full min-h-12 w-full flex-col gap-0 px-1 py-2 text-xs sm:px-3 sm:text-sm"
+            onClick={() => {
+              window.history.pushState(
+                null,
+                "",
+                stateUrl(state, {
+                  classNumbers: selected
+                    ? state.classNumbers.filter((n) => n !== clazz.classNumber)
+                    : [...state.classNumbers, clazz.classNumber],
+                }),
+              );
+              toast(
+                `${offering.courseCode} ${clazz.section} ${selected ? "removed from" : "added to"} shopping cart.`,
+              );
+            }}
+          >
+            {full ? (
+              "Cart full"
+            ) : (
+              <>
+                <span>{clazz.section}</span> <span>({clazz.classNumber})</span>
+              </>
+            )}
+          </Button>,
+        ],
+        [
+          JSON.stringify(group) ?? "undated",
+          group ? (
+            <>
+              <span className="whitespace-nowrap">{group.days.join("")} </span>{" "}
+              <span className="whitespace-nowrap">
+                {meeting?.timeFrom ?? "Time TBA"}
+                {meeting?.timeTo ? `-${meeting.timeTo}` : ""}
+              </span>
+              {(multiplePeriods || meeting?.dateFrom === meeting?.dateTo) &&
+              meeting?.dateFrom &&
+              meeting.dateTo ? (
+                <span className="block whitespace-nowrap text-xs text-slate-500">
+                  {meeting.dateFrom}
+                  {meeting.dateTo !== meeting.dateFrom
+                    ? `–${meeting.dateTo}`
+                    : ""}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            "TBA"
+          ),
+        ],
+        [
+          JSON.stringify(meeting?.instructors ?? []),
+          meeting?.instructors.length
+            ? meeting.instructors.map((i) => (
+                <span
+                  className="block whitespace-nowrap"
+                  key={i.uuid ?? i.sourceName}
+                >
+                  {i.uuid ? (
+                    <EntityLink
+                      style={{ textDecoration: "none" }}
+                      href={instructorPath(i.uuid)}
+                    >
+                      {i.sourceName}
+                    </EntityLink>
+                  ) : (
+                    i.sourceName
+                  )}
+                </span>
+              ))
+            : "TBA",
+        ],
+        [
+          meeting?.room ?? "",
+          meeting?.room ? (
+            <div key="room" className="flex flex-col">
+              <a
+                href={PathAdvisor.findPathTo(meeting.room)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {meeting.room
+                  .replace(/ \(\d+\)$/, "")
+                  .split(", ")
+                  .map((part, index, parts) => (
+                    <span className="whitespace-nowrap" key={part}>
+                      {part}
+                      {index < parts.length - 1 ? ", " : ""}
+                    </span>
+                  ))}
+              </a>
+            </div>
+          ) : (
+            "TBA"
+          ),
+        ],
+      ];
+      return {
+        key: `${clazz.classNumber}-${JSON.stringify(group)}`,
+        cells: cells.map(
+          ([key, content]): ScheduleCell => ({
+            key,
+            content,
+            rowSpan: 1,
+            hidden: false,
+          }),
+        ),
+      };
+    });
+  });
+  // Preserve the original table's adjacent-cell merging, independently in each column.
+  const previous: (ScheduleCell | undefined)[] = [];
+  for (const row of rows) {
+    row.cells.forEach((cell, column) => {
+      const above = previous[column];
+      if (above && above.key === cell.key) {
+        above.rowSpan++;
+        cell.hidden = true;
+      } else previous[column] = cell;
+    });
+  }
   return (
-    <Card className="[contain-intrinsic-size:auto_32rem] [content-visibility:auto]">
-      <CardHeader>
-        <CardTitle asChild>
-          <h3 className="text-xl">
+    <Card className="flex min-w-0 flex-col overflow-hidden border-slate-300 bg-white shadow-sm [contain-intrinsic-size:auto_32rem] [content-visibility:auto]">
+      <CardHeader className="flex w-full flex-row items-center gap-1.5 p-4 sm:p-6">
+        <div className="min-w-0 space-y-1 text-left">
+          <CardTitle className="tracking-tight">
             <EntityLink
+              style={{ textDecoration: "none" }}
               href={coursePath(
                 offering.coursePrefix,
                 offering.courseNumber,
                 state.termCode,
               )}
             >
-              {offering.courseCode}: {offering.title}
+              {offering.courseCode}
             </EntityLink>
-          </h3>
-        </CardTitle>
+          </CardTitle>
+          <CardDescription className="break-words text-pretty leading-relaxed">
+            {offering.title}
+          </CardDescription>
+        </div>
       </CardHeader>
-      <CardContent>
-        <p className="mb-2 text-xs text-slate-600 sm:hidden">
-          Scroll the table for enrollment and planner actions.
-        </p>
+      <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
         <section
           aria-label={`${offering.courseCode} Classes`}
-          className="max-w-full overflow-x-auto rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="overflow-auto rounded-lg bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users need to scroll the wide Class table.
           tabIndex={0}
         >
-          <table className="w-full min-w-[46rem] border-collapse text-left text-sm">
+          <table className="w-full table-auto overflow-auto border border-gray-200 font-mono text-xs text-center sm:text-sm">
             <thead>
-              <tr className="border-b border-slate-200">
-                <th className="p-2" scope="col">
-                  Section
-                </th>
-                <th className="p-2" scope="col">
-                  Class
-                </th>
-                <th className="p-2" scope="col">
-                  Meeting
-                </th>
-                <th className="p-2" scope="col">
-                  Enrollment
-                </th>
-                <th className="p-2" scope="col">
-                  Planner
-                </th>
+              <tr>
+                {["Section", "Schedule", "Instructors", "Room"].map((label) => (
+                  <th key={label} className="p-2" scope="col">
+                    {label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {offering.classes.map((scheduleClass) => {
-                const isSelected = selected.has(scheduleClass.classNumber);
-                const plannerFull =
-                  !isSelected &&
-                  state.classNumbers.length >= MAX_PLANNER_CLASSES;
-                const classNumbers = isSelected
-                  ? state.classNumbers.filter(
-                      (classNumber) =>
-                        classNumber !== scheduleClass.classNumber,
-                    )
-                  : [...state.classNumbers, scheduleClass.classNumber];
-                return (
-                  <tr
-                    className="border-b border-slate-100 last:border-0"
-                    key={scheduleClass.classNumber}
-                  >
-                    <th className="p-2 align-top" scope="row">
-                      <EntityLink
-                        href={coursePath(
-                          scheduleClass.coursePrefix,
-                          scheduleClass.courseNumber,
-                          scheduleClass.termCode,
-                          scheduleClass.section,
-                        )}
+              {rows.map((row) => (
+                <tr key={row.key} className="h-0">
+                  {row.cells.map((cell, column) =>
+                    cell.hidden ? null : (
+                      <td
+                        key={
+                          ["section", "schedule", "instructors", "room"][column]
+                        }
+                        rowSpan={cell.rowSpan}
+                        className={`h-[inherit] border border-gray-200 ${column === 0 ? "p-1" : "p-2"}`}
                       >
-                        {scheduleClass.section}
-                      </EntityLink>
-                      <div className="mt-1">
-                        <Badge
-                          variant={scheduleClass.open ? "secondary" : "outline"}
-                        >
-                          {scheduleClass.open ? "Open" : "Closed"}
-                        </Badge>
-                      </div>
-                    </th>
-                    <td className="p-2 align-top">
-                      {scheduleClass.classNumber}
-                    </td>
-                    <td className="p-2 align-top">
-                      <div className="flex flex-col gap-2">
-                        {scheduleClass.meetings.length ? (
-                          scheduleClass.meetings.map((meeting) => (
-                            <Meeting
-                              key={`${meeting.weekday}-${meeting.dateFrom}-${meeting.timeFrom}-${meeting.roomCode}`}
-                              meeting={meeting}
-                            />
-                          ))
-                        ) : (
-                          <span>Meeting TBA</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-2 align-top">
-                      {scheduleClass.enrollment}/{scheduleClass.capacity}
-                      {scheduleClass.waitlist
-                        ? ` · Wait ${scheduleClass.waitlist}`
-                        : ""}
-                      {scheduleClass.reservations.length ? (
-                        <details className="mt-1">
-                          <summary>Quotas</summary>
-                          <ul>
-                            {scheduleClass.reservations.map((reservation) => (
-                              <li key={reservation.name}>
-                                {reservation.name}: {reservation.enrollment}/
-                                {reservation.quota}
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      ) : null}
-                    </td>
-                    <td className="p-2 align-top">
-                      {plannerFull ? (
-                        <Button disabled size="sm">
-                          Planner full
-                        </Button>
-                      ) : (
-                        <Button
-                          asChild
-                          size="sm"
-                          variant={isSelected ? "outline" : "default"}
-                        >
-                          <Link
-                            href={stateUrl(state, {
-                              classNumbers,
-                              view: isSelected ? state.view : "cart",
-                            })}
-                          >
-                            {isSelected ? "Remove" : "Add"}
-                          </Link>
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+                        {cell.content}
+                      </td>
+                    ),
+                  )}
+                </tr>
+              ))}
             </tbody>
           </table>
         </section>
@@ -261,16 +294,100 @@ function CourseCard({
   );
 }
 
-export function SchedulePageClient({
-  parsed,
-}: {
-  parsed: ReturnType<typeof parsePlannerQuery>;
-}) {
+function ScheduleCardSkeletons() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading Schedule"
+      className="flex w-full flex-col gap-2"
+    >
+      <span className="sr-only">Loading Schedule…</span>
+      {["first", "second", "third"].map((card) => (
+        <Card
+          key={card}
+          aria-hidden="true"
+          className="motion-safe:animate-pulse"
+        >
+          <CardHeader className="gap-2">
+            <div className="h-6 w-36 rounded bg-slate-200" />
+            <div className="h-4 w-3/4 rounded bg-slate-100" />
+          </CardHeader>
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            <div className="overflow-hidden border border-gray-200 bg-slate-50">
+              {["head", "one", "two", "three"].map((row) => (
+                <div
+                  key={row}
+                  className="grid grid-cols-4 border-b border-gray-200 last:border-0"
+                >
+                  {["section", "time", "instructor", "room"].map((column) => (
+                    <div
+                      key={column}
+                      className="border-r border-gray-200 p-3 last:border-0"
+                    >
+                      <div
+                        className={`${row === "head" ? "h-4" : "h-8"} rounded bg-slate-200`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+export function SchedulePageClient() {
+  const searchParams = useSearchParams();
+  const parsed = useMemo(() => {
+    const parameters: Record<string, string | string[]> = {};
+    for (const key of new Set(searchParams.keys())) {
+      const values = searchParams.getAll(key);
+      parameters[key] = values.length === 1 ? values[0] : values;
+    }
+    return parsePlannerQuery(parameters);
+  }, [searchParams]);
+  const [showHelp, setShowHelp] = useState(false);
   const [schedule, setSchedule] = useState<SchedulePage>();
+  const [loadedFor, setLoadedFor] = useState<typeof parsed>();
+  const knownClasses = useMemo(
+    () =>
+      new Map(
+        [
+          ...(schedule?.results.flatMap((offering) => offering.classes) ?? []),
+          ...(schedule?.plannerOfferings.flatMap(
+            (offering) => offering.classes,
+          ) ?? []),
+        ].map((clazz) => [clazz.classNumber, clazz]),
+      ),
+    [schedule],
+  );
+  const requestedTermCode = parsed.termCode || schedule?.terms.at(-1)?.termCode;
+  const needsQuery =
+    !schedule ||
+    parsed.termInvalid ||
+    (requestedTermCode && requestedTermCode !== schedule.term.termCode) ||
+    parsed.search !== schedule.search ||
+    parsed.classNumbers.some(
+      (number) =>
+        !knownClasses.has(number) &&
+        !schedule.invalidClassNumbers.includes(number),
+    );
+  const loading = loadedFor !== parsed && Boolean(needsQuery);
   const [messages, setMessages] = useState(parsed.messages);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
+    if (!needsQuery) {
+      setMessages(parsed.messages);
+      setFailed(false);
+      return;
+    }
+    if (loadedFor === parsed) return;
     let current = true;
+    setFailed(false);
+    setMessages(parsed.messages);
     async function load() {
       let result: SchedulePage;
       const input = {
@@ -291,7 +408,10 @@ export function SchedulePageClient({
             `${error.message} Showing the latest Term with no Classes selected.`,
           ]);
       }
-      if (current) setSchedule(result);
+      if (current) {
+        setSchedule(result);
+        setLoadedFor(parsed);
+      }
     }
     void load().catch(() => {
       if (current) setFailed(true);
@@ -299,12 +419,12 @@ export function SchedulePageClient({
     return () => {
       current = false;
     };
-  }, [parsed]);
+  }, [parsed, needsQuery, loadedFor]);
 
-  if (!schedule)
+  if (!schedule || failed)
     return (
-      <div className="flex w-full max-w-5xl flex-col gap-6 text-left">
-        <h1 className="text-5xl font-bold tracking-tight sm:text-7xl">
+      <div className="flex w-full max-w-2xl flex-col items-center gap-8 text-center pt-12 lg:pt-16">
+        <h1 className="text-logo-gradient max-w-sm text-6xl min-[375px]:text-7xl font-bold tracking-tighter lg:max-w-2xl">
           UST Schedule
         </h1>
         {parsed.messages.map((message) => (
@@ -312,22 +432,32 @@ export function SchedulePageClient({
             <AlertDescription>{message}</AlertDescription>
           </Alert>
         ))}
-        <Alert variant={failed ? "destructive" : "default"}>
-          {failed ? (
-            <>
-              <AlertTitle>UST Schedule is unavailable</AlertTitle>
-              <AlertDescription>
-                Schedule data could not be loaded. Rankings and the rest of the
-                site remain available.
-              </AlertDescription>
-            </>
-          ) : (
-            <>
-              <Spinner aria-hidden="true" />
-              <AlertDescription>Loading Schedule…</AlertDescription>
-            </>
-          )}
-        </Alert>
+        {failed ? (
+          <Alert variant="destructive">
+            <AlertTitle>UST Schedule is unavailable</AlertTitle>
+            <AlertDescription>
+              Schedule data could not be loaded. Rankings and the rest of the
+              site remain available.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            <div
+              aria-hidden="true"
+              className="flex h-12 w-full max-w-2xl gap-4 motion-safe:animate-pulse"
+            >
+              <div className="flex-1 rounded-full bg-slate-200" />
+              <div className="w-36 rounded bg-slate-200" />
+            </div>
+            <div className="w-full">
+              <div
+                aria-hidden="true"
+                className="mx-auto mb-8 h-10 w-48 rounded bg-slate-200 motion-safe:animate-pulse"
+              />
+              <ScheduleCardSkeletons />
+            </div>
+          </>
+        )}
       </div>
     );
 
@@ -336,31 +466,47 @@ export function SchedulePageClient({
     search: parsed.search,
     classNumbers:
       parsed.termInvalid ||
-      (parsed.termCode && parsed.termCode !== schedule.term.termCode)
+      (requestedTermCode && requestedTermCode !== schedule.term.termCode)
         ? []
         : parsed.classNumbers,
     view: parsed.view,
   };
-  const { plannerClasses, invalidClassNumbers } = schedule;
+  const plannerClasses = state.classNumbers.flatMap((number) => {
+    const clazz = knownClasses.get(number);
+    return clazz ? [clazz] : [];
+  });
+  const invalidClassNumbers = state.classNumbers.filter(
+    (number) => !knownClasses.has(number),
+  );
   const plannerClassNumbers = plannerClasses.map(
     (scheduleClass) => scheduleClass.classNumber,
   );
-  const conflicts = findPlannerConflicts(plannerClasses);
+
+  const requestedTerm =
+    schedule.terms.find((term) => term.termCode === requestedTermCode) ??
+    schedule.term;
+
   const offerings =
     state.view === "cart"
-      ? selectedOfferings(plannerClasses)
+      ? [
+          ...new Map(
+            [...schedule.results, ...schedule.plannerOfferings].map(
+              (offering) => [offering.courseCode, offering],
+            ),
+          ).values(),
+        ].filter((offering) =>
+          offering.classes.some((clazz) =>
+            state.classNumbers.includes(clazz.classNumber),
+          ),
+        )
       : schedule.results;
 
   return (
-    <div className="flex w-full max-w-5xl flex-col gap-6 text-left">
+    <div className="flex w-full max-w-2xl flex-col items-center gap-8 text-center pt-12 lg:pt-16">
       <header className="flex flex-col gap-2">
-        <h1 className="text-5xl font-bold tracking-tight sm:text-7xl">
+        <h1 className="text-logo-gradient max-w-sm text-6xl min-[375px]:text-7xl font-bold tracking-tighter lg:max-w-2xl">
           UST Schedule
         </h1>
-        <p className="max-w-2xl text-slate-600">
-          Browse Classes, build a shareable planner, check conflicts, and export
-          your calendar.
-        </p>
       </header>
 
       {messages.map((message) => (
@@ -369,7 +515,7 @@ export function SchedulePageClient({
           <AlertDescription>{message}</AlertDescription>
         </Alert>
       ))}
-      {invalidClassNumbers.length ? (
+      {!loading && invalidClassNumbers.length ? (
         <Alert variant="destructive">
           <AlertTitle>Unknown Classes</AlertTitle>
           <AlertDescription>
@@ -385,139 +531,156 @@ export function SchedulePageClient({
           </AlertDescription>
         </Alert>
       ) : null}
-      {conflicts.length ? (
-        <Alert variant="destructive">
-          <AlertTitle>Planner conflicts</AlertTitle>
-          <AlertDescription>
-            {conflicts
-              .map(([left, right]) => `${left} conflicts with ${right}`)
-              .join("; ")}
-            .
-          </AlertDescription>
-        </Alert>
-      ) : null}
 
-      <section
-        className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"
-        aria-label="Schedule controls"
-      >
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-          <Form action="/schedule" className="flex flex-col gap-3 sm:flex-row">
-            <input name="term" type="hidden" value={state.termCode} />
-            <input name="view" type="hidden" value={state.view} />
-            {state.classNumbers.map((classNumber) => (
-              <input
-                key={classNumber}
-                name="class"
-                type="hidden"
-                value={classNumber}
-              />
-            ))}
-            <Input
-              aria-label="Search Schedule"
-              autoComplete="off"
-              defaultValue={state.search}
-              name="q"
-              maxLength={100}
-              placeholder="Search Courses, Instructors, or rooms…"
-              type="search"
+      <section className="w-full max-w-2xl" aria-label="Schedule controls">
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-4">
+          <div className="min-w-0 flex-1 basis-full sm:basis-auto">
+            <RankingSearch
+              entity="schedule"
+              initialValue={parsed.search ?? ""}
             />
-            <Button type="submit">Search</Button>
-          </Form>
-          <Form action="/schedule" className="flex flex-wrap gap-2">
-            {state.search ? (
-              <input name="q" type="hidden" value={state.search} />
-            ) : null}
-            <label className="sr-only" htmlFor="schedule-term">
-              Term
-            </label>
-            <select
-              className="min-w-0 max-w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-950"
-              defaultValue={state.termCode}
-              id="schedule-term"
-              name="term"
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Help"
+            aria-expanded={showHelp}
+            aria-controls="schedule-help"
+            onClick={() => setShowHelp(!showHelp)}
+          >
+            <HelpCircleIcon />
+          </Button>
+          <CalendarDownload
+            classes={plannerClasses}
+            disabled={
+              !plannerClassNumbers.length ||
+              invalidClassNumbers.length > 0 ||
+              loading
+            }
+          />
+          <CalendarSubscribe
+            termCode={state.termCode}
+            classNumbers={plannerClassNumbers}
+            disabled={
+              !plannerClassNumbers.length ||
+              invalidClassNumbers.length > 0 ||
+              loading
+            }
+          />
+          <Combobox
+            items={schedule.terms}
+            value={requestedTerm}
+            itemToStringLabel={(term) => term.termName}
+            isItemEqualToValue={(a, b) => a.termCode === b.termCode}
+            onValueChange={(term) => {
+              if (term && term.termCode !== requestedTerm.termCode)
+                window.history.pushState(
+                  null,
+                  "",
+                  stateUrl(state, {
+                    termCode: term.termCode,
+                    classNumbers: [],
+                  }),
+                );
+            }}
+          >
+            <ComboboxInput
+              aria-label="Term"
+              className="w-fit max-w-full shrink-0 bg-white [&_input]:field-sizing-content [&_input]:min-w-0 [&_input]:w-auto [&_input]:flex-initial"
+            />
+            <ComboboxContent>
+              <ComboboxEmpty>No Terms found.</ComboboxEmpty>
+              <ComboboxList>
+                {(term) => (
+                  <ComboboxItem key={term.termCode} value={term}>
+                    {term.termName}
+                  </ComboboxItem>
+                )}
+              </ComboboxList>
+            </ComboboxContent>
+          </Combobox>
+        </div>
+        <Collapsible open={showHelp}>
+          <CollapsibleContent className="overflow-hidden motion-safe:data-[state=open]:animate-slideDown motion-safe:data-[state=closed]:animate-slideUp">
+            <article
+              id="schedule-help"
+              className="space-y-1 p-8 pb-0 text-left text-sm"
             >
-              {schedule.terms.map((term) => (
-                <option key={term.termCode} value={term.termCode}>
-                  {term.termName}
-                </option>
-              ))}
-            </select>
-            <Button type="submit" variant="outline">
-              Change Term
-            </Button>
-          </Form>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <details className="mr-auto max-w-2xl">
-            <summary className="cursor-pointer font-semibold">
-              <HelpCircleIcon className="mr-1 inline size-4" /> Help
-            </summary>
-            <p className="mt-2 text-sm text-slate-600">
-              Search the current Term, add Classes to Planner, import Class
-              Numbers from SIS, then review conflicts and download a calendar.
-              Changing Term clears selected Classes. Calendar downloads are a
-              snapshot; calendar subscriptions are temporarily unavailable.
-            </p>
-          </details>
-          <SisImportDialog state={state} />
-          {plannerClassNumbers.length > 0 &&
-          invalidClassNumbers.length === 0 ? (
-            <CalendarDownload classes={plannerClasses} />
-          ) : null}
-        </div>
+              <p>
+                Search for courses by their name, code, instructors, room or
+                section number.
+              </p>
+              <ul className="list-disc space-y-2">
+                <li>
+                  Click (or tap) on sections to add them to (or remove them
+                  from) the shopping cart.
+                </li>
+                <li>
+                  Click the download icon to download the schedules in the
+                  shopping cart. Import the downloaded file into your calendar
+                  app manually.
+                </li>
+                <li>Click on rooms to find their location by Path Advisor.</li>
+              </ul>
+              <p>
+                Changing Term clears selected Classes. Calendar downloads are
+                snapshots. Use the subscribe icon to follow updates in your
+                calendar app.
+              </p>
+            </article>
+          </CollapsibleContent>
+        </Collapsible>
       </section>
-
-      <nav aria-label="Schedule views" className="flex gap-2">
-        <Button
-          asChild
-          variant={state.view === "browse" ? "default" : "outline"}
+      <section className="w-full">
+        <Tabs
+          value={state.view}
+          onValueChange={(view) =>
+            window.history.pushState(
+              null,
+              "",
+              stateUrl(state, { view: view as PlannerState["view"] }),
+            )
+          }
         >
-          <Link
-            aria-current={state.view === "browse" ? "page" : undefined}
-            href={stateUrl(state, { view: "browse" })}
-          >
-            Browse
-          </Link>
-        </Button>
-        <Button asChild variant={state.view === "cart" ? "default" : "outline"}>
-          <Link
-            aria-current={state.view === "cart" ? "page" : undefined}
-            href={stateUrl(state, { view: "cart" })}
-          >
-            Planner ({plannerClassNumbers.length})
-          </Link>
-        </Button>
-      </nav>
-
-      <section className="flex flex-col gap-4" aria-live="polite">
-        <header>
-          <h2 className="text-2xl font-bold">
-            {state.view === "cart"
-              ? "Selected Classes"
-              : schedule.term.termName}
-          </h2>
-          <p className="text-sm text-slate-600">
-            {state.view === "cart"
-              ? `${plannerClasses.length} selected`
-              : `${schedule.total} Course${schedule.total === 1 ? "" : "s"}${schedule.total > schedule.results.length ? ` · showing first ${schedule.results.length}` : ""}`}
-          </p>
-        </header>
-        {offerings.length ? (
-          offerings.map((offering) => (
-            <CourseCard
-              key={offering.courseCode}
-              offering={offering}
-              state={state}
-            />
-          ))
-        ) : (
-          <p className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-slate-600">
-            {state.view === "cart"
-              ? "No Classes selected."
-              : "No Courses match this search."}
-          </p>
-        )}
+          <TabsList aria-label="Schedule views">
+            <TabsTrigger value="browse">All</TabsTrigger>
+            <TabsTrigger value="cart">Shopping Cart</TabsTrigger>
+          </TabsList>
+          <TabsContent key={state.view} value={state.view}>
+            {state.view === "cart" ? (
+              <div className="mb-2">
+                <SisImportDialog state={state} />
+                <Separator className="mt-2" />
+              </div>
+            ) : null}
+            <section className="flex flex-col gap-2" aria-live="polite">
+              <header className={loading ? "invisible" : undefined}>
+                <h2 className="sr-only">
+                  {state.view === "cart"
+                    ? "Selected Classes"
+                    : schedule.term.termName}
+                </h2>
+              </header>
+              {loading ? (
+                <ScheduleCardSkeletons />
+              ) : offerings.length ? (
+                offerings.map((offering) => (
+                  <CourseCard
+                    key={offering.courseCode}
+                    offering={offering}
+                    state={state}
+                  />
+                ))
+              ) : (
+                <p className="p-8 text-center text-sm text-slate-600">
+                  {state.view === "cart"
+                    ? "No Classes selected."
+                    : "No Courses match this search."}
+                </p>
+              )}
+            </section>
+          </TabsContent>
+        </Tabs>
       </section>
     </div>
   );

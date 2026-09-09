@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
 import {
   buildScheduleUrl,
-  findPlannerConflicts,
   mergePlannerClassNumbers,
   parsePlannerQuery,
   parseSisImport,
@@ -78,65 +77,6 @@ test("adding or importing at the planner limit preserves the existing cart", () 
     classNumbers: fullCart,
     error: "The planner cart is limited to 50 Classes.",
   });
-});
-
-test("planner conflicts require overlapping dates, weekday, and times", () => {
-  const meeting = {
-    weekday: "Wed",
-    dateFrom: "2025-09-01",
-    dateTo: "2025-11-30",
-    timeFrom: "11:00",
-    timeTo: "11:50",
-  };
-  expect(
-    findPlannerConflicts([
-      { classNumber: 1001, meetings: [meeting] },
-      {
-        classNumber: 2001,
-        meetings: [{ ...meeting, timeFrom: "11:30", timeTo: "12:20" }],
-      },
-      {
-        classNumber: 3001,
-        meetings: [{ ...meeting, weekday: "Fri" }],
-      },
-    ]),
-  ).toEqual([[1001, 2001]]);
-});
-
-test("planner conflicts use actual meeting occurrences, including overnight Classes", () => {
-  const meeting = {
-    weekday: "Mon",
-    dateFrom: "2025-09-01",
-    dateTo: "2025-09-02",
-    timeFrom: "23:30",
-    timeTo: "00:30",
-  };
-  expect(
-    findPlannerConflicts([
-      { classNumber: 1001, meetings: [meeting] },
-      {
-        classNumber: 2001,
-        meetings: [
-          { ...meeting, weekday: "Tue", timeFrom: "00:00", timeTo: "01:00" },
-        ],
-      },
-      {
-        classNumber: 3001,
-        meetings: [
-          { ...meeting, weekday: "Tue", timeFrom: "00:30", timeTo: "01:30" },
-        ],
-      },
-      {
-        classNumber: 4001,
-        meetings: [
-          { ...meeting, dateFrom: "2025-09-02", dateTo: "2025-09-08" },
-        ],
-      },
-    ]),
-  ).toEqual([
-    [1001, 2001],
-    [2001, 3001],
-  ]);
 });
 
 test("SIS import is bounded and produces Class Numbers for the same URL state", () => {

@@ -1582,18 +1582,11 @@ async function mapScheduleRows(runtime: Runtime, source: Row[]) {
 
 function scheduleSearchText(offering: CourseOffering) {
   return [
-    offering.courseCode,
+    ...courseCodeSearchValues(offering.courseCode),
     offering.title,
-    offering.description,
-    offering.previousCourseCodes,
-    offering.prerequisite,
-    offering.corequisite,
-    offering.exclusion,
-    ...offering.attributes.flatMap((attribute) => Object.values(attribute)),
     ...offering.classes.flatMap((item) => [
       item.section,
       item.classNumber,
-      item.remarks,
       ...item.meetings.flatMap((meeting) => [
         meeting.room,
         meeting.roomCode,
@@ -1640,6 +1633,9 @@ async function schedulePage(
   );
   let offerings = await mapScheduleRows(runtime, rows);
   const selected = new Set(classNumbers);
+  const plannerOfferings = offerings.filter((offering) =>
+    offering.classes.some((item) => selected.has(item.classNumber)),
+  );
   const plannerClasses = offerings
     .flatMap((offering) => offering.classes)
     .filter((item) => selected.has(item.classNumber));
@@ -1657,6 +1653,7 @@ async function schedulePage(
     total: offerings.length,
     results: offerings.slice(0, limit),
     plannerClasses,
+    plannerOfferings,
     invalidClassNumbers: [...selected].filter((value) => !found.has(value)),
   };
 }

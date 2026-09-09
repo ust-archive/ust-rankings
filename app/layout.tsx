@@ -163,17 +163,17 @@ export default function RootLayout({
                 Courses
               </EntityLink>
               <Link
+                className="no-underline underline-offset-4 hover:underline"
+                href="/schedule"
+              >
+                Schedule
+              </Link>
+              <Link
                 className="hidden no-underline underline-offset-4 hover:underline sm:inline"
                 href="/waitlist"
                 transitionTypes={forwardTransition}
               >
                 WL Compass
-              </Link>
-              <Link
-                className="no-underline underline-offset-4 hover:underline"
-                href="/schedule"
-              >
-                Schedule
               </Link>
               <HeaderAuth />
             </nav>

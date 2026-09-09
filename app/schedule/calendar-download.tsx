@@ -1,16 +1,32 @@
 "use client";
 
 import { DownloadIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import type { ScheduleClass } from "@/lib/schedule/server";
 
-export function CalendarDownload({ classes }: { classes: ScheduleClass[] }) {
+export function CalendarDownload({
+  classes,
+  disabled = false,
+}: {
+  classes: ScheduleClass[];
+  disabled?: boolean;
+}) {
   const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState<string>();
+  const selection = classes
+    .map((item) => `${item.termCode}:${item.classNumber}`)
+    .join(",");
+  const toastId = `schedule-calendar-download:${selection}`;
+  useEffect(
+    () => () => {
+      toast.dismiss(toastId);
+    },
+    [toastId],
+  );
   async function download() {
     setPending(true);
-    setMessage(undefined);
+    toast.dismiss(toastId);
     try {
       const { createScheduleCalendar } = await import(
         "@/lib/schedule/calendar"
@@ -24,37 +40,35 @@ export function CalendarDownload({ classes }: { classes: ScheduleClass[] }) {
       link.download = "ust-schedule.ics";
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setMessage(
-        calendar.omitted
-          ? `Calendar downloaded. ${calendar.omitted} meeting${calendar.omitted === 1 ? "" : "s"} without complete dates and times could not be exported.`
-          : "Calendar downloaded. Download it again if the Schedule changes.",
-      );
+      if (calendar.omitted)
+        toast.warning(
+          `${calendar.omitted} meeting${calendar.omitted === 1 ? "" : "s"} without complete dates and times could not be exported.`,
+          { id: toastId },
+        );
     } catch (error) {
-      setMessage(
+      toast.error(
         error instanceof Error
           ? error.message
           : "Calendar download failed. Try again.",
+        { id: toastId },
       );
     } finally {
       setPending(false);
     }
   }
   return (
-    <div className="flex flex-col gap-2">
-      <Button
-        className="gap-2"
-        disabled={pending}
-        onClick={download}
-        variant="outline"
-      >
-        <DownloadIcon data-icon="inline-start" />
+    <Button
+      aria-label={pending ? "Preparing calendar…" : "Download calendar"}
+      title="Download calendar"
+      size="icon"
+      disabled={pending || disabled}
+      onClick={download}
+      variant="ghost"
+    >
+      <DownloadIcon data-icon="inline-start" />
+      <span className="sr-only">
         {pending ? "Preparing calendar…" : "Download calendar"}
-      </Button>
-      {message ? (
-        <p className="max-w-sm text-sm text-slate-600" role="status">
-          {message}
-        </p>
-      ) : null}
-    </div>
+      </span>
+    </Button>
   );
 }

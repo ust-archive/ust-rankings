@@ -1,4 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { expect, test } from "vitest";
+import { parseAcademicCalendar } from "@/lib/schedule/academic-calendar";
 import { createScheduleCalendar } from "@/lib/schedule/calendar";
 import type { ScheduleClass } from "@/lib/schedule/server";
 
@@ -32,6 +34,9 @@ const item: ScheduleClass = {
     },
   ],
 };
+
+const meeting = item.meetings[0];
+if (!meeting) throw new Error("Missing test meeting");
 
 test("calendar exports Hong Kong weekly and overnight meetings with stable identities", async () => {
   const calendar = await createScheduleCalendar([item]);
@@ -70,4 +75,123 @@ test("calendar reports undated meetings and rejects selections with nothing to e
   await expect(createScheduleCalendar([undated])).rejects.toThrow(
     "no dated meetings",
   );
+});
+
+test("recurring meetings exclude Hong Kong holidays at the local start time", async () => {
+  const calendar = await createScheduleCalendar([
+    {
+      ...item,
+      termCode: "2610",
+      meetings: [
+        {
+          ...meeting,
+          weekday: "Mon",
+          dateFrom: "2026-10-05",
+          dateTo: "2026-11-30",
+          timeFrom: "00:30",
+          timeTo: "01:30",
+        },
+      ],
+    },
+  ]);
+  expect(calendar.body).toContain("EXDATE:20261018T163000Z");
+  expect(calendar.body).toContain("DTSTART:20261004T163000Z");
+});
+
+test("HKUST mid-term break excludes non-public-holiday teaching days", async () => {
+  const calendar = await createScheduleCalendar([
+    {
+      ...item,
+      meetings: [
+        {
+          ...meeting,
+          dateFrom: "2026-04-01",
+          dateTo: "2026-04-15",
+          timeFrom: "11:00",
+          timeTo: "12:00",
+        },
+      ],
+    },
+  ]);
+  expect(calendar.body).toContain("EXDATE:20260408T030000Z");
+});
+
+test("date-specific venue changes and explicit one-off sessions survive holiday correction", async () => {
+  const calendar = await createScheduleCalendar([
+    {
+      ...item,
+      meetings: [
+        {
+          ...meeting,
+          weekday: "Mon",
+          dateFrom: "2026-09-01",
+          dateTo: "2026-09-30",
+          room: "Lecture Theater B",
+        },
+        {
+          ...meeting,
+          weekday: "Mon",
+          dateFrom: "2026-10-05",
+          dateTo: "2026-11-30",
+          room: "LG6102",
+        },
+        {
+          ...meeting,
+          weekday: "Mon",
+          dateFrom: "2026-10-19",
+          dateTo: "2026-10-19",
+          room: "Explicit session",
+        },
+      ],
+    },
+  ]);
+  const entries = calendar.body.split("BEGIN:VEVENT").slice(1);
+  expect(entries).toHaveLength(3);
+  expect(entries[0]).toContain("LOCATION:Lecture Theater B");
+  expect(entries[0]).not.toContain("EXDATE");
+  expect(entries[1]).toContain("LOCATION:LG6102");
+  expect(entries[1]).toContain("EXDATE:20261019T153000Z");
+  expect(entries[2]).toContain("LOCATION:Explicit session");
+  expect(entries[2]).not.toContain("EXDATE");
+});
+
+test("HKUST ICS separates holidays and mid-term break from administrative events", async () => {
+  const raw = await readFile(
+    new URL("./fixtures/hkust-calendar-2026-27.ics", import.meta.url),
+    "utf8",
+  );
+  const calendar = parseAcademicCalendar(raw);
+  expect(calendar.academicYear).toBe(2026);
+  expect(calendar.closures).toHaveLength(18);
+  expect(calendar.closures).toContainEqual({
+    from: "2027-03-25",
+    until: "2027-03-31",
+    name: "Mid Term Break",
+  });
+  expect(calendar.closures).toContainEqual({
+    from: "2026-10-19",
+    until: "2026-10-20",
+    name: "The day following the Chung Yeung Festival",
+  });
+  expect(
+    calendar.closures.some((item) =>
+      /Add.Drop|Examinations|Study Break/.test(item.name),
+    ),
+  ).toBe(false);
+  expect(() => parseAcademicCalendar("<html>Unavailable</html>")).toThrow(
+    "Invalid HKUST",
+  );
+});
+
+test("missing academic-year coverage never exports uncorrected recurrences", async () => {
+  await expect(
+    createScheduleCalendar([
+      {
+        ...item,
+        meetings: [
+          { ...meeting, dateFrom: "2029-09-01", dateTo: "2029-11-30" },
+        ],
+      },
+    ]),
+  ).rejects.toThrow("holiday dates for 2029");
 });

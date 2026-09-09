@@ -145,6 +145,7 @@ type ScheduleClassRow = {
   schedules: unknown;
   course_prefix: string;
   course_number: string;
+  course_title: string;
 };
 
 function sqlPath(path: string): string {
@@ -876,7 +877,7 @@ async function buildServerIndex(
     )
     SELECT
       class.term_num, class.term_code, class.course_id, class.section, class.number,
-      class.schedules, course.prefix AS course_prefix, course.number AS course_number
+      class.schedules, course.prefix AS course_prefix, course.number AS course_number, course.title AS course_title
     FROM latest_classes AS class
     JOIN latest_courses AS course
       ON course.term_num = class.term_num AND course.id = class.course_id AND course.rn = 1
@@ -887,7 +888,47 @@ async function buildServerIndex(
     if (!activeCourseIds.has(`${row.term_num}\0${row.course_id}`))
       throw new Error("Active Class references an inactive Course Offering");
 
+  function calendarTime(value: unknown) {
+    if (value === null || value === undefined) return undefined;
+    const minutes = Math.floor(Number(value) / 60_000_000);
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  }
+
   const classes = activeClasses.map((row) => ({
+    calendar: {
+      courseTitle: row.course_title,
+      meetings: (Array.isArray(row.schedules) ? row.schedules : []).map(
+        (meeting: Record<string, unknown>) => ({
+          weekday: String(meeting.weekday) as
+            | "Mon"
+            | "Tue"
+            | "Wed"
+            | "Thu"
+            | "Fri"
+            | "Sat"
+            | "Sun",
+          dateFrom:
+            meeting.date_from instanceof Date
+              ? meeting.date_from.toISOString().slice(0, 10)
+              : undefined,
+          dateTo:
+            meeting.date_to instanceof Date
+              ? meeting.date_to.toISOString().slice(0, 10)
+              : undefined,
+          timeFrom: calendarTime(meeting.time_from),
+          timeTo: calendarTime(meeting.time_to),
+          room: String(meeting.venue_name || meeting.venue || ""),
+          roomCode: String(meeting.venue || ""),
+          instructors: (Array.isArray(meeting.instructors)
+            ? meeting.instructors
+            : []
+          )
+            .map((sourceName) => String(sourceName).trim())
+            .filter(Boolean)
+            .map((sourceName) => ({ sourceName })),
+        }),
+      ),
+    },
     termNumber: Number(row.term_num),
     termCode: valueString(row.term_code, "Class Term Code"),
     courseId: valueString(row.course_id, "Class Course id"),

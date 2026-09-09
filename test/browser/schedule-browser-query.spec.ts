@@ -8,7 +8,7 @@ test("Schedule lists Course Offerings from the browser Worker", async ({
 }) => {
   await page.goto("/schedule?term=2510&q=Updated");
   await expect(page.getByRole("link", { name: /COMP 2000/ })).toBeVisible();
-  await expect(page.getByText("1 Course", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 Course", { exact: true })).toHaveCount(0);
 });
 
 test("Course Schedule details load lazily from the pinned generation", async ({
@@ -73,11 +73,19 @@ test("Schedule failure is explicit and does not disable Rankings or Community", 
   ).toHaveCount(100);
 });
 
-test("calendar subscription routes are removed", async ({ request }) => {
+test("calendar subscriptions export holidays and support legacy links", async ({
+  request,
+}) => {
+  for (const key of ["class", "number"]) {
+    const response = await request.get(`/api/calendar?term=2510&${key}=1001`);
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"]).toContain("text/calendar");
+    expect(await response.text()).toContain("EXDATE:");
+  }
   expect(
-    (await request.get("/schedule/calendar.ics?term=2510&class=1001")).status(),
+    (await request.get("/api/calendar?term=2510&class=999999")).status(),
   ).toBe(404);
   expect(
-    (await request.get("/api/calendar?term=2510&number=1001")).status(),
-  ).toBe(404);
+    (await request.get("/api/calendar?term=bad&class=1001")).status(),
+  ).toBe(400);
 });

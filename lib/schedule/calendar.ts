@@ -1,7 +1,8 @@
 import { createEvents, type EventAttributes } from "ics";
 import { DateTime } from "luxon";
+import calendars from "@/lib/schedule/holidays.json";
 import { PathAdvisor } from "@/lib/schedule/path-advisor";
-import type { ScheduleClass, ScheduleMeeting } from "@/lib/schedule/server";
+import type { CalendarClass, ScheduleMeeting } from "@/lib/schedule/server";
 
 const weekdays: ScheduleMeeting["weekday"][] = [
   "Mon",
@@ -18,9 +19,9 @@ function utcParts(value: DateTime): [number, number, number, number, number] {
   return [utc.year, utc.month, utc.day, utc.hour, utc.minute];
 }
 
-/** Export the selected generation's meetings, without a server query or subscription. */
+/** Export already-resolved meetings; no Schedule query is performed here. */
 export async function createScheduleCalendar(
-  classes: readonly ScheduleClass[],
+  classes: readonly CalendarClass[],
 ) {
   const events: EventAttributes[] = [];
   let omitted = 0;
@@ -86,6 +87,34 @@ export async function createScheduleCalendar(
       const path = meeting.room
         ? PathAdvisor.findPathTo(meeting.room)
         : undefined;
+      const exclusionDates: number[] = [];
+      // Explicit single-date meetings may be special or makeup sessions: preserve
+      // the supplied occurrence. Only expand/correct recurring source ranges.
+      if (meeting.dateFrom !== meeting.dateTo) {
+        for (
+          let occurrence = start;
+          occurrence.toFormat("yyyy-MM-dd") <= meeting.dateTo;
+          occurrence = occurrence.plus({ weeks: 1 })
+        ) {
+          const academicYear =
+            occurrence.month >= 9 ? occurrence.year : occurrence.year - 1;
+          const calendar = calendars.find(
+            (calendar) => calendar.academicYear === academicYear,
+          );
+          if (!calendar)
+            throw new Error(
+              `HKUST holiday dates for ${academicYear}–${academicYear + 1} are unavailable. The calendar could not be exported safely.`,
+            );
+          const localDate = occurrence.toFormat("yyyy-MM-dd");
+          if (
+            calendar.closures.some(
+              (closure) =>
+                closure.from <= localDate && localDate < closure.until,
+            )
+          )
+            exclusionDates.push(occurrence.toMillis());
+        }
+      }
       events.push({
         uid: `${item.termCode}-${item.classNumber}-${identity}@ust-rankings`,
         start: utcParts(start),
@@ -100,6 +129,7 @@ export async function createScheduleCalendar(
         ]
           .filter(Boolean)
           .join("\n"),
+        exclusionDates: exclusionDates.length ? exclusionDates : undefined,
         recurrenceRule: `FREQ=WEEKLY;UNTIL=${until.toUTC().toFormat("yyyyMMdd'T'HHmmss'Z'")}`,
       });
     }
