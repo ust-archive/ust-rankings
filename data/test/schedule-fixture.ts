@@ -55,7 +55,7 @@ export async function makeScheduleArchiveFixture(
       term_num, term_code, term_name, course_id, section, number, role, type,
       association, remarks, capacity, enroll, wait, consent, open, schedules,
       reservations, status, timestamp`;
-      const alphaMeeting = `[{weekday:'Mon', date_from:NULL::DATE, date_to:NULL::DATE, time_from:NULL::TIME, time_to:NULL::TIME, venue:'R101', venue_name:'Room 101', instructors:['Alias Alpha']}]`;
+      const alphaMeeting = `[{weekday:'Mon', date_from:'2025-09-01'::DATE, date_to:'2025-11-30'::DATE, time_from:'00:00'::TIME, time_to:'00:50'::TIME, venue:'R101', venue_name:'Room 101', instructors:['Alias Alpha']}]`;
       const calibratedMeeting = `[{weekday:'Tue', date_from:NULL::DATE, date_to:NULL::DATE, time_from:NULL::TIME, time_to:NULL::TIME, venue:'R102', venue_name:'Room 102', instructors:['Calibrated Name', 'Unknown Name']}]`;
       await copy(
         "classes.parquet",

@@ -249,6 +249,15 @@ if (!connection) {
           },
         ],
       });
+      await sql`UPDATE reviews SET attribution_suppressed = true WHERE id = ${reviewId}`;
+      const suppressedReactions = (
+        await accounts.getContributions(first.id)
+      ).reactions.filter((reaction) => reaction.targetType === "review");
+      expect(suppressedReactions).toHaveLength(3);
+      expect(
+        suppressedReactions.every((reaction) => reaction.reviewAuthor === null),
+      ).toBe(true);
+
       const [retainedWithdrawnReaction] = await sql<{ count: number }[]>`
         SELECT count(*)::int AS count FROM review_emoji_reactions
         WHERE review_id = ${withdrawnReviewId}

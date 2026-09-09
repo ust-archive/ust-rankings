@@ -163,6 +163,12 @@ export default function RootLayout({
                 Courses
               </EntityLink>
               <Link
+                className="no-underline underline-offset-4 hover:underline"
+                href="/schedule"
+              >
+                Schedule
+              </Link>
+              <Link
                 className="hidden no-underline underline-offset-4 hover:underline sm:inline"
                 href="/waitlist"
                 transitionTypes={forwardTransition}
@@ -211,6 +217,7 @@ export default function RootLayout({
               links={[
                 ["Instructor Rankings", "/rankings/instructors"],
                 ["Course Rankings", "/rankings/courses"],
+                ["UST Schedule", "/schedule"],
                 ["WL Compass", "/waitlist"],
               ]}
             />

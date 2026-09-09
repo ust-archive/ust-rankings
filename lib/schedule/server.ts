@@ -69,6 +69,9 @@ export type SchedulePage = {
   search?: string;
   results: CourseOffering[];
   total: number;
+  plannerClasses: ScheduleClass[];
+  plannerOfferings: CourseOffering[];
+  invalidClassNumbers: number[];
 };
 
 export type ScheduleEntity =
@@ -96,3 +99,13 @@ export type ScheduleDetails =
   | { type: "instructor"; instructorUuids: string[]; classes: ScheduleClass[] }
   | ({ type: "course-offering" } & CourseOffering)
   | ({ type: "class" } & ScheduleClass);
+
+export type CalendarClass = Pick<
+  ScheduleClass,
+  | "termCode"
+  | "classNumber"
+  | "courseCode"
+  | "courseTitle"
+  | "section"
+  | "meetings"
+>;

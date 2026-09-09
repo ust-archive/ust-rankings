@@ -19,6 +19,7 @@ import type {
   InstructorIdentity,
   InstructorIdentityLookup,
 } from "@/lib/rankings/server";
+import type { CalendarClass, ScheduleMeeting } from "@/lib/schedule/server";
 import {
   DELIVERY_CDN_BASE_URL,
   DELIVERY_SCHEMA_VERSION,
@@ -58,6 +59,7 @@ export type ServerIndexDependencies = {
 
 export type ActiveServerIndex = {
   readonly generation: string;
+  calendarClasses(termCode: string): CalendarClass[] | undefined;
   canonicalDetailPaths(): string[];
   validateReviewAssociations(
     associations: ReviewAssociations,
@@ -377,6 +379,8 @@ function createActiveServerIndex(value: unknown, generation: string) {
     offeringById.set(idKey, code);
   }
 
+  const calendarByTerm = new Map<string, CalendarClass[]>();
+  const incompleteCalendarTerms = new Set<string>();
   const classes = new Set<string>();
   const classById = new Map<string, string>();
   for (const row of array(
@@ -395,6 +399,55 @@ function createActiveServerIndex(value: unknown, generation: string) {
       offeringById.get(`${termCode}\0${courseId}`) !== code
     )
       throw new Error("Invalid Class");
+    if (!row.calendar) incompleteCalendarTerms.add(termCode);
+    else {
+      const calendar = object(row.calendar, "Class calendar");
+      const courseTitle = string(calendar.courseTitle, "Calendar course title");
+      const meetings = array(calendar.meetings, "Calendar meetings").map(
+        (value) => {
+          const meeting = object(value, "Calendar meeting");
+          const weekday = string(meeting.weekday, "Calendar weekday");
+          if (
+            !["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].includes(weekday)
+          )
+            throw new Error("Invalid calendar weekday");
+          for (const field of [
+            "dateFrom",
+            "dateTo",
+            "timeFrom",
+            "timeTo",
+            "room",
+            "roomCode",
+          ]) {
+            if (
+              meeting[field] !== undefined &&
+              typeof meeting[field] !== "string"
+            )
+              throw new Error("Invalid calendar meeting text");
+          }
+          const instructors = array(
+            meeting.instructors,
+            "Calendar instructors",
+          ).map((value) => ({
+            sourceName: string(
+              object(value, "Calendar instructor").sourceName,
+              "Calendar instructor name",
+            ),
+          }));
+          return { ...meeting, weekday, instructors } as ScheduleMeeting;
+        },
+      );
+      const entries = calendarByTerm.get(termCode) ?? [];
+      entries.push({
+        termCode,
+        courseCode: code,
+        courseTitle,
+        section,
+        classNumber,
+        meetings,
+      });
+      calendarByTerm.set(termCode, entries);
+    }
     const key = classKey(termCode, code, section, classNumber);
     addUnique(classes, key, "Class");
     classById.set(`${termCode}\0${courseId}\0${section}\0${classNumber}`, code);
@@ -442,6 +495,11 @@ function createActiveServerIndex(value: unknown, generation: string) {
   } = {
     generation,
     identityHistory: history,
+    calendarClasses(termCode) {
+      return incompleteCalendarTerms.has(termCode)
+        ? undefined
+        : calendarByTerm.get(termCode);
+    },
     canonicalDetailPaths() {
       return [
         ...[...courses].map((code) => {
