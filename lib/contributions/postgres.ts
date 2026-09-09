@@ -19,7 +19,6 @@ import {
   type ModerationRepository,
   ModerationWriteError,
   type ModerationWriteErrorCode,
-  type ReportReasonCategory,
 } from "./moderation";
 import {
   resolveReviewInstructorAssociationStatus,
@@ -690,277 +689,112 @@ function mapModerationWriteError(error: unknown): never {
   throw error;
 }
 
-function rejectModerationUser(status: string | undefined): never {
-  if (!status)
-    throw new ModerationWriteError("account-not-found", "User was not found");
-  if (status === "onboarding")
-    throw new ModerationWriteError(
-      "onboarding-required",
-      "Complete onboarding before writing",
-    );
-  if (status === "suspended")
-    throw new ModerationWriteError(
-      "account-suspended",
-      "This User is suspended from writing",
-    );
-  if (status === "closed")
-    throw new ModerationWriteError(
-      "account-closed",
-      "This User account is closed",
-    );
-  throw new ModerationWriteError("account-not-found", "User was not found");
+type ModerationCaseRow = {
+  id: string;
+  created_at: Date;
+  target_type: ModerationCase["targetType"];
+  target_id: string;
+  reason_category: string;
+  action: ModerationCase["action"];
+  outcome: string;
+  operator_identifier: string | null;
+  identity_lookup_reason: IdentityLookupReason | null;
+};
+
+function moderationCase(row: ModerationCaseRow): ModerationCase {
+  return {
+    id: row.id,
+    createdAt: normalizeContributionDate(row.created_at),
+    targetType: row.target_type,
+    targetId: row.target_id,
+    reasonCategory: row.reason_category,
+    action: row.action,
+    outcome: row.outcome,
+    ...(row.operator_identifier
+      ? { operatorIdentifier: row.operator_identifier }
+      : {}),
+    ...(row.identity_lookup_reason
+      ? { identityLookupReason: row.identity_lookup_reason }
+      : {}),
+  };
 }
 
 export class PostgresModerationRepository implements ModerationRepository {
   constructor(private readonly sql: ReturnType<typeof postgres>) {}
 
-  private async insertCase(input: {
-    targetType: ModerationCase["targetType"];
-    targetId: string;
-    reasonCategory: string;
-    action: ModerationCase["action"];
-    outcome: string;
-    operatorIdentifier?: string;
-    identityLookupReason?: IdentityLookupReason;
-  }) {
-    const id = crypto.randomUUID();
-    await this.sql`
-      INSERT INTO moderation_cases (
-        id, target_type, target_id, reason_category, operator_identifier,
-        action, outcome, identity_lookup_reason
-      ) VALUES (
-        ${id}, ${input.targetType}, ${input.targetId}, ${input.reasonCategory},
-        ${input.operatorIdentifier ?? null}, ${input.action}, ${input.outcome},
-        ${input.identityLookupReason ?? null}
-      )
-    `;
-    return {
-      id,
-      createdAt: new Date(),
-      targetType: input.targetType,
-      targetId: input.targetId,
-      reasonCategory: input.reasonCategory,
-      action: input.action,
-      outcome: input.outcome,
-      ...(input.operatorIdentifier
-        ? { operatorIdentifier: input.operatorIdentifier }
-        : {}),
-      ...(input.identityLookupReason
-        ? { identityLookupReason: input.identityLookupReason }
-        : {}),
-    };
-  }
-
-  async reportReview(input: {
-    userId: string;
-    reviewId: string;
-    reasonCategory: ReportReasonCategory;
-  }) {
+  async reportReview(
+    input: Parameters<ModerationRepository["reportReview"]>[0],
+  ) {
     try {
-      const [user] = await this.sql<{ status: string }[]>`
-        SELECT status FROM contribution_users WHERE id = ${input.userId}
+      const [row] = await this.sql<ModerationCaseRow[]>`
+        SELECT * FROM report_review(${input.userId}, ${input.reviewId}, ${input.reasonCategory})
       `;
-      if (user?.status !== "active") rejectModerationUser(user?.status);
-      const [review] = await this.sql<{ publicationState: string }[]>`
-        SELECT publication_state AS "publicationState" FROM reviews
-        WHERE id = ${input.reviewId}
-      `;
-      if (review?.publicationState !== "active")
-        throw new ModerationWriteError(
-          "review-not-found",
-          "Review was not found",
-        );
-      await this.sql`
-        INSERT INTO review_reports (review_id, reporter_user_id, reason_category)
-        VALUES (${input.reviewId}, ${input.userId}, ${input.reasonCategory})
-      `;
-      return this.insertCase({
-        targetType: "review",
-        targetId: input.reviewId,
-        reasonCategory: input.reasonCategory,
-        action: "report",
-        outcome: "recorded",
-      });
+      return moderationCase(row);
     } catch (error) {
       mapModerationWriteError(error);
     }
   }
 
-  async withdrawReview(input: {
-    operatorIdentifier: string;
-    reviewId: string;
-    reasonCategory: ReportReasonCategory;
-  }) {
+  async withdrawReview(
+    input: Parameters<ModerationRepository["withdrawReview"]>[0],
+  ) {
     try {
-      const [review] = await this.sql<{ publicationState: string }[]>`
-        SELECT publication_state AS "publicationState" FROM reviews
-        WHERE id = ${input.reviewId}
+      const [row] = await this.sql<ModerationCaseRow[]>`
+        SELECT * FROM operator_withdraw_review(${input.operatorIdentifier}, ${input.reviewId}, ${input.reasonCategory})
       `;
-      if (!review)
-        throw new ModerationWriteError(
-          "review-not-found",
-          "Review was not found",
-        );
-      if (review.publicationState !== "active")
-        throw new ModerationWriteError(
-          "review-withdrawn",
-          "Review is already withdrawn",
-        );
-      await this.sql`
-        UPDATE reviews
-        SET publication_state = 'withdrawn', updated_at = now()
-        WHERE id = ${input.reviewId}
-      `;
-      return this.insertCase({
-        targetType: "review",
-        targetId: input.reviewId,
-        reasonCategory: input.reasonCategory,
-        action: "withdraw-review",
-        outcome: "withdrawn",
-        operatorIdentifier: input.operatorIdentifier,
-      });
+      return moderationCase(row);
     } catch (error) {
       mapModerationWriteError(error);
     }
   }
 
-  async suppressAttribution(input: {
-    operatorIdentifier: string;
-    reviewId: string;
-    reasonCategory: ReportReasonCategory;
-  }) {
+  async suppressAttribution(
+    input: Parameters<ModerationRepository["suppressAttribution"]>[0],
+  ) {
     try {
-      const [review] = await this.sql<{ publicationState: string }[]>`
-        SELECT publication_state AS "publicationState" FROM reviews
-        WHERE id = ${input.reviewId}
+      const [row] = await this.sql<ModerationCaseRow[]>`
+        SELECT * FROM operator_suppress_attribution(${input.operatorIdentifier}, ${input.reviewId}, ${input.reasonCategory})
       `;
-      if (!review)
-        throw new ModerationWriteError(
-          "review-not-found",
-          "Review was not found",
-        );
-      if (review.publicationState !== "active")
-        throw new ModerationWriteError(
-          "review-withdrawn",
-          "Review is already withdrawn",
-        );
-      await this.sql`
-        UPDATE reviews
-        SET attribution_suppressed = true, updated_at = now()
-        WHERE id = ${input.reviewId}
-      `;
-      return this.insertCase({
-        targetType: "review",
-        targetId: input.reviewId,
-        reasonCategory: input.reasonCategory,
-        action: "suppress-attribution",
-        outcome: "attribution-suppressed",
-        operatorIdentifier: input.operatorIdentifier,
-      });
+      return moderationCase(row);
     } catch (error) {
       mapModerationWriteError(error);
     }
   }
 
-  async removeStoredFile(input: {
-    operatorIdentifier: string;
-    storedFileId: string;
-    reasonCategory: ReportReasonCategory;
-  }) {
+  async removeStoredFile(
+    input: Parameters<ModerationRepository["removeStoredFile"]>[0],
+  ) {
     try {
-      const [file] = await this.sql<{ id: string }[]>`
-        UPDATE stored_files
-        SET removal_requested_at = COALESCE(removal_requested_at, now())
-        WHERE id = ${input.storedFileId} AND removed_at IS NULL
-        RETURNING id
+      const [row] = await this.sql<ModerationCaseRow[]>`
+        SELECT * FROM operator_remove_stored_file(${input.operatorIdentifier}, ${input.storedFileId}, ${input.reasonCategory})
       `;
-      if (!file)
-        throw new ModerationWriteError(
-          "stored-file-not-found",
-          "Stored File was not found",
-        );
-      return this.insertCase({
-        targetType: "stored-file",
-        targetId: input.storedFileId,
-        reasonCategory: input.reasonCategory,
-        action: "remove-stored-file",
-        outcome: "removal-queued",
-        operatorIdentifier: input.operatorIdentifier,
-      });
+      return moderationCase(row);
     } catch (error) {
       mapModerationWriteError(error);
     }
   }
 
-  async suspendUser(input: {
-    operatorIdentifier: string;
-    userId: string;
-    reasonCategory: ReportReasonCategory;
-  }) {
+  async suspendUser(input: Parameters<ModerationRepository["suspendUser"]>[0]) {
     try {
-      const [user] = await this.sql<{ status: string }[]>`
-        SELECT status FROM contribution_users WHERE id = ${input.userId}
+      const [row] = await this.sql<ModerationCaseRow[]>`
+        SELECT * FROM operator_suspend_user(${input.operatorIdentifier}, ${input.userId}, ${input.reasonCategory})
       `;
-      if (!user)
-        throw new ModerationWriteError("user-not-found", "User was not found");
-      if (user.status === "closed")
-        throw new ModerationWriteError(
-          "account-closed",
-          "This User account is closed",
-        );
-      await this.sql`
-        UPDATE contribution_users
-        SET status = 'suspended', updated_at = now()
-        WHERE id = ${input.userId}
-      `;
-      return this.insertCase({
-        targetType: "user",
-        targetId: input.userId,
-        reasonCategory: input.reasonCategory,
-        action: "suspend-user",
-        outcome: "suspended",
-        operatorIdentifier: input.operatorIdentifier,
-      });
+      return moderationCase(row);
     } catch (error) {
       mapModerationWriteError(error);
     }
   }
 
-  async lookupIdentity(input: {
-    operatorIdentifier: string;
-    reviewId: string;
-    reason: IdentityLookupReason;
-  }): Promise<IdentityLookup> {
+  async lookupIdentity(
+    input: Parameters<ModerationRepository["lookupIdentity"]>[0],
+  ): Promise<IdentityLookup> {
     try {
-      const [review] = await this.sql<{ authorUserId: string }[]>`
-        SELECT author_user_id AS "authorUserId" FROM reviews
-        WHERE id = ${input.reviewId}
+      const [row] = await this.sql<
+        Array<ModerationCaseRow & { user_id: string }>
+      >`
+        SELECT * FROM operator_lookup_identity(${input.operatorIdentifier}, ${input.reviewId}, ${input.reason})
       `;
-      if (!review)
-        throw new ModerationWriteError(
-          "review-not-found",
-          "Review was not found",
-        );
-      if (input.reason === "report") {
-        const [report] = await this.sql<{ id: string }[]>`
-          SELECT id FROM review_reports WHERE review_id = ${input.reviewId} LIMIT 1
-        `;
-        if (!report)
-          throw new ModerationWriteError(
-            "no-concrete-report",
-            "Identity lookup requires a concrete report",
-          );
-      }
-      const recorded = await this.insertCase({
-        targetType: "review",
-        targetId: input.reviewId,
-        reasonCategory: input.reason,
-        action: "identity-lookup",
-        outcome: "inspected",
-        operatorIdentifier: input.operatorIdentifier,
-        identityLookupReason: input.reason,
-      });
-      return { userId: review.authorUserId, case: recorded };
+      return { userId: row.user_id, case: moderationCase(row) };
     } catch (error) {
       mapModerationWriteError(error);
     }
