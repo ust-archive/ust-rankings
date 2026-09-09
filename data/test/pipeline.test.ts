@@ -177,11 +177,17 @@ async function makeFixtures(
         }
         ('api', NULL, NULL, 100, 'course-high', 'COMP', '1000', 'L1',
           1001, 'E', 'LEC', 120, 100,
-          [{'instructors': ['ALPHA, Alice Beatrice', 'Adam Blake DELTA']}],
+          [{'instructors': ['ALPHA, Alice Beatrice', 'Adam Blake DELTA',
+            'WANG, Wei', 'WEI, Wang', 'TBA', 'MSC(TLE) PROGRAM, .'
+            ${sameName ? ", 'Alex Lee'" : ""}]}],
           'ACTIVE', TIMESTAMP '2025-01-01'),
         ('api', NULL, NULL, 100, 'course-low', 'COMP', '2000', 'L1',
           1002, 'E', 'LEC', 80, 60,
-          [{'instructors': ['${escapedLowInstructor}']}],
+          [{'instructors': ['${escapedLowInstructor}'${sameName ? ", 'Alex Lee'" : ""}]}],
+          'ACTIVE', TIMESTAMP '2025-01-01'),
+        ('api', NULL, NULL, 100, 'course-prior', 'COMP', '3000', 'L1',
+          1003, 'E', 'LEC', 80, 60,
+          [{'instructors': ['Eve Epsilon'${extraSameName ? ", 'Alex Lee'" : ""}]}],
           'ACTIVE', TIMESTAMP '2025-01-01')
       ) AS classes(
         version, source_commit, source_order, term_num, course_id, prefix,
@@ -211,6 +217,8 @@ async function makeFixtures(
         ('api', NULL, NULL, 100, 'course-high', 'COMP', '1000', 'UGRD', 3.0,
           'ACTIVE', TIMESTAMP '2025-01-01'),
         ('api', NULL, NULL, 100, 'course-low', 'COMP', '2000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2025-01-01'),
+        ('api', NULL, NULL, 100, 'course-prior', 'COMP', '3000', 'UGRD', 3.0,
           'ACTIVE', TIMESTAMP '2025-01-01')
       ) AS courses(
         version, source_commit, source_order, term_num, id, prefix, number,
@@ -566,6 +574,94 @@ async function snapshot(outputDir: string, name: keyof typeof outputColumns) {
   const data = await rows(`SELECT * FROM read_parquet('${path}') ORDER BY ALL`);
   return { schema, data };
 }
+
+test("unified Schedule history establishes activity without legacy IDs or roles", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-history-"));
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { backtestHistory: true });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const aliasFile = join(previous, "instructor-aliases.parquet");
+    await connection.run(
+      `CREATE TABLE aliases AS SELECT * FROM read_parquet('${aliasFile.replaceAll("\\", "/")}')`,
+    );
+    await copyQuery(
+      connection,
+      aliasFile,
+      `
+      SELECT * FROM aliases UNION ALL
+      SELECT * REPLACE ('ALPHA, Beatrice Alice' AS name)
+      FROM aliases WHERE name = 'ALPHA, Alice Beatrice'
+    `,
+    );
+    const classes = join(dataDir, "schedule/canonical/class_records.parquet");
+    const courses = join(dataDir, "schedule/canonical/course_records.parquet");
+    await connection.run(
+      `CREATE TABLE classes AS SELECT * FROM read_parquet('${classes.replaceAll("\\", "/")}')`,
+    );
+    await connection.run(
+      `CREATE TABLE courses AS SELECT * FROM read_parquet('${courses.replaceAll("\\", "/")}')`,
+    );
+    await copyQuery(
+      connection,
+      courses,
+      `
+      SELECT * FROM courses WHERE term_num <> 99 UNION ALL
+      SELECT * REPLACE ('legacy' AS version, 99 AS term_num, NULL AS id)
+      FROM courses WHERE term_num = 100
+    `,
+    );
+    await copyQuery(
+      connection,
+      classes,
+      `
+      SELECT * FROM classes WHERE term_num <> 99 UNION ALL
+      SELECT * REPLACE ('legacy' AS version, 99 AS term_num, NULL AS course_id,
+        NULL AS role, NULL AS type, 1 AS number,
+        CASE WHEN course_number = '1000'
+          THEN [{'instructors': ['ALPHA, Beatrice Alice']}]
+          ELSE schedules END AS schedules)
+      FROM classes WHERE term_num = 100
+      UNION ALL
+      SELECT * REPLACE ('legacy' AS version, 99 AS term_num, NULL AS course_id,
+        NULL AS role, NULL AS type, 1 AS number, 'INACTIVE' AS status,
+        TIMESTAMP '2025-02-01' AS timestamp)
+      FROM classes WHERE term_num = 100 AND course_number = '3000'
+      UNION ALL
+      SELECT * REPLACE ('legacy' AS version, 99 AS term_num, NULL AS course_id,
+        NULL AS role, NULL AS type, 2 AS number, 'LA1' AS section)
+      FROM classes WHERE term_num = 100 AND course_number = '3000'
+    `,
+    );
+    const output = runPipeline(dataDir, join(temp, "run"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    assert.deepEqual(
+      await rows(`
+      SELECT DISTINCT code FROM read_parquet('${parquet(output, "course-ratings")}')
+      WHERE term_num = 99 AND is_offered ORDER BY code
+    `),
+      [{ code: "1000" }, { code: "2000" }, { code: "3000" }],
+    );
+    assert.deepEqual(
+      await rows(`
+      SELECT DISTINCT name, is_teaching FROM read_parquet('${parquet(output, "instructor-ratings")}')
+      WHERE term_num = 99 AND name IN ('ALPHA, Alice Beatrice', 'Cara Gamma', 'Eve Epsilon')
+      ORDER BY name
+    `),
+      [
+        { name: "ALPHA, Alice Beatrice", is_teaching: true },
+        { name: "Cara Gamma", is_teaching: true },
+      ],
+    );
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
 
 test("DuckDB pipeline writes reproducible relational marts", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-"));

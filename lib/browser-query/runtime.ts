@@ -611,12 +611,15 @@ async function courseRankings(
   const configuration = normalizedWeights(query);
   const termRows = await queryRows(
     runtime,
-    "SELECT term_num, term_code FROM read_parquet('course-ratings.parquet') GROUP BY ALL ORDER BY term_num DESC",
+    "SELECT term_num, term_code, bool_or(is_offered) AS is_active FROM read_parquet('course-ratings.parquet') GROUP BY ALL ORDER BY term_num DESC",
   );
-  const terms = termRows.map((row) => ({
-    termCode: String(row.term_code),
-    termName: rankingTermName(String(row.term_code)),
-  }));
+  const terms = termRows
+    .filter((row) => activity === "all" || row.is_active)
+    .map((row) => ({
+      termCode: String(row.term_code),
+      termName: rankingTermName(String(row.term_code)),
+      isActive: Boolean(row.is_active),
+    }));
   const termCode = query.termCode?.trim() || terms[0]?.termCode || "";
   if (
     !/^\d{4}$/.test(termCode) ||
@@ -1043,12 +1046,15 @@ async function instructorRankings(
   );
   const termRows = await queryRows(
     runtime,
-    "SELECT term_num, term_code FROM read_parquet('instructor-ratings.parquet') GROUP BY ALL ORDER BY term_num DESC",
+    "SELECT term_num, term_code, bool_or(is_teaching) AS is_active FROM read_parquet('instructor-ratings.parquet') GROUP BY ALL ORDER BY term_num DESC",
   );
-  const terms = termRows.map((row) => ({
-    termCode: String(row.term_code),
-    termName: rankingTermName(String(row.term_code)),
-  }));
+  const terms = termRows
+    .filter((row) => activity === "all" || row.is_active)
+    .map((row) => ({
+      termCode: String(row.term_code),
+      termName: rankingTermName(String(row.term_code)),
+      isActive: Boolean(row.is_active),
+    }));
   const termCode = query.termCode?.trim() || terms[0]?.termCode || "";
   if (
     !/^\d{4}$/.test(termCode) ||

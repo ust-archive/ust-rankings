@@ -77,7 +77,7 @@ export function RankingControls({
   entity: Entity;
   initial: InitialControls;
   schemes: ReadonlyArray<CommonCoreSchemeDefinition>;
-  terms: Array<{ termCode: string; termName: string }>;
+  terms: Array<{ termCode: string; termName: string; isActive?: boolean }>;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -115,6 +115,12 @@ export function RankingControls({
     next.delete("prefix");
     next.delete("course");
     next.set("term", initial.termCode);
+    if (
+      nextSettings.activity === "current" &&
+      terms.find((term) => term.termCode === initial.termCode)?.isActive ===
+        false
+    )
+      next.delete("term");
     next.set("preset", nextSettings.preset);
     next.set("activity", nextSettings.activity);
     next.delete("commonCoreScheme");
