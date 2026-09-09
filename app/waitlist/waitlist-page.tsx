@@ -266,7 +266,7 @@ function WaitlistEvidenceResult({ result }: { result: SupportedPlan }) {
   const timingHeadingId = `${idPrefix}-timing-heading`;
   return (
     <section
-      aria-label="WL Compass result"
+      aria-label="WL result"
       aria-live="polite"
       className="flex flex-col gap-5 text-sm text-slate-700"
     >
@@ -698,7 +698,7 @@ function WaitlistClassChoice({
 function WaitlistCardSkeletons() {
   return (
     <div
-      aria-label="Loading WL Compass Courses"
+      aria-label="Loading WL Courses"
       className="flex flex-col gap-6"
       role="status"
     >
@@ -823,7 +823,7 @@ function WaitlistCourseCard({
               error:
                 error instanceof BrowserQueryError
                   ? error.message
-                  : "WL Compass could not be calculated.",
+                  : "WL could not be calculated.",
             };
           }),
       );
@@ -854,7 +854,7 @@ function WaitlistCourseCard({
           </div>
           {calculating ? (
             <Spinner
-              aria-label="Calculating WL Compass"
+              aria-label="Calculating WL"
               className="absolute right-4 top-4 size-5 text-slate-600 sm:right-6 sm:top-6"
             />
           ) : null}
@@ -1030,7 +1030,7 @@ export function WaitlistPage() {
                 loadMoreError:
                   error instanceof BrowserQueryError
                     ? error.message
-                    : "More WL Compass Course Offerings could not be loaded.",
+                    : "More WL Course Offerings could not be loaded.",
                 loadingMore: false,
               }
             : previous,
@@ -1048,14 +1048,14 @@ export function WaitlistPage() {
     <div className="flex w-full max-w-2xl flex-col gap-8 text-left text-slate-900">
       <header className="text-center">
         <h1 className="text-logo-gradient text-balance text-5xl font-bold leading-none tracking-tighter sm:text-7xl">
-          WL Compass
+          UST WL
         </h1>
       </header>
       <div className="flex flex-col gap-4">
         <div className="flex w-full items-center gap-4">
           <Field className="min-w-0 flex-1 gap-0">
             <FieldLabel className="sr-only" htmlFor="ranking-search">
-              Search WL Compass Courses
+              Search WL Courses
             </FieldLabel>
             <RankingSearch entity="waitlist" initialValue={search} />
           </Field>
@@ -1077,7 +1077,7 @@ export function WaitlistPage() {
         <WaitlistCardSkeletons />
       ) : current.error ? (
         <Alert variant="destructive">
-          <h2 className="text-xl font-bold">WL Compass is unavailable</h2>
+          <h2 className="text-xl font-bold">WL is unavailable</h2>
           <AlertDescription>
             {current.errorMessage ??
               "Public current-Term Schedule data could not be loaded. Refresh to try again."}
@@ -1087,7 +1087,7 @@ export function WaitlistPage() {
         <>
           <ol
             aria-busy={current.loading || current.loadingMore}
-            aria-label="WL Compass Course Offerings"
+            aria-label="WL Course Offerings"
             className="flex list-none flex-col gap-6 p-0"
             style={{ listStyle: "none", marginInlineStart: 0 }}
           >
@@ -1104,7 +1104,7 @@ export function WaitlistPage() {
           {page.results.length < page.total ? (
             <div className="flex flex-col items-center gap-3">
               <Button
-                aria-label="Load more WL Compass Course Offerings"
+                aria-label="Load more WL Course Offerings"
                 className="min-w-32"
                 disabled={current.loadingMore}
                 onClick={loadMore}
@@ -1147,8 +1147,8 @@ export function WaitlistPage() {
       )}
       <p className="sr-only" role="status">
         {current.loading
-          ? "Updating WL Compass Courses…"
-          : `Showing ${page?.results.length ?? 0} of ${page?.total ?? 0} WL Compass Course Offerings.`}
+          ? "Updating WL Courses…"
+          : `Showing ${page?.results.length ?? 0} of ${page?.total ?? 0} WL Course Offerings.`}
       </p>
     </div>
   );

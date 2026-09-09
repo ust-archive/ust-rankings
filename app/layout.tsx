@@ -173,7 +173,7 @@ export default function RootLayout({
                 href="/waitlist"
                 transitionTypes={forwardTransition}
               >
-                WL Compass
+                WL
               </Link>
               <HeaderAuth />
             </nav>
@@ -218,7 +218,7 @@ export default function RootLayout({
                 ["Instructor Rankings", "/rankings/instructors"],
                 ["Course Rankings", "/rankings/courses"],
                 ["UST Schedule", "/schedule"],
-                ["WL Compass", "/waitlist"],
+                ["WL", "/waitlist"],
               ]}
             />
             <FooterLinks
