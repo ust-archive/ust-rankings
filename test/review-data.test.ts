@@ -59,6 +59,48 @@ const review = {
   instructorAssociationStatus: "resolved" as const,
 };
 
+test("production Review reads immediately reflect operator suppression and withdrawal", async () => {
+  vi.stubEnv("NODE_ENV", "production");
+  const moderated = { ...review, id: "00000000-0000-4000-8000-000000000199" };
+  const query = {
+    type: "course" as const,
+    coursePrefix: "COMP",
+    courseNumber: "9900",
+  };
+  try {
+    postgresListReviews.mockResolvedValue([moderated]);
+    postgresGetReview.mockResolvedValue(moderated);
+    expect((await loadReviews(query)).reviews[0].capturedDisplayName).toBe(
+      "Captured Student",
+    );
+    expect((await loadReview(moderated.id)).review?.capturedDisplayName).toBe(
+      "Captured Student",
+    );
+
+    const suppressed = {
+      ...moderated,
+      attribution: "identity-hidden",
+      attributionCredit: "Anonymous Reviewer",
+      capturedDisplayName: undefined,
+    };
+    postgresListReviews.mockResolvedValue([suppressed]);
+    postgresGetReview.mockResolvedValue(suppressed);
+    expect(
+      (await loadReviews(query)).reviews[0].capturedDisplayName,
+    ).toBeUndefined();
+    expect(
+      (await loadReview(moderated.id)).review?.capturedDisplayName,
+    ).toBeUndefined();
+
+    postgresListReviews.mockResolvedValue([]);
+    postgresGetReview.mockResolvedValue(undefined);
+    expect((await loadReviews(query)).reviews).toEqual([]);
+    expect((await loadReview(moderated.id)).review).toBeUndefined();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
 test("Review reads cross one contribution seam and distinguish provider unavailability from zero Reviews", async () => {
   expect(await loadCourseReviews("COMP", "2000", async () => [review])).toEqual(
     { reviews: [review], signedIn: false, unavailable: false },
@@ -170,7 +212,7 @@ test("Review reads reveal edit capability only to the authenticated author query
   expect(result.signedIn).toBe(true);
 });
 
-test("cached Review reads isolate each User's personalized result", async () => {
+test("Review reads isolate each User's personalized result", async () => {
   postgresListReviews.mockReset();
   postgresListReviews.mockImplementation(
     async (_query: unknown, viewerUserId?: string) => [
@@ -189,11 +231,12 @@ test("cached Review reads isolate each User's personalized result", async () => 
 
   expect(postgresListReviews.mock.calls).toEqual([
     [query, "user-a"],
+    [query, "user-a"],
     [query, "user-b"],
   ]);
 });
 
-test("cached Review permalink reads isolate each User's personalized result", async () => {
+test("Review permalink reads isolate each User's personalized result", async () => {
   const previousSecret = process.env.AUTH_SECRET;
   process.env.AUTH_SECRET = "configured";
   postgresGetReview.mockReset();
@@ -211,6 +254,7 @@ test("cached Review permalink reads isolate each User's personalized result", as
     await loadReview(review.id);
 
     expect(postgresGetReview.mock.calls).toEqual([
+      [review.id, "user-a"],
       [review.id, "user-a"],
       [review.id, "user-b"],
     ]);

@@ -40,6 +40,18 @@ const summary = {
   },
 };
 
+test("Signal reads reflect account closure performed outside the web process", async () => {
+  const { loadSignals } = await import("@/app/signals/data");
+  const closingTarget = { ...target, courseNumber: "9900" };
+  postgresReadSignals.mockResolvedValue(summary);
+  expect((await loadSignals(closingTarget)).summary?.thumbs.up).toBe(5);
+  postgresReadSignals.mockResolvedValue({
+    ...summary,
+    thumbs: { up: 0, down: 0 },
+  });
+  expect((await loadSignals(closingTarget)).summary?.thumbs.up).toBe(0);
+});
+
 test("signal loading composes public aggregates with only the authenticated User's state", async () => {
   const { loadSignals } = await import("@/app/signals/data");
   const userId = "00000000-0000-4000-8000-000000000047";
@@ -66,7 +78,7 @@ test("signal loading composes public aggregates with only the authenticated User
   expect(reads).toEqual([userId]);
 });
 
-test("cached Signal reads isolate each User's personalized result", async () => {
+test("Signal reads isolate each User's personalized result", async () => {
   const { loadSignals } = await import("@/app/signals/data");
   postgresReadSignals.mockReset();
   postgresReadSignals.mockImplementation(
@@ -81,6 +93,7 @@ test("cached Signal reads isolate each User's personalized result", async () => 
   await loadSignals(target, undefined, async () => "user-b");
 
   expect(postgresReadSignals.mock.calls).toEqual([
+    [target, "user-a"],
     [target, "user-a"],
     [target, "user-b"],
   ]);
