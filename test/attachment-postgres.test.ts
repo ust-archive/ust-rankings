@@ -36,6 +36,9 @@ if (!connection) {
         async get(key) {
           return objects.get(key);
         },
+        async put(key, bytes) {
+          objects.set(key, bytes);
+        },
         async delete(key) {
           objects.delete(key);
         },
@@ -142,6 +145,44 @@ if (!connection) {
       });
       const signed = await attachments.signPublicRead(attachment.id);
       expect(signed.mime).toBe("image/jpeg");
+
+      // Expiry cleanup removes replayable staging and a raced deduplication
+      // candidate while retaining accepted bytes and pre-fix legacy objects.
+      const legacyIntent = crypto.randomUUID();
+      const legacyFile = crypto.randomUUID();
+      await repository.reserve({
+        userId: userB,
+        intentId: legacyIntent,
+        objectKey: legacyIntent,
+        declaredByteSize: bytes.length,
+        declaredExtension: "jpg",
+        declaredMime: "image/jpeg",
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      await repository.beginValidation(legacyIntent);
+      await repository.accept({
+        intentId: legacyIntent,
+        reused: false,
+        storedFile: {
+          id: legacyFile,
+          ownerUserId: userB,
+          objectKey: legacyIntent,
+          byteSize: bytes.length,
+          sha256: "ab".repeat(32),
+          detectedMime: "image/jpeg",
+        },
+      });
+      objects.set(legacyIntent, bytes);
+      objects.set(reservation.objectKey, Buffer.alloc(bytes.length));
+      objects.set(`verified/${copy.intentId}`, bytes);
+      expect(await attachments.cleanupExpired()).toBe(0);
+      await sql`UPDATE upload_intents SET expires_at = now() - interval '1 minute'`;
+      expect(await attachments.cleanupExpired()).toBe(3);
+      expect(objects.has(reservation.objectKey)).toBe(false);
+      expect(objects.has(`verified/${copy.intentId}`)).toBe(false);
+      expect(objects.get(legacyIntent)).toEqual(bytes);
+      const publishedKey = new URL(signed.url).pathname.slice(1);
+      expect(objects.get(publishedKey)).toEqual(bytes);
       await sql`UPDATE reviews SET publication_state = 'withdrawn' WHERE id = ${reviewId}`;
       await expect(
         attachments.signPublicRead(attachment.id),

@@ -343,33 +343,23 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
   }
 
   async listCleanupIntents(now: Date) {
-    const rows = await this.sql<UploadIntentRecord[]>`
-      SELECT id,
-             owner_user_id AS "ownerUserId",
-             object_key AS "objectKey",
-             declared_byte_size AS "declaredByteSize",
-             declared_extension AS "declaredExtension",
-             declared_mime AS "declaredMime",
-             state,
-             stored_file_id AS "storedFileId",
-             expires_at AS "expiresAt",
-             created_at AS "createdAt",
-             updated_at AS "updatedAt"
-      FROM upload_intents
-      WHERE stored_file_id IS NULL
-        AND (
-          state IN ('rejected', 'validation_error')
-          OR expires_at <= ${now}
-          OR updated_at <= ${now}::timestamptz - interval '24 hours'
-        )
+    return this.sql<Array<{ id: string; objectKeys: string[] }>>`
+      SELECT intent.id,
+             ARRAY(
+               SELECT key FROM unnest(ARRAY[intent.object_key, 'verified/' || intent.id]) AS key
+               WHERE NOT EXISTS (SELECT 1 FROM stored_files WHERE object_key = key)
+             ) AS "objectKeys"
+      FROM upload_intents intent
+      WHERE expires_at <= ${now}
+        AND (state <> 'validating'
+             OR updated_at <= ${now}::timestamptz - interval '24 hours')
     `;
-    return rows.map(intent);
   }
 
   async deleteIntent(intentId: string) {
     await this.sql`
       DELETE FROM upload_intents
-      WHERE id = ${intentId} AND stored_file_id IS NULL
+      WHERE id = ${intentId}
     `;
   }
 

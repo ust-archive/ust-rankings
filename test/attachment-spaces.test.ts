@@ -44,6 +44,18 @@ test("Spaces adapter signs origin PUT/GET for opaque keys without User or filena
     contentType: "image/jpeg",
     expiresSeconds: GET_EXPIRES_SECONDS,
   });
+  const validatedBytes = new Uint8Array([1, 2, 3]);
+  await store.put("verified/opaque-id", validatedBytes, "image/jpeg");
+  expect(
+    commands.find((command) => command instanceof PutObjectCommand),
+  ).toMatchObject({
+    input: {
+      Key: "attachments/verified/opaque-id",
+      Body: validatedBytes,
+      ContentLength: 3,
+      ContentType: "image/jpeg",
+    },
+  });
 
   expect(put.url).toContain("attachments/00000000-0000-4000-8000-000000000148");
   expect(put.url).not.toContain("user");
