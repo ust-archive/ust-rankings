@@ -113,6 +113,19 @@ equal weight to each `Instructor UUID × outcome Term`. Canonical Schedule Class
 records add enrollment, capacity, Section, and teaching-team context. These
 fields do not change the production output files.
 
+Retrospective backtests reject any outcome after the frozen development ceiling
+in `validation/future-holdout.json`, including the legacy comparison export.
+Use development-only input files with outcome Terms at or below that ceiling;
+reserved future outcomes require a separate sealed evaluation. The report also
+includes equal-unit error by criterion, source, evidence density, cold-start
+state, teaching team, and number of historical Courses, plus raw-pair Gaussian
+coverage at 50%, 80%, 90%, and 95%. These diagnostics do not select production
+parameters or establish an independent holdout.
+The report also fits empirical residual quantiles on outcome Terms through 91
+and checks coverage on Terms 92-102, explicitly as a retrospective diagnostic.
+Schedule-backed Ranking Population follow-up counts show how many eligible
+Courses receive later evidence; final four-Term windows may be incomplete.
+
 The upstream dataset cards declare `license: other`; two inputs are private.
 
 Identity history is projected by the shared `lib/instructor-identity.ts` module. The fourth identity artifact retains its storage filename but now contains typed Instructor Association Corrections: `correction_type`, `source_commit`, `target_uuid`, `source_name`, optional `term_code`, and `course_code`. Accepted Course–Instructor UUIDs are authoritative; the `name` column is display data.
