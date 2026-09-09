@@ -3,6 +3,7 @@ import {
   DEFAULT_RANKING_PREFERENCE,
   parseRankingPreference,
   RANKING_PREFERENCE_COOKIE,
+  rankingPreferenceFromQuery,
   rankingPreferenceQuery,
 } from "@/lib/rankings/preference";
 
@@ -16,6 +17,10 @@ export async function readRankingPreference() {
   }
 }
 
-export async function readRankingPreferenceQuery() {
-  return rankingPreferenceQuery(await readRankingPreference());
+export async function readRankingPreferenceQuery(
+  query: Record<string, string | string[] | undefined> = {},
+) {
+  return rankingPreferenceQuery(
+    rankingPreferenceFromQuery(query, await readRankingPreference()),
+  );
 }

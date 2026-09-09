@@ -13,7 +13,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { gradeColor, letterGrade } from "@/lib/rankings/presentation";
-import type { CourseRanking, InstructorRanking } from "@/lib/rankings/server";
+import type {
+  CourseRanking,
+  InstructorRanking,
+  RankingsPage,
+} from "@/lib/rankings/server";
 import { coursePath, instructorPath } from "@/lib/routes";
 
 type Ranking = CourseRanking | InstructorRanking;
@@ -50,17 +54,31 @@ function sampleCount(value: number, source: string) {
 }
 
 export function RankingResultCard({
+  configuration,
   generation,
   result,
+  termCode,
 }: {
+  configuration: RankingsPage["configuration"];
   generation?: string;
   result: Ranking;
+  termCode: string;
 }) {
   const cardPresentation = presentation(result);
+  const parameters = new URLSearchParams({
+    term: termCode,
+    preset: configuration.preset,
+  });
+  if (configuration.preset === "custom")
+    for (const [criterion, weight] of Object.entries(configuration.weights))
+      parameters.set(`weight_${criterion}`, String(weight));
+  if (result.entity === "instructor" && generation) {
+    parameters.set("_generation", generation);
+    parameters.set("_instructor", result.uuid);
+  }
+  const href = `${cardPresentation.href}?${parameters}`;
   const navigationHref =
-    result.entity === "instructor" && generation
-      ? `${cardPresentation.href}?_generation=${generation}&_instructor=${result.uuid}`
-      : undefined;
+    result.entity === "instructor" && generation ? href : undefined;
   const percentile = result.percentile ?? result.allTimePercentile;
   const grade = letterGrade(percentile);
   const score = scoreFormat.format(result.score * 100);
@@ -71,7 +89,7 @@ export function RankingResultCard({
     >
       <EntityLink
         className="group block touch-manipulation rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950"
-        href={navigationHref ?? cardPresentation.href}
+        href={href}
         navigationHref={navigationHref}
         prefetch
         style={{ textDecoration: "none" }}

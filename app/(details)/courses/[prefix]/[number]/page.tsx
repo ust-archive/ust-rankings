@@ -103,7 +103,7 @@ export async function renderCoursePage(
 ) {
   const [query, route] = await Promise.all([searchParams, params]);
   const { coursePrefix, courseNumber } = normalizeCourseRoute(route, query);
-  const rankingPreference = await readRankingPreferenceQuery();
+  const rankingPreference = await readRankingPreferenceQuery(query);
   const selectedTerm =
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term
