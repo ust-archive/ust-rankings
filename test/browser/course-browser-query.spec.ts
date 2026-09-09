@@ -129,12 +129,14 @@ test("counterpart Ranking navigation does not wait for cold browser data", async
       return startViewTransition(...args);
     };
   });
-  await page.route(`${dataOrigin}/**/course-ratings.parquet`, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-    await route.continue();
+  let releaseRatings = () => {};
+  const ratingsReleased = new Promise<void>((resolve) => {
+    releaseRatings = resolve;
   });
-  await page.route("**/rankings/courses?*", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 750));
+  let ratingsRequested = false;
+  await page.route(`${dataOrigin}/**/course-ratings.parquet`, async (route) => {
+    ratingsRequested = true;
+    await ratingsReleased;
     await route.continue();
   });
   await page.goto("/rankings/instructors");
@@ -145,20 +147,20 @@ test("counterpart Ranking navigation does not wait for cold browser data", async
     .getByRole("navigation", { name: "Primary navigation" })
     .getByRole("link", { name: "Courses" });
 
-  await link.evaluate((element) => {
-    window.navigationClickAt = performance.now();
-    (element as HTMLElement).click();
-  });
-
-  await expect
-    .poll(() => page.evaluate(() => window.viewTransitionDelay), {
-      timeout: 5_000,
-    })
-    .not.toBe(Number.POSITIVE_INFINITY);
-  expect(await page.evaluate(() => window.viewTransitionDelay)).toBeLessThan(
-    1_000,
-  );
-  await expect(page).toHaveURL(/\/rankings\/courses/);
+  try {
+    await link.evaluate((element) => {
+      window.navigationClickAt = performance.now();
+      (element as HTMLElement).click();
+    });
+    await expect.poll(() => ratingsRequested).toBe(true);
+    // The transition must start while analytical data is still unavailable.
+    await expect
+      .poll(() => page.evaluate(() => window.viewTransitionDelay))
+      .not.toBe(Number.POSITIVE_INFINITY);
+    await expect(page).toHaveURL(/\/rankings\/courses/);
+  } finally {
+    releaseRatings();
+  }
   await expect(
     page.getByRole("list", { name: "Course rankings" }),
   ).toBeVisible();
