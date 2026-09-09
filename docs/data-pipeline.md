@@ -43,6 +43,8 @@ All outputs are Parquet relations in `data/out/`:
 
 The rating relations contain dense longitudinal history. The ranking relations contain the same measures for the latest source Term; they do not contain a precomputed Rank, percentile, or population size. Consumers select a criterion and population, then rank `bayesian` dynamically.
 
+Schedule activity comes from the unified `canonical/class_records.parquet` and `canonical/course_records.parquet` views. Events are folded before filtering active records; Course Code joins retain legacy rows without Course IDs. Legacy `L`-number sections establish lecture activity, while tutorials and labs do not. Active-Term Rankings offer only Terms with Schedule-derived activity flags for the corresponding Course or Instructor population. All-time Rankings retain every Term in the rating history. Review/SFQ evidence does not substitute for Schedule activity. Existing published generations require a data rebuild to gain the historical activity flags.
+
 ## Instructor identity continuity
 
 The pipeline never mints identity during a normal publication. It loads all four identity relations from the previous identity-aware Ranking Generation and fails when any are missing. `--init` permits missing event and split-association relations only for an intentional first identity-history publication; identities and aliases remain required.

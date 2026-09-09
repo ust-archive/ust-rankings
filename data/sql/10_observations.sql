@@ -165,7 +165,8 @@ SELECT DISTINCT
 FROM source_schedule_classes AS classes
 JOIN source_schedule_courses AS courses
   ON courses.term_num = classes.term_num
- AND courses.id = classes.course_id,
+ AND upper(trim(courses.prefix)) = upper(trim(classes.prefix))
+ AND upper(trim(courses.number)) = upper(trim(classes.course_number)),
   unnest(classes.schedules) AS schedules(schedule),
   unnest(schedule.instructors) AS names(instructor)
 WHERE classes.role = 'E'
@@ -212,7 +213,8 @@ WHERE valid_instructor_name(instructor_name);
 CREATE OR REPLACE TEMP TABLE instructor_coaliases AS
 WITH record_names AS (
   SELECT DISTINCT
-    'schedule:' || classes.term_num || ':' || classes.number AS record_id,
+    concat_ws(':', 'schedule', classes.term_num, classes.prefix,
+      classes.course_number, classes.section, classes.number) AS record_id,
     instructor_name_key(instructor) AS name_key
   FROM source_schedule_classes AS classes,
     unnest(classes.schedules) AS schedules(schedule),
@@ -615,7 +617,8 @@ SELECT DISTINCT
 FROM source_schedule_classes AS classes
 JOIN source_schedule_courses AS courses
   ON courses.term_num = classes.term_num
- AND courses.id = classes.course_id,
+ AND upper(trim(courses.prefix)) = upper(trim(classes.prefix))
+ AND upper(trim(courses.number)) = upper(trim(classes.course_number)),
   unnest(classes.schedules) AS schedules(schedule),
   unnest(schedule.instructors) AS names(instructor)
 JOIN instructor_aliases AS aliases

@@ -4,6 +4,43 @@ import { browserContributionsUrl } from "../browser-contributions-fixture";
 
 const dataOrigin = "http://127.0.0.1:17832";
 
+test("active Course Terms require Schedule coverage; all-time retains rating history", async ({
+  page,
+}) => {
+  await page.goto("/rankings/courses?term=2410");
+  await expect(
+    page.getByRole("list", { name: "Course rankings" }),
+  ).toContainText("COMP 2000");
+  await page.getByRole("combobox", { name: "Term", exact: true }).click();
+  await expect(
+    page.getByRole("option", { name: "2024-25 Fall", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("option", { name: "2024-25 Winter", exact: true }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.goto("/rankings/courses?term=2420&activity=all");
+  await expect(
+    page.getByRole("list", { name: "Course rankings" }).getByRole("link"),
+  ).toHaveCount(2);
+  await page.getByRole("combobox", { name: "Term", exact: true }).click();
+  await expect(
+    page.getByRole("option", { name: "2024-25 Winter", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("combobox", { name: "Courses", exact: true }).click();
+  await page
+    .getByRole("option", { name: "Offered This Term", exact: true })
+    .click();
+  await expect(
+    page.getByRole("list", { name: "Course rankings" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Term", exact: true }),
+  ).toContainText("2025-26 Fall");
+});
+
 declare global {
   interface Window {
     navigationClickAt: number;
@@ -107,7 +144,7 @@ test("Course details retain historical evidence and relation parity", async ({
   await page.getByRole("heading", { name: "Rankings" }).click();
   await expect(page.getByRole("row", { name: /Content 0\.25/ })).toBeVisible();
   await expect(
-    page.getByText("Pinned Course–Instructor relations: 2"),
+    page.getByText("Pinned Course–Instructor relations: 3"),
   ).toBeAttached();
   await expect(page.getByText("2025-26 Fall").first()).toBeVisible();
   await expect(page.getByText("Rankings are unavailable.")).toHaveCount(0);

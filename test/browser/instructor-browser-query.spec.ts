@@ -10,6 +10,45 @@ const alphaUuid = "00000000-0000-4000-8000-000000000001";
 const authorization = `Bearer ${browserServerIndexSecret}`;
 let restoreGeneration: string | undefined;
 
+test("active Instructor Terms require Schedule coverage; all-time retains rating history", async ({
+  page,
+}) => {
+  await page.goto("/rankings/instructors?term=2410");
+  await expect(
+    page.getByRole("list", { name: "Instructor rankings" }),
+  ).toContainText("Alpha Instructor");
+  await page.getByRole("combobox", { name: "Term", exact: true }).click();
+  await expect(
+    page.getByRole("option", { name: "2024-25 Fall", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("option", { name: "2024-25 Winter", exact: true }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.goto("/rankings/instructors?term=2420&activity=all");
+  await expect(
+    page.getByRole("list", { name: "Instructor rankings" }).getByRole("link"),
+  ).toHaveCount(2);
+  await page.getByRole("combobox", { name: "Term", exact: true }).click();
+  await expect(
+    page.getByRole("option", { name: "2024-25 Winter", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Instructors", exact: true })
+    .click();
+  await page
+    .getByRole("option", { name: "Teaching This Term", exact: true })
+    .click();
+  await expect(
+    page.getByRole("list", { name: "Instructor rankings" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Term", exact: true }),
+  ).toContainText("2025-26 Fall");
+});
+
 async function activateFixtureServerIndex(
   request: APIRequestContext,
   generation: string,

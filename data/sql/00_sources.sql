@@ -34,31 +34,40 @@ SELECT DISTINCT
 FROM source_catalog_courses
 WHERE term_num = (SELECT max(term_num) FROM source_catalog_courses);
 
--- Schedule classes: one current class state per term and class number.
+-- The unified Schedule includes legacy history. Legacy rows have no Course ID
+-- or role/type; L-number sections are lectures, not LA/LAX labs or tutorials.
+-- Fold events before filtering ACTIVE so deletions cannot revive older rows.
 CREATE OR REPLACE TABLE source_schedule_classes AS
-SELECT * EXCLUDE (event_rank)
+SELECT * EXCLUDE (event_rank) REPLACE (
+  CASE WHEN version = 'legacy' AND regexp_full_match(section, 'L[0-9]+[A-Z]?')
+    THEN 'E' ELSE role END AS role,
+  CASE WHEN version = 'legacy' AND regexp_full_match(section, 'L[0-9]+[A-Z]?')
+    THEN 'LEC' ELSE type END AS type
+)
 FROM (
   SELECT
     *,
     row_number() OVER (
-      PARTITION BY term_num, number
-      ORDER BY "timestamp" DESC, status ASC
+      PARTITION BY term_num, prefix, course_number, section, number
+      ORDER BY "timestamp" DESC NULLS LAST, source_order DESC NULLS LAST,
+        CASE version WHEN 'api' THEN 0 ELSE 1 END, status ASC
     ) AS event_rank
-  FROM read_parquet(getvariable('schedule_classes'))
+  FROM read_parquet(getvariable('schedule_class_records'))
 )
 WHERE event_rank = 1 AND status = 'ACTIVE';
 
--- Schedule courses: one current course state per term and schedule course id.
+-- Course Code is the cross-version key; legacy Course IDs are absent.
 CREATE OR REPLACE TABLE source_schedule_courses AS
 SELECT * EXCLUDE (event_rank)
 FROM (
   SELECT
     *,
     row_number() OVER (
-      PARTITION BY term_num, id
-      ORDER BY "timestamp" DESC, status ASC
+      PARTITION BY term_num, prefix, number
+      ORDER BY "timestamp" DESC NULLS LAST, source_order DESC NULLS LAST,
+        CASE version WHEN 'api' THEN 0 ELSE 1 END, status ASC
     ) AS event_rank
-  FROM read_parquet(getvariable('schedule_courses'))
+  FROM read_parquet(getvariable('schedule_course_records'))
 )
 WHERE event_rank = 1 AND status = 'ACTIVE';
 

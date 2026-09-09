@@ -135,14 +135,6 @@ const sources = {
     "catalog/courses.parquet",
     `hf://datasets/ust-archive/catalog@${revisions.catalog}/courses.parquet`,
   ),
-  schedule_classes: source(
-    "schedule/classes.parquet",
-    `hf://datasets/ust-archive/schedule@${revisions.schedule}/classes.parquet`,
-  ),
-  schedule_courses: source(
-    "schedule/courses.parquet",
-    `hf://datasets/ust-archive/schedule@${revisions.schedule}/courses.parquet`,
-  ),
   schedule_class_records: source(
     "schedule/canonical/class_records.parquet",
     `hf://datasets/ust-archive/schedule@${revisions.schedule}/canonical/class_records.parquet`,

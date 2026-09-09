@@ -9,9 +9,9 @@ the files in [`sql/`](sql/). The full contract is documented in
 The inputs are [`catalog`](https://huggingface.co/datasets/ust-archive/catalog),
 [`schedule`](https://huggingface.co/datasets/ust-archive/schedule),
 [`ust-space`](https://huggingface.co/datasets/ust-archive/ust-space), and
-[`sfq`](https://huggingface.co/datasets/ust-archive/sfq). The current schedule
-export starts at term `2510`; older rating observations remain, but historical
-schedule-only coverage from the retired CQ source does not.
+[`sfq`](https://huggingface.co/datasets/ust-archive/sfq). Schedule activity uses
+the unified `canonical/class_records.parquet` and `canonical/course_records.parquet`
+views, including legacy historical records as well as current API records.
 
 ## Run
 
@@ -33,8 +33,8 @@ layout; authentication is then unnecessary:
 
 ```text
 catalog/courses.parquet
-schedule/{classes,courses}.parquet
-schedule/canonical/{class_records,course_records}.parquet # data:backtest only
+schedule/canonical/{class_records,course_records}.parquet
+schedule/{classes,courses}.parquet # additionally required by data:backtest
 ust-space/reviews.parquet
 sfq/canonical/{section_records,instructor_records}.parquet
 ```
@@ -66,8 +66,11 @@ rating evidence as well as current schedule assignments.
 after source-name clustering. Include `criterion` when joining or identifying a
 rating row. `is_offered` and
 `is_teaching` come from active schedule data for that exact term;
-`is_teaching` specifically means a primary (`E` role) `LEC` or `IND`
-assignment. Filter those flags first, then calculate rank or percentile
+`is_teaching` means a primary (`E` role) `LEC` or `IND` assignment in API
+records, or an `L`-number lecture section in legacy records that lack these
+fields. Labs and tutorials do not establish teaching activity.
+Active-Term dropdowns include only Terms with activity flags for that population;
+all-time mode retains the full rating history. Filter those flags first, then calculate rank or percentile
 dynamically from `bayesian` so the displayed positions match the population
 visible in the frontend.
 

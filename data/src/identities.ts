@@ -373,6 +373,10 @@ export async function assignInstructorIdentities(
 
   const normalized = (value: string) => value.trim().toLocaleLowerCase();
   const identities = new Map(previousIdentities.map((row) => [row.uuid, row]));
+  if (identities.size !== previousIdentities.length)
+    throw new Error(
+      "Ambiguous Instructor identity: duplicate UUIDs in previous identities",
+    );
   const aliases = [...previousAliases];
   const events = previousEvents;
   const correctionRows = previousCorrections;
@@ -625,7 +629,13 @@ export async function assignInstructorIdentities(
     currentNamesByUuid.set(uuid, names);
   }
   for (const [uuid, names] of currentNamesByUuid) {
-    if (names.size > 1 && !mergedSurvivors.has(uuid))
+    // A unified Schedule can bring several already accepted spellings into
+    // the same build. Reuse their unique pinned identity; do not mint a merge.
+    const knownAliases = [...names].every((name) => {
+      const candidates = candidatesByName.get(normalized(name));
+      return candidates?.size === 1 && candidates.has(uuid);
+    });
+    if (names.size > 1 && !mergedSurvivors.has(uuid) && !knownAliases)
       errors.add(
         `Ambiguous Instructor identity ${uuid}: ${[...names].join(", ")}`,
       );

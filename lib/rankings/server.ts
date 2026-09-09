@@ -281,7 +281,7 @@ export type RankingsPage<
     preset: RankingPreset | "custom";
     weights: RankingWeights;
   };
-  terms: Array<{ termCode: string; termName: string }>;
+  terms: Array<{ termCode: string; termName: string; isActive?: boolean }>;
   results: [Entity] extends ["course"]
     ? CourseRanking[]
     : [Entity] extends ["instructor"]
