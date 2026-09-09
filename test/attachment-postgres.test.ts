@@ -81,6 +81,42 @@ if (!connection) {
         code: "quota-exceeded",
       });
 
+      const reserved = (
+        succeeded[0] as PromiseFulfilledResult<{ intentId: string }>
+      ).value;
+      objects.set(reserved.intentId, new Uint8Array(80));
+      for (const state of ["rejected", "validation_error"] as const) {
+        await repository.markRejected(reserved.intentId, state);
+        await expect(
+          attachments.reserveUpload({
+            userId: userA,
+            byteSize: 21,
+            filename: "new.jpg",
+            contentType: "image/jpeg",
+          }),
+        ).rejects.toMatchObject({ code: "quota-exceeded" });
+        await expect(
+          attachments.reserveUpload({
+            userId: userB,
+            byteSize: 71,
+            filename: "new.jpg",
+            contentType: "image/jpeg",
+          }),
+        ).rejects.toMatchObject({ code: "global-quota-exceeded" });
+      }
+      expect(objects.has(reserved.intentId)).toBe(true);
+      await sql`UPDATE upload_intents SET expires_at = now() - interval '1 minute'`;
+      expect(await attachments.cleanupExpired()).toBe(1);
+      expect(objects.has(reserved.intentId)).toBe(false);
+      await expect(
+        attachments.reserveUpload({
+          userId: userA,
+          byteSize: 80,
+          filename: "new.jpg",
+          contentType: "image/jpeg",
+        }),
+      ).resolves.toMatchObject({ quotaUsedBytes: 80 });
+
       await sql`DELETE FROM upload_intents`;
       await attachments.reserveUpload({
         userId: userA,
@@ -109,6 +145,9 @@ if (!connection) {
         userId: userA,
         intentId: reservation.intentId,
       });
+      await sql`UPDATE upload_intents SET expires_at = now() - interval '1 minute'
+                WHERE id = ${reservation.intentId}`;
+      await attachments.cleanupExpired();
       const copy = await attachments.reserveUpload({
         userId: userA,
         byteSize: bytes.byteLength,
@@ -122,6 +161,25 @@ if (!connection) {
       });
       expect(reused).toMatchObject({ id: stored.id, reused: true });
       expect(objects.has(copy.objectKey)).toBe(false);
+
+      // An accepted duplicate's signed PUT can recreate its staging bytes.
+      objects.set(copy.objectKey, bytes);
+      await expect(
+        attachments.reserveUpload({
+          userId: userA,
+          byteSize: 100 - 2 * bytes.byteLength + 1,
+          filename: "another.jpg",
+          contentType: "image/jpeg",
+        }),
+      ).rejects.toMatchObject({ code: "quota-exceeded" });
+      await expect(
+        attachments.reserveUpload({
+          userId: userB,
+          byteSize: 150 - 2 * bytes.byteLength + 1,
+          filename: "another.jpg",
+          contentType: "image/jpeg",
+        }),
+      ).rejects.toMatchObject({ code: "global-quota-exceeded" });
 
       const reviewId = crypto.randomUUID();
       const revisionId = crypto.randomUUID();
@@ -173,16 +231,24 @@ if (!connection) {
         },
       });
       objects.set(legacyIntent, bytes);
-      objects.set(reservation.objectKey, Buffer.alloc(bytes.length));
+      objects.set(copy.objectKey, Buffer.alloc(bytes.length));
       objects.set(`verified/${copy.intentId}`, bytes);
       expect(await attachments.cleanupExpired()).toBe(0);
       await sql`UPDATE upload_intents SET expires_at = now() - interval '1 minute'`;
-      expect(await attachments.cleanupExpired()).toBe(3);
-      expect(objects.has(reservation.objectKey)).toBe(false);
+      expect(await attachments.cleanupExpired()).toBe(2);
+      expect(objects.has(copy.objectKey)).toBe(false);
       expect(objects.has(`verified/${copy.intentId}`)).toBe(false);
       expect(objects.get(legacyIntent)).toEqual(bytes);
       const publishedKey = new URL(signed.url).pathname.slice(1);
       expect(objects.get(publishedKey)).toEqual(bytes);
+      await expect(
+        attachments.reserveUpload({
+          userId: userA,
+          byteSize: 100 - bytes.byteLength,
+          filename: "after-cleanup.jpg",
+          contentType: "image/jpeg",
+        }),
+      ).resolves.toMatchObject({ quotaUsedBytes: 100 });
       await sql`UPDATE reviews SET publication_state = 'withdrawn' WHERE id = ${reviewId}`;
       await expect(
         attachments.signPublicRead(attachment.id),
