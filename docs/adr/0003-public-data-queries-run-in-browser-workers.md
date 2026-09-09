@@ -4,7 +4,7 @@ UST Rankings will move public Catalog, Ranking, Instructor identity, and Schedul
 
 The full-fidelity source datasets remain canonical archives on Hugging Face. Each publication derives two artifacts with one generation identity: a public, column-pruned **Delivery Dataset** mirrored to DigitalOcean Spaces CDN, and a compact **Server Index** loaded into application memory for authoritative community-write validation. The publisher activates the Server Index before promoting the matching Delivery Dataset. A browser resolves the latest manifest once per tab, pins that immutable generation, preloads only Catalog and Instructor identity data, and fetches Ranking and Schedule Parquet ranges lazily.
 
-There is no server query fallback. If WebAssembly, the Worker, or dataset access fails, static identity and community information remain available while Rankings and Schedule are marked unavailable. Existing calendar subscription delivery is removed temporarily because calendar clients cannot execute the browser runtime. Immutable generation files are retained so tabs and rollbacks can continue using older generations.
+There is no server query fallback. If WebAssembly, the Worker, or dataset access fails, static identity and community information remain available while Rankings and Schedule are marked unavailable. Calendar clients cannot execute the browser runtime. Subscription delivery uses a narrow server endpoint over precomputed meeting records in the active Server Index; it does not query Parquet or provide a general Schedule query fallback. Immutable generation files are retained so tabs and rollbacks can continue using older generations.
 
 ## Considered options
 

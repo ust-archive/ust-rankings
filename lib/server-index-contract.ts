@@ -2,6 +2,7 @@ import type {
   InstructorAssociationCorrection,
   InstructorIdentityHistoryEvent,
 } from "./instructor-identity.ts";
+import type { CalendarClass } from "./schedule/server.ts";
 
 export const DELIVERY_SCHEMA_VERSION = 1;
 export const DELIVERY_CDN_BASE_URL =
@@ -123,6 +124,7 @@ export type ServerIndex = {
     section: string;
     classNumber: number;
     courseCode: string;
+    calendar?: Pick<CalendarClass, "courseTitle" | "meetings">;
   }>;
   classInstructors: Array<{
     termCode: string;

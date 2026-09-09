@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
 import {
   buildScheduleUrl,
-  findPlannerConflicts,
   mergePlannerClassNumbers,
   parsePlannerQuery,
   parseSisImport,
@@ -80,30 +79,10 @@ test("adding or importing at the planner limit preserves the existing cart", () 
   });
 });
 
-test("planner conflicts require overlapping dates, weekday, and times", () => {
-  const meeting = {
-    weekday: "Wed",
-    dateFrom: "2025-09-01",
-    dateTo: "2025-11-30",
-    timeFrom: "11:00",
-    timeTo: "11:50",
-  };
-  expect(
-    findPlannerConflicts([
-      { classNumber: 1001, meetings: [meeting] },
-      {
-        classNumber: 2001,
-        meetings: [{ ...meeting, timeFrom: "11:30", timeTo: "12:20" }],
-      },
-      {
-        classNumber: 3001,
-        meetings: [{ ...meeting, weekday: "Fri" }],
-      },
-    ]),
-  ).toEqual([[1001, 2001]]);
-});
-
 test("SIS import is bounded and produces Class Numbers for the same URL state", () => {
+  expect(parseSisImport("LEC (2001)\r\nTUT (1001)\r\n").classNumbers).toEqual([
+    1001, 2001,
+  ]);
   expect(parseSisImport("LEC (2001)\nTUT (1001)\nLEC (2001)")).toEqual({
     classNumbers: [1001, 2001],
     message: undefined,

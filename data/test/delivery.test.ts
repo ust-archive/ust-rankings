@@ -693,6 +693,16 @@ test("builds a deterministic Delivery Dataset and Server Index from pinned archi
       },
     ]);
     assert.equal(serverIndex.classes.length, 2);
+    assert.deepEqual(serverIndex.classes[0]?.calendar?.meetings[0], {
+      weekday: "Mon",
+      dateFrom: "2025-09-01",
+      dateTo: "2025-11-30",
+      timeFrom: "00:00",
+      timeTo: "00:50",
+      room: "Room 101",
+      roomCode: "R101",
+      instructors: [{ sourceName: "Alias Alpha" }],
+    });
     assert.deepEqual(
       serverIndex.classInstructors.map(({ courseId, sourceName, uuid }) => ({
         courseId,
