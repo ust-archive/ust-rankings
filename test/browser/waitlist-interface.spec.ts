@@ -18,7 +18,7 @@ test("WL calculates independent browser-only Course Plans", async ({
   page.on("request", (request) =>
     requests.push({ postData: request.postData(), url: request.url() }),
   );
-  await page.goto("/waitlist");
+  await page.goto("/wl");
 
   const card = waitlistCard(page);
   await expect(card).toBeVisible();
@@ -75,7 +75,7 @@ test("WL calculates independent browser-only Course Plans", async ({
 });
 
 test("WL search accepts compact Course Codes", async ({ page }) => {
-  await page.goto("/waitlist");
+  await page.goto("/wl");
   const search = page.getByRole("searchbox", {
     name: "Search WL Courses",
   });
@@ -89,7 +89,7 @@ test("WL supports keyboard use at 390px without horizontal overflow", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/waitlist");
+  await page.goto("/wl");
   const card = waitlistCard(page);
   await expect(card).toBeVisible();
 
@@ -119,7 +119,7 @@ test("WL supports keyboard use at 390px without horizontal overflow", async ({
 test("WL exposes unsupported sections and waits for valid positions", async ({
   page,
 }) => {
-  await page.goto("/waitlist");
+  await page.goto("/wl");
   const comp = page.locator("[data-waitlist-course='COMP 2000']");
   const wait = waitlistCard(page);
   await expect(comp.getByRole("button", { name: "Require L1" })).toBeDisabled();
@@ -134,7 +134,7 @@ test("WL exposes unsupported sections and waits for valid positions", async ({
 test("WL retains plans through filtering and validates positions", async ({
   page,
 }) => {
-  await page.goto("/waitlist");
+  await page.goto("/wl");
   const card = waitlistCard(page);
   await card.getByRole("button", { name: "Require L1" }).click();
   const position = card.getByRole("spinbutton", {
