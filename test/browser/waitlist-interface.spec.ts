@@ -11,14 +11,14 @@ const courseOffering = (
 const waitlistCard = (page: import("@playwright/test").Page) =>
   courseOffering(page, "WAIT 3000");
 
-test("WL Compass calculates independent browser-only Course Plans", async ({
+test("WL calculates independent browser-only Course Plans", async ({
   page,
 }) => {
   const requests: Array<{ postData: string | null; url: string }> = [];
   page.on("request", (request) =>
     requests.push({ postData: request.postData(), url: request.url() }),
   );
-  await page.goto("/waitlist");
+  await page.goto("/wl");
 
   const card = waitlistCard(page);
   await expect(card).toBeVisible();
@@ -38,7 +38,7 @@ test("WL Compass calculates independent browser-only Course Plans", async ({
     .getByRole("spinbutton", { name: "WL Position for WAIT 3000 T1" })
     .fill("3");
 
-  const result = card.getByRole("region", { name: "WL Compass result" });
+  const result = card.getByRole("region", { name: "WL result" });
   await expect(result).toBeVisible();
 
   const math = courseOffering(page, "MATH 1000");
@@ -46,23 +46,19 @@ test("WL Compass calculates independent browser-only Course Plans", async ({
   await math
     .getByRole("spinbutton", { name: "WL Position for MATH 1000 L1" })
     .fill("2");
-  await expect(
-    math.getByRole("region", { name: "WL Compass result" }),
-  ).toBeVisible();
+  await expect(math.getByRole("region", { name: "WL result" })).toBeVisible();
   await expect(
     card.getByRole("button", { name: "Require L1" }),
   ).toHaveAttribute("aria-pressed", "true");
 
   const search = page.getByRole("searchbox", {
-    name: "Search WL Compass Courses",
+    name: "Search WL Courses",
   });
   await search.fill("MATH");
   await expect(card).toHaveCount(0);
   await search.fill("");
   await expect(result).toBeVisible();
-  await expect(
-    math.getByRole("region", { name: "WL Compass result" }),
-  ).toBeVisible();
+  await expect(math.getByRole("region", { name: "WL result" })).toBeVisible();
   await expect(page.locator("#waitlist-wait-3000-summary-heading")).toHaveCount(
     1,
   );
@@ -78,10 +74,10 @@ test("WL Compass calculates independent browser-only Course Plans", async ({
   ).toBe(false);
 });
 
-test("WL Compass search accepts compact Course Codes", async ({ page }) => {
-  await page.goto("/waitlist");
+test("WL search accepts compact Course Codes", async ({ page }) => {
+  await page.goto("/wl");
   const search = page.getByRole("searchbox", {
-    name: "Search WL Compass Courses",
+    name: "Search WL Courses",
   });
   await search.fill("WAIT3000");
   expect(new URL(page.url()).searchParams.get("q")).toBe("WAIT3000");
@@ -89,11 +85,11 @@ test("WL Compass search accepts compact Course Codes", async ({ page }) => {
   await expect(courseOffering(page, "MATH 1000")).toHaveCount(0);
 });
 
-test("WL Compass supports keyboard use at 390px without horizontal overflow", async ({
+test("WL supports keyboard use at 390px without horizontal overflow", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/waitlist");
+  await page.goto("/wl");
   const card = waitlistCard(page);
   await expect(card).toBeVisible();
 
@@ -120,27 +116,25 @@ test("WL Compass supports keyboard use at 390px without horizontal overflow", as
   ).toBeLessThanOrEqual(390);
 });
 
-test("WL Compass exposes unsupported sections and waits for valid positions", async ({
+test("WL exposes unsupported sections and waits for valid positions", async ({
   page,
 }) => {
-  await page.goto("/waitlist");
+  await page.goto("/wl");
   const comp = page.locator("[data-waitlist-course='COMP 2000']");
   const wait = waitlistCard(page);
   await expect(comp.getByRole("button", { name: "Require L1" })).toBeDisabled();
   await expect(comp.getByRole("checkbox")).toHaveCount(0);
 
-  await expect(
-    wait.getByRole("button", { name: "Calculate WL Compass" }),
-  ).toHaveCount(0);
-  await expect(
-    wait.getByRole("region", { name: "WL Compass result" }),
-  ).toHaveCount(0);
+  await expect(wait.getByRole("button", { name: "Calculate WL" })).toHaveCount(
+    0,
+  );
+  await expect(wait.getByRole("region", { name: "WL result" })).toHaveCount(0);
 });
 
-test("WL Compass retains plans through filtering and validates positions", async ({
+test("WL retains plans through filtering and validates positions", async ({
   page,
 }) => {
-  await page.goto("/waitlist");
+  await page.goto("/wl");
   const card = waitlistCard(page);
   await card.getByRole("button", { name: "Require L1" }).click();
   const position = card.getByRole("spinbutton", {
@@ -148,17 +142,15 @@ test("WL Compass retains plans through filtering and validates positions", async
   });
   await position.fill("9");
   await expect(position).toHaveAttribute("aria-invalid", "true");
-  await expect(
-    card.getByRole("button", { name: "Calculate WL Compass" }),
-  ).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Calculate WL" })).toHaveCount(
+    0,
+  );
   expect(page.url()).not.toContain("9");
 
   await position.fill("5");
-  await expect(
-    card.getByRole("region", { name: "WL Compass result" }),
-  ).toBeVisible();
+  await expect(card.getByRole("region", { name: "WL result" })).toBeVisible();
   const search = page.getByRole("searchbox", {
-    name: "Search WL Compass Courses",
+    name: "Search WL Courses",
   });
   await search.fill("MATH");
   await expect(card).toHaveCount(0);

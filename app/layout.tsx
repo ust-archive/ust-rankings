@@ -170,10 +170,10 @@ export default function RootLayout({
               </Link>
               <Link
                 className="hidden no-underline underline-offset-4 hover:underline sm:inline"
-                href="/waitlist"
+                href="/wl"
                 transitionTypes={forwardTransition}
               >
-                WL Compass
+                WL
               </Link>
               <HeaderAuth />
             </nav>
@@ -218,7 +218,7 @@ export default function RootLayout({
                 ["Instructor Rankings", "/rankings/instructors"],
                 ["Course Rankings", "/rankings/courses"],
                 ["UST Schedule", "/schedule"],
-                ["WL Compass", "/waitlist"],
+                ["WL", "/wl"],
               ]}
             />
             <FooterLinks

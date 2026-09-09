@@ -43,7 +43,7 @@ export function RankingSearch({
         ? "Search Instructors"
         : entity === "schedule"
           ? "Search Schedule"
-          : "Search WL Compass Courses";
+          : "Search WL Courses";
   return (
     <InputGroup className="h-12 min-w-0 flex-1 rounded-full bg-white">
       <InputGroupAddon className="cursor-default">
