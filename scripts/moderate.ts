@@ -107,6 +107,8 @@ try {
       await transaction`DELETE FROM instructor_thumbs_votes WHERE user_id = ${targetId}`;
       await transaction`DELETE FROM course_emoji_reactions WHERE user_id = ${targetId}`;
       await transaction`DELETE FROM instructor_emoji_reactions WHERE user_id = ${targetId}`;
+      await transaction`DELETE FROM review_thumbs_votes WHERE user_id = ${targetId}`;
+      await transaction`DELETE FROM review_emoji_reactions WHERE user_id = ${targetId}`;
       const [row] = await transaction<{ id: string }[]>`
         UPDATE contribution_users
         SET status = 'closed', updated_at = now()
