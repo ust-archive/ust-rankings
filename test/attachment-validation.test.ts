@@ -37,6 +37,22 @@ function reject(bytes: Uint8Array, filename: string, declaredMime: string) {
   );
 }
 
+test.each([
+  ["notes.txt", "text/plain", "Please read the course notes.\n"],
+  ["notes.md", "text/markdown", "% Completion\n75% complete\n"],
+  ["table.csv", "text/csv", "Percentage,Count\n75,3\n"],
+])(
+  "valid UTF-8 %s can begin with a format-signature character",
+  (filename, declaredMime, text) => {
+    expect(
+      validateUpload({ bytes: textBytes(text), filename, declaredMime }),
+    ).toMatchObject({
+      mime: declaredMime,
+      kind: "document",
+    });
+  },
+);
+
 test("every allowed raster format is accepted when extension, MIME, and structure agree", () => {
   accept(jpegBytes(), "photo.JPG", "image/jpeg", {
     mime: "image/jpeg",
@@ -68,6 +84,15 @@ test("every allowed raster format is accepted when extension, MIME, and structur
     extension: "heif",
     kind: "image",
   });
+});
+
+test("renamed PDFs and ZIP documents remain rejected as plain text", () => {
+  reject(pdfBytes(), "notes.txt", "text/plain");
+  reject(
+    zipBytes([{ name: "notes.txt", data: "notes" }]),
+    "notes.txt",
+    "text/plain",
+  );
 });
 
 test("every allowed document format is accepted when extension, MIME, and structure agree", () => {

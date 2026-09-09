@@ -429,7 +429,7 @@ function parsePdf(bytes: Uint8Array) {
 }
 
 function parseText(bytes: Uint8Array) {
-  if (bytes.includes(0) || bytes[0] === 0x50 || bytes[0] === 0x25) return false;
+  if (bytes.includes(0) || ascii(bytes, 0, 5) === "%PDF-") return false;
   try {
     const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const sniff = text.slice(0, 256).trimStart().toLowerCase();
