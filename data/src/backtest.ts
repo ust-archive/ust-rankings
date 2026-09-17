@@ -468,6 +468,20 @@ try {
         "Each aggregated Course or Instructor outcome unit has equal primary weight. Source weights affect fitting and the named secondary metric only.",
       intervals:
         "Deterministic paired 95% intervals resample Courses, Instructors, or outcome Terms with seed 100 and 2,000 draws.",
+      strata:
+        "Equal primary units within each reported group; a unit may appear in several groups when its Class contexts differ. Evidence density uses cumulative samples: 0, 1-5, or more than 5.",
+      intervalCoverage:
+        "50%, 80%, 90%, and 95% Gaussian coverage over raw forecast/outcome pairs with finite predictive standard deviations. This is diagnostic, not development-fitted conformal calibration or an outer holdout result.",
+      empiricalCalibration: {
+        developmentOutcomeCeilingTerm: 91,
+        evaluationOutcomeTerms: [92, 102],
+        method:
+          "Empirical absolute normalized-residual quantiles fitted only on development outcomes; coverage uses raw forecast/outcome pairs. Retrospective diagnostic, without a conformal or independent-holdout guarantee.",
+      },
+      populationFollowup:
+        "Schedule-backed Course Ranking Population by cutoff, with any Course-role SFQ or Review evidence in the next four Terms retained in this snapshot. Cutoffs without later outcomes are omitted; the final windows may be right-censored.",
+      holdoutProtection:
+        "Reserved future outcomes are rejected before scoring, using the frozen development ceiling in data/validation/future-holdout.json.",
     },
     uncertaintyTarget: "future-observation",
     uncertaintyCriteria: [
