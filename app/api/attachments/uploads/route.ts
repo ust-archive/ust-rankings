@@ -67,6 +67,11 @@ export async function POST(request: Request) {
   const { getAttachmentService } = await import("@/lib/attachments/postgres");
   return createAttachmentUploadHandlers({
     userId: authenticatedUserId,
-    attachments: getAttachmentService,
+    attachments: () =>
+      getAttachmentService({
+        caller: "attachments",
+        authentication: "authenticated",
+        requestClass: "action-api",
+      }),
   }).POST(request);
 }

@@ -12,7 +12,10 @@ type ReadSignals = (
 
 const readSignals: ReadSignals = async (target, userId) =>
   (await import("@/lib/contributions/postgres"))
-    .getSignalService()
+    .getSignalService({
+      caller: target.type,
+      authentication: userId ? "authenticated" : "anonymous",
+    })
     .readSignals(target, userId);
 
 async function optionalAuthenticatedUserId() {

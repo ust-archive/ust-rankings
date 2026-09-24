@@ -12,7 +12,10 @@ type ReadReview = (
 
 const readReview: ReadReview = async (reviewId, viewerUserId) =>
   (await import("@/lib/contributions/postgres"))
-    .getReviewService()
+    .getReviewService({
+      caller: "review",
+      authentication: viewerUserId ? "authenticated" : "anonymous",
+    })
     .getReview(reviewId, viewerUserId);
 
 export async function loadReview(

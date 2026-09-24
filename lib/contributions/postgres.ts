@@ -4,6 +4,11 @@ import postgres from "postgres";
 import type { ImageAttachment } from "@/lib/attachments/attachments";
 import { AttachmentWriteError } from "@/lib/attachments/attachments";
 import { PostgresAttachmentRepository } from "@/lib/attachments/postgres";
+import { databaseRequestContext } from "@/lib/database-request-context";
+import {
+  type DatabaseContext,
+  observeDatabaseService,
+} from "@/lib/database-telemetry";
 import {
   type AccountContributions,
   type AccountRepository,
@@ -1269,26 +1274,80 @@ function initializeRuntime() {
   return runtime;
 }
 
-export function getAccountService() {
-  return initializeRuntime().accounts;
+export function getAccountService(
+  context: DatabaseContext = { caller: "account" },
+) {
+  return observeDatabaseService(
+    initializeRuntime().accounts,
+    "accounts",
+    {
+      establishUser: "write",
+      getUser: "read",
+      getContributions: "read",
+      requireActiveUser: "read",
+      completeOnboarding: "write",
+      updateAccount: "write",
+      closeAccount: "write",
+    },
+    () => databaseRequestContext(context),
+  );
 }
 
-export function getReviewService() {
+export function getReviewService(
+  context: DatabaseContext = { caller: "review" },
+) {
   if (!process.env.CONTRIBUTIONS_POSTGRES_URL)
     throw new ContributionsUnavailableError();
-  return initializeRuntime().reviews;
+  return observeDatabaseService(
+    initializeRuntime().reviews,
+    "reviews",
+    {
+      publishReview: "write",
+      editReview: "write",
+      withdrawReview: "write",
+      getReview: "read",
+      listReviews: "read",
+    },
+    () => databaseRequestContext(context),
+  );
 }
 
-export function getModerationService() {
+export function getModerationService(
+  context: DatabaseContext = { caller: "review" },
+) {
   if (!process.env.CONTRIBUTIONS_POSTGRES_URL)
     throw new ContributionsUnavailableError();
-  return initializeRuntime().moderation;
+  return observeDatabaseService(
+    initializeRuntime().moderation,
+    "moderation",
+    {
+      reportReview: "write",
+      withdrawReview: "write",
+      suppressAttribution: "write",
+      removeStoredFile: "write",
+      suspendUser: "write",
+      lookupIdentity: "write",
+    },
+    () => databaseRequestContext(context),
+  );
 }
 
-export function getSignalService() {
+export function getSignalService(
+  context: DatabaseContext = { caller: "unknown" },
+) {
   if (!process.env.CONTRIBUTIONS_POSTGRES_URL)
     throw new ContributionsUnavailableError();
-  return initializeRuntime().signals;
+  return observeDatabaseService(
+    initializeRuntime().signals,
+    "signals",
+    {
+      readSignals: "read",
+      setThumbs: "write",
+      setEmoji: "write",
+      mergeInstructorSignals: "write",
+    },
+    () => databaseRequestContext(context),
+  );
 }
 
 export async function closeAccountRuntimeForTests() {

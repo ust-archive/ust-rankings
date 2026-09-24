@@ -46,6 +46,11 @@ export async function POST(
   const { getAttachmentService } = await import("@/lib/attachments/postgres");
   return createAttachmentCompleteHandlers({
     userId: authenticatedUserId,
-    attachments: getAttachmentService,
+    attachments: () =>
+      getAttachmentService({
+        caller: "attachments",
+        authentication: "authenticated",
+        requestClass: "action-api",
+      }),
   }).POST(request, context);
 }

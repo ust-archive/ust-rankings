@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { observeDatabaseOperation } from "../lib/database-telemetry.ts";
 import { privacyContact } from "../lib/privacy/contact.ts";
 
 const UUID =
@@ -65,87 +66,97 @@ function notify() {
 
 const sql = postgres(connection, { max: 1 });
 try {
-  const targetId = target.toLowerCase();
-  const operatorIdentifier = operator.trim();
-  if (action === "rights-request") {
-    if (!RIGHTS.has(reason)) throw new Error(USAGE);
-    const [row] = await sql<{ id: string }[]>`
+  await observeDatabaseOperation(
+    {
+      operation: "operator.moderate",
+      caller: "operator",
+      intent: "write",
+      requestClass: "non-http",
+    },
+    async () => {
+      const targetId = target.toLowerCase();
+      const operatorIdentifier = operator.trim();
+      if (action === "rights-request") {
+        if (!RIGHTS.has(reason)) throw new Error(USAGE);
+        const [row] = await sql<{ id: string }[]>`
       INSERT INTO rights_requests (user_id, kind, operator_identifier)
       VALUES (${targetId}, ${reason}, ${operatorIdentifier})
       RETURNING id
     `;
-    if (!row) throw new Error("Rights request was not recorded");
-    console.log(
-      `Recorded rights request ${row.id} (${reason}) for ${targetId}.`,
-    );
-    notify();
-  } else if (action === "lookup-identity") {
-    if (!LOOKUP_REASONS.has(reason)) throw new Error(USAGE);
-    const [row] = await sql<{ id: string; user_id: string }[]>`
+        if (!row) throw new Error("Rights request was not recorded");
+        console.log(
+          `Recorded rights request ${row.id} (${reason}) for ${targetId}.`,
+        );
+        notify();
+      } else if (action === "lookup-identity") {
+        if (!LOOKUP_REASONS.has(reason)) throw new Error(USAGE);
+        const [row] = await sql<{ id: string; user_id: string }[]>`
       SELECT id, user_id FROM operator_lookup_identity(
         ${operatorIdentifier}, ${targetId}, ${reason}
       )
     `;
-    if (!row) throw new Error("Identity lookup did not complete");
-    console.log(
-      `Looked up User ${row.user_id} for Review ${targetId}; Moderation Case ${row.id}.`,
-    );
-    notify();
-  } else if (action === "close-account") {
-    const closed = await sql.begin(async (transaction) => {
-      await transaction`
+        if (!row) throw new Error("Identity lookup did not complete");
+        console.log(
+          `Looked up User ${row.user_id} for Review ${targetId}; Moderation Case ${row.id}.`,
+        );
+        notify();
+      } else if (action === "close-account") {
+        const closed = await sql.begin(async (transaction) => {
+          await transaction`
         INSERT INTO rights_requests (user_id, kind, operator_identifier)
         VALUES (${targetId}, 'closure', ${operatorIdentifier})
       `;
-      await transaction`
+          await transaction`
         UPDATE reviews
         SET publication_state = 'withdrawn', updated_at = now()
         WHERE author_user_id = ${targetId}
           AND publication_state = 'active'
       `;
-      await transaction`DELETE FROM course_thumbs_votes WHERE user_id = ${targetId}`;
-      await transaction`DELETE FROM instructor_thumbs_votes WHERE user_id = ${targetId}`;
-      await transaction`DELETE FROM course_emoji_reactions WHERE user_id = ${targetId}`;
-      await transaction`DELETE FROM instructor_emoji_reactions WHERE user_id = ${targetId}`;
-      await transaction`DELETE FROM review_thumbs_votes WHERE user_id = ${targetId}`;
-      await transaction`DELETE FROM review_emoji_reactions WHERE user_id = ${targetId}`;
-      const [row] = await transaction<{ id: string }[]>`
+          await transaction`DELETE FROM course_thumbs_votes WHERE user_id = ${targetId}`;
+          await transaction`DELETE FROM instructor_thumbs_votes WHERE user_id = ${targetId}`;
+          await transaction`DELETE FROM course_emoji_reactions WHERE user_id = ${targetId}`;
+          await transaction`DELETE FROM instructor_emoji_reactions WHERE user_id = ${targetId}`;
+          await transaction`DELETE FROM review_thumbs_votes WHERE user_id = ${targetId}`;
+          await transaction`DELETE FROM review_emoji_reactions WHERE user_id = ${targetId}`;
+          const [row] = await transaction<{ id: string }[]>`
         UPDATE contribution_users
         SET status = 'closed', updated_at = now()
         WHERE id = ${targetId} AND status <> 'closed'
         RETURNING id
       `;
-      if (!row) throw new Error("Account closure did not complete");
-      return row;
-    });
-    console.log(`Closed account ${closed.id}.`);
-    notify();
-  } else {
-    if (!REASONS.has(reason)) throw new Error(USAGE);
-    const query =
-      action === "withdraw-review"
-        ? sql<
-            { id: string }[]
-          >`SELECT id FROM operator_withdraw_review(${operatorIdentifier}, ${targetId}, ${reason})`
-        : action === "suppress-attribution"
-          ? sql<
-              { id: string }[]
-            >`SELECT id FROM operator_suppress_attribution(${operatorIdentifier}, ${targetId}, ${reason})`
-          : action === "remove-stored-file"
+          if (!row) throw new Error("Account closure did not complete");
+          return row;
+        });
+        console.log(`Closed account ${closed.id}.`);
+        notify();
+      } else {
+        if (!REASONS.has(reason)) throw new Error(USAGE);
+        const query =
+          action === "withdraw-review"
             ? sql<
                 { id: string }[]
-              >`SELECT id FROM operator_remove_stored_file(${operatorIdentifier}, ${targetId}, ${reason})`
-            : action === "suspend-user"
+              >`SELECT id FROM operator_withdraw_review(${operatorIdentifier}, ${targetId}, ${reason})`
+            : action === "suppress-attribution"
               ? sql<
                   { id: string }[]
-                >`SELECT id FROM operator_suspend_user(${operatorIdentifier}, ${targetId}, ${reason})`
-              : undefined;
-    if (!query) throw new Error(USAGE);
-    const [row] = await query;
-    if (!row) throw new Error("Moderation action did not complete");
-    console.log(`Recorded Moderation Case ${row.id} (${action}).`);
-    notify();
-  }
+                >`SELECT id FROM operator_suppress_attribution(${operatorIdentifier}, ${targetId}, ${reason})`
+              : action === "remove-stored-file"
+                ? sql<
+                    { id: string }[]
+                  >`SELECT id FROM operator_remove_stored_file(${operatorIdentifier}, ${targetId}, ${reason})`
+                : action === "suspend-user"
+                  ? sql<
+                      { id: string }[]
+                    >`SELECT id FROM operator_suspend_user(${operatorIdentifier}, ${targetId}, ${reason})`
+                  : undefined;
+        if (!query) throw new Error(USAGE);
+        const [row] = await query;
+        if (!row) throw new Error("Moderation action did not complete");
+        console.log(`Recorded Moderation Case ${row.id} (${action}).`);
+        notify();
+      }
+    },
+  );
 } finally {
   await sql.end();
 }

@@ -156,7 +156,11 @@ export async function setThumbsSignal(formData: FormData) {
   }
   const { path, userId } = await authorize(target);
   try {
-    await getSignalService().setThumbs(userId, {
+    await getSignalService({
+      caller: target.type,
+      authentication: "authenticated",
+      requestClass: "action-api",
+    }).setThumbs(userId, {
       target,
       state: state as ThumbsState,
     });
@@ -187,7 +191,11 @@ export async function setEmojiSignal(formData: FormData) {
   }
   const { path, userId } = await authorize(target);
   try {
-    await getSignalService().setEmoji(userId, {
+    await getSignalService({
+      caller: target.type,
+      authentication: "authenticated",
+      requestClass: "action-api",
+    }).setEmoji(userId, {
       target,
       code: code as EmojiCode,
       selected: selected === "true",

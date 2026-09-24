@@ -1,5 +1,10 @@
 import "server-only";
 import postgres from "postgres";
+import { databaseRequestContext } from "@/lib/database-request-context";
+import {
+  type DatabaseContext,
+  observeDatabaseService,
+} from "@/lib/database-telemetry";
 import {
   type AttachmentRepository,
   AttachmentWriteError,
@@ -430,7 +435,7 @@ let runtime:
     }
   | undefined;
 
-export function getAttachmentService() {
+function initializeRuntime() {
   if (runtime) return runtime.attachments;
   const connection = process.env.CONTRIBUTIONS_POSTGRES_URL;
   if (!connection) throw new AttachmentsUnavailableError();
@@ -447,6 +452,27 @@ export function getAttachmentService() {
   } catch (error) {
     throw new AttachmentsUnavailableError(undefined, { cause: error });
   }
+}
+
+export function getAttachmentService(
+  context: DatabaseContext = {
+    caller: "attachments",
+    requestClass: "action-api",
+  },
+) {
+  return observeDatabaseService(
+    initializeRuntime(),
+    "attachments",
+    {
+      reserveUpload: "write",
+      completeUpload: "write",
+      attachToRevision: "write",
+      signPublicRead: "read",
+      removeStoredFile: "write",
+      cleanupExpired: "write",
+    },
+    () => databaseRequestContext(context),
+  );
 }
 
 export async function closeAttachmentRuntimeForTests() {

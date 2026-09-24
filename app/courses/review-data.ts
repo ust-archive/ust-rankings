@@ -13,7 +13,17 @@ type ReadReviews = (
 
 const readReviews: ReadReviews = async (query, viewerUserId) =>
   (await import("@/lib/contributions/postgres"))
-    .getReviewService()
+    .getReviewService({
+      caller:
+        query.type === "instructor"
+          ? "instructor"
+          : query.section
+            ? "course-section"
+            : query.termCode
+              ? "course-term"
+              : "course",
+      authentication: viewerUserId ? "authenticated" : "anonymous",
+    })
     .listReviews(query, viewerUserId);
 
 async function optionalAuthenticatedUserId() {

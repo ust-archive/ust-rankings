@@ -23,7 +23,11 @@ export async function completeOnboarding(formData: FormData) {
   const userId = await authenticatedUserId();
   if (!userId) redirect(`/auth/login?r=${encodeURIComponent(returnPath)}`);
   try {
-    await getAccountService().completeOnboarding(userId, {
+    await getAccountService({
+      caller: "account",
+      authentication: "authenticated",
+      requestClass: "action-api",
+    }).completeOnboarding(userId, {
       publicDisplayName: String(formData.get("publicDisplayName") ?? ""),
       acceptPrivacy: formData.get("acceptPrivacy") === "on",
       acceptCommunity: formData.get("acceptCommunity") === "on",
@@ -38,7 +42,11 @@ export async function updateAccount(formData: FormData) {
   const userId = await authenticatedUserId();
   if (!userId) redirect("/auth/login?r=%2Faccount");
   try {
-    await getAccountService().updateAccount(userId, {
+    await getAccountService({
+      caller: "account",
+      authentication: "authenticated",
+      requestClass: "action-api",
+    }).updateAccount(userId, {
       publicDisplayName: String(formData.get("publicDisplayName") ?? ""),
     });
   } catch (error) {

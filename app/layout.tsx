@@ -94,7 +94,10 @@ async function HeaderAuth() {
   let label = "Account";
   if (process.env.CONTRIBUTIONS_POSTGRES_URL)
     try {
-      const user = await getAccountService().getUser(userId);
+      const user = await getAccountService({
+        caller: "account.header",
+        authentication: "authenticated",
+      }).getUser(userId);
       if (user?.publicDisplayName) label = user.publicDisplayName;
     } catch {
       // Keep public pages independent from contribution storage.

@@ -11,7 +11,10 @@ export default async function ContinueAfterSignIn({
   const returnPath = safeReturnPath((await searchParams).r);
   const userId = await authenticatedUserId();
   if (!userId) redirect(`/auth/login?r=${encodeURIComponent(returnPath)}`);
-  const user = await getAccountService().getUser(userId);
+  const user = await getAccountService({
+    caller: "auth",
+    authentication: "authenticated",
+  }).getUser(userId);
   if (!user) redirect(`/auth/login?r=${encodeURIComponent(returnPath)}`);
   if (user.status === "onboarding")
     redirect(`/onboarding?r=${encodeURIComponent(returnPath)}`);
