@@ -24,6 +24,8 @@ it("logs an owned Review read without logging its inputs or changing its result"
       caller: "course",
       authentication: "anonymous",
       requestClass: "rsc-unknown",
+      agentClass: "declared-bot",
+      fetchSite: "missing",
     }),
   );
   const result = await service.listReviews({
@@ -43,6 +45,8 @@ it("logs an owned Review read without logging its inputs or changing its result"
     intent: "read",
     authentication: "anonymous",
     requestClass: "rsc-unknown",
+    agentClass: "declared-bot",
+    fetchSite: "missing",
   });
   expect(events[1]).toMatchObject({
     phase: "complete",

@@ -54,11 +54,64 @@ it("summarizes captured operations while exposing duplicates, incomplete capture
   });
   expect(report.groups[0]).toMatchObject({
     caller: "course",
+    agentClass: "unknown",
+    fetchSite: "unknown",
     attempts: 2,
     completions: 2,
   });
   expect(report.largestObservedAttemptGapSeconds).toBe(600);
   expect(report.coverage).toContain("not proof of database inactivity");
+});
+
+it("groups request attribution while preserving legacy events", async () => {
+  const base = {
+    event: "database-operation",
+    version: 1,
+    processId: "process",
+    deployment: "build",
+    timestamp: "2026-10-01T08:00:00Z",
+    operation: "reviews.listReviews",
+    caller: "course",
+    intent: "read",
+    authentication: "anonymous",
+    requestClass: "unknown",
+    phase: "attempt",
+  };
+  const report = await summarizeDatabaseLogs(
+    [
+      JSON.stringify({ ...base, operationId: "legacy" }),
+      JSON.stringify({
+        ...base,
+        operationId: "crawler",
+        agentClass: "declared-bot",
+        fetchSite: "missing",
+      }),
+      JSON.stringify({
+        ...base,
+        operationId: "browser",
+        agentClass: "browser-like",
+        fetchSite: "same-origin",
+      }),
+      JSON.stringify({
+        ...base,
+        operationId: "malformed",
+        agentClass: { private: "secret" },
+      }),
+    ],
+    { from: "2026-10-01T08:00:00Z", to: "2026-10-01T09:00:00Z" },
+  );
+  expect(report.counts.attempts).toBe(3);
+  expect(report.counts.malformed).toBe(1);
+  expect(
+    report.groups.map(({ agentClass, fetchSite }) => ({
+      agentClass,
+      fetchSite,
+    })),
+  ).toEqual([
+    { agentClass: "unknown", fetchSite: "unknown" },
+    { agentClass: "declared-bot", fetchSite: "missing" },
+    { agentClass: "browser-like", fetchSite: "same-origin" },
+  ]);
 });
 
 it("compares billing counters only across matching scope and interval", () => {

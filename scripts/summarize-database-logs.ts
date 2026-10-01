@@ -14,6 +14,8 @@ type Event = {
   intent: string;
   authentication: string;
   requestClass: string;
+  agentClass?: string;
+  fetchSite?: string;
   phase: "attempt" | "complete";
   outcome?: "success" | "error";
   errorCategory?: string;
@@ -74,6 +76,9 @@ export async function summarizeDatabaseLogs(
         "authentication",
         "requestClass",
       ].some((key) => typeof value[key] !== "string") ||
+      ["agentClass", "fetchSite"].some(
+        (key) => value[key] !== undefined && typeof value[key] !== "string",
+      ) ||
       !["attempt", "complete"].includes(String(value.phase)) ||
       !Number.isFinite(Date.parse(String(value.timestamp))) ||
       (value.phase === "complete" &&
@@ -107,6 +112,8 @@ export async function summarizeDatabaseLogs(
       intent: string;
       authentication: string;
       requestClass: string;
+      agentClass: string;
+      fetchSite: string;
       attempts: number;
       completions: number;
       errors: number;
@@ -127,6 +134,8 @@ export async function summarizeDatabaseLogs(
       intent,
       authentication,
       requestClass,
+      agentClass = "unknown",
+      fetchSite = "unknown",
     } = event;
     const dimensions = {
       deployment,
@@ -135,6 +144,8 @@ export async function summarizeDatabaseLogs(
       intent,
       authentication,
       requestClass,
+      agentClass,
+      fetchSite,
     };
     const key = JSON.stringify(dimensions);
     const group = groups.get(key) ?? {

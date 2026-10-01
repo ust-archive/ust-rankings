@@ -23,6 +23,19 @@ export type DatabaseContext = {
     | "action-api"
     | "non-http"
     | "unknown";
+  agentClass?:
+    | "declared-bot"
+    | "browser-like"
+    | "other"
+    | "missing"
+    | "unknown";
+  fetchSite?:
+    | "same-origin"
+    | "same-site"
+    | "cross-site"
+    | "none"
+    | "missing"
+    | "unknown";
 };
 type Operation = DatabaseContext & {
   operation: string;
@@ -74,6 +87,8 @@ export async function observeDatabaseOperation<T>(
     intent: context.intent,
     authentication: context.authentication ?? "unknown",
     requestClass: context.requestClass ?? "unknown",
+    agentClass: context.agentClass ?? "unknown",
+    fetchSite: context.fetchSite ?? "unknown",
   };
   function emit(fields: Record<string, unknown>) {
     try {
