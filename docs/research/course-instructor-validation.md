@@ -14,7 +14,96 @@ The main findings are:
 - The crossed Course + Instructor + Course Offering prototype did not beat the simpler baselines on its post-hoc holdout.
 - A future holdout must confirm any production change. The frozen manifest is `data/validation/future-holdout.json`.
 
-## Question
+## 2026-09-07 validation audit
+
+The retrospective runner previously did not enforce the frozen development
+ceiling. It could score Term 103+ outcomes while reporting only a retrospective
+warning. Both the batched candidate runner and the legacy comparison export now
+reject such inputs before model scoring. The frozen manifest is unchanged.
+
+The pinned UST Space snapshot listed below already contains 169 raw Review
+events for Terms after 102. Therefore, a Term number alone does not prove that
+an outcome was unseen when the manifest was frozen. The earlier report must
+not certify those observations as untouched future evidence. A confirmatory
+evaluation still needs sealed forecasts, acquisition provenance, and outcomes
+not previously inspected. No reserved outcomes were scored in this audit.
+
+For a development-only rerun, local copies of the pinned source files were
+restricted to Term Numbers at or below 102 (Review Terms parsed from `semester`).
+This deliberately excludes future Schedule/Catalog context as well as future
+Review outcomes; it is still retrospective because earlier edits, votes, and
+identity knowledge cannot be reconstructed. The resulting report has 199,106
+observations, 54 cutoffs, 40,566 Course units, and 11,256 Instructor units.
+All evidence-allocation invariants passed.
+
+The nine-candidate run selected `votes-unweighted-context-4` for retrospective
+advice only: balanced Course error was 0.515812 versus 0.557199 for `current`.
+Current Instructor error was 0.280544; rolling history remained better at
+0.277570. These results do not authorize a production change.
+
+The report now includes equal-primary-unit errors within each criterion,
+source, cumulative-sample group (0, 1-5, more than 5), cold Instructor/Course
+state, solo/team/unknown teaching context, and zero/one/multiple historical
+Courses. Units can occur in more than one group when their Class contexts or
+cutoff states differ. Cold Instructor/Course means no cumulative samples in the
+corresponding Instructor/Course SFQ criterion at that cutoff; it does not assert
+that the entity has no other kind of historical evidence. The compatible older scalar Instructor strata remain
+raw-observation metrics; use the new `strata` arrays for balanced comparisons.
+
+It also reports raw forecast/outcome-pair coverage at all four target levels.
+Missing source standard deviations no longer erase Review predictive intervals;
+the model and inverse-source-weight variance terms remain available. These are
+Gaussian diagnostics, not development-fitted empirical/conformal intervals.
+
+| Current model | 50% target | 80% target | 90% target | 95% target |
+| --- | ---: | ---: | ---: | ---: |
+| Course (601,332 pairs) | 52.49% | 80.41% | 88.13% | 91.82% |
+| Instructor (96,449 pairs) | 50.23% | 77.78% | 86.61% | 91.35% |
+
+Empirical interval diagnostics now fit absolute normalized-residual quantiles
+using only outcome Terms through 91, then evaluate Terms 92-102. This split was
+specified in the original issue, but it remains retrospective and provides no
+exchangeability, conformal, or independent-holdout guarantee. No evaluation
+outcome changes the fitted multiplier; an end-to-end artifact test verifies it.
+
+| Empirical intervals, evaluation Terms 92-102 | 50% target | 80% target | 90% target | 95% target |
+| --- | ---: | ---: | ---: | ---: |
+| Current Course | 47.20% | 77.59% | 88.31% | 93.96% |
+| Advisory candidate Course | 46.21% | 77.84% | 88.67% | 94.05% |
+| Current Instructor | 51.43% | 82.46% | 92.19% | 96.65% |
+
+Course calibration used 411,394 development pairs and 189,938 evaluation pairs;
+Instructor calibration used 63,872 and 32,577 pairs respectively. The fitted
+95% multipliers were 2.371812 for current Course and 2.495005 for current
+Instructor. Coverage still varies by family and target, so these are useful
+diagnostics rather than validated production interval settings.
+
+Ranking Population follow-up is available only for the two Schedule-backed
+cutoffs with later outcomes: 250 of 1,436 eligible Courses at Term 100 (17.41%),
+and 16 of 96 at Term 101 (16.67%). These counts use any later Course-role SFQ or
+Review evidence within the next four Terms. The development copy ends at Term
+102, so these windows are right-censored; the rates are not eventual coverage.
+
+Additional end-to-end invariance checks duplicate Schedule/Review team members,
+add a Catalog `previous` link between two Course Codes, and append later-Term
+SFQ evidence with the accepted identities unchanged. Course and Instructor
+ratings remain exactly equal for existing prediction Terms. This checks new
+future-Term observations, not the unavailable history of later edits to old
+observations or later identity corrections.
+
+Issue #167 remains open for independently sealed future validation and the
+unvalidated crossed-model production criteria. The existing crossed prototype
+remains isolated and unpromoted.
+
+Verification: 34 data tests and data type checking passed, including rejection
+of reserved outcomes in both export modes, finite Review interval checks,
+development-only calibration, population denominators, and the invariances above.
+The report SHA-256 is
+`4974e9fc32a286f5f14dce07a14d956bb7150d920e5df513916383ece266a557`.
+The frozen manifest SHA-256 remains
+`81cab9eb43d0dd6b62dd012e7bec9159d92a63c4d0752aa67df722d6755f0c47`.
+
+## Research question
 
 Can the project evaluate Course and Instructor predictions without these errors?
 
@@ -194,9 +283,31 @@ The crossed Instructor change versus raw Instructor history was `+0.007733`. Its
 
 The prototype did not show a reliable gain. The result supports the simpler current structure for now. It does not show that context has no value. It shows that this small model and this post-hoc split did not validate the added terms.
 
+The [development-only negative controls in PR #183](https://github.com/ust-archive/ust-rankings/pull/183),
+with [frozen code and results](https://github.com/ust-archive/ust-rankings/blob/0382d64515f100560d93fae309b3c4614b28ef12/data/prototypes/course-instructor-negative-control.md),
+replicated the original development crossed-model MAE exactly (0.32942133039949745).
+All ten within-Term Instructor-label shuffles improved on the real-label residual
+and crossed models. A label-free, training-only population Instructor-minus-Course
+offset was better still: development MAE 0.301314 versus 0.322365 for the
+Instructor residual, and 0.305443 versus 0.329421 for the crossed model. These
+results do not establish Instructor-specific predictive signal. They do not
+select a new production model.
+
+Splitting each source SFQ record into two identical half-respondent fragments
+before canonical aggregation preserved all 28,130 model rows within floating-point
+precision and evaluation metrics within `6 × 10^-17`. Duplicating already
+aggregated model units changed the fitter's predictions; that input violates its
+documented canonical-unit boundary. The controls remain on the isolated prototype
+branch and scored no outcomes after Term 102.
+
 ## Future holdout
 
-`data/validation/future-holdout.json` freezes the next decision before future outcomes are inspected. Its frozen SHA-256 is `81cab9eb43d0dd6b62dd012e7bec9159d92a63c4d0752aa67df722d6755f0c47`.
+`data/validation/future-holdout.json` records the intended protocol for the next
+decision. Its frozen SHA-256 is
+`81cab9eb43d0dd6b62dd012e7bec9159d92a63c4d0752aa67df722d6755f0c47`.
+The 2026-09-07 audit above found reserved-Term Review events already in the
+development snapshot, so this manifest alone does not establish independence.
+The protocol still requires sealed forecasts and genuinely unseen outcomes.
 
 The holdout starts at Term 103. It remains closed until it has at least:
 
@@ -210,6 +321,37 @@ The manifest freezes `current` and `votes-unweighted-context-4`. It freezes the 
 
 A production change requires a separate reviewed decision after the holdout is sealed. The backtest does not update production parameters automatically.
 
+### Fresh prospective protocol
+
+The existing retrospective backtest is not a prospective forecast writer: it
+reads outcome tables and averages errors over historical cutoffs. Its empirical
+intervals also use a retrospective development split. It must not be run on
+reserved outcomes to implement this protocol.
+
+Before a fresh attempt, record the latest inspected outcome Term and all known
+source revisions, including the 169 already-present reserved-Term Review events.
+Choose a genuinely new outcome window after that boundary and commit a new
+protocol before acquiring its outcomes; merely changing the old manifest's
+start Term cannot restore independence. Freeze the two candidates, metric units,
+interval rule, eligibility and missing-forecast rules, minimum counts, bootstrap
+rules, and regression guardrails together.
+
+Code work can provide a forecast-only writer over pinned past-only sources and
+accepted cutoff identity mappings, seal the candidate parameters, implementation,
+source hashes, identities and source-scale forecasts, and provide a separate
+one-use evaluator. That evaluator must use the latest shared sealed cutoff before
+each outcome Term, reject duplicate or reused outcome observations, preserve
+identical candidate comparison units, report unknown identity and forecast
+coverage, and seal outcome bytes before calculating metrics. Those tools are
+separate from the retrospective artifacts delivered here.
+
+External requirements remain: independently support the acquisition history and
+absence of prior outcome inspection, publish the protocol and forecast seals
+before outcomes become available, then wait for genuinely new outcomes meeting
+all minimum Term and unit counts. Local timestamps and SHA-256 hashes establish
+byte integrity, not historical independence. A reviewed future decision is still
+required before any production change.
+
 ## Risks and limits
 
 - Historical Review votes, edits, withdrawals, and identity knowledge cannot be reconstructed at every old cutoff. The current report is retrospective.
@@ -222,7 +364,7 @@ A production change requires a separate reviewed decision after the holdout is s
 ## Recommended integration order
 
 1. Keep the balanced analysis and context artifacts separate from production exports.
-2. Use the frozen future-holdout manifest before any new outcome is scored.
+2. Commit a fresh prospective protocol and forecast seals before acquiring genuinely new outcomes.
 3. Seal immutable Hugging Face revisions and file hashes before each holdout evaluation.
 4. Keep Course-role and Instructor-role outcomes in separate tables.
 5. Keep the one-observation, one-total-allocation invariant.

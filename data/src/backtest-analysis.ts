@@ -435,7 +435,8 @@ export async function writeBacktestAnalysis(
         baselines.rolling_prediction,
         sqrt(
           pow(predictions.model_stddev, 2)
-          + pow(contexts.source_stddev, 2) / greatest(contexts.source_samples, 1)
+          + pow(coalesce(contexts.source_stddev, 0), 2)
+            / greatest(contexts.source_samples, 1)
           + 1 / greatest(contexts.source_weight, 1e-12)
         ) AS predictive_stddev,
         predictions.confidence,
@@ -568,7 +569,7 @@ export async function writeBacktestAnalysis(
         outcomes.paired_course_rating,
         sqrt(
           pow(predictions.model_stddev, 2)
-          + pow(outcomes.source_stddev, 2)
+          + pow(coalesce(outcomes.source_stddev, 0), 2)
             / greatest(outcomes.source_samples, 1)
           + 1 / greatest(outcomes.source_weight, 1e-12)
         ) AS predictive_stddev,

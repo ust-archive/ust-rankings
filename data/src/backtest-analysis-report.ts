@@ -22,6 +22,25 @@ type ErrorSummary = {
     rolling: number;
     courseOnly?: number | null;
   };
+  strata: Array<{
+    dimension: string;
+    group: string;
+    evaluationUnits: number;
+    predictionError: number;
+  }>;
+  intervalCoverage: Array<{
+    target: number;
+    comparisons: number;
+    covered: number;
+    coverage: number | null;
+  }>;
+  empiricalIntervals: Array<{
+    target: number;
+    developmentComparisons: number;
+    multiplier: number | null;
+    evaluationComparisons: number;
+    coverage: number | null;
+  }>;
 };
 
 export type BacktestAnalysisSummary = {
@@ -29,6 +48,12 @@ export type BacktestAnalysisSummary = {
     criteria: number;
     criterionMismatches: number;
     equalCriterionError: number;
+    populationFollowup: Array<{
+      cutoffTerm: number;
+      eligibleCourses: number;
+      coursesWithLaterEvidence: number;
+      rate: number;
+    }>;
   };
   instructor: ErrorSummary & {
     teamTaughtError: number | null;
@@ -67,6 +92,118 @@ async function queryRows(
   return (await connection.runAndReadAll(sql)).getRowObjectsJS() as NumberRow[];
 }
 
+async function summarizeBreakdowns(
+  connection: DuckDBConnection,
+  path: string,
+  family: "course" | "instructor",
+): Promise<
+  Pick<ErrorSummary, "strata" | "intervalCoverage" | "empiricalIntervals">
+> {
+  const entity = family === "course" ? "course_id" : "uuid";
+  const criterion = family === "course" ? ", criterion" : "";
+  const groups =
+    family === "course"
+      ? "('criterion', criterion), ('source', outcome_source)"
+      : `('cold Instructor', CASE WHEN cold_instructor THEN 'cold' ELSE 'warm' END),
+       ('cold Course', CASE WHEN cold_course THEN 'cold' ELSE 'warm' END),
+       ('teaching team', CASE WHEN team_taught THEN 'team'
+          WHEN NOT team_taught THEN 'solo' ELSE 'unknown' END),
+       ('historical Courses', CASE WHEN historical_courses > 1 THEN 'multiple'
+          WHEN historical_courses = 1 THEN 'one' ELSE 'none' END)`;
+  const strata = await queryRows(
+    connection,
+    `
+    WITH raw AS (SELECT * FROM read_parquet('${path}')),
+    cutoff_units AS (
+      SELECT ${entity}, cutoff_term, outcome_term${criterion}, dimension, label,
+        min(prediction) AS prediction, avg(outcome) AS outcome
+      FROM raw, LATERAL (VALUES
+        ${groups},
+        ('evidence samples', CASE WHEN cumulative_samples = 0 THEN '0'
+          WHEN cumulative_samples <= 5 THEN '1-5' ELSE 'more than 5' END)
+      ) AS strata(dimension, label)
+      GROUP BY ${entity}, cutoff_term, outcome_term${criterion}, dimension, label
+    ), units AS (
+      SELECT ${entity}, outcome_term${criterion}, dimension, label,
+        avg(abs(prediction - outcome)) AS error
+      FROM cutoff_units
+      GROUP BY ${entity}, outcome_term${criterion}, dimension, label
+    )
+    SELECT dimension, label, count(*) AS evaluation_units,
+      avg(error) AS prediction_error
+    FROM units GROUP BY dimension, label ORDER BY dimension, label
+  `,
+  );
+  const coverage = await queryRows(
+    connection,
+    `
+    SELECT target, count(*) FILTER (WHERE predictive_stddev IS NOT NULL
+      AND isfinite(predictive_stddev) AND predictive_stddev >= 0) AS comparisons,
+      count(*) FILTER (WHERE isfinite(predictive_stddev) AND predictive_stddev >= 0
+        AND abs(prediction - outcome) <= multiplier * predictive_stddev) AS covered
+    FROM read_parquet('${path}'), (VALUES
+      (0.50, 0.6744897501960817), (0.80, 1.2815515655446004),
+      (0.90, 1.6448536269514722), (0.95, 1.959963984540054)
+    ) AS levels(target, multiplier)
+    GROUP BY target ORDER BY target
+  `,
+  );
+  // Retrospective diagnostic split from #167, never a confirmatory holdout.
+  const empirical = await queryRows(
+    connection,
+    `
+    WITH raw AS (SELECT * FROM read_parquet('${path}')),
+    fitted AS (
+      SELECT count(*) AS comparisons,
+        quantile_disc(abs(prediction - outcome) / predictive_stddev,
+          [0.50, 0.80, 0.90, 0.95]) AS multipliers
+      FROM raw WHERE outcome_term <= 91
+        AND isfinite(predictive_stddev) AND predictive_stddev > 0
+    ), levels AS (
+      SELECT target, comparisons AS development_comparisons,
+        multipliers[position] AS multiplier
+      FROM fitted, (VALUES (1, 0.50), (2, 0.80), (3, 0.90), (4, 0.95))
+        AS targets(position, target)
+    )
+    SELECT target, development_comparisons, multiplier,
+      count(raw.outcome_id) FILTER (WHERE multiplier IS NOT NULL
+        AND isfinite(predictive_stddev) AND predictive_stddev >= 0) AS comparisons,
+      count(raw.outcome_id) FILTER (WHERE multiplier IS NOT NULL
+        AND isfinite(predictive_stddev) AND predictive_stddev >= 0
+        AND abs(prediction - outcome) <= multiplier * predictive_stddev) AS covered
+    FROM levels LEFT JOIN raw ON outcome_term BETWEEN 92 AND 102
+    GROUP BY target, development_comparisons, multiplier ORDER BY target
+  `,
+  );
+  return {
+    strata: strata.map((row) => ({
+      dimension: String(row.dimension),
+      group: String(row.label),
+      evaluationUnits: Number(row.evaluation_units),
+      predictionError: Number(row.prediction_error),
+    })),
+    intervalCoverage: coverage.map((row) => ({
+      target: Number(row.target),
+      comparisons: Number(row.comparisons),
+      covered: Number(row.covered),
+      coverage:
+        Number(row.comparisons) > 0
+          ? Number(row.covered) / Number(row.comparisons)
+          : null,
+    })),
+    empiricalIntervals: empirical.map((row) => ({
+      target: Number(row.target),
+      developmentComparisons: Number(row.development_comparisons),
+      multiplier: number(row.multiplier),
+      evaluationComparisons: Number(row.comparisons),
+      coverage:
+        Number(row.comparisons) > 0
+          ? Number(row.covered) / Number(row.comparisons)
+          : null,
+    })),
+  };
+}
+
 export async function summarizeBacktestAnalysis(
   connection: DuckDBConnection,
   directory: string,
@@ -75,6 +212,30 @@ export async function summarizeBacktestAnalysis(
   const instructorPath = parquet(directory, "instructor-analysis.parquet");
   const contextPath = parquet(directory, "evidence-context.parquet");
   const allocationPath = parquet(directory, "evidence-allocations.parquet");
+  const ratingsPath = parquet(directory, "course-ratings.parquet");
+  const populationFollowup = await queryRows(
+    connection,
+    `
+    WITH population AS (
+      SELECT DISTINCT subject, code, term_num AS cutoff_term
+      FROM read_parquet('${ratingsPath}')
+      WHERE is_offered AND term_num < (
+        SELECT max(term_num) FROM read_parquet('${contextPath}')
+      )
+    ), followup AS (
+      SELECT population.*,
+        EXISTS (SELECT 1 FROM read_parquet('${contextPath}') AS outcomes
+          WHERE outcomes.subject = population.subject AND outcomes.code = population.code
+            AND outcomes.evidence_role IN ('course', 'review')
+            AND outcomes.term_num > population.cutoff_term
+            AND outcomes.term_num <= population.cutoff_term + 4) AS observed
+      FROM population
+    )
+    SELECT cutoff_term, count(*) AS eligible_courses,
+      count(*) FILTER (WHERE observed) AS courses_with_later_evidence
+    FROM followup GROUP BY cutoff_term ORDER BY cutoff_term
+  `,
+  );
   const [course] = await queryRows(
     connection,
     `
@@ -276,6 +437,15 @@ export async function summarizeBacktestAnalysis(
   };
   return {
     course: {
+      populationFollowup: populationFollowup.map((row) => ({
+        cutoffTerm: Number(row.cutoff_term),
+        eligibleCourses: Number(row.eligible_courses),
+        coursesWithLaterEvidence: Number(row.courses_with_later_evidence),
+        rate:
+          Number(row.courses_with_later_evidence) /
+          Number(row.eligible_courses),
+      })),
+      ...(await summarizeBreakdowns(connection, coursePath, "course")),
       evaluationUnits: required(course.evaluation_units),
       entities: required(course.entities),
       criteria: required(course.criteria),
@@ -295,6 +465,7 @@ export async function summarizeBacktestAnalysis(
       },
     },
     instructor: {
+      ...(await summarizeBreakdowns(connection, instructorPath, "instructor")),
       evaluationUnits: required(instructor.evaluation_units),
       entities: required(instructor.entities),
       predictionError: required(instructor.prediction_error),
