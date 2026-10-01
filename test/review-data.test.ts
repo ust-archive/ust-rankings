@@ -67,22 +67,46 @@ const review = {
   instructorAssociationStatus: "resolved" as const,
 };
 
-test("crawler Review lists skip authentication and PostgreSQL instead of reporting zero Reviews", async () => {
+test("anonymous crawler Review lists skip PostgreSQL and explain the login restriction", async () => {
   requestHeaders.mockResolvedValue(
     new Headers({ "user-agent": "GoogleOther" }),
   );
   vi.spyOn(console, "log").mockImplementation(() => {});
   const read = vi.fn(async () => [review]);
-  const identify = vi.fn(async () => "user");
+  const identify = vi.fn(async () => undefined);
   expect(
     await loadReviews(
       { type: "course", coursePrefix: "COMP", courseNumber: "2000" },
       read,
       identify,
     ),
-  ).toEqual({ reviews: [], signedIn: false, unavailable: true });
+  ).toEqual({
+    reviews: [],
+    signedIn: false,
+    unavailable: true,
+    botRestricted: true,
+  });
   expect(read).not.toHaveBeenCalled();
-  expect(identify).not.toHaveBeenCalled();
+  expect(identify).toHaveBeenCalledTimes(1);
+});
+
+test("signed-in users can view Reviews even when their agent is recognized as a bot", async () => {
+  requestHeaders.mockResolvedValue(
+    new Headers({ "user-agent": "GoogleOther" }),
+  );
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  const read = vi.fn(async () => [review]);
+  const query = {
+    type: "course" as const,
+    coursePrefix: "COMP",
+    courseNumber: "2000",
+  };
+  expect(await loadReviews(query, read, async () => "user")).toEqual({
+    reviews: [review],
+    signedIn: true,
+    unavailable: false,
+  });
+  expect(read).toHaveBeenCalledWith(query, "user");
 });
 
 test("browser Review lists retain personalized reads and record the allow decision", async () => {

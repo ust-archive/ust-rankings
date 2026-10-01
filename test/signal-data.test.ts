@@ -46,20 +46,39 @@ const summary = {
   },
 };
 
-test("crawler Signal loading skips authentication and PostgreSQL without inventing zero totals", async () => {
+test("anonymous crawler Signal loading skips PostgreSQL and explains the login restriction", async () => {
   const { loadSignals } = await import("@/app/signals/data");
   requestHeaders.mockResolvedValue(
     new Headers({ "user-agent": "GoogleOther" }),
   );
   vi.spyOn(console, "log").mockImplementation(() => {});
   const read = vi.fn(async () => summary);
-  const identify = vi.fn(async () => "user");
+  const identify = vi.fn(async () => undefined);
   expect(await loadSignals(target, read, identify)).toEqual({
     summary: undefined,
     unavailable: true,
+    botRestricted: true,
   });
   expect(read).not.toHaveBeenCalled();
-  expect(identify).not.toHaveBeenCalled();
+  expect(identify).toHaveBeenCalledTimes(1);
+});
+
+test("signed-in users can view personalized Signals even when their agent is recognized as a bot", async () => {
+  const { loadSignals } = await import("@/app/signals/data");
+  requestHeaders.mockResolvedValue(
+    new Headers({ "user-agent": "GoogleOther" }),
+  );
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  const personalized = {
+    ...summary,
+    mine: { thumbs: "up" as const, emoji: ["love" as const] },
+  };
+  const read = vi.fn(async () => personalized);
+  expect(await loadSignals(target, read, async () => "user")).toEqual({
+    summary: personalized,
+    unavailable: false,
+  });
+  expect(read).toHaveBeenCalledWith(target, "user");
 });
 
 test("Signal reads reflect account closure performed outside the web process", async () => {

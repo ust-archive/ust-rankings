@@ -132,6 +132,7 @@ export function CourseDetails({
   detailsLoading = false,
   reviews = [],
   reviewsUnavailable = true,
+  botRestricted,
   reviewPublished,
   reviewWithdrawn,
   reviewError,
@@ -152,6 +153,7 @@ export function CourseDetails({
   detailsLoading?: boolean;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
+  botRestricted?: boolean;
   reviewPublished?: boolean;
   reviewWithdrawn?: boolean;
   reviewError?: string;
@@ -365,6 +367,7 @@ export function CourseDetails({
           )}
           {communityContent ?? (
             <DetailsCommunity
+              botRestricted={botRestricted}
               description="Published experiences and signals for this Course."
               editor={reviewEditor}
               error={reviewError}

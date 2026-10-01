@@ -38,6 +38,7 @@ export default async function CourseOfferingPage({
   ]);
   return (
     <CourseDetails
+      botRestricted={community.botRestricted}
       coursePrefix={coursePrefix}
       courseNumber={courseNumber}
       rankingsContent={

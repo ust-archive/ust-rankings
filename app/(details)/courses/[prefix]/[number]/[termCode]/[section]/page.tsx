@@ -42,6 +42,7 @@ export default async function ClassPage({
   ]);
   return (
     <CourseDetails
+      botRestricted={community.botRestricted}
       coursePrefix={coursePrefix}
       courseNumber={courseNumber}
       rankingsContent={

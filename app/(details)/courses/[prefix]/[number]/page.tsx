@@ -62,6 +62,7 @@ async function CourseCommunity({
   };
   return (
     <DetailsCommunity
+      botRestricted={community.botRestricted}
       description="Published experiences and signals for this Course."
       editor={editor}
       error={

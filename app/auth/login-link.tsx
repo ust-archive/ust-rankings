@@ -4,11 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-export function LoginLink({ children }: { children: ReactNode }) {
+export function LoginLink({
+  children,
+  className = "text-xs font-bold uppercase tracking-[0.16em] text-slate-600",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   const pathname = usePathname();
   return (
     <Link
-      className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600"
+      className={className}
       href={`/auth/login?r=${encodeURIComponent(pathname)}`}
       prefetch={false}
     >

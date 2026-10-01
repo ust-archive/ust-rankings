@@ -26,6 +26,7 @@ type CommunityReadDecision = Pick<
   "processId" | "deployment" | "timestamp" | "operation" | "caller"
 > & {
   decisionId: string;
+  authentication?: string;
   agentClass: string;
   previousAgentClass: string;
   fetchSite: string;
@@ -96,6 +97,8 @@ export async function summarizeDatabaseLogs(
           "previousAgentClass",
           "fetchSite",
         ].some((key) => typeof value[key] !== "string") ||
+        (value.authentication !== undefined &&
+          typeof value.authentication !== "string") ||
         !["allow", "skip"].includes(String(value.decision)) ||
         !Number.isFinite(Date.parse(String(value.timestamp)))
       ) {
@@ -245,6 +248,7 @@ export async function summarizeDatabaseLogs(
       deployment: string;
       operation: string;
       caller: string;
+      authentication: string;
       agentClass: string;
       previousAgentClass: string;
       fetchSite: string;
@@ -257,6 +261,7 @@ export async function summarizeDatabaseLogs(
     deployment,
     operation,
     caller,
+    authentication = "unknown",
     agentClass,
     previousAgentClass,
     fetchSite,
@@ -266,6 +271,7 @@ export async function summarizeDatabaseLogs(
       deployment,
       operation,
       caller,
+      authentication,
       agentClass,
       previousAgentClass,
       fetchSite,

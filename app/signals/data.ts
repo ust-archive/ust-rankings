@@ -32,10 +32,20 @@ export async function loadSignals(
   target: SignalTarget,
   read: ReadSignals = readSignals,
   identify: () => Promise<string | undefined> = optionalAuthenticatedUserId,
-) {
-  if (await skipBotCommunityRead(target.type, "signals.readSignals"))
-    return { summary: undefined, unavailable: true as const };
+): Promise<{
+  summary?: SignalSummary;
+  unavailable: boolean;
+  botRestricted?: true;
+}> {
   const userId = await identify().catch(() => undefined);
+  if (
+    await skipBotCommunityRead(
+      target.type,
+      "signals.readSignals",
+      Boolean(userId),
+    )
+  )
+    return { summary: undefined, unavailable: true, botRestricted: true };
   try {
     return {
       summary: await read(target, userId),

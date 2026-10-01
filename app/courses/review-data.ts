@@ -43,10 +43,26 @@ export async function loadReviews(
   query: ReviewListQuery,
   read: ReadReviews = readReviews,
   identify: () => Promise<string | undefined> = optionalAuthenticatedUserId,
-) {
-  if (await skipBotCommunityRead(reviewCaller(query), "reviews.listReviews"))
-    return { reviews: [], signedIn: false, unavailable: true as const };
+): Promise<{
+  reviews: PublicReview[];
+  signedIn: boolean;
+  unavailable: boolean;
+  botRestricted?: true;
+}> {
   const viewerUserId = await identify().catch(() => undefined);
+  if (
+    await skipBotCommunityRead(
+      reviewCaller(query),
+      "reviews.listReviews",
+      Boolean(viewerUserId),
+    )
+  )
+    return {
+      reviews: [],
+      signedIn: false,
+      unavailable: true,
+      botRestricted: true,
+    };
   try {
     // Operator moderation changes PostgreSQL outside the Next.js process.
     const reviews = await read(query, viewerUserId);

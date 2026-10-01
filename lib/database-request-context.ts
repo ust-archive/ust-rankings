@@ -74,9 +74,13 @@ export async function databaseRequestContext(
 export async function skipBotCommunityRead(
   caller: DatabaseContext["caller"],
   operation: "reviews.listReviews" | "signals.readSignals",
+  signedIn = false,
 ) {
-  const context = await databaseRequestContext({ caller });
-  const skipped = context.agentClass === "declared-bot";
+  const context = await databaseRequestContext({
+    caller,
+    authentication: signedIn ? "authenticated" : "anonymous",
+  });
+  const skipped = !signedIn && context.agentClass === "declared-bot";
   observeCommunityReadDecision(context, operation, skipped);
   return skipped;
 }

@@ -75,6 +75,7 @@ export function observeCommunityReadDecision(
         timestamp: new Date().toISOString(),
         operation,
         caller: context.caller,
+        authentication: context.authentication ?? "unknown",
         agentClass: context.agentClass ?? "unknown",
         previousAgentClass: context.previousAgentClass ?? "unknown",
         fetchSite: context.fetchSite ?? "unknown",

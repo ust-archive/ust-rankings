@@ -91,6 +91,7 @@ async function InstructorCommunity({
   };
   return (
     <DetailsCommunity
+      botRestricted={reviewResult.botRestricted}
       editor={editor}
       error={
         typeof query.reviewError === "string" ? query.reviewError : undefined
