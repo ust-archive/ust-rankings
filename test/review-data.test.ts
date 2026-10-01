@@ -1,6 +1,14 @@
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { loadCourseReviews, loadReviews } from "@/app/courses/review-data";
 import { loadReview } from "@/app/reviews/review-data";
+
+const requestHeaders = vi.hoisted(() => vi.fn());
+vi.mock("next/headers", () => ({ headers: requestHeaders }));
+afterEach(() => {
+  requestHeaders.mockReset();
+  vi.restoreAllMocks();
+});
+
 import {
   ContributionsUnavailableError,
   normalizeContributionDate,
@@ -58,6 +66,54 @@ const review = {
   publishedAt: new Date("2026-08-20T12:00:00.000Z"),
   instructorAssociationStatus: "resolved" as const,
 };
+
+test("crawler Review lists skip authentication and PostgreSQL instead of reporting zero Reviews", async () => {
+  requestHeaders.mockResolvedValue(
+    new Headers({ "user-agent": "GoogleOther" }),
+  );
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  const read = vi.fn(async () => [review]);
+  const identify = vi.fn(async () => "user");
+  expect(
+    await loadReviews(
+      { type: "course", coursePrefix: "COMP", courseNumber: "2000" },
+      read,
+      identify,
+    ),
+  ).toEqual({ reviews: [], signedIn: false, unavailable: true });
+  expect(read).not.toHaveBeenCalled();
+  expect(identify).not.toHaveBeenCalled();
+});
+
+test("browser Review lists retain personalized reads and record the allow decision", async () => {
+  requestHeaders.mockResolvedValue(
+    new Headers({
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    }),
+  );
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+  const read = vi.fn(async () => [review]);
+  expect(
+    await loadReviews(
+      { type: "instructor", instructorUuids: [review.instructorUuid] },
+      read,
+      async () => "user",
+    ),
+  ).toEqual({ reviews: [review], signedIn: true, unavailable: false });
+  expect(read).toHaveBeenCalledWith(
+    { type: "instructor", instructorUuids: [review.instructorUuid] },
+    "user",
+  );
+  expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({
+    event: "community-read-decision",
+    operation: "reviews.listReviews",
+    caller: "instructor",
+    agentClass: "browser-like",
+    previousAgentClass: "browser-like",
+    decision: "allow",
+  });
+});
 
 test("production Review reads immediately reflect operator suppression and withdrawal", async () => {
   vi.stubEnv("NODE_ENV", "production");

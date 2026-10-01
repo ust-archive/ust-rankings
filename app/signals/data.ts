@@ -4,6 +4,7 @@ import {
   type SignalSummary,
   type SignalTarget,
 } from "@/lib/contributions/signals";
+import { skipBotCommunityRead } from "@/lib/database-request-context";
 
 type ReadSignals = (
   target: SignalTarget,
@@ -32,6 +33,8 @@ export async function loadSignals(
   read: ReadSignals = readSignals,
   identify: () => Promise<string | undefined> = optionalAuthenticatedUserId,
 ) {
+  if (await skipBotCommunityRead(target.type, "signals.readSignals"))
+    return { summary: undefined, unavailable: true as const };
   const userId = await identify().catch(() => undefined);
   try {
     return {

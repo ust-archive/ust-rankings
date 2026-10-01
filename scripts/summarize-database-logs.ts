@@ -21,6 +21,16 @@ type Event = {
   errorCategory?: string;
   durationMs?: number;
 };
+type CommunityReadDecision = Pick<
+  Event,
+  "processId" | "deployment" | "timestamp" | "operation" | "caller"
+> & {
+  decisionId: string;
+  agentClass: string;
+  previousAgentClass: string;
+  fetchSite: string;
+  decision: "allow" | "skip";
+};
 function windowTimes(window: Window) {
   const from = Date.parse(window.from);
   const to = Date.parse(window.to);
@@ -50,8 +60,13 @@ export async function summarizeDatabaseLogs(
     unmatchedCompletions: 0,
   };
   const events = new Map<string, Event>();
+  const decisions = new Map<string, CommunityReadDecision>();
   for await (const line of lines) {
-    if (!line.includes('"database-operation"')) continue;
+    if (
+      !line.includes('"database-operation"') &&
+      !line.includes('"community-read-decision"')
+    )
+      continue;
     let value: Record<string, unknown>;
     try {
       value = JSON.parse(line.slice(line.indexOf("{")));
@@ -59,9 +74,43 @@ export async function summarizeDatabaseLogs(
       counts.malformed++;
       continue;
     }
-    if (value?.event !== "database-operation") continue;
+    if (
+      value?.event !== "database-operation" &&
+      value?.event !== "community-read-decision"
+    )
+      continue;
     if (value.version !== 1) {
       counts.unsupported++;
+      continue;
+    }
+    if (value.event === "community-read-decision") {
+      if (
+        [
+          "decisionId",
+          "processId",
+          "deployment",
+          "timestamp",
+          "operation",
+          "caller",
+          "agentClass",
+          "previousAgentClass",
+          "fetchSite",
+        ].some((key) => typeof value[key] !== "string") ||
+        !["allow", "skip"].includes(String(value.decision)) ||
+        !Number.isFinite(Date.parse(String(value.timestamp)))
+      ) {
+        counts.malformed++;
+        continue;
+      }
+      const time = Date.parse(String(value.timestamp));
+      if (time < from || time >= to) {
+        counts.outsideWindow++;
+        continue;
+      }
+      const decision = value as unknown as CommunityReadDecision;
+      const key = `${decision.processId}/${decision.decisionId}`;
+      if (decisions.has(key)) counts.duplicates++;
+      else decisions.set(key, decision);
       continue;
     }
     if (
@@ -190,9 +239,52 @@ export async function summarizeDatabaseLogs(
   let gap = 0;
   for (let index = 1; index < attemptTimes.length; index++)
     gap = Math.max(gap, attemptTimes[index] - attemptTimes[index - 1]);
+  const decisionGroups = new Map<
+    string,
+    {
+      deployment: string;
+      operation: string;
+      caller: string;
+      agentClass: string;
+      previousAgentClass: string;
+      fetchSite: string;
+      decision: string;
+      count: number;
+    }
+  >();
+  let skipped = 0;
+  for (const {
+    deployment,
+    operation,
+    caller,
+    agentClass,
+    previousAgentClass,
+    fetchSite,
+    decision,
+  } of decisions.values()) {
+    const dimensions = {
+      deployment,
+      operation,
+      caller,
+      agentClass,
+      previousAgentClass,
+      fetchSite,
+      decision,
+    };
+    const key = JSON.stringify(dimensions);
+    const group = decisionGroups.get(key) ?? { ...dimensions, count: 0 };
+    group.count++;
+    decisionGroups.set(key, group);
+    if (decision === "skip") skipped++;
+  }
   return {
     window,
     counts,
+    communityReads: {
+      allowed: decisions.size - skipped,
+      skipped,
+      groups: [...decisionGroups.values()].sort((a, b) => b.count - a.count),
+    },
     coverage:
       "Counts describe captured events only. Missing events and observed gaps are not proof of database inactivity; include all instances and operator logs, and record known capture gaps separately.",
     firstAttempt: attemptTimes.length

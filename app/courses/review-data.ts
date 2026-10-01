@@ -5,6 +5,17 @@ import {
   type ReviewListQuery,
   type ReviewOrder,
 } from "@/lib/contributions/reviews";
+import { skipBotCommunityRead } from "@/lib/database-request-context";
+
+function reviewCaller(query: ReviewListQuery) {
+  return query.type === "instructor"
+    ? "instructor"
+    : query.section
+      ? "course-section"
+      : query.termCode
+        ? "course-term"
+        : "course";
+}
 
 type ReadReviews = (
   query: ReviewListQuery,
@@ -14,14 +25,7 @@ type ReadReviews = (
 const readReviews: ReadReviews = async (query, viewerUserId) =>
   (await import("@/lib/contributions/postgres"))
     .getReviewService({
-      caller:
-        query.type === "instructor"
-          ? "instructor"
-          : query.section
-            ? "course-section"
-            : query.termCode
-              ? "course-term"
-              : "course",
+      caller: reviewCaller(query),
       authentication: viewerUserId ? "authenticated" : "anonymous",
     })
     .listReviews(query, viewerUserId);
@@ -40,6 +44,8 @@ export async function loadReviews(
   read: ReadReviews = readReviews,
   identify: () => Promise<string | undefined> = optionalAuthenticatedUserId,
 ) {
+  if (await skipBotCommunityRead(reviewCaller(query), "reviews.listReviews"))
+    return { reviews: [], signedIn: false, unavailable: true as const };
   const viewerUserId = await identify().catch(() => undefined);
   try {
     // Operator moderation changes PostgreSQL outside the Next.js process.

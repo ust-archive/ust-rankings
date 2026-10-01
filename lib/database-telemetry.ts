@@ -29,6 +29,7 @@ export type DatabaseContext = {
     | "other"
     | "missing"
     | "unknown";
+  previousAgentClass?: DatabaseContext["agentClass"];
   fetchSite?:
     | "same-origin"
     | "same-site"
@@ -56,6 +57,34 @@ function deploymentId() {
   }
 }
 const deployment = deploymentId();
+
+/** Measures allowed/skipped page reads without creating database operations. */
+export function observeCommunityReadDecision(
+  context: DatabaseContext,
+  operation: "reviews.listReviews" | "signals.readSignals",
+  skipped: boolean,
+) {
+  try {
+    console.log(
+      JSON.stringify({
+        event: "community-read-decision",
+        version: 1,
+        decisionId: randomUUID(),
+        processId,
+        deployment,
+        timestamp: new Date().toISOString(),
+        operation,
+        caller: context.caller,
+        agentClass: context.agentClass ?? "unknown",
+        previousAgentClass: context.previousAgentClass ?? "unknown",
+        fetchSite: context.fetchSite ?? "unknown",
+        decision: skipped ? "skip" : "allow",
+      }),
+    );
+  } catch {
+    /* Observability must never change page loading. */
+  }
+}
 
 function errorCategory(error: unknown): string {
   try {

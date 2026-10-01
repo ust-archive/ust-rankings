@@ -140,3 +140,58 @@ it("compares billing counters only across matching scope and interval", () => {
     compareUsage(before, { ...after, compute_time_seconds: 0 }, window),
   ).toThrow();
 });
+
+it("counts avoided reads separately and compares both detectors on the same traffic", async () => {
+  const decision = {
+    event: "community-read-decision",
+    version: 1,
+    decisionId: "a",
+    processId: "process",
+    deployment: "isbot-build",
+    timestamp: "2026-10-02T00:00:00Z",
+    operation: "reviews.listReviews",
+    caller: "course",
+    agentClass: "declared-bot",
+    previousAgentClass: "other",
+    fetchSite: "missing",
+    decision: "skip",
+  };
+  const line = JSON.stringify(decision);
+  const report = await summarizeDatabaseLogs(
+    [
+      line,
+      line,
+      JSON.stringify({
+        ...decision,
+        decisionId: "b",
+        operation: "signals.readSignals",
+      }),
+      JSON.stringify({
+        ...decision,
+        decisionId: "c",
+        decision: "allow",
+        agentClass: "browser-like",
+        previousAgentClass: "browser-like",
+      }),
+      JSON.stringify({
+        ...decision,
+        decisionId: "invalid",
+        decision: "invalid",
+      }),
+    ],
+    { from: "2026-10-02T00:00:00Z", to: "2026-10-02T01:00:00Z" },
+  );
+  expect(report.counts).toMatchObject({
+    attempts: 0,
+    completions: 0,
+    duplicates: 1,
+    malformed: 1,
+  });
+  expect(report.communityReads).toMatchObject({ skipped: 2, allowed: 1 });
+  expect(report.communityReads.groups[0]).toMatchObject({
+    agentClass: "declared-bot",
+    previousAgentClass: "other",
+    decision: "skip",
+    count: 1,
+  });
+});

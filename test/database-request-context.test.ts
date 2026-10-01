@@ -23,6 +23,7 @@ it("attributes declared crawlers without retaining arbitrary headers", async () 
     authentication: "anonymous",
     requestClass: "unknown",
     agentClass: "declared-bot",
+    previousAgentClass: "declared-bot",
     fetchSite: "missing",
   });
   expect(JSON.stringify(context)).not.toMatch(
@@ -64,10 +65,11 @@ it("separates browser-like navigation from explicit prefetch", async () => {
   });
 });
 
-it("keeps unidentified clients and unavailable context distinct", async () => {
+it("recognizes additional automated clients and keeps unavailable context distinct", async () => {
   requestHeaders.mockResolvedValue(new Headers({ "user-agent": "curl/8.0" }));
   expect(await databaseRequestContext({ caller: "course" })).toMatchObject({
-    agentClass: "other",
+    agentClass: "declared-bot",
+    previousAgentClass: "other",
     fetchSite: "missing",
   });
   requestHeaders.mockRejectedValue(new Error("outside request"));

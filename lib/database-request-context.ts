@@ -1,6 +1,10 @@
+import { isBot } from "isbot";
 import { headers } from "next/headers";
 import { userAgentFromString } from "next/server";
-import type { DatabaseContext } from "./database-telemetry";
+import {
+  type DatabaseContext,
+  observeCommunityReadDecision,
+} from "./database-telemetry";
 
 /** Never infer a route or user identity from arbitrary request headers. */
 export async function databaseRequestContext(
@@ -10,10 +14,18 @@ export async function databaseRequestContext(
     const request = await headers();
     const agent = request.get("user-agent")?.slice(0, 1024);
     const parsed = agent ? userAgentFromString(agent) : undefined;
-    // ponytail: declared agents are spoofable; verify bot identity separately before access policy changes.
-    const agentClass: DatabaseContext["agentClass"] = !agent
+    // ponytail: agents are spoofable; add caching/rate limits if disguised traffic keeps compute active.
+    // Keep the previous classifier during rollout for a same-request comparison.
+    const previousAgentClass: DatabaseContext["agentClass"] = !agent
       ? "missing"
       : parsed?.isBot || /bot\b|crawler|spider|meta-externalagent/i.test(agent)
+        ? "declared-bot"
+        : parsed?.browser.name
+          ? "browser-like"
+          : "other";
+    const agentClass = !agent
+      ? "missing"
+      : isBot(agent)
         ? "declared-bot"
         : parsed?.browser.name
           ? "browser-like"
@@ -40,13 +52,31 @@ export async function databaseRequestContext(
             : request.get("sec-fetch-dest") === "document"
               ? "document"
               : (context.requestClass ?? "unknown");
-    return { ...context, requestClass, agentClass, fetchSite };
+    return {
+      ...context,
+      requestClass,
+      agentClass,
+      previousAgentClass,
+      fetchSite,
+    };
   } catch {
     return {
       ...context,
       requestClass: "unknown",
       agentClass: "unknown",
+      previousAgentClass: "unknown",
       fetchSite: "unknown",
     };
   }
+}
+
+/** Page loaders only: never applies to contribution writes or individual Review URLs. */
+export async function skipBotCommunityRead(
+  caller: DatabaseContext["caller"],
+  operation: "reviews.listReviews" | "signals.readSignals",
+) {
+  const context = await databaseRequestContext({ caller });
+  const skipped = context.agentClass === "declared-bot";
+  observeCommunityReadDecision(context, operation, skipped);
+  return skipped;
 }

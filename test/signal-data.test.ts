@@ -1,7 +1,13 @@
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { ContributionsUnavailableError } from "@/lib/contributions/signals";
 
 vi.mock("server-only", () => ({}));
+const requestHeaders = vi.hoisted(() => vi.fn());
+vi.mock("next/headers", () => ({ headers: requestHeaders }));
+afterEach(() => {
+  requestHeaders.mockReset();
+  vi.restoreAllMocks();
+});
 const { postgresReadSignals } = vi.hoisted(() => ({
   postgresReadSignals: vi.fn(),
 }));
@@ -39,6 +45,22 @@ const summary = {
     fire: 2,
   },
 };
+
+test("crawler Signal loading skips authentication and PostgreSQL without inventing zero totals", async () => {
+  const { loadSignals } = await import("@/app/signals/data");
+  requestHeaders.mockResolvedValue(
+    new Headers({ "user-agent": "GoogleOther" }),
+  );
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  const read = vi.fn(async () => summary);
+  const identify = vi.fn(async () => "user");
+  expect(await loadSignals(target, read, identify)).toEqual({
+    summary: undefined,
+    unavailable: true,
+  });
+  expect(read).not.toHaveBeenCalled();
+  expect(identify).not.toHaveBeenCalled();
+});
 
 test("Signal reads reflect account closure performed outside the web process", async () => {
   const { loadSignals } = await import("@/app/signals/data");
