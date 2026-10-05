@@ -10,6 +10,8 @@ Section labels identify current and historical Classes but are not predictive fe
 
 Queue positions stay in React state and worker messages. They are not placed in URLs, persistent browser storage, analytics payloads, or server requests.
 
+Draft association-grain policy: component ordinals are scoped to their current association and Class type, matching the historical bundle grain. Mixed-association Plans return an explicit unsupported result until their whole-offering joint history is defined. The tradeoffs and release decision are recorded in [the association-grain proposal](research/waitlist-association-grain.md).
+
 ## Official Term dates
 
 Supported Fall/Spring dates and Registry PDF sources live in `data/src/waitlist-evidence.ts` as `WAITLIST_TERMS`. To add a Term:

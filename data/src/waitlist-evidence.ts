@@ -169,10 +169,44 @@ function componentPattern(types: Iterable<string>): string {
   return [...types].map(typeKey).sort().join("+");
 }
 
-function associationKey(trajectory: WaitlistTrajectory): string {
+function associationKey(
+  trajectory: Pick<WaitlistTrajectory, "association">,
+): string {
   return trajectory.association === undefined
     ? "offering"
     : `association:${trajectory.association}`;
+}
+
+/** Current ordinals use the same association-local grain as historical bundles. */
+export function associationPlanCandidate(
+  classes: readonly Pick<
+    WaitlistTrajectory,
+    "association" | "section" | "type"
+  >[],
+  candidate: WaitlistPlanCandidate,
+): WaitlistPlanCandidate | undefined {
+  const selected = candidate.components.map((component) => {
+    const current = classes.find((item) => item.section === component.section);
+    if (!current)
+      throw new Error("Waitlist Plan Class is not in the current offering");
+    return { component, current };
+  });
+  if (new Set(selected.map(({ current }) => associationKey(current))).size > 1)
+    return;
+  return {
+    ...candidate,
+    components: selected.map(({ component, current }) => ({
+      ...component,
+      ordinal: classes
+        .filter(
+          (item) =>
+            associationKey(item) === associationKey(current) &&
+            typeKey(item.type) === typeKey(current.type),
+        )
+        .sort((left, right) => left.section.localeCompare(right.section))
+        .findIndex((item) => item.section === current.section),
+    })),
+  };
 }
 
 /** Group component trajectories without treating a Course Offering's queues as independent samples. */
