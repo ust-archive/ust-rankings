@@ -1,10 +1,10 @@
-import { unstable_cache } from "next/cache";
 import { authenticatedUserId } from "@/lib/auth/user";
 import {
   ContributionsUnavailableError,
   type SignalSummary,
   type SignalTarget,
 } from "@/lib/contributions/signals";
+import { skipBotCommunityRead } from "@/lib/database-request-context";
 
 type ReadSignals = (
   target: SignalTarget,
@@ -13,13 +13,11 @@ type ReadSignals = (
 
 const readSignals: ReadSignals = async (target, userId) =>
   (await import("@/lib/contributions/postgres"))
-    .getSignalService()
+    .getSignalService({
+      caller: target.type,
+      authentication: userId ? "authenticated" : "anonymous",
+    })
     .readSignals(target, userId);
-
-const readCachedSignals = unstable_cache(readSignals, ["signals"], {
-  revalidate: 3600,
-  tags: ["contributions"],
-});
 
 async function optionalAuthenticatedUserId() {
   if (!process.env.AUTH_SECRET) return undefined;
@@ -34,13 +32,23 @@ export async function loadSignals(
   target: SignalTarget,
   read: ReadSignals = readSignals,
   identify: () => Promise<string | undefined> = optionalAuthenticatedUserId,
-) {
+): Promise<{
+  summary?: SignalSummary;
+  unavailable: boolean;
+  botRestricted?: true;
+}> {
   const userId = await identify().catch(() => undefined);
+  if (
+    await skipBotCommunityRead(
+      target.type,
+      "signals.readSignals",
+      Boolean(userId),
+    )
+  )
+    return { summary: undefined, unavailable: true, botRestricted: true };
   try {
     return {
-      summary: await (read === readSignals
-        ? readCachedSignals(target, userId)
-        : read(target, userId)),
+      summary: await read(target, userId),
       unavailable: false as const,
     };
   } catch (error) {

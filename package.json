@@ -25,12 +25,14 @@
     "test": "vitest run --dir test --exclude \"*-postgres.test.ts\" --exclude \"**/browser/**\"",
     "pretest:browser": "npm run assets:duckdb",
     "test:browser": "node scripts/generate-browser-fixture.ts && playwright test",
+    "test:prefetch": "playwright test --config playwright.prefetch.config.ts",
     "test:contracts": "vitest run --test-timeout 30000 test/account-postgres.test.ts test/attachment-postgres.test.ts test/moderation-postgres.test.ts test/review-postgres.test.ts test/signal-postgres.test.ts",
     "data:run": "npm run run --workspace data",
     "data:backtest": "npm run backtest --workspace data",
     "data:check": "npm run type-check --workspace data && npm test --workspace data",
     "toolchain:check": "node scripts/check-toolchain.ts",
     "contributions:migrate": "node scripts/migrate-contributions.ts",
+    "diagnostics:database": "node scripts/summarize-database-logs.ts",
     "contributions:merge-instructor-signals": "node scripts/merge-instructor-signals.ts",
     "contributions:moderate": "node scripts/moderate.ts",
     "attachments:remove-stored-file": "node scripts/remove-stored-file.ts"
@@ -38,10 +40,11 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",
     "@aws-sdk/s3-request-presigner": "^3.1115.0",
+    "@base-ui/react": "^1.8.0",
     "@duckdb/duckdb-wasm": "1.32.0",
     "@icons-pack/react-simple-icons": "^13.15.1",
     "@mdxeditor/editor": "^4.2.1",
-    "@next/third-parties": "16.3.2",
+    "@next/third-parties": "16.3.8",
     "@radix-ui/react-checkbox": "^1.3.11",
     "@radix-ui/react-collapsible": "^1.1.20",
     "@radix-ui/react-dialog": "^1.1.23",
@@ -56,9 +59,11 @@
     "@typehaus/metropolis": "12.0.0-next.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "ics": "^3.12.0",
+    "isbot": "^5.2.2",
     "lucide-react": "^1.33.0",
     "luxon": "^3.7.2",
-    "next": "16.3.2",
+    "next": "16.3.8",
     "next-auth": "5.0.0-beta.32",
     "postgres": "^3.4.9",
     "react": "19.2.8",
@@ -91,5 +96,10 @@
   },
   "allowScripts": {
     "esbuild@0.28.2": true
+  },
+  "overrides": {
+    "@mdxeditor/editor": {
+      "js-yaml": "4.3.2"
+    }
   }
 }

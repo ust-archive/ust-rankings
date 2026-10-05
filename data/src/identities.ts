@@ -373,6 +373,10 @@ export async function assignInstructorIdentities(
 
   const normalized = (value: string) => value.trim().toLocaleLowerCase();
   const identities = new Map(previousIdentities.map((row) => [row.uuid, row]));
+  if (identities.size !== previousIdentities.length)
+    throw new Error(
+      "Ambiguous Instructor identity: duplicate UUIDs in previous identities",
+    );
   const aliases = [...previousAliases];
   const events = previousEvents;
   const correctionRows = previousCorrections;
@@ -412,6 +416,11 @@ export async function assignInstructorIdentities(
       if (eventKeys.has(key)) continue;
       eventKeys.add(key);
       events.push(event);
+      // Only new corrections update the snapshot; historical events are unordered.
+      if (event.event_type === "itsc-added" && event.uuid && event.itsc) {
+        const identity = identities.get(event.uuid);
+        if (identity) identity.itsc = event.itsc;
+      }
     }
     const correctionKeys = new Set(
       correctionRows.map((correction) => JSON.stringify(correction)),
@@ -625,7 +634,13 @@ export async function assignInstructorIdentities(
     currentNamesByUuid.set(uuid, names);
   }
   for (const [uuid, names] of currentNamesByUuid) {
-    if (names.size > 1 && !mergedSurvivors.has(uuid))
+    // A unified Schedule can bring several already accepted spellings into
+    // the same build. Reuse their unique pinned identity; do not mint a merge.
+    const knownAliases = [...names].every((name) => {
+      const candidates = candidatesByName.get(normalized(name));
+      return candidates?.size === 1 && candidates.has(uuid);
+    });
+    if (names.size > 1 && !mergedSurvivors.has(uuid) && !knownAliases)
       errors.add(
         `Ambiguous Instructor identity ${uuid}: ${[...names].join(", ")}`,
       );
@@ -635,13 +650,27 @@ export async function assignInstructorIdentities(
       `Instructor identity validation failed with ${errors.size} ${errors.size === 1 ? "error" : "errors"}:\n${[...errors].map((error) => `- ${error}`).join("\n")}`,
     );
 
+  const namePriorities = new Map(
+    (
+      await connection.runAndReadAll(
+        "SELECT name, source_priority FROM instructor_name_anchors",
+      )
+    )
+      .getRowObjectsJson()
+      .map((row) => [String(row.name), Number(row.source_priority)]),
+  );
   for (const [uuid, names] of currentNamesByUuid) {
     const current = identities.get(uuid) as IdentityRow;
     identities.set(uuid, {
       ...current,
-      canonical_name: names.has(current.canonical_name)
-        ? current.canonical_name
-        : ([...names].sort()[0] as string),
+      // A merge chooses identity; source priority still chooses display spelling.
+      canonical_name: [...names].sort(
+        (left, right) =>
+          (namePriorities.get(right) ?? 0) - (namePriorities.get(left) ?? 0) ||
+          Number(right === current.canonical_name) -
+            Number(left === current.canonical_name) ||
+          (left < right ? -1 : left > right ? 1 : 0),
+      )[0] as string,
     });
   }
 

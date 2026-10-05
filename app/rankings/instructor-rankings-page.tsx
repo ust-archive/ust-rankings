@@ -210,9 +210,11 @@ export function InstructorRankingsPage({
         >
           {rankings.results.map((result) => (
             <RankingResultCard
+              configuration={rankings.configuration}
               generation={rankings.generation}
               key={result.uuid}
               result={result}
+              termCode={rankings.population.termCode}
             />
           ))}
           {!current.loading ? (

@@ -28,5 +28,7 @@ export function createAttachmentCleanupHandlers(
 
 export async function GET(request: Request) {
   const { getAttachmentService } = await import("@/lib/attachments/postgres");
-  return createAttachmentCleanupHandlers(getAttachmentService).GET(request);
+  return createAttachmentCleanupHandlers(() =>
+    getAttachmentService({ caller: "operator", requestClass: "action-api" }),
+  ).GET(request);
 }

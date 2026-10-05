@@ -479,6 +479,7 @@ export function DetailsCommunityLoading() {
 }
 
 export function DetailsCommunity({
+  botRestricted,
   description,
   signalControls,
   reviewComposer,
@@ -490,6 +491,7 @@ export function DetailsCommunity({
   withdrawn,
   error,
 }: {
+  botRestricted?: boolean;
   description?: string;
   signalControls: ReactNode;
   reviewComposer: ReactNode;
@@ -515,44 +517,59 @@ export function DetailsCommunity({
         ) : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
-        <section aria-label="Signals">{signalControls}</section>
-        <Separator />
-        <ReviewNotice
-          error={error}
-          published={published}
-          withdrawn={withdrawn}
-        />
-        <section
-          aria-labelledby="community-reviews"
-          className="flex flex-col gap-5"
-        >
-          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h3
-              className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600"
-              id="community-reviews"
+        {botRestricted ? (
+          <p
+            className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+            role="status"
+          >
+            You have been identified as a bot.{" "}
+            <LoginLink className="font-semibold underline underline-offset-2">
+              Login
+            </LoginLink>{" "}
+            to view the signals and comments.
+          </p>
+        ) : (
+          <>
+            <section aria-label="Signals">{signalControls}</section>
+            <Separator />
+            <ReviewNotice
+              error={error}
+              published={published}
+              withdrawn={withdrawn}
+            />
+            <section
+              aria-labelledby="community-reviews"
+              className="flex flex-col gap-5"
             >
-              Reviews
-            </h3>
-            <div className="flex w-full flex-col items-start gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
-              <ReviewOrderSelect />
-              {signedIn ? (
-                reviewComposer
+              <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h3
+                  className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600"
+                  id="community-reviews"
+                >
+                  Reviews
+                </h3>
+                <div className="flex w-full flex-col items-start gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+                  <ReviewOrderSelect />
+                  {signedIn ? (
+                    reviewComposer
+                  ) : (
+                    <LoginLink>Login to create a review</LoginLink>
+                  )}
+                </div>
+              </div>
+              {reviewsUnavailable ? (
+                <p
+                  className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+                  role="status"
+                >
+                  Reviews are unavailable. This does not represent zero reviews.
+                </p>
               ) : (
-                <LoginLink>Login to create a review</LoginLink>
+                <Reviews displayTermNames editor={editor} reviews={reviews} />
               )}
-            </div>
-          </div>
-          {reviewsUnavailable ? (
-            <p
-              className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
-              role="status"
-            >
-              Reviews are unavailable. This does not represent zero reviews.
-            </p>
-          ) : (
-            <Reviews displayTermNames editor={editor} reviews={reviews} />
-          )}
-        </section>
+            </section>
+          </>
+        )}
       </CardContent>
     </Card>
   );

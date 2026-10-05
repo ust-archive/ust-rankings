@@ -126,12 +126,14 @@ export function CourseDetails({
   rankings,
   rankingsContent,
   reviewComposerContent,
+  reviewEditorOptions,
   communityContent,
   scheduleContent,
   selectedTermCode,
   detailsLoading = false,
   reviews = [],
   reviewsUnavailable = true,
+  botRestricted,
   reviewPublished,
   reviewWithdrawn,
   reviewError,
@@ -146,12 +148,14 @@ export function CourseDetails({
   rankings?: CourseRankings;
   rankingsContent?: ReactNode;
   reviewComposerContent?: ReactNode;
+  reviewEditorOptions?: ReviewEditorOptions;
   communityContent?: ReactNode;
   scheduleContent?: ReactNode;
   selectedTermCode?: string;
   detailsLoading?: boolean;
   reviews?: PublicReview[];
   reviewsUnavailable?: boolean;
+  botRestricted?: boolean;
   reviewPublished?: boolean;
   reviewWithdrawn?: boolean;
   reviewError?: string;
@@ -365,8 +369,9 @@ export function CourseDetails({
           )}
           {communityContent ?? (
             <DetailsCommunity
+              botRestricted={botRestricted}
               description="Published experiences and signals for this Course."
-              editor={reviewEditor}
+              editor={reviewEditorOptions ?? reviewEditor}
               error={reviewError}
               published={reviewPublished}
               reviewComposer={

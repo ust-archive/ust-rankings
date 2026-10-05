@@ -56,6 +56,28 @@ export function rankingPreferenceQuery(preference: RankingPreference) {
     : { preset: preference.preset };
 }
 
+export function rankingPreferenceFromQuery(
+  query: Record<string, string | string[] | undefined>,
+  fallback: RankingPreference,
+): RankingPreference {
+  if (query.preset === "learning" || query.preset === "grade")
+    return { preset: query.preset, weights: {} };
+  if (query.preset !== "custom") return fallback;
+  return parseRankingPreference(
+    serializeRankingPreference({
+      preset: "custom",
+      weights: Object.fromEntries(
+        RANKING_CRITERIA.map((criterion) => [
+          criterion,
+          typeof query[`weight_${criterion}`] === "string"
+            ? Number(query[`weight_${criterion}`])
+            : 0,
+        ]),
+      ),
+    }),
+  );
+}
+
 export function serializeRankingPreference(preference: RankingPreference) {
   return encodeURIComponent(JSON.stringify(preference));
 }

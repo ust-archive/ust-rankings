@@ -25,7 +25,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -97,6 +97,7 @@ function scheduleText(item: WaitlistSchedule, key: string) {
 
 function scheduleTime(item: WaitlistSchedule, key: string) {
   const value = item[key];
+  if (value == null || (typeof value === "string" && !value.trim())) return "";
   const micros = typeof value === "number" ? value : Number(value);
   if (Number.isSafeInteger(micros) && micros >= 0) {
     const minutes = Math.floor(micros / 60_000_000);
@@ -266,7 +267,7 @@ function WaitlistEvidenceResult({ result }: { result: SupportedPlan }) {
   const timingHeadingId = `${idPrefix}-timing-heading`;
   return (
     <section
-      aria-label="WL Compass result"
+      aria-label="WL result"
       aria-live="polite"
       className="flex flex-col gap-5 text-sm text-slate-700"
     >
@@ -515,190 +516,208 @@ function WaitlistClassChoice({
       };
     });
   return (
-    <tr
-      className={cn(
-        "text-sm transition-colors hover:bg-slate-50",
-        selected && "bg-slate-50",
-      )}
-    >
-      <td className="border border-slate-200 p-1 align-middle">
-        <button
-          aria-label={`Require ${classItem.section}`}
-          aria-pressed={selected}
-          className={cn(
-            "min-h-12 w-full rounded-md border px-0.5 py-2 text-center font-mono text-xs leading-tight tabular-nums transition-colors sm:px-3 sm:text-sm",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2",
-            selected
-              ? "border-slate-950 bg-slate-950 text-white"
-              : "border-slate-200 bg-slate-50 text-slate-950 hover:border-slate-400 hover:bg-slate-100",
-            !classItem.eligible && "cursor-not-allowed opacity-60",
-          )}
-          disabled={!classItem.eligible}
-          onClick={toggleSelection}
-          type="button"
-        >
-          {classItem.section} ({classItem.classNumber})
-        </button>
-      </td>
-      {classItem.eligible ? (
-        <>
-          <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
-            {numberFormatter.format(classItem.capacity)}
-          </td>
-          <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
-            {numberFormatter.format(availableSeats(classItem))}
-          </td>
-          <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
-            {numberFormatter.format(classItem.waitlist)}
-          </td>
-          <td className="border border-slate-200 p-1 text-center align-middle">
-            {selected ? (
-              <Field data-invalid={Boolean(error)} className="min-w-0 gap-1">
-                <FieldLabel className="sr-only" htmlFor={inputId}>
-                  WL position
-                </FieldLabel>
-                <Input
-                  aria-invalid={Boolean(error)}
-                  aria-label={`WL Position for ${courseCode} ${classItem.section}`}
-                  autoComplete="off"
-                  data-loading={calculating ? "true" : undefined}
-                  className="waitlist-position-input h-9 min-w-0 appearance-none border-slate-200 bg-white px-2 text-center font-mono text-xs tabular-nums shadow-none focus-visible:ring-1 focus-visible:ring-slate-400 focus-visible:ring-offset-0 aria-invalid:border-red-700 aria-invalid:text-red-700 aria-invalid:focus-visible:ring-red-700 sm:px-3 sm:text-sm"
-                  id={inputId}
-                  inputMode="numeric"
-                  max={classItem.waitlist}
-                  min={1}
-                  name={inputId}
-                  onBlur={() =>
-                    onChange((current) => ({
-                      ...current,
-                      touchedSections: current.touchedSections.includes(
-                        classItem.section,
-                      )
-                        ? current.touchedSections
-                        : [...current.touchedSections, classItem.section],
-                    }))
-                  }
-                  onChange={(event) =>
-                    onChange((current) => ({
-                      ...current,
-                      error: undefined,
-                      loading: false,
-                      positions: {
-                        ...current.positions,
-                        [classItem.section]: event.target.value,
-                      },
-                      result: undefined,
-                      submittedKey: undefined,
-                      touchedSections: current.touchedSections.includes(
-                        classItem.section,
-                      )
-                        ? current.touchedSections
-                        : [...current.touchedSections, classItem.section],
-                    }))
-                  }
-                  placeholder="-"
-                  step={1}
-                  type="number"
-                  value={position}
-                />
-              </Field>
-            ) : (
-              <span aria-hidden="true" className="text-slate-400">
-                -
-              </span>
+    <>
+      <tr
+        className={cn(
+          "text-sm transition-colors hover:bg-slate-50",
+          selected && "bg-slate-50",
+        )}
+      >
+        <td className="border border-slate-200 p-1 align-middle">
+          <button
+            aria-label={`Require ${classItem.section}`}
+            aria-pressed={selected}
+            className={cn(
+              "min-h-12 w-full rounded-md border px-0.5 py-2 text-center font-mono text-xs leading-tight tabular-nums transition-colors sm:px-3 sm:text-sm",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2",
+              selected
+                ? "border-slate-950 bg-slate-950 text-white"
+                : "border-slate-200 bg-slate-50 text-slate-950 hover:border-slate-400 hover:bg-slate-100",
+              !classItem.eligible && "cursor-not-allowed opacity-60",
             )}
-          </td>
-        </>
-      ) : (
-        <td
-          className="border border-slate-200 px-2 py-2 text-left text-xs text-slate-600"
-          colSpan={4}
-        >
-          {unsupportedLabel(classItem.unsupportedReason)}
-        </td>
-      )}
-      <td className="border border-slate-200 p-1 text-center align-middle">
-        <Tooltip onOpenChange={setTooltipOpen} open={tooltipOpen}>
-          <TooltipTrigger asChild>
-            <Button
-              aria-expanded={tooltipOpen}
-              aria-label={`More details for ${courseCode} ${classItem.section}`}
-              className="size-9 text-slate-600"
-              onClick={() => setTooltipOpen((open) => !open)}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <Info aria-hidden="true" data-icon="inline-start" />
-            </Button>
-          </TooltipTrigger>
-
-          <TooltipContent
-            className="w-max max-w-[calc(100vw-2rem)] p-4"
-            side="top"
+            disabled={!classItem.eligible}
+            onClick={toggleSelection}
+            type="button"
           >
-            <dl className="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-4 gap-y-3 text-sm">
-              <dt className="font-semibold text-slate-950">Section</dt>
-              <dd className="font-medium tabular-nums">
-                {classItem.section} · {classItem.classType} ·{" "}
-                {classItem.classNumber}
-              </dd>
-              <dt className="font-semibold text-slate-950">Instructor</dt>
-              <dd className="break-words">{instructorLabel(schedules)}</dd>
-              <dt className="self-start font-semibold text-slate-950">
-                Schedule
-              </dt>
-              <dd className="flex min-w-0 flex-col gap-2">
-                {meetingDetails(schedules).map((meeting) => (
-                  <span
-                    className="flex min-w-0 flex-col"
-                    key={`${meeting.time}-${meeting.venue}`}
-                  >
-                    <span className="tabular-nums">
-                      {meeting.time || "Time not published"}
-                    </span>
-                    {meeting.venue ? (
-                      <span className="break-words text-slate-600">
-                        {meeting.venue}
+            {classItem.section} ({classItem.classNumber})
+          </button>
+        </td>
+        {classItem.eligible ? (
+          <>
+            <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
+              {numberFormatter.format(classItem.capacity)}
+            </td>
+            <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
+              {numberFormatter.format(availableSeats(classItem))}
+            </td>
+            <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
+              {numberFormatter.format(classItem.waitlist)}
+            </td>
+            <td className="border border-slate-200 p-1 text-center align-middle">
+              {selected ? (
+                <Field data-invalid={Boolean(error)} className="min-w-0 gap-1">
+                  <FieldLabel className="sr-only" htmlFor={inputId}>
+                    WL position
+                  </FieldLabel>
+                  <Input
+                    aria-describedby={error ? `${inputId}-error` : undefined}
+                    aria-invalid={Boolean(error)}
+                    aria-label={`WL Position for ${courseCode} ${classItem.section}`}
+                    autoComplete="off"
+                    data-loading={calculating ? "true" : undefined}
+                    className="waitlist-position-input h-9 min-w-0 appearance-none border-slate-200 bg-white px-2 text-center font-mono text-xs tabular-nums shadow-none focus-visible:ring-1 focus-visible:ring-slate-400 focus-visible:ring-offset-0 aria-invalid:border-red-700 aria-invalid:text-red-700 aria-invalid:focus-visible:ring-red-700 sm:px-3 sm:text-sm"
+                    id={inputId}
+                    inputMode="numeric"
+                    max={classItem.waitlist}
+                    min={1}
+                    name={inputId}
+                    onBlur={() =>
+                      onChange((current) => ({
+                        ...current,
+                        touchedSections: current.touchedSections.includes(
+                          classItem.section,
+                        )
+                          ? current.touchedSections
+                          : [...current.touchedSections, classItem.section],
+                      }))
+                    }
+                    onChange={(event) =>
+                      onChange((current) => ({
+                        ...current,
+                        error: undefined,
+                        loading: false,
+                        positions: {
+                          ...current.positions,
+                          [classItem.section]: event.target.value,
+                        },
+                        result: undefined,
+                        submittedKey: undefined,
+                        touchedSections: current.touchedSections.includes(
+                          classItem.section,
+                        )
+                          ? current.touchedSections
+                          : [...current.touchedSections, classItem.section],
+                      }))
+                    }
+                    placeholder="-"
+                    step={1}
+                    type="number"
+                    value={position}
+                  />
+                </Field>
+              ) : (
+                <span aria-hidden="true" className="text-slate-400">
+                  -
+                </span>
+              )}
+            </td>
+          </>
+        ) : (
+          <td
+            className="border border-slate-200 px-2 py-2 text-left text-xs text-slate-600"
+            colSpan={4}
+          >
+            {unsupportedLabel(classItem.unsupportedReason)}
+          </td>
+        )}
+        <td className="border border-slate-200 p-1 text-center align-middle">
+          <Tooltip onOpenChange={setTooltipOpen} open={tooltipOpen}>
+            <TooltipTrigger asChild>
+              <Button
+                aria-expanded={tooltipOpen}
+                aria-label={`More details for ${courseCode} ${classItem.section}`}
+                className="size-9 text-slate-600"
+                onClick={() => setTooltipOpen((open) => !open)}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <Info aria-hidden="true" data-icon="inline-start" />
+              </Button>
+            </TooltipTrigger>
+
+            <TooltipContent
+              className="w-max max-w-[calc(100vw-2rem)] p-4"
+              side="top"
+            >
+              <dl className="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-4 gap-y-3 text-sm">
+                <dt className="font-semibold text-slate-950">Section</dt>
+                <dd className="font-medium tabular-nums">
+                  {classItem.section} · {classItem.classType} ·{" "}
+                  {classItem.classNumber}
+                </dd>
+                <dt className="font-semibold text-slate-950">Instructor</dt>
+                <dd className="break-words">{instructorLabel(schedules)}</dd>
+                <dt className="self-start font-semibold text-slate-950">
+                  Schedule
+                </dt>
+                <dd className="flex min-w-0 flex-col gap-2">
+                  {meetingDetails(schedules).map((meeting) => (
+                    <span
+                      className="flex min-w-0 flex-col"
+                      key={`${meeting.time}-${meeting.venue}`}
+                    >
+                      <span className="tabular-nums">
+                        {meeting.time || "Time not published"}
                       </span>
-                    ) : null}
-                  </span>
-                ))}
-              </dd>
-              <dt className="font-semibold text-slate-950">Quota</dt>
-              <dd className="font-medium tabular-nums">
-                {numberFormatter.format(classItem.capacity)}
-              </dd>
-              <dt className="font-semibold text-slate-950">Avail</dt>
-              <dd className="font-medium tabular-nums">
-                {numberFormatter.format(availableSeats(classItem))}
-              </dd>
-              <dt className="font-semibold text-slate-950">Wait</dt>
-              <dd className="font-medium tabular-nums">
-                {numberFormatter.format(classItem.waitlist)}
-              </dd>
-              <dt className="font-semibold text-slate-950">Reservations</dt>
-              <dd className="min-w-0 break-words">
-                {reservationLabel(classItem)}
-              </dd>
-              {classItem.observedAt ? (
-                <>
-                  <dt className="font-semibold text-slate-950">Observed</dt>
-                  <dd>{formatDate(classItem.observedAt)}</dd>
-                </>
-              ) : null}
-            </dl>
-          </TooltipContent>
-        </Tooltip>
-      </td>
-    </tr>
+                      {meeting.venue ? (
+                        <span className="break-words text-slate-600">
+                          {meeting.venue}
+                        </span>
+                      ) : null}
+                    </span>
+                  ))}
+                </dd>
+                <dt className="font-semibold text-slate-950">Quota</dt>
+                <dd className="font-medium tabular-nums">
+                  {numberFormatter.format(classItem.capacity)}
+                </dd>
+                <dt className="font-semibold text-slate-950">Avail</dt>
+                <dd className="font-medium tabular-nums">
+                  {numberFormatter.format(availableSeats(classItem))}
+                </dd>
+                <dt className="font-semibold text-slate-950">Wait</dt>
+                <dd className="font-medium tabular-nums">
+                  {numberFormatter.format(classItem.waitlist)}
+                </dd>
+                <dt className="font-semibold text-slate-950">Reservations</dt>
+                <dd className="min-w-0 break-words">
+                  {reservationLabel(classItem)}
+                </dd>
+                {classItem.observedAt ? (
+                  <>
+                    <dt className="font-semibold text-slate-950">Observed</dt>
+                    <dd>{formatDate(classItem.observedAt)}</dd>
+                  </>
+                ) : null}
+              </dl>
+            </TooltipContent>
+          </Tooltip>
+        </td>
+      </tr>
+      {error ? (
+        <tr>
+          <td
+            className="border border-slate-200 bg-white px-2 py-2"
+            colSpan={6}
+          >
+            <FieldError
+              className="text-left text-xs text-red-700"
+              id={`${inputId}-error`}
+            >
+              {error}
+            </FieldError>
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }
 
 function WaitlistCardSkeletons() {
   return (
     <div
-      aria-label="Loading WL Compass Courses"
+      aria-label="Loading WL Courses"
       className="flex flex-col gap-6"
       role="status"
     >
@@ -823,7 +842,7 @@ function WaitlistCourseCard({
               error:
                 error instanceof BrowserQueryError
                   ? error.message
-                  : "WL Compass could not be calculated.",
+                  : "WL could not be calculated.",
             };
           }),
       );
@@ -854,7 +873,7 @@ function WaitlistCourseCard({
           </div>
           {calculating ? (
             <Spinner
-              aria-label="Calculating WL Compass"
+              aria-label="Calculating WL"
               className="absolute right-4 top-4 size-5 text-slate-600 sm:right-6 sm:top-6"
             />
           ) : null}
@@ -1030,7 +1049,7 @@ export function WaitlistPage() {
                 loadMoreError:
                   error instanceof BrowserQueryError
                     ? error.message
-                    : "More WL Compass Course Offerings could not be loaded.",
+                    : "More WL Course Offerings could not be loaded.",
                 loadingMore: false,
               }
             : previous,
@@ -1048,14 +1067,14 @@ export function WaitlistPage() {
     <div className="flex w-full max-w-2xl flex-col gap-8 text-left text-slate-900">
       <header className="text-center">
         <h1 className="text-logo-gradient text-balance text-5xl font-bold leading-none tracking-tighter sm:text-7xl">
-          WL Compass
+          UST WL
         </h1>
       </header>
       <div className="flex flex-col gap-4">
         <div className="flex w-full items-center gap-4">
           <Field className="min-w-0 flex-1 gap-0">
             <FieldLabel className="sr-only" htmlFor="ranking-search">
-              Search WL Compass Courses
+              Search WL Courses
             </FieldLabel>
             <RankingSearch entity="waitlist" initialValue={search} />
           </Field>
@@ -1077,7 +1096,7 @@ export function WaitlistPage() {
         <WaitlistCardSkeletons />
       ) : current.error ? (
         <Alert variant="destructive">
-          <h2 className="text-xl font-bold">WL Compass is unavailable</h2>
+          <h2 className="text-xl font-bold">WL is unavailable</h2>
           <AlertDescription>
             {current.errorMessage ??
               "Public current-Term Schedule data could not be loaded. Refresh to try again."}
@@ -1087,7 +1106,7 @@ export function WaitlistPage() {
         <>
           <ol
             aria-busy={current.loading || current.loadingMore}
-            aria-label="WL Compass Course Offerings"
+            aria-label="WL Course Offerings"
             className="flex list-none flex-col gap-6 p-0"
             style={{ listStyle: "none", marginInlineStart: 0 }}
           >
@@ -1104,7 +1123,7 @@ export function WaitlistPage() {
           {page.results.length < page.total ? (
             <div className="flex flex-col items-center gap-3">
               <Button
-                aria-label="Load more WL Compass Course Offerings"
+                aria-label="Load more WL Course Offerings"
                 className="min-w-32"
                 disabled={current.loadingMore}
                 onClick={loadMore}
@@ -1147,8 +1166,8 @@ export function WaitlistPage() {
       )}
       <p className="sr-only" role="status">
         {current.loading
-          ? "Updating WL Compass Courses…"
-          : `Showing ${page?.results.length ?? 0} of ${page?.total ?? 0} WL Compass Course Offerings.`}
+          ? "Updating WL Courses…"
+          : `Showing ${page?.results.length ?? 0} of ${page?.total ?? 0} WL Course Offerings.`}
       </p>
     </div>
   );

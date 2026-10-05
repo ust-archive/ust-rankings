@@ -6,6 +6,7 @@ import {
   DetailsCommunityLoading,
 } from "@/app/courses/details-sections";
 import { loadReviews } from "@/app/courses/review-data";
+import { hydrateReviewEditorOptions } from "@/app/courses/review-editor-options";
 import {
   BrowserInstructorDetails,
   BrowserInstructorIdentity,
@@ -79,18 +80,22 @@ async function InstructorCommunity({
       order: reviewOrder(query.order),
     }),
   ]);
-  const editor: ReviewEditorOptions = {
-    courses: [],
-    contexts: [],
-    instructors: [
-      {
-        instructorUuid: identity.instructor.uuid,
-        name: identity.instructor.canonicalName,
-      },
-    ],
-  };
+  const editor: ReviewEditorOptions = await hydrateReviewEditorOptions(
+    {
+      courses: [],
+      contexts: [],
+      instructors: [
+        {
+          instructorUuid: identity.instructor.uuid,
+          name: identity.instructor.canonicalName,
+        },
+      ],
+    },
+    reviewResult.reviews,
+  );
   return (
     <DetailsCommunity
+      botRestricted={reviewResult.botRestricted}
       editor={editor}
       error={
         typeof query.reviewError === "string" ? query.reviewError : undefined
@@ -147,7 +152,7 @@ export async function renderInstructorPage(
         if (!(error instanceof ServerIndexUnavailableError)) throw error;
         return undefined;
       }),
-    readRankingPreferenceQuery(),
+    readRankingPreferenceQuery(query),
   ]);
   if (!identity)
     return (

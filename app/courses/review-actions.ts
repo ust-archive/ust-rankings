@@ -123,7 +123,11 @@ export async function publishReview(
   if (attachments === "invalid")
     redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
   try {
-    await getReviewService().publishReview(userId, {
+    await getReviewService({
+      caller: "review",
+      authentication: "authenticated",
+      requestClass: "action-api",
+    }).publishReview(userId, {
       associations: parsed.associations,
       markdown,
       attribution,
@@ -162,7 +166,11 @@ export async function editReview(formData: FormData) {
   if (attachments === "invalid")
     redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
   try {
-    await getReviewService().editReview(userId, reviewId, {
+    await getReviewService({
+      caller: "review",
+      authentication: "authenticated",
+      requestClass: "action-api",
+    }).editReview(userId, reviewId, {
       expectedRevisionId,
       associations: parsed.associations,
       markdown,
@@ -189,11 +197,11 @@ export async function withdrawReview(formData: FormData) {
   )
     redirect(`${parsed.path}?reviewError=invalid-review#reviews`);
   try {
-    await getReviewService().withdrawReview(
-      userId,
-      reviewId,
-      expectedRevisionId,
-    );
+    await getReviewService({
+      caller: "review",
+      authentication: "authenticated",
+      requestClass: "action-api",
+    }).withdrawReview(userId, reviewId, expectedRevisionId);
   } catch (error) {
     redirectReviewError(error, parsed.path);
   }
@@ -214,7 +222,11 @@ export async function reportReview(formData: FormData) {
   )
     redirect(`${parsed.path}?reviewError=invalid-reason#reviews`);
   try {
-    await getModerationService().reportReview(userId, reviewId, reasonCategory);
+    await getModerationService({
+      caller: "review",
+      authentication: "authenticated",
+      requestClass: "action-api",
+    }).reportReview(userId, reviewId, reasonCategory);
   } catch (error) {
     redirectReviewError(error, parsed.path);
   }

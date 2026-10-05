@@ -27,6 +27,7 @@ import type {
   RankingsQuery,
   ScoreDistribution,
 } from "@/lib/rankings/server";
+import { MAX_PLANNER_CLASSES } from "@/lib/schedule/planner";
 import type {
   CourseOffering,
   ScheduleClass,
@@ -610,12 +611,15 @@ async function courseRankings(
   const configuration = normalizedWeights(query);
   const termRows = await queryRows(
     runtime,
-    "SELECT term_num, term_code FROM read_parquet('course-ratings.parquet') GROUP BY ALL ORDER BY term_num DESC",
+    "SELECT term_num, term_code, bool_or(is_offered) AS is_active FROM read_parquet('course-ratings.parquet') GROUP BY ALL ORDER BY term_num DESC",
   );
-  const terms = termRows.map((row) => ({
-    termCode: String(row.term_code),
-    termName: rankingTermName(String(row.term_code)),
-  }));
+  const terms = termRows
+    .filter((row) => activity === "all" || row.is_active)
+    .map((row) => ({
+      termCode: String(row.term_code),
+      termName: rankingTermName(String(row.term_code)),
+      isActive: Boolean(row.is_active),
+    }));
   const termCode = query.termCode?.trim() || terms[0]?.termCode || "";
   if (
     !/^\d{4}$/.test(termCode) ||
@@ -1042,12 +1046,15 @@ async function instructorRankings(
   );
   const termRows = await queryRows(
     runtime,
-    "SELECT term_num, term_code FROM read_parquet('instructor-ratings.parquet') GROUP BY ALL ORDER BY term_num DESC",
+    "SELECT term_num, term_code, bool_or(is_teaching) AS is_active FROM read_parquet('instructor-ratings.parquet') GROUP BY ALL ORDER BY term_num DESC",
   );
-  const terms = termRows.map((row) => ({
-    termCode: String(row.term_code),
-    termName: rankingTermName(String(row.term_code)),
-  }));
+  const terms = termRows
+    .filter((row) => activity === "all" || row.is_active)
+    .map((row) => ({
+      termCode: String(row.term_code),
+      termName: rankingTermName(String(row.term_code)),
+      isActive: Boolean(row.is_active),
+    }));
   const termCode = query.termCode?.trim() || terms[0]?.termCode || "";
   if (
     !/^\d{4}$/.test(termCode) ||
@@ -1581,18 +1588,11 @@ async function mapScheduleRows(runtime: Runtime, source: Row[]) {
 
 function scheduleSearchText(offering: CourseOffering) {
   return [
-    offering.courseCode,
+    ...courseCodeSearchValues(offering.courseCode),
     offering.title,
-    offering.description,
-    offering.previousCourseCodes,
-    offering.prerequisite,
-    offering.corequisite,
-    offering.exclusion,
-    ...offering.attributes.flatMap((attribute) => Object.values(attribute)),
     ...offering.classes.flatMap((item) => [
       item.section,
       item.classNumber,
-      item.remarks,
       ...item.meetings.flatMap((meeting) => [
         meeting.room,
         meeting.roomCode,
@@ -1621,12 +1621,31 @@ async function schedulePage(
   const search = input.search?.trim();
   const normalizedSearch = searchQuery(search);
   const limit = Math.min(Math.max(Math.floor(input.limit ?? 100), 1), 100);
+  const classNumbers = input.classNumbers ?? [];
+  if (
+    classNumbers.length > MAX_PLANNER_CLASSES ||
+    classNumbers.some(
+      (value) => !Number.isSafeInteger(value) || value <= 0 || value > 999_999,
+    )
+  )
+    throw new QueryError(
+      "invalid",
+      `Select at most ${MAX_PLANNER_CLASSES} valid Class Numbers.`,
+    );
   const rows = await queryRows(
     runtime,
     `${scheduleOfferingSql} WHERE course.term_code = ? ORDER BY course.prefix, course.number, class.section`,
     [termCode],
   );
   let offerings = await mapScheduleRows(runtime, rows);
+  const selected = new Set(classNumbers);
+  const plannerOfferings = offerings.filter((offering) =>
+    offering.classes.some((item) => selected.has(item.classNumber)),
+  );
+  const plannerClasses = offerings
+    .flatMap((offering) => offering.classes)
+    .filter((item) => selected.has(item.classNumber));
+  const found = new Set(plannerClasses.map((item) => item.classNumber));
   if (normalizedSearch) {
     offerings = offerings.filter((offering) =>
       normalizeSearch(scheduleSearchText(offering)).includes(normalizedSearch),
@@ -1639,6 +1658,9 @@ async function schedulePage(
     search,
     total: offerings.length,
     results: offerings.slice(0, limit),
+    plannerClasses,
+    plannerOfferings,
+    invalidClassNumbers: [...selected].filter((value) => !found.has(value)),
   };
 }
 
@@ -2253,6 +2275,7 @@ function waitlistHistoricalData(rows: readonly Row[]): WaitlistHistoricalData {
 function waitlistCandidate(
   term: WaitlistTerm,
   courseCode: string,
+  current: readonly WaitlistCurrentClass[],
   selected: readonly WaitlistCurrentClass[],
   positions: ReadonlyMap<string, number>,
 ): WaitlistPlanCandidate {
@@ -2271,6 +2294,12 @@ function waitlistCandidate(
               ),
             }),
         features: item.features,
+        ordinal: current
+          .filter(({ value }) => value.classType === item.value.classType)
+          .sort((left, right) =>
+            left.value.section.localeCompare(right.value.section),
+          )
+          .findIndex(({ value }) => value.section === item.value.section),
         position: positions.get(item.value.section) as number,
         section: item.value.section,
         type: item.value.classType,
@@ -2418,6 +2447,7 @@ async function waitlistPlan(
   const candidate = waitlistCandidate(
     term,
     requestedCourse,
+    current,
     selected,
     new Map(entries.map(({ section, position }) => [section, position])),
   );

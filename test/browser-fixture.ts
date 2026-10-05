@@ -87,6 +87,7 @@ export async function generateBrowserFixtures() {
         },
       ],
       includePriorOnly: true,
+      includeHistoricalTeaching: true,
       includeScheduleCourse: true,
       punctuatedInstructor: true,
       sameNameAssociations: true,

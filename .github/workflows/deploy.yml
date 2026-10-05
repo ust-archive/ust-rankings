@@ -71,17 +71,23 @@ jobs:
       - name: Deploy verified image to DigitalOcean App Platform
         if: steps.latest.outputs.deploy == 'true'
         run: |
-          if doctl apps update "$DIGITALOCEAN_APP_ID" --spec .do/app.json --wait; then
+          if doctl apps update "$DIGITALOCEAN_APP_ID" --spec .do/app.json --wait --output json > .deploy/updated-app.json; then
             exit 0
+          fi
+          # doctl outputs the original update response when its deployment wait fails.
+          if ! deployment_id="$(jq -er '.[0].pending_deployment.id // .[0].in_progress_deployment.id' .deploy/updated-app.json)"; then
+            echo "::error::App update failed without identifying a deployment."
+            exit 1
           fi
           digest="$(tr -d '\r\n' < .deploy/image-digest.txt)"
-          doctl apps list-deployments "$DIGITALOCEAN_APP_ID" --output json > .deploy/deployments.json
-          if jq -e --arg digest "$digest" \
-            '(sort_by(.created_at) | last) as $deployment | $deployment.phase == "ACTIVE" and any($deployment.spec.services[]; .name == "web" and .image.digest == $digest)' \
-            .deploy/deployments.json > /dev/null; then
-            echo "Deployment became active after doctl wait exited unexpectedly."
-            exit 0
+          if doctl apps get-deployment "$DIGITALOCEAN_APP_ID" "$deployment_id" --output json > .deploy/deployment.json; then
+            jq '.[0] | {id, phase, progress}' .deploy/deployment.json
+            if jq -e --arg digest "$digest" \
+              '.[0] | .phase == "ACTIVE" and any(.spec.services[]; .name == "web" and .image.digest == $digest)' \
+              .deploy/deployment.json > /dev/null; then
+              echo "Deployment became active after doctl wait exited unexpectedly."
+              exit 0
+            fi
           fi
-          deployment_id="$(doctl apps list-deployments "$DIGITALOCEAN_APP_ID" --format ID --no-header | head -1)"
           doctl apps logs "$DIGITALOCEAN_APP_ID" web --deployment "$deployment_id" --type deploy --tail 100 || true
           exit 1

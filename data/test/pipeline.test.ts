@@ -10,6 +10,41 @@ import { test } from "vitest";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureCommit = "0123456789abcdef0123456789abcdef01234567";
 
+test("freezes the future holdout before outcomes", async () => {
+  const manifest = JSON.parse(
+    await readFile(resolve(root, "validation", "future-holdout.json"), "utf8"),
+  );
+  assert.equal(manifest.status, "frozen-before-outcomes");
+  assert.equal(manifest.developmentOutcomeCeilingTerm, 102);
+  assert.equal(manifest.holdout.firstOutcomeTerm, 103);
+  assert.deepEqual(
+    manifest.candidateRegistry.map((candidate: { id: string }) => candidate.id),
+    ["current", "votes-unweighted-context-4"],
+  );
+  assert.deepEqual(manifest.candidateRegistry[0].parameters, {
+    timelinessBase: 0.65,
+    courseInstructorMultiplier: 12,
+    reviewVoteScale: 1,
+    sfqRatePenalty: 1,
+    contextAffectsUncertainty: true,
+  });
+  assert.deepEqual(manifest.candidateRegistry[1].parameters, {
+    timelinessBase: 0.65,
+    courseInstructorMultiplier: 4,
+    reviewVoteScale: 0,
+    sfqRatePenalty: 1,
+    contextAffectsUncertainty: true,
+  });
+  assert.equal(
+    manifest.courseEvaluation.primaryUnit,
+    "Course Code × outcome Term × criterion",
+  );
+  assert.equal(
+    manifest.instructorEvaluation.primaryUnit,
+    "accepted Instructor UUID × outcome Term",
+  );
+});
+
 async function copyQuery(
   connection: DuckDBConnection,
   path: string,
@@ -116,6 +151,79 @@ async function makeFixtures(
         (100, 'class-prior', TIMESTAMP '2025-01-01', 'ACTIVE',
           [{'instructors': ['Eve Epsilon'${extraSameName ? ", 'Alex Lee'" : ""}]}], 'prior', 'E', 'LEC')
       ) AS classes(term_num, number, "timestamp", status, schedules, course_id, role, type)
+    `,
+    );
+
+    await copyQuery(
+      connection,
+      join(dataDir, "schedule", "canonical", "class_records.parquet"),
+      `
+      SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `('api', NULL, NULL, 98, 'course-high', 'COMP', '1000', 'L1',
+          981, 'E', 'LEC', 100, 80,
+          [{'instructors': ['ALPHA, Alice Beatrice']}], 'ACTIVE', TIMESTAMP '2024-01-01'),
+        ('api', NULL, NULL, 98, 'course-low', 'COMP', '2000', 'L1',
+          982, 'E', 'LEC', 80, 40,
+          [{'instructors': ['Cara Gamma']}], 'ACTIVE', TIMESTAMP '2024-01-01'),
+        ('api', NULL, NULL, 99, 'course-high', 'COMP', '1000', 'L1',
+          991, 'E', 'LEC', 100, 90,
+          [{'instructors': ['ALPHA, Alice Beatrice']}], 'ACTIVE', TIMESTAMP '2024-06-01'),
+        ('api', NULL, NULL, 99, 'course-low', 'COMP', '2000', 'L1',
+          992, 'E', 'LEC', 80, 35,
+          [{'instructors': ['Cara Gamma']}], 'ACTIVE', TIMESTAMP '2024-06-01'),`
+            : ""
+        }
+        ('api', NULL, NULL, 100, 'course-high', 'COMP', '1000', 'L1',
+          1001, 'E', 'LEC', 120, 100,
+          [{'instructors': ['ALPHA, Alice Beatrice', 'Adam Blake DELTA',
+            'WANG, Wei', 'WEI, Wang', 'TBA', 'MSC(TLE) PROGRAM, .'
+            ${sameName ? ", 'Alex Lee'" : ""}]}],
+          'ACTIVE', TIMESTAMP '2025-01-01'),
+        ('api', NULL, NULL, 100, 'course-low', 'COMP', '2000', 'L1',
+          1002, 'E', 'LEC', 80, 60,
+          [{'instructors': ['${escapedLowInstructor}'${sameName ? ", 'Alex Lee'" : ""}]}],
+          'ACTIVE', TIMESTAMP '2025-01-01'),
+        ('api', NULL, NULL, 100, 'course-prior', 'COMP', '3000', 'L1',
+          1003, 'E', 'LEC', 80, 60,
+          [{'instructors': ['Eve Epsilon'${extraSameName ? ", 'Alex Lee'" : ""}]}],
+          'ACTIVE', TIMESTAMP '2025-01-01')
+      ) AS classes(
+        version, source_commit, source_order, term_num, course_id, prefix,
+        course_number, section, number, "role", "type", capacity, enroll,
+        schedules, status, "timestamp"
+      )
+    `,
+    );
+
+    await copyQuery(
+      connection,
+      join(dataDir, "schedule", "canonical", "course_records.parquet"),
+      `
+      SELECT * FROM (VALUES
+        ${
+          backtestHistory
+            ? `('api', NULL, NULL, 98, 'course-high', 'COMP', '1000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2024-01-01'),
+        ('api', NULL, NULL, 98, 'course-low', 'COMP', '2000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2024-01-01'),
+        ('api', NULL, NULL, 99, 'course-high', 'COMP', '1000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2024-06-01'),
+        ('api', NULL, NULL, 99, 'course-low', 'COMP', '2000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2024-06-01'),`
+            : ""
+        }
+        ('api', NULL, NULL, 100, 'course-high', 'COMP', '1000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2025-01-01'),
+        ('api', NULL, NULL, 100, 'course-low', 'COMP', '2000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2025-01-01'),
+        ('api', NULL, NULL, 100, 'course-prior', 'COMP', '3000', 'UGRD', 3.0,
+          'ACTIVE', TIMESTAMP '2025-01-01')
+      ) AS courses(
+        version, source_commit, source_order, term_num, id, prefix, number,
+        career, credits, status, "timestamp"
+      )
     `,
     );
 
@@ -467,6 +575,94 @@ async function snapshot(outputDir: string, name: keyof typeof outputColumns) {
   return { schema, data };
 }
 
+test("unified Schedule history establishes activity without legacy IDs or roles", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-history-"));
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir, { backtestHistory: true });
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const aliasFile = join(previous, "instructor-aliases.parquet");
+    await connection.run(
+      `CREATE TABLE aliases AS SELECT * FROM read_parquet('${aliasFile.replaceAll("\\", "/")}')`,
+    );
+    await copyQuery(
+      connection,
+      aliasFile,
+      `
+      SELECT * FROM aliases UNION ALL
+      SELECT * REPLACE ('ALPHA, Beatrice Alice' AS name)
+      FROM aliases WHERE name = 'ALPHA, Alice Beatrice'
+    `,
+    );
+    const classes = join(dataDir, "schedule/canonical/class_records.parquet");
+    const courses = join(dataDir, "schedule/canonical/course_records.parquet");
+    await connection.run(
+      `CREATE TABLE classes AS SELECT * FROM read_parquet('${classes.replaceAll("\\", "/")}')`,
+    );
+    await connection.run(
+      `CREATE TABLE courses AS SELECT * FROM read_parquet('${courses.replaceAll("\\", "/")}')`,
+    );
+    await copyQuery(
+      connection,
+      courses,
+      `
+      SELECT * FROM courses WHERE term_num <> 99 UNION ALL
+      SELECT * REPLACE ('legacy' AS version, 99 AS term_num, NULL AS id)
+      FROM courses WHERE term_num = 100
+    `,
+    );
+    await copyQuery(
+      connection,
+      classes,
+      `
+      SELECT * FROM classes WHERE term_num <> 99 UNION ALL
+      SELECT * REPLACE ('legacy' AS version, 99 AS term_num, NULL AS course_id,
+        NULL AS role, NULL AS type, 1 AS number,
+        CASE WHEN course_number = '1000'
+          THEN [{'instructors': ['ALPHA, Beatrice Alice']}]
+          ELSE schedules END AS schedules)
+      FROM classes WHERE term_num = 100
+      UNION ALL
+      SELECT * REPLACE ('legacy' AS version, 99 AS term_num, NULL AS course_id,
+        NULL AS role, NULL AS type, 1 AS number, 'INACTIVE' AS status,
+        TIMESTAMP '2025-02-01' AS timestamp)
+      FROM classes WHERE term_num = 100 AND course_number = '3000'
+      UNION ALL
+      SELECT * REPLACE ('legacy' AS version, 99 AS term_num, NULL AS course_id,
+        NULL AS role, NULL AS type, 2 AS number, 'LA1' AS section)
+      FROM classes WHERE term_num = 100 AND course_number = '3000'
+    `,
+    );
+    const output = runPipeline(dataDir, join(temp, "run"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+    });
+    assert.deepEqual(
+      await rows(`
+      SELECT DISTINCT code FROM read_parquet('${parquet(output, "course-ratings")}')
+      WHERE term_num = 99 AND is_offered ORDER BY code
+    `),
+      [{ code: "1000" }, { code: "2000" }, { code: "3000" }],
+    );
+    assert.deepEqual(
+      await rows(`
+      SELECT DISTINCT name, is_teaching FROM read_parquet('${parquet(output, "instructor-ratings")}')
+      WHERE term_num = 99 AND name IN ('ALPHA, Alice Beatrice', 'Cara Gamma', 'Eve Epsilon')
+      ORDER BY name
+    `),
+      [
+        { name: "ALPHA, Alice Beatrice", is_teaching: true },
+        { name: "Cara Gamma", is_teaching: true },
+      ],
+    );
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
 test("DuckDB pipeline writes reproducible relational marts", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-"));
   try {
@@ -768,6 +964,60 @@ test("shared backtest candidates match the production model", async () => {
       `),
       [],
     );
+    const contexts = parquet(
+      join(backtestDirectory, "current"),
+      "evidence-context",
+    );
+    const allocations = parquet(
+      join(backtestDirectory, "current"),
+      "evidence-allocations",
+    );
+    const courseAnalysis = parquet(
+      join(backtestDirectory, "current"),
+      "course-analysis",
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT
+          bool_and(section IS NULL AND section_id IS NULL AND class_id IS NULL)
+            FILTER (WHERE evidence_role = 'review') AS reviews_have_no_class,
+          count(*) FILTER (
+            WHERE evidence_role = 'course'
+              AND schedule_class_number IS NOT NULL
+              AND schedule_course_id IS NOT NULL
+          ) > 0 AS canonical_context_exists
+        FROM read_parquet('${contexts}')
+      `),
+      [{ reviews_have_no_class: true, canonical_context_exists: true }],
+    );
+    assert.deepEqual(
+      await rows(`
+        WITH allocation_sums AS (
+          SELECT
+            observation_id,
+            sum(allocation) AS allocation,
+            sum(allocated_samples) AS samples,
+            sum(allocated_weight) AS weight
+          FROM read_parquet('${allocations}')
+          GROUP BY observation_id
+        )
+        SELECT bool_and(
+          abs(allocation_sums.allocation - 1) < 1e-12
+          AND abs(allocation_sums.samples - contexts.source_samples) < 1e-12
+          AND abs(allocation_sums.weight - contexts.source_weight) < 1e-12
+        ) AS evidence_is_conserved
+        FROM allocation_sums
+        JOIN read_parquet('${contexts}') AS contexts USING (observation_id)
+      `),
+      [{ evidence_is_conserved: true }],
+    );
+    assert.deepEqual(
+      await rows(`
+        SELECT bool_and(criterion = outcome_criterion) AS criteria_match
+        FROM read_parquet('${courseAnalysis}')
+      `),
+      [{ criteria_match: true }],
+    );
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
@@ -808,6 +1058,34 @@ test("walk-forward backtests compare candidates across historical cutoffs", asyn
     );
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const report = JSON.parse(await readFile(reportPath, "utf8"));
+    const repeatedReportPath = join(temp, "model-validation-repeated.json");
+    const repeated = spawnSync(
+      process.execPath,
+      [join(root, "src", "backtest.ts")],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          DATA_DIR: dataDir,
+          RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+          RANKINGS_BACKTEST_OUTPUT: repeatedReportPath,
+          RANKINGS_SFQ_COMPARABILITY_EVIDENCE: sfqEvidencePath,
+        },
+      },
+    );
+    assert.equal(repeated.status, 0, repeated.stderr || repeated.stdout);
+    const repeatedReport = JSON.parse(
+      await readFile(repeatedReportPath, "utf8"),
+    );
+    assert.deepEqual(
+      report.candidates.map(
+        (candidate: { pairedIntervals: unknown }) => candidate.pairedIntervals,
+      ),
+      repeatedReport.candidates.map(
+        (candidate: { pairedIntervals: unknown }) => candidate.pairedIntervals,
+      ),
+    );
     assert.equal(report.historyMode, "retrospective");
     assert.equal(report.asOfAvailable, false);
     assert.equal(report.sources.mode, "local");
@@ -816,7 +1094,13 @@ test("walk-forward backtests compare candidates across historical cutoffs", asyn
         /^[0-9a-f]{64}$/.test(String(hash)),
       ),
     );
-    assert.ok(report.candidates.length >= 8);
+    assert.ok(report.candidates.length >= 9);
+    assert.ok(
+      report.candidates.some(
+        (candidate: { id: string }) =>
+          candidate.id === "votes-unweighted-context-4",
+      ),
+    );
     assert.equal(
       report.selectionGuardrails.maximumCutoffPredictionRegression,
       0.02,
@@ -850,6 +1134,71 @@ test("walk-forward backtests compare candidates across historical cutoffs", asyn
     );
     assert.ok(report.selected.parameters);
     assert.equal(report.predictionScale, "source-rating");
+    assert.equal(report.analysis.usedForCandidateSelection, false);
+    assert.match(report.analysis.primaryCourseMetric, /Course Code/);
+    assert.match(report.analysis.primaryInstructorMetric, /Instructor UUID/);
+    assert.ok(
+      report.candidates.every(
+        (candidate: {
+          analysis: {
+            course: {
+              evaluationUnits: number;
+              entities: number;
+              criteria: number;
+              criterionMismatches: number;
+              sourceWeightedError: number;
+              respondentWeightedError: number;
+            };
+            instructor: {
+              evaluationUnits: number;
+              entities: number;
+              sourceWeightedError: number;
+              respondentWeightedError: number;
+            };
+            context: {
+              invalidAllocationSums: number;
+              invalidAllocatedSamples: number;
+              invalidAllocatedWeights: number;
+              missingInstructorAllocations: number;
+              instructorEvidenceFanout: number;
+              maximumAllocationSumError: number;
+            };
+          };
+        }) =>
+          candidate.analysis.course.evaluationUnits === 20 &&
+          candidate.analysis.course.entities === 2 &&
+          candidate.analysis.course.criteria === 5 &&
+          candidate.analysis.course.criterionMismatches === 0 &&
+          Number.isFinite(candidate.analysis.course.sourceWeightedError) &&
+          Number.isFinite(candidate.analysis.course.respondentWeightedError) &&
+          candidate.analysis.instructor.evaluationUnits === 4 &&
+          candidate.analysis.instructor.entities === 2 &&
+          Number.isFinite(candidate.analysis.instructor.sourceWeightedError) &&
+          Number.isFinite(
+            candidate.analysis.instructor.respondentWeightedError,
+          ) &&
+          candidate.analysis.context.invalidAllocationSums === 0 &&
+          candidate.analysis.context.invalidAllocatedSamples === 0 &&
+          candidate.analysis.context.invalidAllocatedWeights === 0 &&
+          candidate.analysis.context.missingInstructorAllocations === 0 &&
+          candidate.analysis.context.instructorEvidenceFanout === 0 &&
+          candidate.analysis.context.maximumAllocationSumError < 1e-12,
+      ),
+    );
+    assert.ok(
+      report.candidates.slice(1).every(
+        (candidate: {
+          pairedIntervals: {
+            course: { byCourse: unknown; byTerm: unknown };
+            instructor: { byInstructor: unknown; byTerm: unknown };
+          };
+        }) =>
+          candidate.pairedIntervals.course.byCourse &&
+          candidate.pairedIntervals.course.byTerm &&
+          candidate.pairedIntervals.instructor.byInstructor &&
+          candidate.pairedIntervals.instructor.byTerm,
+      ),
+    );
     assert.equal(report.uncertaintyTarget, "future-observation");
     assert.deepEqual(report.uncertaintyCriteria, [
       "content",
@@ -911,6 +1260,59 @@ test("new Instructor UUIDs are stable across pipeline runs and omit TBA", async 
       ),
       [{ count: 0 }],
     );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("new ITSC corrections update the snapshot once and history reload preserves it", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-itsc-history-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    const events = [
+      {
+        type: "itsc-added",
+        uuid: "00000000-0000-4000-8000-000000000003",
+        itsc: "cara-old",
+        sourceCommit: "ffffffffffffffffffffffffffffffffffffffff",
+      },
+      {
+        type: "itsc-added",
+        uuid: "00000000-0000-4000-8000-000000000003",
+        itsc: "cara-new",
+        sourceCommit: fixtureCommit,
+      },
+    ];
+    await writeFile(corrections, JSON.stringify({ events }));
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    await writeFile(
+      corrections,
+      JSON.stringify({ events: events.toReversed() }),
+    );
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    for (const output of [first, second]) {
+      assert.deepEqual(
+        await rows(
+          `SELECT itsc FROM read_parquet('${parquet(output, "instructor-identities")}') WHERE uuid = '00000000-0000-4000-8000-000000000003'`,
+        ),
+        [{ itsc: "cara-new" }],
+      );
+      assert.deepEqual(
+        await rows(
+          `SELECT count(*)::INTEGER AS count FROM read_parquet('${parquet(output, "instructor-identity-events")}') WHERE event_type = 'itsc-added'`,
+        ),
+        [{ count: 2 }],
+      );
+    }
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
@@ -985,6 +1387,48 @@ test("merge corrections preserve aliases, ITSC history, and apply only once", as
       `),
       [{ itsc: "dora" }],
     );
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("merges preserve the survivor UUID while preferring the Schedule name", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-merge-name-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    await writeFile(
+      corrections,
+      JSON.stringify({
+        events: [
+          {
+            type: "merge",
+            retiredUuid: "00000000-0000-4000-8000-000000000006",
+            survivorUuid: "00000000-0000-4000-8000-000000000004",
+            sourceCommit: fixtureCommit,
+          },
+        ],
+      }),
+    );
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    for (const output of [first, second]) {
+      assert.deepEqual(
+        await rows(`
+        SELECT DISTINCT uuid, name FROM read_parquet('${parquet(output, "course-instructors")}')
+        WHERE uuid = '00000000-0000-4000-8000-000000000004'
+      `),
+        [{ uuid: "00000000-0000-4000-8000-000000000004", name: "Eve Epsilon" }],
+      );
+    }
   } finally {
     await rm(temp, { recursive: true, force: true });
   }

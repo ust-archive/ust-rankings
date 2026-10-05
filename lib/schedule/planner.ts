@@ -106,57 +106,6 @@ export function buildScheduleUrl(state: PlannerState) {
   return `/schedule?${parameters}`;
 }
 
-type ConflictClass = {
-  classNumber: number;
-  meetings: Array<{
-    weekday: string;
-    dateFrom?: string;
-    dateTo?: string;
-    timeFrom?: string;
-    timeTo?: string;
-  }>;
-};
-
-export function findPlannerConflicts(
-  classes: ReadonlyArray<ConflictClass>,
-): Array<readonly [number, number]> {
-  const conflicts: Array<readonly [number, number]> = [];
-  for (let leftIndex = 0; leftIndex < classes.length; leftIndex++) {
-    const left = classes[leftIndex];
-    if (!left) continue;
-    for (
-      let rightIndex = leftIndex + 1;
-      rightIndex < classes.length;
-      rightIndex++
-    ) {
-      const right = classes[rightIndex];
-      if (
-        right &&
-        left.meetings.some((leftMeeting) =>
-          right.meetings.some(
-            (rightMeeting) =>
-              leftMeeting.weekday === rightMeeting.weekday &&
-              leftMeeting.dateFrom &&
-              leftMeeting.dateTo &&
-              rightMeeting.dateFrom &&
-              rightMeeting.dateTo &&
-              leftMeeting.dateFrom <= rightMeeting.dateTo &&
-              rightMeeting.dateFrom <= leftMeeting.dateTo &&
-              leftMeeting.timeFrom &&
-              leftMeeting.timeTo &&
-              rightMeeting.timeFrom &&
-              rightMeeting.timeTo &&
-              leftMeeting.timeFrom < rightMeeting.timeTo &&
-              rightMeeting.timeFrom < leftMeeting.timeTo,
-          ),
-        )
-      )
-        conflicts.push([left.classNumber, right.classNumber]);
-    }
-  }
-  return conflicts;
-}
-
 export function parseSisImport(text: string): {
   classNumbers: number[];
   message?: string;
@@ -166,7 +115,9 @@ export function parseSisImport(text: string): {
       classNumbers: [],
       message: `SIS text is limited to ${MAX_SIS_TEXT_LENGTH.toLocaleString("en-US")} characters.`,
     };
-  const classNumbers = [...text.matchAll(/^\w{3} \(([1-9][0-9]{0,5})\)$/gm)]
+  const classNumbers = [
+    ...text.matchAll(/^[\t ]*\w{3} \(([1-9][0-9]{0,5})\)[\t ]*\r?$/gm),
+  ]
     .map((match) => Number(match[1]))
     .filter((number, index, values) => values.indexOf(number) === index)
     .sort((left, right) => left - right);

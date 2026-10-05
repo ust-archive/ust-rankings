@@ -92,6 +92,7 @@ export type WaitlistPlanComponent = {
   activationAt?: number;
   activationHours?: number;
   features?: WaitlistFeatures;
+  ordinal?: number;
   position: number;
   section: string;
   type: string;
@@ -141,7 +142,7 @@ export type WaitlistTuneResult = {
   weight: number;
 };
 
-export const WAITLIST_MODEL_VERSION = "joint-baseline-v3" as const;
+export const WAITLIST_MODEL_VERSION = "joint-baseline-v4" as const;
 export const WAITLIST_PRIOR_WEIGHT = 2 as const;
 export const WAITLIST_TUNING_POSITIONS = [5, 25, 50] as const;
 export const WAITLIST_TUNING_HOURS = [12, 24, 48] as const;
@@ -331,18 +332,23 @@ function componentPairs(
   | undefined {
   const sampleComponents = [...sample.components].sort(componentOrder);
   const candidateComponents = [...candidate.components].sort(componentOrder);
-  if (sampleComponents.length !== candidateComponents.length) return;
   const pairs: Array<{
     sample: WaitlistComponent;
     candidate: WaitlistPlanComponent;
   }> = [];
-  for (const [index, sampleComponent] of sampleComponents.entries()) {
-    const candidateComponent = candidateComponents[index];
-    if (
-      !candidateComponent ||
-      typeKey(sampleComponent.type) !== typeKey(candidateComponent.type)
-    )
-      return;
+  const used = new Set<WaitlistComponent>();
+  for (const [index, candidateComponent] of candidateComponents.entries()) {
+    const type = typeKey(candidateComponent.type);
+    const ordinal =
+      candidateComponent.ordinal ??
+      candidateComponents
+        .slice(0, index)
+        .filter((component) => typeKey(component.type) === type).length;
+    const sampleComponent = sampleComponents.filter(
+      (component) => typeKey(component.type) === type,
+    )[ordinal];
+    if (!sampleComponent || used.has(sampleComponent)) return;
+    used.add(sampleComponent);
     pairs.push({ sample: sampleComponent, candidate: candidateComponent });
   }
   return pairs;
@@ -443,7 +449,7 @@ function historyLevelMatch(
 ): boolean {
   const criteria = historyLevelCriteria[id];
   return (
-    sample.pattern === candidate.pattern &&
+    componentPairs(sample, candidate) !== undefined &&
     (!criteria.course || sample.course === candidate.course) &&
     (!criteria.season || sample.season === candidate.season) &&
     (!criteria.timing || timingClose(sample, candidate))
@@ -456,7 +462,7 @@ function modelMatch(
   model: WaitlistModelName,
   seasonal: boolean,
 ): boolean {
-  if (sample.pattern !== candidate.pattern) return false;
+  if (!componentPairs(sample, candidate)) return false;
   if (model !== "global" && sample.course !== candidate.course) return false;
   if (seasonal && sample.season !== candidate.season) return false;
   if (!timingClose(sample, candidate)) return false;
@@ -517,13 +523,14 @@ function evidenceFor(
       historyLevelMatch(bundle, candidate, id),
     ).length,
   }));
-  const patternPopulation = eligible.filter(
-    ({ bundle }) =>
-      bundle.pattern === candidate.pattern && timingClose(bundle, candidate),
+  const patternPopulation = eligible.filter(({ bundle }) =>
+    timingClose(bundle, candidate),
   );
   const priorPopulation = patternPopulation.length
     ? patternPopulation
-    : eligible.filter(({ bundle }) => bundle.pattern === candidate.pattern);
+    : eligible.filter(
+        ({ bundle }) => componentPairs(bundle, candidate) !== undefined,
+      );
   if (!priorPopulation.length) return;
   const prior =
     priorPopulation.filter(({ result }) => result.success).length /
@@ -578,10 +585,14 @@ export function planForBundle(
   hours: number,
 ): WaitlistPlanCandidate {
   return {
-    components: bundle.components.map(({ type, trajectory }) => ({
+    components: bundle.components.map(({ type, trajectory }, index, items) => ({
       activationAt: activationAt(trajectory),
       activationHours: hours,
       features: trajectory.activationFeatures,
+      ordinal: items
+        .slice(0, index)
+        .filter((component) => typeKey(component.type) === typeKey(type))
+        .length,
       position,
       section: trajectory.section,
       type,

@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { observeDatabaseOperation } from "../lib/database-telemetry.ts";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -22,9 +23,19 @@ const retiredUuid = retiredInput.toLowerCase();
 const survivorUuid = survivorInput.toLowerCase();
 const sql = postgres(connection, { max: 1 });
 try {
-  await sql`SELECT merge_instructor_signals(${retiredUuid}, ${survivorUuid})`;
-  console.log(
-    `Moved Instructor signals from ${retiredUuid} to ${survivorUuid}`,
+  await observeDatabaseOperation(
+    {
+      operation: "operator.mergeInstructorSignals",
+      caller: "operator",
+      intent: "write",
+      requestClass: "non-http",
+    },
+    async () => {
+      await sql`SELECT merge_instructor_signals(${retiredUuid}, ${survivorUuid})`;
+      console.log(
+        `Moved Instructor signals from ${retiredUuid} to ${survivorUuid}`,
+      );
+    },
   );
 } finally {
   await sql.end();

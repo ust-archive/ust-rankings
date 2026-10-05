@@ -11,7 +11,7 @@ const paths = [
   "/rankings/instructors",
   "/rankings/courses",
   "/schedule",
-  "/waitlist",
+  "/wl",
   "/faq",
   "/privacy",
 ];

@@ -1,6 +1,14 @@
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { loadCourseReviews, loadReviews } from "@/app/courses/review-data";
 import { loadReview } from "@/app/reviews/review-data";
+
+const requestHeaders = vi.hoisted(() => vi.fn());
+vi.mock("next/headers", () => ({ headers: requestHeaders }));
+afterEach(() => {
+  requestHeaders.mockReset();
+  vi.restoreAllMocks();
+});
+
 import {
   ContributionsUnavailableError,
   normalizeContributionDate,
@@ -58,6 +66,120 @@ const review = {
   publishedAt: new Date("2026-08-20T12:00:00.000Z"),
   instructorAssociationStatus: "resolved" as const,
 };
+
+test("anonymous crawler Review lists skip PostgreSQL and explain the login restriction", async () => {
+  requestHeaders.mockResolvedValue(
+    new Headers({ "user-agent": "GoogleOther" }),
+  );
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  const read = vi.fn(async () => [review]);
+  const identify = vi.fn(async () => undefined);
+  expect(
+    await loadReviews(
+      { type: "course", coursePrefix: "COMP", courseNumber: "2000" },
+      read,
+      identify,
+    ),
+  ).toEqual({
+    reviews: [],
+    signedIn: false,
+    unavailable: true,
+    botRestricted: true,
+  });
+  expect(read).not.toHaveBeenCalled();
+  expect(identify).toHaveBeenCalledTimes(1);
+});
+
+test("signed-in users can view Reviews even when their agent is recognized as a bot", async () => {
+  requestHeaders.mockResolvedValue(
+    new Headers({ "user-agent": "GoogleOther" }),
+  );
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  const read = vi.fn(async () => [review]);
+  const query = {
+    type: "course" as const,
+    coursePrefix: "COMP",
+    courseNumber: "2000",
+  };
+  expect(await loadReviews(query, read, async () => "user")).toEqual({
+    reviews: [review],
+    signedIn: true,
+    unavailable: false,
+  });
+  expect(read).toHaveBeenCalledWith(query, "user");
+});
+
+test("browser Review lists retain personalized reads and record the allow decision", async () => {
+  requestHeaders.mockResolvedValue(
+    new Headers({
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    }),
+  );
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+  const read = vi.fn(async () => [review]);
+  expect(
+    await loadReviews(
+      { type: "instructor", instructorUuids: [review.instructorUuid] },
+      read,
+      async () => "user",
+    ),
+  ).toEqual({ reviews: [review], signedIn: true, unavailable: false });
+  expect(read).toHaveBeenCalledWith(
+    { type: "instructor", instructorUuids: [review.instructorUuid] },
+    "user",
+  );
+  expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({
+    event: "community-read-decision",
+    operation: "reviews.listReviews",
+    caller: "instructor",
+    agentClass: "browser-like",
+    previousAgentClass: "browser-like",
+    decision: "allow",
+  });
+});
+
+test("production Review reads immediately reflect operator suppression and withdrawal", async () => {
+  vi.stubEnv("NODE_ENV", "production");
+  const moderated = { ...review, id: "00000000-0000-4000-8000-000000000199" };
+  const query = {
+    type: "course" as const,
+    coursePrefix: "COMP",
+    courseNumber: "9900",
+  };
+  try {
+    postgresListReviews.mockResolvedValue([moderated]);
+    postgresGetReview.mockResolvedValue(moderated);
+    expect((await loadReviews(query)).reviews[0].capturedDisplayName).toBe(
+      "Captured Student",
+    );
+    expect((await loadReview(moderated.id)).review?.capturedDisplayName).toBe(
+      "Captured Student",
+    );
+
+    const suppressed = {
+      ...moderated,
+      attribution: "identity-hidden",
+      attributionCredit: "Anonymous Reviewer",
+      capturedDisplayName: undefined,
+    };
+    postgresListReviews.mockResolvedValue([suppressed]);
+    postgresGetReview.mockResolvedValue(suppressed);
+    expect(
+      (await loadReviews(query)).reviews[0].capturedDisplayName,
+    ).toBeUndefined();
+    expect(
+      (await loadReview(moderated.id)).review?.capturedDisplayName,
+    ).toBeUndefined();
+
+    postgresListReviews.mockResolvedValue([]);
+    postgresGetReview.mockResolvedValue(undefined);
+    expect((await loadReviews(query)).reviews).toEqual([]);
+    expect((await loadReview(moderated.id)).review).toBeUndefined();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
 
 test("Review reads cross one contribution seam and distinguish provider unavailability from zero Reviews", async () => {
   expect(await loadCourseReviews("COMP", "2000", async () => [review])).toEqual(
@@ -170,7 +292,7 @@ test("Review reads reveal edit capability only to the authenticated author query
   expect(result.signedIn).toBe(true);
 });
 
-test("cached Review reads isolate each User's personalized result", async () => {
+test("Review reads isolate each User's personalized result", async () => {
   postgresListReviews.mockReset();
   postgresListReviews.mockImplementation(
     async (_query: unknown, viewerUserId?: string) => [
@@ -189,11 +311,12 @@ test("cached Review reads isolate each User's personalized result", async () => 
 
   expect(postgresListReviews.mock.calls).toEqual([
     [query, "user-a"],
+    [query, "user-a"],
     [query, "user-b"],
   ]);
 });
 
-test("cached Review permalink reads isolate each User's personalized result", async () => {
+test("Review permalink reads isolate each User's personalized result", async () => {
   const previousSecret = process.env.AUTH_SECRET;
   process.env.AUTH_SECRET = "configured";
   postgresGetReview.mockReset();
@@ -211,6 +334,7 @@ test("cached Review permalink reads isolate each User's personalized result", as
     await loadReview(review.id);
 
     expect(postgresGetReview.mock.calls).toEqual([
+      [review.id, "user-a"],
       [review.id, "user-a"],
       [review.id, "user-b"],
     ]);

@@ -1,5 +1,10 @@
 import "server-only";
 import postgres from "postgres";
+import { databaseRequestContext } from "@/lib/database-request-context";
+import {
+  type DatabaseContext,
+  observeDatabaseService,
+} from "@/lib/database-telemetry";
 import {
   type AttachmentRepository,
   AttachmentWriteError,
@@ -60,6 +65,51 @@ function storedFile(row: StoredFileRecord): StoredFileRecord {
   return { ...row, byteSize: asNumber(row.byteSize) };
 }
 
+export async function attachToReviewRevision(
+  sql: postgres.TransactionSql,
+  input: Parameters<AttachmentRepository["attachToRevision"]>[0],
+) {
+  if (input.attachments.length > 4)
+    throw new AttachmentWriteError(
+      "too-many-attachments",
+      "A Review Revision has at most four Attachments",
+    );
+  const created: ImageAttachment[] = [];
+  for (const draft of input.attachments) {
+    const [row] = await sql<ImageAttachment[]>`
+      WITH inserted AS (
+        INSERT INTO attachments (
+          id, revision_id, stored_file_id, public_filename, description
+        )
+        SELECT ${draft.id}, ${input.revisionId}, sf.id,
+               ${draft.filename}, ${draft.description}
+        FROM stored_files sf
+        WHERE sf.id = ${draft.storedFileId}
+          AND sf.owner_user_id = ${input.userId}
+          AND sf.removed_at IS NULL
+        RETURNING id, stored_file_id, public_filename, description
+      )
+      SELECT inserted.id,
+             inserted.stored_file_id AS "storedFileId",
+             inserted.public_filename AS filename,
+             inserted.description,
+             sf.detected_mime AS mime,
+             CASE WHEN sf.detected_mime LIKE 'image/%' THEN 'image'
+                  ELSE 'document' END AS kind,
+             true AS available
+      FROM inserted
+      JOIN stored_files sf ON sf.id = inserted.stored_file_id
+    `;
+    if (!row)
+      throw new AttachmentWriteError(
+        "invalid-attachment",
+        "Stored File cannot be attached",
+      );
+    created.push(row);
+  }
+  return created;
+}
+
 export class PostgresAttachmentRepository implements AttachmentRepository {
   constructor(
     private readonly sql: Sql,
@@ -105,17 +155,23 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
               COALESCE((SELECT sum(byte_size) FROM stored_files
                         WHERE owner_user_id = ${input.userId}
                           AND removed_at IS NULL), 0)
-              + COALESCE((SELECT sum(declared_byte_size) FROM upload_intents
+              + COALESCE((SELECT sum(declared_byte_size) FROM upload_intents AS intent
                           WHERE owner_user_id = ${input.userId}
-                            AND stored_file_id IS NULL
-                            AND state IN ('reserved', 'uploaded', 'validating')), 0)
+                            AND NOT EXISTS (
+                              SELECT 1 FROM stored_files AS file
+                              WHERE file.object_key = intent.object_key
+                                AND file.removed_at IS NULL
+                            )), 0)
             )::text AS "userBytes",
             (
               COALESCE((SELECT sum(byte_size) FROM stored_files
                         WHERE removed_at IS NULL), 0)
-              + COALESCE((SELECT sum(declared_byte_size) FROM upload_intents
-                          WHERE stored_file_id IS NULL
-                            AND state IN ('reserved', 'uploaded', 'validating')), 0)
+              + COALESCE((SELECT sum(declared_byte_size) FROM upload_intents AS intent
+                          WHERE NOT EXISTS (
+                            SELECT 1 FROM stored_files AS file
+                            WHERE file.object_key = intent.object_key
+                              AND file.removed_at IS NULL
+                          )), 0)
             )::text AS "globalBytes"
         `;
         const userBytes = Number(usage.userBytes);
@@ -268,47 +324,7 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
     input: Parameters<AttachmentRepository["attachToRevision"]>[0],
   ) {
     try {
-      return await this.sql.begin(async (sql) => {
-        if (input.attachments.length > 4)
-          throw new AttachmentWriteError(
-            "too-many-attachments",
-            "A Review Revision has at most four Attachments",
-          );
-        const created: ImageAttachment[] = [];
-        for (const draft of input.attachments) {
-          const [row] = await sql<ImageAttachment[]>`
-            WITH inserted AS (
-              INSERT INTO attachments (
-                id, revision_id, stored_file_id, public_filename, description
-              )
-              SELECT ${draft.id}, ${input.revisionId}, sf.id,
-                     ${draft.filename}, ${draft.description}
-              FROM stored_files sf
-              WHERE sf.id = ${draft.storedFileId}
-                AND sf.owner_user_id = ${input.userId}
-                AND sf.removed_at IS NULL
-              RETURNING id, stored_file_id, public_filename, description
-            )
-            SELECT inserted.id,
-                   inserted.stored_file_id AS "storedFileId",
-                   inserted.public_filename AS filename,
-                   inserted.description,
-                   sf.detected_mime AS mime,
-                   CASE WHEN sf.detected_mime LIKE 'image/%' THEN 'image'
-                        ELSE 'document' END AS kind,
-                   true AS available
-            FROM inserted
-            JOIN stored_files sf ON sf.id = inserted.stored_file_id
-          `;
-          if (!row)
-            throw new AttachmentWriteError(
-              "invalid-attachment",
-              "Stored File cannot be attached",
-            );
-          created.push(row);
-        }
-        return created;
-      });
+      return await this.sql.begin((sql) => attachToReviewRevision(sql, input));
     } catch (error) {
       mapWriteError(error);
     }
@@ -343,33 +359,23 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
   }
 
   async listCleanupIntents(now: Date) {
-    const rows = await this.sql<UploadIntentRecord[]>`
-      SELECT id,
-             owner_user_id AS "ownerUserId",
-             object_key AS "objectKey",
-             declared_byte_size AS "declaredByteSize",
-             declared_extension AS "declaredExtension",
-             declared_mime AS "declaredMime",
-             state,
-             stored_file_id AS "storedFileId",
-             expires_at AS "expiresAt",
-             created_at AS "createdAt",
-             updated_at AS "updatedAt"
-      FROM upload_intents
-      WHERE stored_file_id IS NULL
-        AND (
-          state IN ('rejected', 'validation_error')
-          OR expires_at <= ${now}
-          OR updated_at <= ${now}::timestamptz - interval '24 hours'
-        )
+    return this.sql<Array<{ id: string; objectKeys: string[] }>>`
+      SELECT intent.id,
+             ARRAY(
+               SELECT key FROM unnest(ARRAY[intent.object_key, 'verified/' || intent.id]) AS key
+               WHERE NOT EXISTS (SELECT 1 FROM stored_files WHERE object_key = key)
+             ) AS "objectKeys"
+      FROM upload_intents intent
+      WHERE expires_at <= ${now}
+        AND (state <> 'validating'
+             OR updated_at <= ${now}::timestamptz - interval '24 hours')
     `;
-    return rows.map(intent);
   }
 
   async deleteIntent(intentId: string) {
     await this.sql`
       DELETE FROM upload_intents
-      WHERE id = ${intentId} AND stored_file_id IS NULL
+      WHERE id = ${intentId}
     `;
   }
 
@@ -434,7 +440,7 @@ let runtime:
     }
   | undefined;
 
-export function getAttachmentService() {
+function initializeRuntime() {
   if (runtime) return runtime.attachments;
   const connection = process.env.CONTRIBUTIONS_POSTGRES_URL;
   if (!connection) throw new AttachmentsUnavailableError();
@@ -451,6 +457,27 @@ export function getAttachmentService() {
   } catch (error) {
     throw new AttachmentsUnavailableError(undefined, { cause: error });
   }
+}
+
+export function getAttachmentService(
+  context: DatabaseContext = {
+    caller: "attachments",
+    requestClass: "action-api",
+  },
+) {
+  return observeDatabaseService(
+    initializeRuntime(),
+    "attachments",
+    {
+      reserveUpload: "write",
+      completeUpload: "write",
+      attachToRevision: "write",
+      signPublicRead: "read",
+      removeStoredFile: "write",
+      cleanupExpired: "write",
+    },
+    () => databaseRequestContext(context),
+  );
 }
 
 export async function closeAttachmentRuntimeForTests() {

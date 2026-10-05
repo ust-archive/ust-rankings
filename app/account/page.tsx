@@ -350,7 +350,10 @@ export default async function AccountPage({
   const params = await searchParams;
   const userId = await authenticatedUserId();
   if (!userId) redirect("/auth/login?r=%2Faccount");
-  const account = getAccountService();
+  const account = getAccountService({
+    caller: "account",
+    authentication: "authenticated",
+  });
   const [user, contributions] = await Promise.all([
     account.getUser(userId),
     account.getContributions(userId),

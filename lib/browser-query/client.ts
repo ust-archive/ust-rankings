@@ -3,6 +3,7 @@
 import {
   parseRankingPreference,
   RANKING_PREFERENCE_COOKIE,
+  rankingPreferenceFromQuery,
   rankingPreferenceQuery,
 } from "@/lib/rankings/preference";
 import type {
@@ -345,11 +346,17 @@ export async function preloadPublicQuery(href: string) {
     return href;
   }
   const instructor = url.pathname.match(/^\/instructors\/([^/]+)$/);
+  const preference = rankingPreferenceQuery(
+    rankingPreferenceFromQuery(
+      rankingSearchParams(url.searchParams),
+      rankingPreference(),
+    ),
+  );
   if (instructor?.[1]) {
     const details = await queryInstructorDetails({
       key: decodeURIComponent(instructor[1]),
       termCode: url.searchParams.get("term") ?? undefined,
-      ...rankingPreferenceQuery(rankingPreference()),
+      ...preference,
     });
     await queryScheduleDetails({
       type: "instructor",
@@ -364,7 +371,6 @@ export async function preloadPublicQuery(href: string) {
   );
   if (!match) return href;
   const [, prefix = "", number = "", pathTerm] = match;
-  const preference = rankingPreferenceQuery(rankingPreference());
   const coursePrefix = decodeURIComponent(prefix);
   const courseNumber = decodeURIComponent(number);
   const termCode = url.searchParams.get("term") ?? pathTerm;

@@ -41,6 +41,12 @@ jobs:
           node-version: 26.7.0
           cache: npm
 
+      - name: Validate Hugging Face authentication
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: node scripts/huggingface-source.ts auth
+
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: false
@@ -69,12 +75,8 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          resolve() {
-            curl --fail --silent --show-error --header "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/datasets/$1/revision/main" | jq -r .sha
-          }
           for source in catalog schedule ust-space sfq; do
-            sha="$(resolve "ust-archive/$source")"
-            [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+            sha="$(node scripts/huggingface-source.ts revision "ust-archive/$source")"
             case "$source" in
               catalog) key=CATALOG_REVISION ;;
               schedule) key=SCHEDULE_REVISION ;;
@@ -89,8 +91,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          sha="$(curl --fail --silent --show-error --header "Authorization: Bearer $HF_TOKEN" https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main | jq -r .sha)"
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          sha="$(node scripts/huggingface-source.ts revision ust-archive/ust-rankings)"
           echo "RANKINGS_IDENTITY_COMMIT=$sha" >> "$GITHUB_ENV"
           uvx hf download ust-archive/ust-rankings --type dataset --revision "$sha" --local-dir "$RUNNER_TEMP/previous-rankings" --include course-instructors.parquet --include instructor-identities.parquet --include instructor-aliases.parquet --include instructor-identity-events.parquet --include instructor-split-affected-associations.parquet
           test -f "$RUNNER_TEMP/previous-rankings/instructor-identities.parquet"
@@ -114,8 +115,7 @@ jobs:
         run: |
           uvx hf repos create ust-archive/ust-rankings --type dataset --exist-ok
           uvx hf upload ust-archive/ust-rankings data/out . --type dataset --commit-message "update(v0): $(TZ='Asia/Hong_Kong' date --iso-8601=seconds)"
-          sha="$(curl --fail --silent --show-error --header "Authorization: Bearer $HF_TOKEN" https://huggingface.co/api/datasets/ust-archive/ust-rankings/revision/main | jq -r .sha)"
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          sha="$(node scripts/huggingface-source.ts revision ust-archive/ust-rankings)"
           echo "RANKING_GENERATION_SHA=$sha" >> "$GITHUB_ENV"
 
       - name: Download pinned canonical archives
