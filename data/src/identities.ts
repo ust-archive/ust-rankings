@@ -416,6 +416,11 @@ export async function assignInstructorIdentities(
       if (eventKeys.has(key)) continue;
       eventKeys.add(key);
       events.push(event);
+      // Only new corrections update the snapshot; historical events are unordered.
+      if (event.event_type === "itsc-added" && event.uuid && event.itsc) {
+        const identity = identities.get(event.uuid);
+        if (identity) identity.itsc = event.itsc;
+      }
     }
     const correctionKeys = new Set(
       correctionRows.map((correction) => JSON.stringify(correction)),

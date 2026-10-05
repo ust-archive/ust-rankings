@@ -1265,6 +1265,59 @@ test("new Instructor UUIDs are stable across pipeline runs and omit TBA", async 
   }
 });
 
+test("new ITSC corrections update the snapshot once and history reload preserves it", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "ust-data-itsc-history-"));
+  try {
+    const dataDir = join(temp, "data");
+    await makeFixtures(dataDir);
+    const previous = await makePreviousGeneration(join(temp, "previous"));
+    const corrections = join(temp, "corrections.json");
+    const events = [
+      {
+        type: "itsc-added",
+        uuid: "00000000-0000-4000-8000-000000000003",
+        itsc: "cara-old",
+        sourceCommit: "ffffffffffffffffffffffffffffffffffffffff",
+      },
+      {
+        type: "itsc-added",
+        uuid: "00000000-0000-4000-8000-000000000003",
+        itsc: "cara-new",
+        sourceCommit: fixtureCommit,
+      },
+    ];
+    await writeFile(corrections, JSON.stringify({ events }));
+    const first = runPipeline(dataDir, join(temp, "first"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: previous,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    await writeFile(
+      corrections,
+      JSON.stringify({ events: events.toReversed() }),
+    );
+    const second = runPipeline(dataDir, join(temp, "second"), {
+      RANKINGS_PREVIOUS_GENERATION_DIR: first,
+      RANKINGS_INSTRUCTOR_REGISTRY_FILE: corrections,
+    });
+    for (const output of [first, second]) {
+      assert.deepEqual(
+        await rows(
+          `SELECT itsc FROM read_parquet('${parquet(output, "instructor-identities")}') WHERE uuid = '00000000-0000-4000-8000-000000000003'`,
+        ),
+        [{ itsc: "cara-new" }],
+      );
+      assert.deepEqual(
+        await rows(
+          `SELECT count(*)::INTEGER AS count FROM read_parquet('${parquet(output, "instructor-identity-events")}') WHERE event_type = 'itsc-added'`,
+        ),
+        [{ count: 2 }],
+      );
+    }
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
 test("merge corrections preserve aliases, ITSC history, and apply only once", async () => {
   const temp = await mkdtemp(join(tmpdir(), "ust-data-identity-merge-"));
   try {

@@ -194,23 +194,19 @@ export function buildInstructorIdentityHistory(
         throw new Error("Invalid ITSC addition");
       addedItscs.add(itsc);
       const history = identifiers.get(uuid) ?? [];
-      for (const identifier of history) identifier.status = "retired";
       const existing = history.find((identifier) => identifier.value === itsc);
       if (existing) {
-        existing.status = "current";
         existing.sourceCommit = sourceCommit;
       } else {
         history.push({
           type: "itsc",
           value: itsc,
-          status: "current",
+          status: "retired",
           sourceCommit,
         });
       }
       identifiers.set(uuid, history);
       claimedItscs.set(itsc, uuid);
-      const identity = identities.get(uuid);
-      if (identity) identity.itsc = itsc;
       continue;
     }
     if (event.type === "merge") {
