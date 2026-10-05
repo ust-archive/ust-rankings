@@ -18,6 +18,13 @@ Can a small crossed model reduce context misattribution with these terms?
 
 Use a local directory that contains the pinned Hugging Face files.
 
+The shared source loader now uses the unified Schedule. Include both
+`schedule/canonical/class_records.parquet` and
+`schedule/canonical/course_records.parquet` from the same pinned Schedule
+revision below. The prototype's model, fixed strengths and prediction rules
+are unchanged; this input plumbing keeps its optional CLI compatible with
+the production branch.
+
 ```sh
 cd data
 node prototypes/course-instructor-offering.ts \
@@ -74,3 +81,13 @@ The prototype did not beat the simpler baselines. Keep production unchanged.
 - JSON SHA-256: `e37495ea4b5292821ea9382baf93794ba69876cc80f9502c9b181d33476ff04f`
 - HTML SHA-256: `991a0662eeb93201c9b1fed7b05048037351697e8b191e854e0b7ac0efdf0f1c`
 - Browser screenshots were checked for the Course, Instructor, and team-teaching views.
+
+## Source-loader compatibility check
+
+The 2026-10-06 prototype-base synchronization preserves this optional script
+outside the production pipeline. With synthetic pipeline fixtures, the old
+Schedule variable map failed against the current shared source SQL with
+`read_parquet cannot take NULL list as parameter`. Supplying the two canonical
+record paths loaded five synthetic SFQ Instructor rows and two Schedule Classes.
+This checks source loading, not model fit or statistical performance. No source
+revision was refreshed and no future outcomes were acquired.
