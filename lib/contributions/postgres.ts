@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import type { ImageAttachment } from "@/lib/attachments/attachments";
 import { AttachmentWriteError } from "@/lib/attachments/attachments";
-import { PostgresAttachmentRepository } from "@/lib/attachments/postgres";
+import { attachToReviewRevision } from "@/lib/attachments/postgres";
 import { databaseRequestContext } from "@/lib/database-request-context";
 import {
   type DatabaseContext,
@@ -389,13 +389,13 @@ function mapReviewWriteError(error: unknown): never {
 }
 
 async function attachDrafts(
-  sql: ReturnType<typeof postgres>,
+  sql: postgres.TransactionSql,
   userId: string,
   revisionId: string,
   drafts: PublishReviewRecord["attachments"],
 ) {
   if (!drafts?.length) return [];
-  return new PostgresAttachmentRepository(sql).attachToRevision({
+  return attachToReviewRevision(sql, {
     userId,
     revisionId,
     attachments: drafts.map((draft) => ({
@@ -439,7 +439,7 @@ export class PostgresReviewRepository implements ReviewRepository {
         return publicReview({
           ...published,
           attachments: await attachDrafts(
-            sql as unknown as ReturnType<typeof postgres>,
+            sql,
             input.userId,
             published.revisionId,
             input.attachments,
@@ -481,7 +481,7 @@ export class PostgresReviewRepository implements ReviewRepository {
         return publicReview({
           ...edited,
           attachments: await attachDrafts(
-            sql as unknown as ReturnType<typeof postgres>,
+            sql,
             input.userId,
             edited.revisionId,
             input.attachments,
