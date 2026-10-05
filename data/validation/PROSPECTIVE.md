@@ -176,3 +176,53 @@ Genuinely new outcomes meeting all count thresholds and a separately
 reviewed production decision remain external requirements. Moving to another
 repository clone requires importing and auditing the existing registry; local files
 cannot prevent deliberate deletion or falsification by their owner.
+
+## Review the operator workflow
+
+The previous retrospective backtest can reject reserved outcomes but cannot
+publish a forecast seal before acquisition or enforce one-use evaluation. This
+draft adds a separate operator workflow; it does not promote either candidate.
+
+| Operation | Before | Draft behavior |
+| --- | --- | --- |
+| `protocol` | Frozen legacy manifest only | Write a new immutable protocol after the declared inspected boundary |
+| `forecast` | Retrospective fitting and scoring | Copy/hash past-only sources, fit, and register the forecast before later acquisition |
+| `outcomes` | Outcomes read by the backtest | Independently seal later source bytes and contexts without fitting |
+| `evaluate` | Repeatable retrospective reports | Reserve a report path, verify registrations, claim units once, and write diagnostics |
+| Existing report path | No prospective command | Reject with `EEXIST`; preserve its bytes without consuming the evaluation |
+| Repeated evaluation | No durable prospective ledger | Reject `already been consumed`, including another report path |
+
+Reproduce the synthetic CLI demonstration from the repository root:
+
+```sh
+node node_modules/vitest/vitest.mjs run --root data test/pipeline.test.ts \
+  -t "seals synthetic past-only forecasts and later outcomes for one evaluation" \
+  --reporter verbose
+```
+
+The test creates local synthetic Parquet sources and an isolated disposable Git
+receipt repository. It executes the actual `protocol`, `forecast`, `outcomes`,
+and `evaluate` CLI commands with generated JSON configurations. On 2026-10-06,
+all four commands exited with code 0; the existing-report and replay guards
+rejected their calls as shown above. The report stayed `diagnostics-only`, with
+`accepted: false` and `productionPromotion: false`. Its synthetic population had
+three Courses, later evidence for two, and a right-censored four-Term window.
+This is an operator-contract demonstration, not a statistical validation result
+or an assertion that real future outcomes are uninspected.
+
+Before this draft is ready, review these implementation decisions:
+
+- Use Gaussian model-plus-source-noise intervals and require coverage at every
+  nominal level, rather than treating a calibrated interval or sampling
+  tolerance as interchangeable with that rule.
+- Require strictly lower primary error than every simple baseline, in addition
+  to the original improvement and paired-interval guards.
+- Freeze the implementation and dependency bytes; later changes require a
+  deliberate protocol and provenance decision rather than silently accepting
+  seals made by a different checkout.
+- Keep durable registrations and one-use receipts in the shared Git directory;
+  preserve and audit them when moving repositories. A failure after claiming
+  consumes outcomes, and a crashed lock requires investigation before recovery.
+- Require separately audited past-only source curation and independent acquisition
+  evidence. A local seal cannot establish that a source revision or Instructor
+  mapping was historically available.

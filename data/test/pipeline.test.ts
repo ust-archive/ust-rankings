@@ -10,13 +10,9 @@ import { summarizeBacktestAnalysis } from "../src/backtest-analysis-report.ts";
 import {
   evaluateOutcomeSeal,
   writeForecastSeal,
-  writeOutcomeSeal,
+  type writeOutcomeSeal,
 } from "../src/prospective.ts";
-import {
-  createProtocol,
-  type SourceFile,
-  sha256,
-} from "../src/prospective-seal.ts";
+import { readSeal, type SourceFile, sha256 } from "../src/prospective-seal.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureCommit = "0123456789abcdef0123456789abcdef01234567";
@@ -30,6 +26,21 @@ test("seals synthetic past-only forecasts and later outcomes for one evaluation"
     // Isolate the durable one-use receipt ledger, including repeated test runs.
     execFileSync("git", ["init", "--quiet", join(temp, "receipt-repository")]);
     process.env.GIT_DIR = join(temp, "receipt-repository", ".git");
+    const cli = (command: string, configPath: string, destination: string) =>
+      spawnSync(
+        process.execPath,
+        [join(root, "src", "prospective.ts"), command, configPath, destination],
+        { encoding: "utf8", env: process.env },
+      );
+    const successfulCli = (
+      command: string,
+      configPath: string,
+      destination: string,
+    ) => {
+      const result = cli(command, configPath, destination);
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout;
+    };
     const dataDir = join(temp, "past");
     await makeFixtures(dataDir);
     const pastInstance = await DuckDBInstance.create();
@@ -101,17 +112,27 @@ test("seals synthetic past-only forecasts and later outcomes for one evaluation"
         await describe(`previous-${name}`, join(accepted, name), fixtureCommit),
       );
     const protocolPath = join(temp, "protocol.json");
-    await createProtocol(protocolPath, {
-      knownOutcomeCeilingTerm: 103,
-      firstOutcomeTerm: 104,
-      inspectedSourceRevisions: [fixtureCommit],
-    });
+    const protocolConfig = join(temp, "protocol-config.json");
+    await writeFile(
+      protocolConfig,
+      JSON.stringify({
+        knownOutcomeCeilingTerm: 103,
+        firstOutcomeTerm: 104,
+        inspectedSourceRevisions: [fixtureCommit],
+      }),
+    );
+    successfulCli("protocol", protocolConfig, protocolPath);
     const forecastDirectory = join(temp, "forecast");
-    const forecast = await writeForecastSeal(forecastDirectory, {
-      protocolPath,
-      cutoffTerm: 103,
-      files,
-    });
+    const forecastConfig = join(temp, "forecast-config.json");
+    await writeFile(
+      forecastConfig,
+      JSON.stringify({ protocolPath, cutoffTerm: 103, files }),
+    );
+    successfulCli("forecast", forecastConfig, forecastDirectory);
+    const forecast =
+      await readSeal<Awaited<ReturnType<typeof writeForecastSeal>>["metadata"]>(
+        forecastDirectory,
+      );
     assert(forecast.metadata.forecasts.length > 0);
     assert(
       forecast.metadata.forecasts.some(
@@ -184,11 +205,16 @@ test("seals synthetic past-only forecasts and later outcomes for one evaluation"
       /future training Terms/,
     );
     const outcomeDirectory = join(temp, "outcomes");
-    const outcomeSeal = await writeOutcomeSeal(outcomeDirectory, {
-      protocolPath,
-      forecastSeals,
-      files: futureFiles,
-    });
+    const outcomeConfig = join(temp, "outcome-config.json");
+    await writeFile(
+      outcomeConfig,
+      JSON.stringify({ protocolPath, forecastSeals, files: futureFiles }),
+    );
+    successfulCli("outcomes", outcomeConfig, outcomeDirectory);
+    const outcomeSeal =
+      await readSeal<Awaited<ReturnType<typeof writeOutcomeSeal>>["metadata"]>(
+        outcomeDirectory,
+      );
     assert(
       outcomeSeal.metadata.outcomes.some(
         (row) => row.family === "instructor" && row.entityId === null,
@@ -306,26 +332,17 @@ test("seals synthetic past-only forecasts and later outcomes for one evaluation"
       }),
     );
     await writeFile(existingReport, "preserve");
-    const collision = spawnSync(
-      process.execPath,
-      [
-        join(root, "src", "prospective.ts"),
-        "evaluate",
-        evaluationConfig,
-        existingReport,
-      ],
-      { encoding: "utf8", env: process.env },
-    );
+    const collision = cli("evaluate", evaluationConfig, existingReport);
     assert.notEqual(collision.status, 0);
     assert.match(collision.stderr, /EEXIST/);
     assert.equal(await readFile(existingReport, "utf8"), "preserve");
-    const result = await evaluateOutcomeSeal(
-      protocolPath,
-      forecastSeals,
-      outcomeDirectory,
-      outcomeSeal.sha256,
+    const reportPath = join(temp, "report.json");
+    successfulCli("evaluate", evaluationConfig, reportPath);
+    const result: Awaited<ReturnType<typeof evaluateOutcomeSeal>> = JSON.parse(
+      await readFile(reportPath, "utf8"),
     );
     assert.equal(result.status, "diagnostics-only");
+    assert.equal(result.accepted, false);
     assert.equal(result.productionPromotion, false);
     assert.deepEqual(result.diagnostics.populationFollowup, [
       {
@@ -339,14 +356,21 @@ test("seals synthetic past-only forecasts and later outcomes for one evaluation"
         rightCensored: true,
       },
     ]);
-    await assert.rejects(
-      evaluateOutcomeSeal(
-        protocolPath,
-        forecastSeals,
-        outcomeDirectory,
-        outcomeSeal.sha256,
-      ),
-      /already been consumed/,
+    const replay = cli("evaluate", evaluationConfig, join(temp, "replay.json"));
+    assert.notEqual(replay.status, 0);
+    assert.match(replay.stderr, /already been consumed/);
+    console.log(
+      JSON.stringify({
+        evidence: "Synthetic CLI workflow; not a prospective validation result",
+        commands: ["protocol", "forecast", "outcomes", "evaluate"],
+        successfulExitCodes: [0, 0, 0, 0],
+        existingReport: "preserved; EEXIST rejected before consumption",
+        replay: "rejected: already been consumed",
+        status: result.status,
+        accepted: result.accepted,
+        productionPromotion: result.productionPromotion,
+        populationFollowup: result.diagnostics.populationFollowup,
+      }),
     );
   } finally {
     if (oldGitDir === undefined) delete process.env.GIT_DIR;
