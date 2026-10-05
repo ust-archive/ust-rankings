@@ -10,6 +10,9 @@ use. Run it with `npm test`, or focus one file while working, for example:
 The Spaces test uses a deterministic local adapter by default and enables its
 remote contract only when `TEST_ATTACHMENTS_SPACE_BUCKET` is configured.
 
+Deployment workflow tests execute the workflow's Bash script with a fake
+`doctl`. They require Bash and `jq` on `PATH`; on Windows, use Git Bash.
+
 Tests mock only external seams such as Auth, Postgres, Spaces, time, and remote
 sources. They do not assert internal call order. Vitest isolates test files in
 workers while keeping independent files parallel.
