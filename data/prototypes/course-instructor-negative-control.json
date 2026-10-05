@@ -1,0 +1,501 @@
+{
+  "prototype": true,
+  "negativeControl": true,
+  "developmentOnly": true,
+  "productionPromotion": false,
+  "maximumTerm": 102,
+  "sourceRevisions": {
+    "catalog": "fd704a74bfc9fd9076680da3d80d0a7e304c7164",
+    "schedule": "8710e83979c989401aab91972234659adbeaba0a",
+    "reviews": "1069ca3822f00da12a22fee8f7ea4fc87dfe8344",
+    "sfq": "880e90dbd3af759e1e91c85a1bb721197a79bd8d"
+  },
+  "configuration": {
+    "courseStrength": 1,
+    "instructorStrength": 1,
+    "interactionStrength": 4
+  },
+  "folds": {
+    "originalDevelopment": [94, 95, 96, 98],
+    "oldPostHoc": [99, 102]
+  },
+  "cache": {
+    "file": "crossed-rows.parquet",
+    "sha256": "80acb25e2fa0b2c906ea41cfdf1abcf3393bf53fbedf716c276d54e87d5a7b5b",
+    "rawDevelopmentRows": 28136,
+    "distinctDevelopmentUnits": 28130,
+    "reconstructedWeightedUnits": 28130,
+    "classes": 25771,
+    "changedIdentityLabels": 1651,
+    "identityDifference": "The earlier cache retains name fallbacks in Term 102; the original model resolves unique names using historical ITSCs. Cache null identity is normalized to the original model's name: label for this count."
+  },
+  "method": "Fisher-Yates Instructor-label permutation within each Term, LCG seeds 167..176; original Instructor evaluation groups, outcome rows, Class context, fitting rules, and fixed configuration retained.",
+  "original": {
+    "originalDevelopment": {
+      "rows": 5211,
+      "instructors": 1080,
+      "courseOnly": 0.3727121671592129,
+      "courseContext": 0.3852208448953336,
+      "populationResidual": 0.30131445374406296,
+      "populationContext": 0.305443294274048,
+      "residual": 0.3223649547876987,
+      "crossed": 0.32942133039949745,
+      "residualGain": 0.05034721237151418,
+      "crossedGain": 0.055799514495836144,
+      "residualGainOverPopulation": -0.02105050104363576,
+      "crossedGainOverPopulation": -0.023978036125449464
+    },
+    "oldPostHoc": {
+      "rows": 2020,
+      "instructors": 910,
+      "courseOnly": 0.37964804777790895,
+      "courseContext": 0.38413859213198925,
+      "populationResidual": 0.295330180907705,
+      "populationContext": 0.296087588732757,
+      "residual": 0.3282903074230716,
+      "crossed": 0.32987082944563045,
+      "residualGain": 0.05135774035483737,
+      "crossedGain": 0.0542677626863588,
+      "residualGainOverPopulation": -0.03296012651536656,
+      "crossedGainOverPopulation": -0.033783240712873475
+    }
+  },
+  "shuffled": [
+    {
+      "seed": 167,
+      "reassignedFraction": 0.9968361180234625,
+      "metrics": {
+        "originalDevelopment": {
+          "rows": 5211,
+          "instructors": 1080,
+          "courseOnly": 0.3727121671592129,
+          "courseContext": 0.3852208448953336,
+          "populationResidual": 0.30131445374406296,
+          "populationContext": 0.305443294274048,
+          "residual": 0.3149807871032529,
+          "crossed": 0.3210606701705373,
+          "residualGain": 0.05773138005596001,
+          "crossedGain": 0.06416017472479629,
+          "residualGainOverPopulation": -0.01366633335918993,
+          "crossedGainOverPopulation": -0.015617375896489316
+        },
+        "oldPostHoc": {
+          "rows": 2020,
+          "instructors": 910,
+          "courseOnly": 0.37964804777790895,
+          "courseContext": 0.38413859213198925,
+          "populationResidual": 0.295330180907705,
+          "populationContext": 0.296087588732757,
+          "residual": 0.31809442029451346,
+          "crossed": 0.31979329243027205,
+          "residualGain": 0.06155362748339549,
+          "crossedGain": 0.0643452997017172,
+          "residualGainOverPopulation": -0.022764239386808438,
+          "crossedGainOverPopulation": -0.023705703697515068
+        }
+      }
+    },
+    {
+      "seed": 168,
+      "reassignedFraction": 0.9965872733736225,
+      "metrics": {
+        "originalDevelopment": {
+          "rows": 5211,
+          "instructors": 1080,
+          "courseOnly": 0.3727121671592129,
+          "courseContext": 0.3852208448953336,
+          "populationResidual": 0.30131445374406296,
+          "populationContext": 0.305443294274048,
+          "residual": 0.31511996891502003,
+          "crossed": 0.3199010667216937,
+          "residualGain": 0.05759219824419287,
+          "crossedGain": 0.06531977817363988,
+          "residualGainOverPopulation": -0.013805515170957072,
+          "crossedGainOverPopulation": -0.014457772447645734
+        },
+        "oldPostHoc": {
+          "rows": 2020,
+          "instructors": 910,
+          "courseOnly": 0.37964804777790895,
+          "courseContext": 0.38413859213198925,
+          "populationResidual": 0.295330180907705,
+          "populationContext": 0.296087588732757,
+          "residual": 0.3207863100499822,
+          "crossed": 0.3218143001204934,
+          "residualGain": 0.058861737727926744,
+          "crossedGain": 0.06232429201149586,
+          "residualGainOverPopulation": -0.025456129142277184,
+          "crossedGainOverPopulation": -0.025726711387736412
+        }
+      }
+    },
+    {
+      "seed": 169,
+      "reassignedFraction": 0.9971560611446854,
+      "metrics": {
+        "originalDevelopment": {
+          "rows": 5211,
+          "instructors": 1080,
+          "courseOnly": 0.3727121671592129,
+          "courseContext": 0.3852208448953336,
+          "populationResidual": 0.30131445374406296,
+          "populationContext": 0.305443294274048,
+          "residual": 0.3122755862106203,
+          "crossed": 0.3174392370333004,
+          "residualGain": 0.06043658094859261,
+          "crossedGain": 0.06778160786203319,
+          "residualGainOverPopulation": -0.010961132466557333,
+          "crossedGainOverPopulation": -0.01199594275925242
+        },
+        "oldPostHoc": {
+          "rows": 2020,
+          "instructors": 910,
+          "courseOnly": 0.37964804777790895,
+          "courseContext": 0.38413859213198925,
+          "populationResidual": 0.295330180907705,
+          "populationContext": 0.296087588732757,
+          "residual": 0.320762987646677,
+          "crossed": 0.3231469624380847,
+          "residualGain": 0.05888506013123196,
+          "crossedGain": 0.06099162969390454,
+          "residualGainOverPopulation": -0.02543280673897197,
+          "crossedGainOverPopulation": -0.02705937370532774
+        }
+      }
+    },
+    {
+      "seed": 170,
+      "reassignedFraction": 0.9966583718450054,
+      "metrics": {
+        "originalDevelopment": {
+          "rows": 5211,
+          "instructors": 1080,
+          "courseOnly": 0.3727121671592129,
+          "courseContext": 0.3852208448953336,
+          "populationResidual": 0.30131445374406296,
+          "populationContext": 0.305443294274048,
+          "residual": 0.3131469522986833,
+          "crossed": 0.31887400342808886,
+          "residualGain": 0.059565214860529625,
+          "crossedGain": 0.06634684146724473,
+          "residualGainOverPopulation": -0.011832498554620319,
+          "crossedGainOverPopulation": -0.013430709154040876
+        },
+        "oldPostHoc": {
+          "rows": 2020,
+          "instructors": 910,
+          "courseOnly": 0.37964804777790895,
+          "courseContext": 0.38413859213198925,
+          "populationResidual": 0.295330180907705,
+          "populationContext": 0.296087588732757,
+          "residual": 0.31639895598115847,
+          "crossed": 0.31789964611223165,
+          "residualGain": 0.06324909179675048,
+          "crossedGain": 0.0662389460197576,
+          "residualGainOverPopulation": -0.02106877507345345,
+          "crossedGainOverPopulation": -0.02181205737947467
+        }
+      }
+    },
+    {
+      "seed": 171,
+      "reassignedFraction": 0.9970849626733025,
+      "metrics": {
+        "originalDevelopment": {
+          "rows": 5211,
+          "instructors": 1080,
+          "courseOnly": 0.3727121671592129,
+          "courseContext": 0.3852208448953336,
+          "populationResidual": 0.30131445374406296,
+          "populationContext": 0.305443294274048,
+          "residual": 0.3151016095313727,
+          "crossed": 0.32068347815539744,
+          "residualGain": 0.05761055762784023,
+          "crossedGain": 0.06453736673993615,
+          "residualGainOverPopulation": -0.013787155787309713,
+          "crossedGainOverPopulation": -0.015240183881349456
+        },
+        "oldPostHoc": {
+          "rows": 2020,
+          "instructors": 910,
+          "courseOnly": 0.37964804777790895,
+          "courseContext": 0.38413859213198925,
+          "populationResidual": 0.295330180907705,
+          "populationContext": 0.296087588732757,
+          "residual": 0.31875004742424856,
+          "crossed": 0.3200653456265681,
+          "residualGain": 0.060898000353660386,
+          "crossedGain": 0.06407324650542118,
+          "residualGainOverPopulation": -0.02341986651654354,
+          "crossedGainOverPopulation": -0.023977756893811097
+        }
+      }
+    },
+    {
+      "seed": 172,
+      "reassignedFraction": 0.9964095271951653,
+      "metrics": {
+        "originalDevelopment": {
+          "rows": 5211,
+          "instructors": 1080,
+          "courseOnly": 0.3727121671592129,
+          "courseContext": 0.3852208448953336,
+          "populationResidual": 0.30131445374406296,
+          "populationContext": 0.305443294274048,
+          "residual": 0.31473184889185124,
+          "crossed": 0.3201803097612458,
+          "residualGain": 0.057980318267361663,
+          "crossedGain": 0.0650405351340878,
+          "residualGainOverPopulation": -0.01341739514778828,
+          "crossedGainOverPopulation": -0.014737015487197802
+        },
+        "oldPostHoc": {
+          "rows": 2020,
+          "instructors": 910,
+          "courseOnly": 0.37964804777790895,
+          "courseContext": 0.38413859213198925,
+          "populationResidual": 0.295330180907705,
+          "populationContext": 0.296087588732757,
+          "residual": 0.31705820049443056,
+          "crossed": 0.3178185488821512,
+          "residualGain": 0.06258984728347838,
+          "crossedGain": 0.06632004324983803,
+          "residualGainOverPopulation": -0.021728019586725544,
+          "crossedGainOverPopulation": -0.02173096014939424
+        }
+      }
+    },
+    {
+      "seed": 173,
+      "reassignedFraction": 0.9974760042659083,
+      "metrics": {
+        "originalDevelopment": {
+          "rows": 5211,
+          "instructors": 1080,
+          "courseOnly": 0.3727121671592129,
+          "courseContext": 0.3852208448953336,
+          "populationResidual": 0.30131445374406296,
+          "populationContext": 0.305443294274048,
+          "residual": 0.31560697274517113,
+          "crossed": 0.3213634312538571,
+          "residualGain": 0.05710519441404177,
+          "crossedGain": 0.06385741364147651,
+          "residualGainOverPopulation": -0.014292519001108173,
+          "crossedGainOverPopulation": -0.015920136979809096
+        },
+        "oldPostHoc": {
+          "rows": 2020,
+          "instructors": 910,
+          "courseOnly": 0.37964804777790895,
+          "courseContext": 0.38413859213198925,
+          "populationResidual": 0.295330180907705,
+          "populationContext": 0.296087588732757,
+          "residual": 0.315797947345428,
+          "crossed": 0.3164855276561381,
+          "residualGain": 0.06385010043248096,
+          "crossedGain": 0.06765306447585118,
+          "residualGainOverPopulation": -0.020467766437722967,
+          "crossedGainOverPopulation": -0.020397938923381098
+        }
+      }
+    },
+    {
+      "seed": 174,
+      "reassignedFraction": 0.9974760042659083,
+      "metrics": {
+        "originalDevelopment": {
+          "rows": 5211,
+          "instructors": 1080,
+          "courseOnly": 0.3727121671592129,
+          "courseContext": 0.3852208448953336,
+          "populationResidual": 0.30131445374406296,
+          "populationContext": 0.305443294274048,
+          "residual": 0.31504553462926027,
+          "crossed": 0.3206864095564143,
+          "residualGain": 0.05766663252995263,
+          "crossedGain": 0.06453443533891928,
+          "residualGainOverPopulation": -0.013731080885197311,
+          "crossedGainOverPopulation": -0.015243115282366326
+        },
+        "oldPostHoc": {
+          "rows": 2020,
+          "instructors": 910,
+          "courseOnly": 0.37964804777790895,
+          "courseContext": 0.38413859213198925,
+          "populationResidual": 0.295330180907705,
+          "populationContext": 0.296087588732757,
+          "residual": 0.31650337897957453,
+          "crossed": 0.31736239447486647,
+          "residualGain": 0.06314466879833441,
+          "crossedGain": 0.06677619765712278,
+          "residualGainOverPopulation": -0.021173198071869515,
+          "crossedGainOverPopulation": -0.021274805742109493
+        }
+      }
+    },
+    {
+      "seed": 175,
+      "reassignedFraction": 0.9970138642019196,
+      "metrics": {
+        "originalDevelopment": {
+          "rows": 5211,
+          "instructors": 1080,
+          "courseOnly": 0.3727121671592129,
+          "courseContext": 0.3852208448953336,
+          "populationResidual": 0.30131445374406296,
+          "populationContext": 0.305443294274048,
+          "residual": 0.3153419156914514,
+          "crossed": 0.32017736230729443,
+          "residualGain": 0.05737025146776148,
+          "crossedGain": 0.06504348258803916,
+          "residualGainOverPopulation": -0.014027461947388464,
+          "crossedGainOverPopulation": -0.01473406803324645
+        },
+        "oldPostHoc": {
+          "rows": 2020,
+          "instructors": 910,
+          "courseOnly": 0.37964804777790895,
+          "courseContext": 0.38413859213198925,
+          "populationResidual": 0.295330180907705,
+          "populationContext": 0.296087588732757,
+          "residual": 0.31755356700216497,
+          "crossed": 0.31938155558708586,
+          "residualGain": 0.062094480775743977,
+          "crossedGain": 0.06475703654490339,
+          "residualGainOverPopulation": -0.02222338609445995,
+          "crossedGainOverPopulation": -0.023293966854328885
+        }
+      }
+    },
+    {
+      "seed": 176,
+      "reassignedFraction": 0.9971560611446854,
+      "metrics": {
+        "originalDevelopment": {
+          "rows": 5211,
+          "instructors": 1080,
+          "courseOnly": 0.3727121671592129,
+          "courseContext": 0.3852208448953336,
+          "populationResidual": 0.30131445374406296,
+          "populationContext": 0.305443294274048,
+          "residual": 0.3131434555097924,
+          "crossed": 0.3184596252610199,
+          "residualGain": 0.059568711649420514,
+          "crossedGain": 0.0667612196343137,
+          "residualGainOverPopulation": -0.01182900176572943,
+          "crossedGainOverPopulation": -0.013016330986971913
+        },
+        "oldPostHoc": {
+          "rows": 2020,
+          "instructors": 910,
+          "courseOnly": 0.37964804777790895,
+          "courseContext": 0.38413859213198925,
+          "populationResidual": 0.295330180907705,
+          "populationContext": 0.296087588732757,
+          "residual": 0.3168515581400408,
+          "crossed": 0.3182392309062784,
+          "residualGain": 0.06279648963786816,
+          "crossedGain": 0.06589936122571083,
+          "residualGainOverPopulation": -0.02152137723233577,
+          "crossedGainOverPopulation": -0.022151642173521446
+        }
+      }
+    }
+  ],
+  "sourceFragmentSplit": {
+    "method": "Each mapped SFQ observation becomes two identical half-respondent fragments before the original SQL aggregation. Every canonical field is checked within 1e-12 (exact comparison for nonnumeric fields).",
+    "canonicalRows": 28130,
+    "canonicalRowsUnchangedWithinTolerance": true,
+    "maximumCanonicalNumericDifference": 1.4210854715202004e-14,
+    "metrics": {
+      "originalDevelopment": {
+        "rows": 5211,
+        "instructors": 1080,
+        "courseOnly": 0.3727121671592129,
+        "courseContext": 0.3852208448953336,
+        "populationResidual": 0.30131445374406296,
+        "populationContext": 0.305443294274048,
+        "residual": 0.3223649547876987,
+        "crossed": 0.32942133039949745,
+        "residualGain": 0.05034721237151418,
+        "crossedGain": 0.055799514495836144,
+        "residualGainOverPopulation": -0.02105050104363576,
+        "crossedGainOverPopulation": -0.023978036125449464
+      },
+      "oldPostHoc": {
+        "rows": 2020,
+        "instructors": 910,
+        "courseOnly": 0.37964804777790895,
+        "courseContext": 0.38413859213198925,
+        "populationResidual": 0.295330180907705,
+        "populationContext": 0.296087588732757,
+        "residual": 0.3282903074230716,
+        "crossed": 0.3298708294456304,
+        "residualGain": 0.05135774035483737,
+        "crossedGain": 0.054267762686358856,
+        "residualGainOverPopulation": -0.03296012651536656,
+        "crossedGainOverPopulation": -0.03378324071287342
+      }
+    }
+  },
+  "equivalentTeamRowSplit": {
+    "boundary": "Post-aggregation training model rows only; split every team row into two equal-rating half-respondent rows. Course Class rows and evaluation rows are unchanged.",
+    "courseOnly": {
+      "changedPredictions": 0,
+      "maximumAbsoluteChange": 0,
+      "meanAbsoluteChange": 0
+    },
+    "courseContext": {
+      "changedPredictions": 0,
+      "maximumAbsoluteChange": 0,
+      "meanAbsoluteChange": 0
+    },
+    "residual": {
+      "changedPredictions": 3298,
+      "maximumAbsoluteChange": 0.2166666666666659,
+      "meanAbsoluteChange": 0.005153497332109674
+    },
+    "crossed": {
+      "changedPredictions": 3299,
+      "maximumAbsoluteChange": 0.277661779081134,
+      "meanAbsoluteChange": 0.005715200476901221
+    },
+    "metrics": {
+      "originalDevelopment": {
+        "rows": 5211,
+        "instructors": 1080,
+        "courseOnly": 0.3727121671592129,
+        "courseContext": 0.3852208448953336,
+        "populationResidual": 0.3020780949993251,
+        "populationContext": 0.30638211355364553,
+        "residual": 0.32206217820732763,
+        "crossed": 0.3290249673720419,
+        "residualGain": 0.05064998895188527,
+        "crossedGain": 0.05619587752329169,
+        "residualGainOverPopulation": -0.019984083208002545,
+        "crossedGainOverPopulation": -0.02264285381839637
+      },
+      "oldPostHoc": {
+        "rows": 2020,
+        "instructors": 910,
+        "courseOnly": 0.37964804777790895,
+        "courseContext": 0.38413859213198925,
+        "populationResidual": 0.29728230499125813,
+        "populationContext": 0.2981683663662949,
+        "residual": 0.3282558609242995,
+        "crossed": 0.33007978005565525,
+        "residualGain": 0.05139218685360947,
+        "crossedGain": 0.054058812076334006,
+        "residualGainOverPopulation": -0.030973555933041352,
+        "crossedGainOverPopulation": -0.031911413689360346
+      }
+    },
+    "limitation": "The fitter accepts canonical Instructor-Class rows, so duplicate rows here violate its input contract and this is not a confirmed pipeline defect. The downstream fitter ignores respondents and relies on upstream aggregation to enforce the invariant."
+  },
+  "limits": [
+    "All evaluated Terms were previously inspected and are development only; this is not independent confirmation.",
+    "An identity permutation does not remove the population mean Instructor-minus-Course rating offset. Compare real gains to shuffled gains; do not interpret a nonzero residual gain alone as surviving identity signal.",
+    "The cached file omits respondents and has duplicate units; values are reconstructed with the original pinned source aggregation and cross-checked against distinct cache units.",
+    "No model selection, source refresh, production change, or scoring of outcomes above Term 102 occurs."
+  ]
+}
