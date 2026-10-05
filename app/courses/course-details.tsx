@@ -126,6 +126,7 @@ export function CourseDetails({
   rankings,
   rankingsContent,
   reviewComposerContent,
+  reviewEditorOptions,
   communityContent,
   scheduleContent,
   selectedTermCode,
@@ -147,6 +148,7 @@ export function CourseDetails({
   rankings?: CourseRankings;
   rankingsContent?: ReactNode;
   reviewComposerContent?: ReactNode;
+  reviewEditorOptions?: ReviewEditorOptions;
   communityContent?: ReactNode;
   scheduleContent?: ReactNode;
   selectedTermCode?: string;
@@ -369,7 +371,7 @@ export function CourseDetails({
             <DetailsCommunity
               botRestricted={botRestricted}
               description="Published experiences and signals for this Course."
-              editor={reviewEditor}
+              editor={reviewEditorOptions ?? reviewEditor}
               error={reviewError}
               published={reviewPublished}
               reviewComposer={
