@@ -282,6 +282,7 @@ function memory(options?: {
     async deleteIntent(intentId) {
       intents.delete(intentId);
     },
+    async queueOrphanedFiles() {},
     async requestRemoval(storedFileId) {
       const file = files.get(storedFileId);
       if (!file || removed.has(storedFileId))
