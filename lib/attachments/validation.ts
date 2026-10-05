@@ -610,6 +610,59 @@ function parseOoxml(
   return true;
 }
 
+function odfManifestHasEncryption(manifest: string) {
+  const namespace = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0";
+  const scopes: Array<{ name: string; bindings: Map<string, string> }> = [];
+  // Inspect only bounded namespace scopes; comments and examples are not tags.
+  const tags =
+    /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<(?:[^"'<>]|"[^"]*"|'[^']*')*>/gu;
+  for (const [tag] of manifest.matchAll(tags)) {
+    if (
+      tag.startsWith("<!--") ||
+      tag.startsWith("<![CDATA[") ||
+      tag.startsWith("<?")
+    )
+      continue;
+    const closing = /^<\/([^\s/>]+)\s*>$/u.exec(tag);
+    if (closing) {
+      if (scopes.pop()?.name !== closing[1]) return true;
+      continue;
+    }
+    const name = /^<([^\s/>]+)/u.exec(tag)?.[1];
+    if (!name || name.startsWith("!") || scopes.length >= 64) return true;
+    const bindings = new Map<string, string>();
+    for (const [, attribute, , doubleQuoted, singleQuoted] of tag.matchAll(
+      /\s([^\s=/>]+)\s*=\s*("([^"]*)"|'([^']*)')/gu,
+    )) {
+      const prefix =
+        attribute === "xmlns"
+          ? ""
+          : attribute.startsWith("xmlns:")
+            ? attribute.slice(6)
+            : undefined;
+      if (prefix === undefined) continue;
+      const uri = doubleQuoted ?? singleQuoted;
+      // Entity-encoded namespace bindings are uncertain; fail closed.
+      if (uri.includes("&") || bindings.has(prefix)) return true;
+      bindings.set(prefix, uri);
+    }
+    scopes.push({ name, bindings });
+    const parts = name.split(":");
+    if (parts.length > 2) return true;
+    const localName = parts.at(-1);
+    if (localName === "encryption-data" || localName === "encrypted-key") {
+      const prefix = parts.length === 2 ? parts[0] : "";
+      const binding = scopes
+        .findLast((scope) => scope.bindings.has(prefix))
+        ?.bindings.get(prefix);
+      if (binding === namespace || (prefix && binding === undefined))
+        return true;
+    }
+    if (tag.endsWith("/>")) scopes.pop();
+  }
+  return scopes.length !== 0;
+}
+
 function parseOdf(bytes: Uint8Array, mime: string) {
   const entries = parseZip(bytes);
   if (!entries) return false;
@@ -635,7 +688,8 @@ function parseOdf(bytes: Uint8Array, mime: string) {
     !manifest ||
     /<!ENTITY|<!DOCTYPE|text\/x-script|application\/x-basic|Basic\//i.test(
       manifest,
-    )
+    ) ||
+    odfManifestHasEncryption(manifest)
   )
     return false;
   return names.includes("content.xml");
