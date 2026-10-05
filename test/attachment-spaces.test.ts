@@ -7,7 +7,7 @@ import {
 
 vi.mock("server-only", () => ({}));
 
-test("Spaces adapter signs origin PUT/GET for opaque keys without User or filename data", async () => {
+test("Spaces adapter prepares PUT/GET signing requests with opaque keys", async () => {
   const commands: unknown[] = [];
   const { SpacesAttachmentStore } = await import("@/lib/attachments/spaces");
   const store = new SpacesAttachmentStore({
@@ -81,7 +81,3 @@ test("Spaces adapter signs origin PUT/GET for opaque keys without User or filena
     ),
   ).toBe(true);
 });
-
-if (!process.env.TEST_ATTACHMENTS_SPACE_BUCKET) {
-  test.skip("non-production Spaces contract (TEST_ATTACHMENTS_SPACE_BUCKET is not configured)", () => {});
-}

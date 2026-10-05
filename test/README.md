@@ -7,8 +7,11 @@ use. Run it with `npm test`, or focus one file while working, for example:
 `npm run test:browser` exercises rendered behavior in Chromium. The separate
 `test:contracts` suite exercises the Postgres adapters and needs
 `TEST_CONTRIBUTIONS_POSTGRES_URL`. CI supplies a disposable Postgres instance.
-The Spaces test uses a deterministic local adapter by default and enables its
-remote contract only when `TEST_ATTACHMENTS_SPACE_BUCKET` is configured.
+The Spaces adapter test injects deterministic SDK client and signing mocks.
+It checks object keys, request fields, and signing options without remote
+transfers. There is no remote Spaces contract test or environment-variable
+opt-in for one; uploads, downloads, provider permissions, and CORS are not
+verified against a real Space by this suite.
 
 Tests mock only external seams such as Auth, Postgres, Spaces, time, and remote
 sources. They do not assert internal call order. Vitest isolates test files in
