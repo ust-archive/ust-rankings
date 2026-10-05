@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 export function LoginLink({
   children,
@@ -12,13 +11,19 @@ export function LoginLink({
   className?: string;
 }) {
   const pathname = usePathname();
+  function updateReturnPath(event: MouseEvent<HTMLAnchorElement>) {
+    const { pathname, search, hash } = window.location;
+    event.currentTarget.href = `/auth/login?r=${encodeURIComponent(`${pathname}${search}${hash}`)}`;
+  }
   return (
-    <Link
+    <a
       className={className}
       href={`/auth/login?r=${encodeURIComponent(pathname)}`}
-      prefetch={false}
+      onAuxClick={updateReturnPath}
+      onClick={updateReturnPath}
+      onContextMenu={updateReturnPath}
     >
       {children}
-    </Link>
+    </a>
   );
 }
