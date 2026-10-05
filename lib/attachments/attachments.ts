@@ -6,6 +6,8 @@ export const GLOBAL_QUOTA_BYTES = 128 * 1024 * 1024 * 1024;
 export const USAGE_ALERT_BYTES = Math.floor(GLOBAL_QUOTA_BYTES * 0.8);
 export const PUT_EXPIRES_SECONDS = 15 * 60;
 export const GET_EXPIRES_SECONDS = 5 * 60;
+export const VALIDATION_LEASE_SECONDS = 2 * 60;
+export const MAX_VALIDATION_ATTEMPTS = 3;
 export const MAX_REVISION_ATTACHMENTS = 4;
 export const MAX_FILENAME_GRAPHEMES = 100;
 export const MAX_DESCRIPTION_GRAPHEMES = 300;
@@ -59,6 +61,12 @@ export type StoredFileRecord = {
   detectedMime: string;
 };
 
+export type ValidationLease = UploadIntentRecord & {
+  validationLeaseId: string;
+  validationObjectKey: string;
+  validationLeaseExpiresAt: Date;
+};
+
 export type AttachmentRecord = ImageAttachment & { revisionId: string };
 
 export interface AttachmentStore {
@@ -76,9 +84,19 @@ export interface AttachmentStore {
   }): Promise<{ url: string }>;
   head(
     key: string,
+    signal?: AbortSignal,
   ): Promise<{ contentLength: number; contentType?: string } | undefined>;
-  get(key: string, maxBytes: number): Promise<Uint8Array | undefined>;
-  put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
+  get(
+    key: string,
+    maxBytes: number,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined>;
+  put(
+    key: string,
+    bytes: Uint8Array,
+    contentType: string,
+    signal?: AbortSignal,
+  ): Promise<void>;
   delete(key: string): Promise<void>;
   exists(key: string): Promise<boolean>;
 }
@@ -94,17 +112,22 @@ export interface AttachmentRepository {
     expiresAt: Date;
   }): Promise<{ quotaUsedBytes: number; globalUsedBytes: number }>;
   getIntent(intentId: string): Promise<UploadIntentRecord | undefined>;
+  getAccepted(
+    intentId: string,
+  ): Promise<(StoredFileRecord & { reused: boolean }) | undefined>;
   markRejected(
     intentId: string,
     state: "rejected" | "validation_error",
+    leaseId: string,
   ): Promise<void>;
-  beginValidation(intentId: string): Promise<UploadIntentRecord>;
+  beginValidation(intentId: string): Promise<ValidationLease>;
   findStoredFile(
     userId: string,
     sha256: string,
   ): Promise<StoredFileRecord | undefined>;
   accept(input: {
     intentId: string;
+    leaseId: string;
     storedFile: StoredFileRecord;
     reused: boolean;
   }): Promise<StoredFileRecord>;
@@ -145,6 +168,9 @@ export type AttachmentWriteErrorCode =
   | "invalid-upload"
   | "upload-not-found"
   | "upload-expired"
+  | "validation-in-progress"
+  | "validation-retry-exhausted"
+  | "validation-lease-lost"
   | "size-mismatch"
   | "validation-failed"
   | "too-many-attachments"
@@ -346,6 +372,9 @@ function wrap(error: unknown): never {
       "global-quota-exceeded",
       "upload-not-found",
       "upload-expired",
+      "validation-in-progress",
+      "validation-retry-exhausted",
+      "validation-lease-lost",
       "too-many-attachments",
       "invalid-attachment",
       "uploads-disabled",
@@ -477,37 +506,74 @@ export function createAttachmentService(
           "upload-not-found",
           "Upload was not found",
         );
+      const completed = (file: StoredFileRecord, reused: boolean) => ({
+        id: file.id,
+        sha256: file.sha256,
+        byteSize: file.byteSize,
+        mime: file.detectedMime,
+        kind: attachmentKind(file.detectedMime),
+        reused,
+      });
+      if (intent.state === "accepted") {
+        const accepted = await repository.getAccepted(intent.id);
+        if (!accepted)
+          throw new AttachmentWriteError(
+            "attachment-unavailable",
+            "Stored File is unavailable",
+          );
+        return completed(accepted, accepted.reused);
+      }
       if (intent.expiresAt.getTime() <= now().getTime())
         throw new AttachmentWriteError(
           "upload-expired",
           "Upload Intent expired",
         );
-      const head = await store.head(intent.objectKey);
-      if (
-        !head ||
-        head.contentLength !== intent.declaredByteSize ||
-        (head.contentType && head.contentType !== intent.declaredMime)
-      ) {
-        await repository.markRejected(intent.id, "rejected");
-        throw new AttachmentWriteError(
-          "size-mismatch",
-          "Uploaded object does not match the reserved size or type",
-        );
-      }
+      let lease: ValidationLease;
       try {
-        await repository.beginValidation(intent.id);
+        lease = await repository.beginValidation(intent.id);
       } catch (error) {
+        // Another request may have accepted after our initial intent read.
+        if (
+          error instanceof AttachmentWriteError &&
+          error.code === "upload-not-found"
+        ) {
+          const accepted = await repository.getAccepted(intent.id);
+          if (accepted) return completed(accepted, accepted.reused);
+        }
         wrap(error);
       }
-      const bytes = await store.get(intent.objectKey, intent.declaredByteSize);
-      if (!bytes || bytes.byteLength !== intent.declaredByteSize) {
-        await repository.markRejected(intent.id, "rejected");
-        throw new AttachmentWriteError(
-          "size-mismatch",
-          "Uploaded object does not match the reserved size or type",
-        );
-      }
       try {
+        // Bound origin requests to this lease. PostgreSQL remains the final
+        // authority; a provider may still finish a cancelled request late.
+        const signal = AbortSignal.timeout(
+          Math.max(
+            1,
+            Math.min(
+              VALIDATION_LEASE_SECONDS * 1000,
+              lease.validationLeaseExpiresAt.getTime() - now().getTime(),
+            ),
+          ),
+        );
+        const head = await store.head(intent.objectKey, signal);
+        if (
+          !head ||
+          head.contentLength !== intent.declaredByteSize ||
+          (head.contentType && head.contentType !== intent.declaredMime)
+        )
+          throw new AttachmentWriteError(
+            "size-mismatch",
+            "Uploaded object does not match the reserved size or type",
+          );
+        const bytes = await store.get(
+          intent.objectKey,
+          intent.declaredByteSize,
+          signal,
+        );
+        if (!bytes || bytes.byteLength !== intent.declaredByteSize)
+          throw new AttachmentWriteError(
+            "size-mismatch",
+            "Uploaded object does not match the reserved size or type",
+          );
         const { validateUpload } = await import("./validation");
         const detected = validateUpload({
           bytes,
@@ -521,7 +587,7 @@ export function createAttachmentService(
           ({
             id: randomUUID(),
             ownerUserId: input.userId,
-            objectKey: `verified/${intent.id}`,
+            objectKey: lease.validationObjectKey,
             byteSize: bytes.byteLength,
             sha256: digest,
             detectedMime: detected.mime,
@@ -529,32 +595,43 @@ export function createAttachmentService(
         // The presigned PUT remains replayable until expiry. Publish only the
         // exact bytes validated here, under a key the uploader cannot write.
         if (!reused)
-          await store.put(storedFile.objectKey, bytes, detected.mime);
+          await store.put(storedFile.objectKey, bytes, detected.mime, signal);
         const accepted = await repository.accept({
           intentId: intent.id,
+          leaseId: lease.validationLeaseId,
           storedFile,
           reused: Boolean(reused),
         });
         // Expiry cleanup retains this intent and retries deletion, including
         // any replayed upload. A cleanup failure must not hide acceptance.
         await store.delete(intent.objectKey).catch(() => {});
-        return {
-          id: accepted.id,
-          sha256: accepted.sha256,
-          byteSize: accepted.byteSize,
-          mime: accepted.detectedMime,
-          kind: attachmentKind(accepted.detectedMime),
-          reused: Boolean(reused) || accepted.id !== storedFile.id,
-        };
+        return completed(
+          accepted,
+          Boolean(reused) || accepted.id !== storedFile.id,
+        );
       } catch (error) {
         const { AttachmentValidationError } = await import("./validation");
         if (error instanceof AttachmentValidationError) {
-          await repository.markRejected(intent.id, "rejected");
+          await repository.markRejected(
+            intent.id,
+            "rejected",
+            lease.validationLeaseId,
+          );
           throw new AttachmentWriteError(
             "validation-failed",
             "Upload rejected",
           );
         }
+        await repository
+          .markRejected(
+            intent.id,
+            error instanceof AttachmentWriteError &&
+              error.code === "size-mismatch"
+              ? "rejected"
+              : "validation_error",
+            lease.validationLeaseId,
+          )
+          .catch(() => {});
         wrap(error);
       }
     },

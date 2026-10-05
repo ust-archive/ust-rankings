@@ -100,10 +100,11 @@ export class SpacesAttachmentStore implements AttachmentStore {
     return { url };
   }
 
-  async head(key: string) {
+  async head(key: string, signal?: AbortSignal) {
     try {
       const result = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: this.key(key) }),
+        { abortSignal: signal },
       );
       return {
         contentLength: result.ContentLength ?? 0,
@@ -115,10 +116,11 @@ export class SpacesAttachmentStore implements AttachmentStore {
     }
   }
 
-  async get(key: string, maxBytes: number) {
+  async get(key: string, maxBytes: number, signal?: AbortSignal) {
     try {
       const result = await this.client.send(
         new GetObjectCommand({ Bucket: this.bucket, Key: this.key(key) }),
+        { abortSignal: signal },
       );
       if (result.ContentLength !== undefined && result.ContentLength > maxBytes)
         return undefined;
@@ -141,7 +143,12 @@ export class SpacesAttachmentStore implements AttachmentStore {
     }
   }
 
-  async put(key: string, bytes: Uint8Array, contentType: string) {
+  async put(
+    key: string,
+    bytes: Uint8Array,
+    contentType: string,
+    signal?: AbortSignal,
+  ) {
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
@@ -150,6 +157,7 @@ export class SpacesAttachmentStore implements AttachmentStore {
         ContentLength: bytes.byteLength,
         ContentType: contentType,
       }),
+      { abortSignal: signal },
     );
   }
 
