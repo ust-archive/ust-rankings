@@ -9,6 +9,39 @@ const alpha = "00000000-0000-4000-8000-000000000001";
 const beta = "00000000-0000-4000-8000-000000000002";
 const gamma = "00000000-0000-4000-8000-000000000003";
 
+test("historical ITSC events preserve the snapshot current identifier in either order", () => {
+  const events = [
+    {
+      type: "itsc-added" as const,
+      uuid: alpha,
+      itsc: "alex-old",
+      sourceCommit,
+    },
+    {
+      type: "itsc-added" as const,
+      uuid: alpha,
+      itsc: "alex-new",
+      sourceCommit: "ffffffffffffffffffffffffffffffffffffffff",
+    },
+  ];
+  for (const ordered of [events, events.toReversed()]) {
+    const history = buildInstructorIdentityHistory({
+      sourceCommit,
+      identities: [{ uuid: alpha, itsc: "alex-new", aliasSourceCommits: [] }],
+      events: ordered,
+      associationCorrections: [],
+    });
+    expect(history.itscByUuid.get(alpha)).toBe("alex-new");
+    expect(history.uuidByItsc.get("alex-old")).toBe(alpha);
+    expect(history.identifiersByUuid.get(alpha)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: "alex-old", status: "retired" }),
+        expect.objectContaining({ value: "alex-new", status: "current" }),
+      ]),
+    );
+  }
+});
+
 function correction(
   value: Partial<InstructorAssociationCorrection>,
 ): InstructorAssociationCorrection {
