@@ -76,6 +76,7 @@ test("WL calculates independent browser-only Course Plans", async ({
 
 test("WL search accepts compact Course Codes", async ({ page }) => {
   await page.goto("/wl");
+  await expect(waitlistCard(page)).toBeVisible();
   const search = page.getByRole("searchbox", {
     name: "Search WL Courses",
   });
@@ -142,12 +143,23 @@ test("WL retains plans through filtering and validates positions", async ({
   });
   await position.fill("9");
   await expect(position).toHaveAttribute("aria-invalid", "true");
+  await expect(position).toHaveAccessibleDescription(
+    "WL position cannot exceed the current wait of 8.",
+  );
+  await expect(
+    card.getByText("WL position cannot exceed the current wait of 8."),
+  ).toBeVisible();
   await expect(card.getByRole("button", { name: "Calculate WL" })).toHaveCount(
     0,
   );
-  expect(page.url()).not.toContain("9");
+  expect(new URL(page.url()).search).not.toContain("9");
 
   await position.fill("5");
+  await expect(position).toHaveAttribute("aria-invalid", "false");
+  await expect(position).not.toHaveAttribute("aria-describedby");
+  await expect(
+    card.getByText("WL position cannot exceed the current wait of 8."),
+  ).toHaveCount(0);
   await expect(card.getByRole("region", { name: "WL result" })).toBeVisible();
   const search = page.getByRole("searchbox", {
     name: "Search WL Courses",
@@ -171,4 +183,41 @@ test("WL retains plans through filtering and validates positions", async ({
       name: "WL Position for WAIT 3000 L1",
     }),
   ).toHaveCount(0);
+});
+
+test("WL meeting details distinguish unpublished times from midnight", async ({
+  page,
+}) => {
+  // Supply nullable and blank times at the public Worker boundary. A genuine
+  // zero remains midnight, even alongside unpublished meeting times.
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        this.addEventListener("message", (event) => {
+          const offering = event.data.output?.results?.find(
+            (item: { courseCode: string }) => item.courseCode === "WAIT 3000",
+          );
+          if (!offering) return;
+          offering.classes[0].schedules = [
+            { weekday: "Mon", time_from: null, time_to: null },
+            { weekday: "Tue", time_from: "", time_to: " " },
+            { weekday: "Wed", time_from: 0, time_to: 3_000_000_000 },
+            { weekday: "Thu" },
+          ];
+        });
+      }
+    };
+  });
+  await page.goto("/wl?q=WAIT3000");
+  const card = waitlistCard(page);
+  await card
+    .getByRole("button", { name: "More details for WAIT 3000 L1" })
+    .click();
+  const details = page.getByRole("tooltip");
+  await expect(details).toBeVisible();
+  for (const day of ["Mon", "Tue", "Thu"])
+    await expect(details.getByText(day, { exact: true })).toBeVisible();
+  await expect(details).toContainText("Wed 00:00–00:50");
 });
