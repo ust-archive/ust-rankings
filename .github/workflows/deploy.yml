@@ -4,14 +4,11 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+    branches: [master]
 
 permissions:
   actions: read
   contents: read
-
-concurrency:
-  group: production
-  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -19,6 +16,9 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'master'
+    concurrency:
+      group: production
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
