@@ -47,9 +47,10 @@ const enrollmentStarts = Object.entries(WAITLIST_TERMS)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const output = resolve(
   root,
-  validationTerm
-    ? `data/prototypes/waitlist-clearance-validation-${validationTerm}.md`
-    : "data/prototypes/waitlist-clearance-report.md",
+  process.env.WAITLIST_REPORT_PATH ??
+    (validationTerm
+      ? `data/prototypes/waitlist-clearance-validation-${validationTerm}.md`
+      : "data/prototypes/waitlist-clearance-report.md"),
 );
 const unifiedClasses =
   process.env.WAITLIST_CLASSES_PATH ??
@@ -134,11 +135,13 @@ type CurrentClass = Features & {
   wait: number;
 };
 
-async function extractTrajectories(): Promise<Trajectory[]> {
+export async function extractTrajectories(
+  path = unifiedClasses,
+): Promise<Trajectory[]> {
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
   try {
-    if (unifiedClasses.startsWith("http"))
+    if (path.startsWith("http"))
       await connection.run("INSTALL httpfs; LOAD httpfs;");
     await connection.run("SET threads = 1");
     // Keep the wide event scan and movement calculation in DuckDB.
@@ -172,7 +175,7 @@ async function extractTrajectories(): Promise<Trajectory[]> {
             WHEN '2610' THEN TIMESTAMPTZ '${terms["2610"].addDropEnd}'
             ELSE NULL::TIMESTAMPTZ
           END AS add_drop_end
-        FROM read_parquet('${sqlPath(unifiedClasses)}')
+        FROM read_parquet('${sqlPath(path)}')
         WHERE term_code IN (${extractionTerms})
           AND course_code IS NOT NULL
           AND section IS NOT NULL
@@ -241,7 +244,7 @@ async function extractTrajectories(): Promise<Trajectory[]> {
           (
             SELECT max(try_cast(regexp_extract(
               coalesce(schedule.unnest.venue_name, schedule.unnest.venue),
-              '\\\\((\\\\d+)\\\\)\\\\s*$', 1
+              '\\((\\d+)\\)\\s*$', 1
             ) AS INTEGER))
             FROM unnest(schedules) AS schedule
           )::INTEGER AS venue_capacity,
@@ -1266,189 +1269,258 @@ function jointSelfCheck(): void {
     throw new Error("joint movement self-check failed");
 }
 
-const startedAt = performance.now();
-selfCheck();
-jointSelfCheck();
-if (process.argv.includes("--self-check")) {
-  console.log("Waitlist single-Class and joint self-checks passed");
-  process.exit(0);
-}
-console.error("Extracting historical queue trajectories…");
-const trajectories = await extractTrajectories();
-if (process.argv.includes("--extract-only")) {
-  console.log(`Extracted ${trajectories.length} trajectories`);
-  process.exit(0);
-}
-const current = await currentHuma();
-const scheduleRevision = await sourceRevision(unifiedClasses);
-const position = 25;
-const hoursSinceActivation = Math.max(
-  0,
-  (current.timestamp - current.activation) / 3_600_000,
-);
-const modelResults = modelNames.map((model) => ({
-  model,
-  ...tune(trajectories, model),
-}));
-const retained = [...modelResults].sort((a, b) => a.brier - b.brier)[0];
-
-const bundles = bundleTrajectories(trajectories as WaitlistTrajectory[]);
-const jointModelResults = modelNames.map((model) => ({
-  model,
-  ...tuneJointFast(
-    bundles,
-    model,
-    validationTerm ? [validationTerm] : undefined,
-  ),
-}));
-const retainedJoint = [...jointModelResults].sort(
-  (a, b) =>
-    (Number.isNaN(a.brier) ? Number.POSITIVE_INFINITY : a.brier) -
-    (Number.isNaN(b.brier) ? Number.POSITIVE_INFINITY : b.brier),
-)[0];
-if (!retainedJoint) throw new Error("No joint model result was available");
-const productionJointModel = "baseline" as const;
-const productionPriorWeight = WAITLIST_PRIOR_WEIGHT;
-const productionJointWeight = productionPriorWeight;
-const jointBundle = bundles.find(
-  (bundle) =>
-    bundle.components.length >= 2 &&
-    jointSample(bundle, 25, 24) !== undefined &&
-    (!validationTerm || bundle.term !== validationTerm),
-);
-const jointTraining = validationTerm
-  ? bundles.filter(
-      (bundle) =>
-        Date.parse(terms[bundle.term as TermCode].addDropEnd) <
-        Date.parse(terms[validationTerm as TermCode].addDropEnd),
-    )
-  : bundles;
-const jointPredictionResult = jointBundle
-  ? jointPredictionFast(
-      jointTraining,
-      jointBundle,
-      25,
-      24,
-      productionJointModel,
-      productionJointWeight,
-    )
-  : undefined;
-const jointUncertainty = jointPredictionResult
-  ? jointInterval(
-      jointPredictionResult.estimate,
-      jointPredictionResult.local.length,
-      productionJointWeight,
-    )
-  : undefined;
-
-const target: Trajectory = {
-  activationAt: current.activation,
-  activationFeatures: current,
-  course: "HUMA 1710",
-  events: [{ at: current.activation, wait: current.wait }],
-  section: "L1",
-  term: "2610",
-  type: "LEC",
-};
-const targetTraining = trajectories.filter(
-  (trajectory) =>
-    Date.parse(terms[trajectory.term].addDropEnd) <
-    Date.parse(terms["2610"].addDropEnd),
-);
-const targetPrediction = targetPredictionFast(
-  targetTraining,
-  target,
-  position,
-  hoursSinceActivation,
-  retained.model,
-  productionPriorWeight,
-);
-if (!targetPrediction) throw new Error("No historical LEC prior was available");
-const uncertainty = interval(
-  targetPrediction.estimate,
-  targetPrediction.local.length,
-  productionPriorWeight,
-);
-const displayedEstimate = Math.round(targetPrediction.estimate * 100);
-const displayedLow = Math.round(uncertainty.low * 100);
-const displayedHigh = Math.round(uncertainty.high * 100);
-const displayedMargin = Math.max(
-  displayedEstimate - displayedLow,
-  displayedHigh - displayedEstimate,
-);
-const localSuccesses = targetPrediction.local.filter(
-  (result) => result.success,
-).length;
-const localNet = targetPrediction.local.map((result) => result.net);
-const localGross = targetPrediction.local.map((result) => result.gross);
-
-const historicalHuma =
-  trajectories.find(
-    (trajectory) =>
-      trajectory.term === "2510" &&
-      trajectory.course === "HUMA 1710" &&
-      trajectory.section === "L1" &&
-      trajectory.association === undefined,
-  ) ??
-  trajectories.find(
-    (trajectory) =>
-      trajectory.term === "2510" &&
-      trajectory.course === "HUMA 1710" &&
-      trajectory.section === "L1",
+async function liveDemonstration(
+  trajectories: Trajectory[],
+  model: ModelName,
+): Promise<string> {
+  const current = await currentHuma();
+  const position = 25;
+  if (
+    !Number.isFinite(current.activation) ||
+    current.activation <= 0 ||
+    current.wait < position
+  )
+    return "## Live demonstration\n\nUnavailable: HUMA 1710 L1 has no active position-25 queue.\n\n";
+  const hoursSinceActivation = Math.max(
+    0,
+    (current.timestamp - current.activation) / 3_600_000,
   );
-const historicalHumaFeatures = historicalHuma?.deadlineFeatures;
-const generalCapacity = current.capacity - current.reservationQuota;
-const generalEnroll = current.enroll - current.reservationEnroll;
-const generalHeadroom = Math.max(generalCapacity - generalEnroll, 0);
-const roomExpansion = Math.max(
-  (current.venueCapacity ?? current.capacity) - current.capacity,
-  0,
-);
-const historicalExpansion = Math.max(
-  (historicalHumaFeatures?.capacity ?? current.capacity) - current.capacity,
-  0,
-);
+  const productionPriorWeight = WAITLIST_PRIOR_WEIGHT;
+  const target: Trajectory = {
+    activationAt: current.activation,
+    activationFeatures: current,
+    course: "HUMA 1710",
+    events: [{ at: current.activation, wait: current.wait }],
+    section: "L1",
+    term: "2610",
+    type: "LEC",
+  };
+  const targetTraining = trajectories.filter(
+    (trajectory) =>
+      Date.parse(terms[trajectory.term].addDropEnd) <
+      Date.parse(terms["2610"].addDropEnd),
+  );
+  const targetPrediction = targetPredictionFast(
+    targetTraining,
+    target,
+    position,
+    hoursSinceActivation,
+    model,
+    productionPriorWeight,
+  );
+  if (!targetPrediction)
+    return "## Live demonstration\n\nUnavailable: no comparable historical LEC prior.\n\n";
+  const uncertainty = interval(
+    targetPrediction.estimate,
+    targetPrediction.local.length,
+    productionPriorWeight,
+  );
+  const displayedEstimate = Math.round(targetPrediction.estimate * 100);
+  const displayedLow = Math.round(uncertainty.low * 100);
+  const displayedHigh = Math.round(uncertainty.high * 100);
+  const displayedMargin = Math.max(
+    displayedEstimate - displayedLow,
+    displayedHigh - displayedEstimate,
+  );
+  const localSuccesses = targetPrediction.local.filter(
+    (result) => result.success,
+  ).length;
+  const localNet = targetPrediction.local.map((result) => result.net);
+  const localGross = targetPrediction.local.map((result) => result.gross);
 
-const waitlisted = trajectories.filter((trajectory) =>
-  trajectory.events.some((event) => event.wait > 0),
-);
-const reportTermCodes = validationTerm
-  ? [...new Set([...historicalTermCodes, validationTerm as TermCode])]
-  : historicalTermCodes;
-const termRows = reportTermCodes.map((term) => {
-  const rows = trajectories.filter((trajectory) => trajectory.term === term);
-  return `| ${term} | ${terms[term].season} | ${terms[term].enrollmentStart.slice(0, 10)} | ${terms[term].addDropEnd.slice(0, 10)} | ${rows.length} | ${rows.filter((trajectory) => trajectory.events.some((event) => event.wait > 0)).length} |`;
-});
-const modelRows = modelResults.map(
-  (result) =>
-    `| ${result.model} | ${result.weight} | ${result.brier.toFixed(4)} | ${result.exact}/${result.total} | ${result.model === retained.model ? "Retain" : "Reject"} |`,
-);
-const tuningRows = retained.scores.map(
-  (result) => `| ${result.weight} | ${result.brier.toFixed(4)} |`,
-);
-const jointModelRows = jointModelResults.map(
-  (result) =>
-    `| ${result.model} | ${result.weight} | ${Number.isNaN(result.brier) ? "n/a" : result.brier.toFixed(4)} | ${result.exact}/${result.total} | ${result.model === productionJointModel ? "Retain" : "Reject"} |`,
-);
-const jointPattern = jointBundle?.pattern ?? "none";
-const jointHeadline =
-  jointPredictionResult && jointUncertainty
-    ? formatHeadline(
+  const historicalHuma =
+    trajectories.find(
+      (trajectory) =>
+        trajectory.term === "2510" &&
+        trajectory.course === "HUMA 1710" &&
+        trajectory.section === "L1" &&
+        trajectory.association === undefined,
+    ) ??
+    trajectories.find(
+      (trajectory) =>
+        trajectory.term === "2510" &&
+        trajectory.course === "HUMA 1710" &&
+        trajectory.section === "L1",
+    );
+  const historicalHumaFeatures = historicalHuma?.deadlineFeatures;
+  const generalCapacity = current.capacity - current.reservationQuota;
+  const generalEnroll = current.enroll - current.reservationEnroll;
+  const generalHeadroom = Math.max(generalCapacity - generalEnroll, 0);
+  const roomExpansion = Math.max(
+    (current.venueCapacity ?? current.capacity) - current.capacity,
+    0,
+  );
+  const historicalExpansion = Math.max(
+    (historicalHumaFeatures?.capacity ?? current.capacity) - current.capacity,
+    0,
+  );
+
+  return `## Demonstration: HUMA 1710 L1, position 25
+
+Current Schedule snapshot (${new Date(current.timestamp).toISOString()}):
+
+- Queue Activation first observed: **${new Date(current.activation).toISOString()}**
+- Time since Queue Activation: **${hoursSinceActivation.toFixed(1)} hours**
+- Normal UG enrollment started: **25 August 2026**
+- Add/drop ends: **14 September 2026**
+- Capacity / enrolled / waitlisted: **${current.capacity} / ${current.enroll} / ${current.wait}**
+- Venue: **${current.venue}**, physical capacity **${current.venueCapacity ?? "unknown"}**
+- Reserved quota: **${current.reservationEnroll}/${current.reservationQuota} enrolled**
+
+> **Historical queue evidence: ${displayedEstimate}% ±${displayedMargin} pp (${displayedLow}–${displayedHigh}%)**
+> Estimated uncertainty width: **${Math.round(uncertainty.width * 100)} percentage points**
+> Exact histories: **${targetPrediction.local.length}** (${localSuccesses} favorable); broader LEC histories: **${targetPrediction.priorSamples}** at **${percent(targetPrediction.prior)}**
+> Broader-prior influence: **${productionPriorWeight}-history equivalent**; this is not the student's enrollment probability.
+
+### Capacity scenarios
+
+| Scenario | Additional physical/general headroom | Position-25 interpretation |
+| --- | ---: | --- |
+| No quota expansion | ${generalHeadroom} currently available general seats | Requires drops or reservation release |
+| Expand to current venue (${current.venueCapacity ?? "unknown"}) | Up to ${roomExpansion} additional seats | Capacity arithmetic could cover position 25, but expansion is not promised |
+| Repeat last year's larger-venue outcome (${historicalHumaFeatures?.capacity ?? "unknown"}) | Up to ${historicalExpansion} additional seats | Historically possible, not a forecast |
+
+Last Fall, the deadline snapshot had capacity **${historicalHumaFeatures?.capacity ?? "unknown"}**, wait **${historicalHuma?.deadlineWait ?? "unknown"}**, venue ceiling **${historicalHumaFeatures?.venueCapacity ?? "unknown"}**, and reservation quota **${historicalHumaFeatures?.reservationQuota ?? "unknown"}**. A venue-driven quota increase materially changed that queue, so capacity paths belong in the evidence rather than being dismissed as noise.
+
+<details>
+<summary>How the headline was formed</summary>
+
+- Exact matching: same Course, Class type, and Season; then same Course and Class type.
+- Raw exact outcomes: ${targetPrediction.local.length ? `${localSuccesses}/${targetPrediction.local.length}` : "none"} had net queue reduction of at least ${position}.
+- Exact net reductions: ${localNet.length ? localNet.join(", ") : "none"}.
+- Exact observed exits: ${localGross.length ? localGross.join(", ") : "none"}.
+- Sparse exact evidence is shrunk toward the broader same-type rate using production prior weight ${productionPriorWeight}; it is never displayed as an unsupported raw 0% or 100%.
+- Headline calculation: \`(${localSuccesses} + ${productionPriorWeight} × ${targetPrediction.prior.toFixed(3)}) ÷ (${targetPrediction.local.length} + ${productionPriorWeight}) = ${targetPrediction.estimate.toFixed(3)}\`.
+- The ± value is an estimated uncertainty margin; the explicit range is capped to 0–100% and may therefore be asymmetric.
+- Net reduction and observed exits are diagnostics, not mathematical probability bounds.
+
+</details>
+
+`;
+}
+
+export async function runWaitlistPrototype(): Promise<void> {
+  const startedAt = performance.now();
+  selfCheck();
+  jointSelfCheck();
+  if (process.argv.includes("--self-check")) {
+    console.log("Waitlist single-Class and joint self-checks passed");
+    return;
+  }
+  console.error("Extracting historical queue trajectories…");
+  const trajectories = await extractTrajectories();
+  if (process.argv.includes("--extract-only")) {
+    console.log(`Extracted ${trajectories.length} trajectories`);
+    return;
+  }
+  const scheduleRevision = await sourceRevision(unifiedClasses);
+  const modelResults = modelNames.map((model) => ({
+    model,
+    ...tune(trajectories, model),
+  }));
+  const retained = [...modelResults].sort((a, b) => a.brier - b.brier)[0];
+
+  const bundles = bundleTrajectories(trajectories as WaitlistTrajectory[]);
+  const jointModelResults = modelNames.map((model) => ({
+    model,
+    ...tuneJointFast(
+      bundles,
+      model,
+      validationTerm ? [validationTerm] : undefined,
+    ),
+  }));
+  const retainedJoint = [...jointModelResults].sort(
+    (a, b) =>
+      (Number.isNaN(a.brier) ? Number.POSITIVE_INFINITY : a.brier) -
+      (Number.isNaN(b.brier) ? Number.POSITIVE_INFINITY : b.brier),
+  )[0];
+  if (!retainedJoint) throw new Error("No joint model result was available");
+  const productionJointModel = "baseline" as const;
+  const productionPriorWeight = WAITLIST_PRIOR_WEIGHT;
+  const productionJointWeight = productionPriorWeight;
+  const jointBundle = bundles.find(
+    (bundle) =>
+      bundle.components.length >= 2 &&
+      jointSample(bundle, 25, 24) !== undefined &&
+      (!validationTerm || bundle.term !== validationTerm),
+  );
+  const jointTraining = validationTerm
+    ? bundles.filter(
+        (bundle) =>
+          Date.parse(terms[bundle.term as TermCode].addDropEnd) <
+          Date.parse(terms[validationTerm as TermCode].addDropEnd),
+      )
+    : bundles;
+  const jointPredictionResult = jointBundle
+    ? jointPredictionFast(
+        jointTraining,
+        jointBundle,
+        25,
+        24,
+        productionJointModel,
+        productionJointWeight,
+      )
+    : undefined;
+  const jointUncertainty = jointPredictionResult
+    ? jointInterval(
         jointPredictionResult.estimate,
         jointPredictionResult.local.length,
         productionJointWeight,
       )
-    : "Unavailable (no two-component Course Offering in the source)";
-const jointCalculation = jointPredictionResult
-  ? `(${jointPredictionResult.successes} + ${productionJointWeight} × ${jointPredictionResult.prior.toFixed(3)}) ÷ (${jointPredictionResult.local.length} + ${productionJointWeight}) = ${jointPredictionResult.estimate.toFixed(3)}`
-  : "not available";
+    : undefined;
 
-if (validationTerm && !bundles.some((bundle) => bundle.term === validationTerm))
-  throw new Error(
-    `Validation Term ${validationTerm} has no completed trajectories`,
+  let demonstration =
+    "## Live demonstration\n\nNot requested; use --live-demo to include the optional current HUMA 1710 L1 example.\n\n";
+  if (process.argv.includes("--live-demo")) {
+    try {
+      demonstration = await liveDemonstration(trajectories, retained.model);
+    } catch (error) {
+      demonstration = `## Live demonstration\n\nUnavailable: ${error instanceof Error ? error.message : String(error)}\n\n`;
+    }
+  }
+  const waitlisted = trajectories.filter((trajectory) =>
+    trajectory.events.some((event) => event.wait > 0),
   );
+  const reportTermCodes = validationTerm
+    ? [...new Set([...historicalTermCodes, validationTerm as TermCode])]
+    : historicalTermCodes;
+  const termRows = reportTermCodes.map((term) => {
+    const rows = trajectories.filter((trajectory) => trajectory.term === term);
+    return `| ${term} | ${terms[term].season} | ${terms[term].enrollmentStart.slice(0, 10)} | ${terms[term].addDropEnd.slice(0, 10)} | ${rows.length} | ${rows.filter((trajectory) => trajectory.events.some((event) => event.wait > 0)).length} |`;
+  });
+  const modelRows = modelResults.map(
+    (result) =>
+      `| ${result.model} | ${result.weight} | ${result.brier.toFixed(4)} | ${result.exact}/${result.total} | ${result.model === retained.model ? "Retain" : "Reject"} |`,
+  );
+  const tuningRows = retained.scores.map(
+    (result) => `| ${result.weight} | ${result.brier.toFixed(4)} |`,
+  );
+  const jointModelRows = jointModelResults.map(
+    (result) =>
+      `| ${result.model} | ${result.weight} | ${Number.isNaN(result.brier) ? "n/a" : result.brier.toFixed(4)} | ${result.exact}/${result.total} | ${result.model === productionJointModel ? "Retain" : "Reject"} |`,
+  );
+  const jointPattern = jointBundle?.pattern ?? "none";
+  const jointHeadline =
+    jointPredictionResult && jointUncertainty
+      ? formatHeadline(
+          jointPredictionResult.estimate,
+          jointPredictionResult.local.length,
+          productionJointWeight,
+        )
+      : "Unavailable (no two-component Course Offering in the source)";
+  const jointCalculation = jointPredictionResult
+    ? `(${jointPredictionResult.successes} + ${productionJointWeight} × ${jointPredictionResult.prior.toFixed(3)}) ÷ (${jointPredictionResult.local.length} + ${productionJointWeight}) = ${jointPredictionResult.estimate.toFixed(3)}`
+    : "not available";
 
-const report = `# Waitlist queue-evidence ${validationTerm ? `${validationTerm} validation` : "prototype"}
+  if (
+    validationTerm &&
+    !bundles.some((bundle) => bundle.term === validationTerm)
+  )
+    throw new Error(
+      `Validation Term ${validationTerm} has no completed trajectories`,
+    );
+
+  const report = `# Waitlist queue-evidence ${validationTerm ? `${validationTerm} validation` : "prototype"}
 
 ${validationTerm ? `This report evaluates the frozen candidate grid against held-out Term **${validationTerm}**. It does not update production parameters.\n\n` : ""}**Question:** Can aggregate UST Class history provide useful queue evidence without claiming to know an individual student's enrollment outcome?
 
@@ -1502,55 +1574,17 @@ ${jointModelRows.join("\n")}
 
 The production joint candidate is **${productionJointModel}** with frozen prior weight **${productionJointWeight}**. The held-out grid's best baseline weight is **${jointModelResults.find((result) => result.model === productionJointModel)?.weight ?? "n/a"}**; changing production parameters requires a repeatable refresh. Exact smoothing is independent of the single-Class provisional result above.
 
-## Demonstration: HUMA 1710 L1, position 25
-
-Current Schedule snapshot (${new Date(current.timestamp).toISOString()}):
-
-- Queue Activation first observed: **${new Date(current.activation).toISOString()}**
-- Time since Queue Activation: **${hoursSinceActivation.toFixed(1)} hours**
-- Normal UG enrollment started: **25 August 2026**
-- Add/drop ends: **14 September 2026**
-- Capacity / enrolled / waitlisted: **${current.capacity} / ${current.enroll} / ${current.wait}**
-- Venue: **${current.venue}**, physical capacity **${current.venueCapacity ?? "unknown"}**
-- Reserved quota: **${current.reservationEnroll}/${current.reservationQuota} enrolled**
-
-> **Historical queue evidence: ${displayedEstimate}% ±${displayedMargin} pp (${displayedLow}–${displayedHigh}%)**
-> Estimated uncertainty width: **${Math.round(uncertainty.width * 100)} percentage points**
-> Exact histories: **${targetPrediction.local.length}** (${localSuccesses} favorable); broader LEC histories: **${targetPrediction.priorSamples}** at **${percent(targetPrediction.prior)}**
-> Broader-prior influence: **${productionPriorWeight}-history equivalent**; this is not the student's enrollment probability.
-
-### Capacity scenarios
-
-| Scenario | Additional physical/general headroom | Position-25 interpretation |
-| --- | ---: | --- |
-| No quota expansion | ${generalHeadroom} currently available general seats | Requires drops or reservation release |
-| Expand to current venue (${current.venueCapacity ?? "unknown"}) | Up to ${roomExpansion} additional seats | Capacity arithmetic could cover position 25, but expansion is not promised |
-| Repeat last year's larger-venue outcome (${historicalHumaFeatures?.capacity ?? "unknown"}) | Up to ${historicalExpansion} additional seats | Historically possible, not a forecast |
-
-Last Fall, the deadline snapshot had capacity **${historicalHumaFeatures?.capacity ?? "unknown"}**, wait **${historicalHuma?.deadlineWait ?? "unknown"}**, venue ceiling **${historicalHumaFeatures?.venueCapacity ?? "unknown"}**, and reservation quota **${historicalHumaFeatures?.reservationQuota ?? "unknown"}**. A venue-driven quota increase materially changed that queue, so capacity paths belong in the evidence rather than being dismissed as noise.
-
-<details>
-<summary>How the headline was formed</summary>
-
-- Exact matching: same Course, Class type, and Season; then same Course and Class type.
-- Raw exact outcomes: ${targetPrediction.local.length ? `${localSuccesses}/${targetPrediction.local.length}` : "none"} had net queue reduction of at least ${position}.
-- Exact net reductions: ${localNet.length ? localNet.join(", ") : "none"}.
-- Exact observed exits: ${localGross.length ? localGross.join(", ") : "none"}.
-- Sparse exact evidence is shrunk toward the broader same-type rate using production prior weight ${productionPriorWeight}; it is never displayed as an unsupported raw 0% or 100%.
-- Headline calculation: \`(${localSuccesses} + ${productionPriorWeight} × ${targetPrediction.prior.toFixed(3)}) ÷ (${targetPrediction.local.length} + ${productionPriorWeight}) = ${targetPrediction.estimate.toFixed(3)}\`.
-- The ± value is an estimated uncertainty margin; the explicit range is capped to 0–100% and may therefore be asymmetric.
-- Net reduction and observed exits are diagnostics, not mathematical probability bounds.
-
-</details>
-
-## Verdict
+${demonstration}## Verdict
 
 The prototype always returns a transparent historical-evidence estimate, but release still requires the retained model to beat simpler alternatives consistently across Terms and queue positions. Reservation eligibility is not requested because the archive cannot calibrate subgroup outcomes. Official dates remain a checked static table until unsupported Terms justify a feed integration.
 `;
 
-await mkdir(dirname(output), { recursive: true });
-await writeFile(output, report);
-console.log(output);
-console.error(
-  `Waitlist report generated in ${((performance.now() - startedAt) / 1000).toFixed(2)}s`,
-);
+  await mkdir(dirname(output), { recursive: true });
+  await writeFile(output, report);
+  console.log(output);
+  console.error(
+    `Waitlist report generated in ${((performance.now() - startedAt) / 1000).toFixed(2)}s`,
+  );
+}
+
+if (import.meta.main) await runWaitlistPrototype();
