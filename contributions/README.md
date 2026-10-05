@@ -108,8 +108,9 @@ from public reads without deleting immutable Revisions. It does not recall CC BY
 Signal reads return only aggregate counts plus the requesting User's own current
 states. Pages are dynamic and never put session-specific state or participant
 identities in shared cache entries. Mutations send desired state, re-check active
-User status in the same PostgreSQL statement, and validate targets against the
-ranking module. Course Offerings, Classes, and Reviews are not accepted targets.
+User status in the same PostgreSQL statement. Course and Instructor targets are
+validated against the active Server Index; Review targets must be active in
+contribution storage. Course Offerings and Classes are not accepted targets.
 
 When an approved Instructor registry correction merges UUIDs, run the idempotent
 deployment-controlled operation after applying migrations:

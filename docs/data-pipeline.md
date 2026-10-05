@@ -204,8 +204,11 @@ use the tab-pinned Worker. `schedule-courses.parquet` and
 latest active events are projected into typed meetings, venues, enrollment,
 reservations, and Instructor associations through `relation.parquet`. Failure
 shows an explicit Schedule-unavailable state while Rankings and Community stay
-usable. Calendar subscription UI and both `.ics` routes are removed; no
-server-side calendar query path remains.
+usable. Calendar download is generated in the browser from selected meetings.
+Calendar subscription UI remains available, and `/api/calendar` serves ICS from
+precomputed meeting records in the active Server Index, as specified in
+ADR-0003. This narrow endpoint does not query Parquet or provide a general
+server-side Schedule query fallback.
 
 Waitlist search reuses those lazy current Schedule relations. A typed Waitlist
 Plan operation validates required Class/position pairs and only then registers
