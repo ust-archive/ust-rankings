@@ -342,20 +342,27 @@ export function BrowserScheduleDetails({ entity }: { entity: ScheduleEntity }) {
               {meeting.dateTo ? `–${meeting.dateTo}` : ""}
             </p>
           ))}
-          {state.schedule.meetings
-            .flatMap((meeting) => meeting.instructors)
-            .map((instructor) =>
-              instructor.uuid ? (
-                <EntityLink
-                  href={instructorPath(instructor.uuid)}
-                  key={`${instructor.uuid}-${instructor.sourceName}`}
-                >
-                  {instructor.sourceName}
-                </EntityLink>
-              ) : (
-                <span key={instructor.sourceName}>{instructor.sourceName}</span>
-              ),
-            )}
+          {[
+            ...new Map(
+              state.schedule.meetings
+                .flatMap((meeting) => meeting.instructors)
+                .map((instructor) => [
+                  instructor.uuid ?? instructor.sourceName,
+                  instructor,
+                ]),
+            ).values(),
+          ].map((instructor) =>
+            instructor.uuid ? (
+              <EntityLink
+                href={instructorPath(instructor.uuid)}
+                key={instructor.uuid}
+              >
+                {instructor.sourceName}
+              </EntityLink>
+            ) : (
+              <span key={instructor.sourceName}>{instructor.sourceName}</span>
+            ),
+          )}
           {state.schedule.reservations.map((reservation) => (
             <p key={reservation.name}>
               {reservation.name}: {reservation.enrollment}/{reservation.quota}
