@@ -1,13 +1,14 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import { beginSearchNavigation } from "@/lib/rankings/search-lifecycle";
 import { withoutRankingPagination } from "@/lib/rankings/url";
 
 export function RankingSearch({
@@ -18,6 +19,7 @@ export function RankingSearch({
   initialValue: string;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const currentValue = searchParams.get("q") ?? "";
   const [value, setValue] = useState(initialValue);
@@ -29,11 +31,10 @@ export function RankingSearch({
     const next = withoutRankingPagination(searchParams);
     if (value) next.set("q", value);
     else next.delete("q");
-    window.history.replaceState(
-      null,
-      "",
-      `${pathname}${next.size ? `?${next}` : ""}`,
-    );
+    beginSearchNavigation();
+    router.replace(`${pathname}${next.size ? `?${next}` : ""}`, {
+      scroll: false,
+    });
   }
 
   const label =

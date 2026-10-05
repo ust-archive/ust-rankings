@@ -76,13 +76,21 @@ test("Course filtering preserves population Rank and searches Instructor relatio
   await expect(links.first()).toContainText("#3");
 });
 
-test("Course search updates the Worker locally without an RSC navigation", async ({
+test("Course search preserves filters and clears pagination through router navigation", async ({
   page,
 }) => {
-  await page.goto("/rankings/courses?term=2510");
+  await page.goto(
+    "/rankings/courses?term=2510&activity=all&preset=custom&weight_content=2&q=Bulk",
+  );
   await expect(
     page.getByRole("list", { name: "Course rankings" }),
   ).toBeVisible();
+  const initialResults = page.getByRole("list", { name: "Course rankings" });
+  await expect(initialResults.getByRole("link")).toHaveCount(100);
+  await initialResults.getByRole("link").last().scrollIntoViewIfNeeded();
+  await expect(initialResults.getByRole("link")).toHaveCount(105);
+  expect(new URL(page.url()).searchParams.get("pages")).toBe("2");
+  expect(new URL(page.url()).searchParams.has("cursor")).toBe(true);
   const rscRequests: string[] = [];
   page.on("request", (request) => {
     if (request.headers().rsc === "1") rscRequests.push(request.url());
@@ -91,7 +99,16 @@ test("Course search updates the Worker locally without an RSC navigation", async
   await page
     .getByRole("searchbox", { name: "Search Courses" })
     .fill("COMP 1000");
-  expect(new URL(page.url()).searchParams.get("q")).toBe("COMP 1000");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("q"))
+    .toBe("COMP 1000");
+  const query = new URL(page.url()).searchParams;
+  expect(query.get("term")).toBe("2510");
+  expect(query.get("activity")).toBe("all");
+  expect(query.get("preset")).toBe("custom");
+  expect(query.get("weight_content")).toBe("2");
+  expect(query.has("pages")).toBe(false);
+  expect(query.has("cursor")).toBe(false);
   const results = page
     .getByRole("list", { name: "Course rankings" })
     .getByRole("link");
@@ -99,7 +116,7 @@ test("Course search updates the Worker locally without an RSC navigation", async
   await expect(results).toContainText("COMP 1000");
   expect(
     rscRequests.filter((url) => new URL(url).pathname === "/rankings/courses"),
-  ).toEqual([]);
+  ).not.toEqual([]);
 });
 
 test("custom Course weights preserve server scoring", async ({ page }) => {
@@ -122,7 +139,9 @@ test("Course search accepts compact Course Codes", async ({ page }) => {
   ).toBeVisible();
   const search = page.getByRole("searchbox", { name: "Search Courses" });
   await search.fill("COMP1000");
-  expect(new URL(page.url()).searchParams.get("q")).toBe("COMP1000");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("q"))
+    .toBe("COMP1000");
   const results = page
     .getByRole("list", { name: "Course rankings" })
     .getByRole("link");

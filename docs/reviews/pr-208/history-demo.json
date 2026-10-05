@@ -1,0 +1,51 @@
+{
+  "mode": "ordinary history, no adapter seam; actual Worker and real immutable data",
+  "steps": [
+    {
+      "step": "first entry",
+      "url": "http://localhost:17842/wl?q=LANG1402",
+      "input": "LANG1402",
+      "courses": ["LANG 1402", "LANG 1402I"],
+      "historyLength": 2,
+      "width": 1280,
+      "scrollWidth": 1280
+    },
+    {
+      "step": "search replaces second entry",
+      "url": "http://localhost:17842/wl?q=ACCT5170",
+      "input": "ACCT5170",
+      "courses": ["ACCT 5170"],
+      "historyLength": 3,
+      "width": 1280,
+      "scrollWidth": 1280
+    },
+    {
+      "step": "Back",
+      "url": "http://localhost:17842/wl?q=LANG1402",
+      "input": "LANG1402",
+      "courses": ["LANG 1402", "LANG 1402I"],
+      "historyLength": 3,
+      "width": 1280,
+      "scrollWidth": 1280
+    },
+    {
+      "step": "Forward",
+      "url": "http://localhost:17842/wl?q=ACCT5170",
+      "input": "ACCT5170",
+      "courses": ["ACCT 5170"],
+      "historyLength": 3,
+      "width": 1280,
+      "scrollWidth": 1280
+    },
+    {
+      "step": "mounted Plan after filter away and return",
+      "url": "http://localhost:17842/wl?q=ACCT5170",
+      "input": "ACCT5170",
+      "courses": ["ACCT 5170"],
+      "historyLength": 3,
+      "width": 1280,
+      "scrollWidth": 1280,
+      "retainedL1Position": 1
+    }
+  ]
+}

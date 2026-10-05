@@ -11,6 +11,64 @@ const courseOffering = (
 const waitlistCard = (page: import("@playwright/test").Page) =>
   courseOffering(page, "WAIT 3000");
 
+test("WL search reaches the Worker before native history integration is ready", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const nativeReplace = window.history.replaceState.bind(window.history);
+    let integratedReplace = nativeReplace;
+    let ready = false;
+    Object.defineProperty(window.history, "replaceState", {
+      configurable: true,
+      get: () => (ready ? integratedReplace : nativeReplace),
+      set: (value) => {
+        integratedReplace = value;
+      },
+    });
+    const requests: Array<{ operation: string; input: { search?: string } }> =
+      [];
+    const postMessage = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message, ...options) {
+      if (message?.operation === "waitlistSearch") requests.push(message);
+      return postMessage.call(this, message, ...options);
+    };
+    Object.assign(window, {
+      earlySearchRequests: requests,
+      releaseHistoryIntegration: () => {
+        ready = true;
+      },
+    });
+  });
+  await page.goto("/wl");
+  await page
+    .getByRole("searchbox", { name: "Search WL Courses" })
+    .fill("WAIT3000");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as unknown as {
+            earlySearchRequests: Array<{ input: { search?: string } }>;
+          }
+        ).earlySearchRequests.some(({ input }) => input.search === "WAIT3000"),
+      ),
+    )
+    .toBe(true);
+  await expect(waitlistCard(page)).toBeVisible();
+  await expect(courseOffering(page, "MATH 1000")).toHaveCount(0);
+  await expect(
+    page.getByRole("searchbox", { name: "Search WL Courses" }),
+  ).toHaveValue("WAIT3000");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("q"))
+    .toBe("WAIT3000");
+  await page.evaluate(() => {
+    (
+      window as unknown as { releaseHistoryIntegration: () => void }
+    ).releaseHistoryIntegration();
+  });
+});
+
 test("WL calculates independent browser-only Course Plans", async ({
   page,
 }) => {
@@ -81,7 +139,9 @@ test("WL search accepts compact Course Codes", async ({ page }) => {
     name: "Search WL Courses",
   });
   await search.fill("WAIT3000");
-  expect(new URL(page.url()).searchParams.get("q")).toBe("WAIT3000");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("q"))
+    .toBe("WAIT3000");
   await expect(waitlistCard(page)).toBeVisible();
   await expect(courseOffering(page, "MATH 1000")).toHaveCount(0);
 });
