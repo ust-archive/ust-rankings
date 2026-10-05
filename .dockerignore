@@ -1,6 +1,8 @@
 node_modules
 .next
 .next-playwright
+.next-preview/
+.preview/
 .playwright
 coverage
 playwright-report
