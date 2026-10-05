@@ -96,5 +96,10 @@
   },
   "allowScripts": {
     "esbuild@0.28.2": true
+  },
+  "overrides": {
+    "@mdxeditor/editor": {
+      "js-yaml": "4.3.2"
+    }
   }
 }
