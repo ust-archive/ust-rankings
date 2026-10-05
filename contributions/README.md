@@ -69,7 +69,12 @@ origin (not CDN) variables in `.env.example` and exact-origin CORS allowing
 `PUT` and `HEAD` only. Set Spaces to abort incomplete multipart uploads after
 one day as a lifecycle backstop; application cleanup is the primary 24-hour
 path. Daily `/api/attachments/cleanup` uses `CRON_SECRET` and releases quota
-only after the object is confirmed gone. Set `ATTACHMENTS_UPLOADS_DISABLED=1`
+only after the object is confirmed gone. Never-published Stored Files become
+eligible for automatic byte removal 24 hours after their most recent completed
+upload/reuse. Every historical Attachment reference prevents this automatic
+removal, including Attachments on withdrawn Reviews. Queuing removal blocks new
+reuse and association before deleting bytes. Migration `0012` grants existing
+files a fresh 24-hour grace period. Set `ATTACHMENTS_UPLOADS_DISABLED=1`
 to reject new uploads without disabling Review text or existing downloads.
 Accepted files are not malware-scanned; UI copy must not claim otherwise.
 Attachments receive only a non-exclusive site license and are not automatically
