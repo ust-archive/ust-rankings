@@ -25,7 +25,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -97,6 +97,7 @@ function scheduleText(item: WaitlistSchedule, key: string) {
 
 function scheduleTime(item: WaitlistSchedule, key: string) {
   const value = item[key];
+  if (value == null || (typeof value === "string" && !value.trim())) return "";
   const micros = typeof value === "number" ? value : Number(value);
   if (Number.isSafeInteger(micros) && micros >= 0) {
     const minutes = Math.floor(micros / 60_000_000);
@@ -515,183 +516,201 @@ function WaitlistClassChoice({
       };
     });
   return (
-    <tr
-      className={cn(
-        "text-sm transition-colors hover:bg-slate-50",
-        selected && "bg-slate-50",
-      )}
-    >
-      <td className="border border-slate-200 p-1 align-middle">
-        <button
-          aria-label={`Require ${classItem.section}`}
-          aria-pressed={selected}
-          className={cn(
-            "min-h-12 w-full rounded-md border px-0.5 py-2 text-center font-mono text-xs leading-tight tabular-nums transition-colors sm:px-3 sm:text-sm",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2",
-            selected
-              ? "border-slate-950 bg-slate-950 text-white"
-              : "border-slate-200 bg-slate-50 text-slate-950 hover:border-slate-400 hover:bg-slate-100",
-            !classItem.eligible && "cursor-not-allowed opacity-60",
-          )}
-          disabled={!classItem.eligible}
-          onClick={toggleSelection}
-          type="button"
-        >
-          {classItem.section} ({classItem.classNumber})
-        </button>
-      </td>
-      {classItem.eligible ? (
-        <>
-          <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
-            {numberFormatter.format(classItem.capacity)}
-          </td>
-          <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
-            {numberFormatter.format(availableSeats(classItem))}
-          </td>
-          <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
-            {numberFormatter.format(classItem.waitlist)}
-          </td>
-          <td className="border border-slate-200 p-1 text-center align-middle">
-            {selected ? (
-              <Field data-invalid={Boolean(error)} className="min-w-0 gap-1">
-                <FieldLabel className="sr-only" htmlFor={inputId}>
-                  WL position
-                </FieldLabel>
-                <Input
-                  aria-invalid={Boolean(error)}
-                  aria-label={`WL Position for ${courseCode} ${classItem.section}`}
-                  autoComplete="off"
-                  data-loading={calculating ? "true" : undefined}
-                  className="waitlist-position-input h-9 min-w-0 appearance-none border-slate-200 bg-white px-2 text-center font-mono text-xs tabular-nums shadow-none focus-visible:ring-1 focus-visible:ring-slate-400 focus-visible:ring-offset-0 aria-invalid:border-red-700 aria-invalid:text-red-700 aria-invalid:focus-visible:ring-red-700 sm:px-3 sm:text-sm"
-                  id={inputId}
-                  inputMode="numeric"
-                  max={classItem.waitlist}
-                  min={1}
-                  name={inputId}
-                  onBlur={() =>
-                    onChange((current) => ({
-                      ...current,
-                      touchedSections: current.touchedSections.includes(
-                        classItem.section,
-                      )
-                        ? current.touchedSections
-                        : [...current.touchedSections, classItem.section],
-                    }))
-                  }
-                  onChange={(event) =>
-                    onChange((current) => ({
-                      ...current,
-                      error: undefined,
-                      loading: false,
-                      positions: {
-                        ...current.positions,
-                        [classItem.section]: event.target.value,
-                      },
-                      result: undefined,
-                      submittedKey: undefined,
-                      touchedSections: current.touchedSections.includes(
-                        classItem.section,
-                      )
-                        ? current.touchedSections
-                        : [...current.touchedSections, classItem.section],
-                    }))
-                  }
-                  placeholder="-"
-                  step={1}
-                  type="number"
-                  value={position}
-                />
-              </Field>
-            ) : (
-              <span aria-hidden="true" className="text-slate-400">
-                -
-              </span>
+    <>
+      <tr
+        className={cn(
+          "text-sm transition-colors hover:bg-slate-50",
+          selected && "bg-slate-50",
+        )}
+      >
+        <td className="border border-slate-200 p-1 align-middle">
+          <button
+            aria-label={`Require ${classItem.section}`}
+            aria-pressed={selected}
+            className={cn(
+              "min-h-12 w-full rounded-md border px-0.5 py-2 text-center font-mono text-xs leading-tight tabular-nums transition-colors sm:px-3 sm:text-sm",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2",
+              selected
+                ? "border-slate-950 bg-slate-950 text-white"
+                : "border-slate-200 bg-slate-50 text-slate-950 hover:border-slate-400 hover:bg-slate-100",
+              !classItem.eligible && "cursor-not-allowed opacity-60",
             )}
-          </td>
-        </>
-      ) : (
-        <td
-          className="border border-slate-200 px-2 py-2 text-left text-xs text-slate-600"
-          colSpan={4}
-        >
-          {unsupportedLabel(classItem.unsupportedReason)}
-        </td>
-      )}
-      <td className="border border-slate-200 p-1 text-center align-middle">
-        <Tooltip onOpenChange={setTooltipOpen} open={tooltipOpen}>
-          <TooltipTrigger asChild>
-            <Button
-              aria-expanded={tooltipOpen}
-              aria-label={`More details for ${courseCode} ${classItem.section}`}
-              className="size-9 text-slate-600"
-              onClick={() => setTooltipOpen((open) => !open)}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <Info aria-hidden="true" data-icon="inline-start" />
-            </Button>
-          </TooltipTrigger>
-
-          <TooltipContent
-            className="w-max max-w-[calc(100vw-2rem)] p-4"
-            side="top"
+            disabled={!classItem.eligible}
+            onClick={toggleSelection}
+            type="button"
           >
-            <dl className="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-4 gap-y-3 text-sm">
-              <dt className="font-semibold text-slate-950">Section</dt>
-              <dd className="font-medium tabular-nums">
-                {classItem.section} · {classItem.classType} ·{" "}
-                {classItem.classNumber}
-              </dd>
-              <dt className="font-semibold text-slate-950">Instructor</dt>
-              <dd className="break-words">{instructorLabel(schedules)}</dd>
-              <dt className="self-start font-semibold text-slate-950">
-                Schedule
-              </dt>
-              <dd className="flex min-w-0 flex-col gap-2">
-                {meetingDetails(schedules).map((meeting) => (
-                  <span
-                    className="flex min-w-0 flex-col"
-                    key={`${meeting.time}-${meeting.venue}`}
-                  >
-                    <span className="tabular-nums">
-                      {meeting.time || "Time not published"}
-                    </span>
-                    {meeting.venue ? (
-                      <span className="break-words text-slate-600">
-                        {meeting.venue}
+            {classItem.section} ({classItem.classNumber})
+          </button>
+        </td>
+        {classItem.eligible ? (
+          <>
+            <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
+              {numberFormatter.format(classItem.capacity)}
+            </td>
+            <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
+              {numberFormatter.format(availableSeats(classItem))}
+            </td>
+            <td className="border border-slate-200 px-0.5 py-2 text-center font-mono text-xs tabular-nums sm:px-2 sm:text-sm">
+              {numberFormatter.format(classItem.waitlist)}
+            </td>
+            <td className="border border-slate-200 p-1 text-center align-middle">
+              {selected ? (
+                <Field data-invalid={Boolean(error)} className="min-w-0 gap-1">
+                  <FieldLabel className="sr-only" htmlFor={inputId}>
+                    WL position
+                  </FieldLabel>
+                  <Input
+                    aria-describedby={error ? `${inputId}-error` : undefined}
+                    aria-invalid={Boolean(error)}
+                    aria-label={`WL Position for ${courseCode} ${classItem.section}`}
+                    autoComplete="off"
+                    data-loading={calculating ? "true" : undefined}
+                    className="waitlist-position-input h-9 min-w-0 appearance-none border-slate-200 bg-white px-2 text-center font-mono text-xs tabular-nums shadow-none focus-visible:ring-1 focus-visible:ring-slate-400 focus-visible:ring-offset-0 aria-invalid:border-red-700 aria-invalid:text-red-700 aria-invalid:focus-visible:ring-red-700 sm:px-3 sm:text-sm"
+                    id={inputId}
+                    inputMode="numeric"
+                    max={classItem.waitlist}
+                    min={1}
+                    name={inputId}
+                    onBlur={() =>
+                      onChange((current) => ({
+                        ...current,
+                        touchedSections: current.touchedSections.includes(
+                          classItem.section,
+                        )
+                          ? current.touchedSections
+                          : [...current.touchedSections, classItem.section],
+                      }))
+                    }
+                    onChange={(event) =>
+                      onChange((current) => ({
+                        ...current,
+                        error: undefined,
+                        loading: false,
+                        positions: {
+                          ...current.positions,
+                          [classItem.section]: event.target.value,
+                        },
+                        result: undefined,
+                        submittedKey: undefined,
+                        touchedSections: current.touchedSections.includes(
+                          classItem.section,
+                        )
+                          ? current.touchedSections
+                          : [...current.touchedSections, classItem.section],
+                      }))
+                    }
+                    placeholder="-"
+                    step={1}
+                    type="number"
+                    value={position}
+                  />
+                </Field>
+              ) : (
+                <span aria-hidden="true" className="text-slate-400">
+                  -
+                </span>
+              )}
+            </td>
+          </>
+        ) : (
+          <td
+            className="border border-slate-200 px-2 py-2 text-left text-xs text-slate-600"
+            colSpan={4}
+          >
+            {unsupportedLabel(classItem.unsupportedReason)}
+          </td>
+        )}
+        <td className="border border-slate-200 p-1 text-center align-middle">
+          <Tooltip onOpenChange={setTooltipOpen} open={tooltipOpen}>
+            <TooltipTrigger asChild>
+              <Button
+                aria-expanded={tooltipOpen}
+                aria-label={`More details for ${courseCode} ${classItem.section}`}
+                className="size-9 text-slate-600"
+                onClick={() => setTooltipOpen((open) => !open)}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <Info aria-hidden="true" data-icon="inline-start" />
+              </Button>
+            </TooltipTrigger>
+
+            <TooltipContent
+              className="w-max max-w-[calc(100vw-2rem)] p-4"
+              side="top"
+            >
+              <dl className="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-4 gap-y-3 text-sm">
+                <dt className="font-semibold text-slate-950">Section</dt>
+                <dd className="font-medium tabular-nums">
+                  {classItem.section} · {classItem.classType} ·{" "}
+                  {classItem.classNumber}
+                </dd>
+                <dt className="font-semibold text-slate-950">Instructor</dt>
+                <dd className="break-words">{instructorLabel(schedules)}</dd>
+                <dt className="self-start font-semibold text-slate-950">
+                  Schedule
+                </dt>
+                <dd className="flex min-w-0 flex-col gap-2">
+                  {meetingDetails(schedules).map((meeting) => (
+                    <span
+                      className="flex min-w-0 flex-col"
+                      key={`${meeting.time}-${meeting.venue}`}
+                    >
+                      <span className="tabular-nums">
+                        {meeting.time || "Time not published"}
                       </span>
-                    ) : null}
-                  </span>
-                ))}
-              </dd>
-              <dt className="font-semibold text-slate-950">Quota</dt>
-              <dd className="font-medium tabular-nums">
-                {numberFormatter.format(classItem.capacity)}
-              </dd>
-              <dt className="font-semibold text-slate-950">Avail</dt>
-              <dd className="font-medium tabular-nums">
-                {numberFormatter.format(availableSeats(classItem))}
-              </dd>
-              <dt className="font-semibold text-slate-950">Wait</dt>
-              <dd className="font-medium tabular-nums">
-                {numberFormatter.format(classItem.waitlist)}
-              </dd>
-              <dt className="font-semibold text-slate-950">Reservations</dt>
-              <dd className="min-w-0 break-words">
-                {reservationLabel(classItem)}
-              </dd>
-              {classItem.observedAt ? (
-                <>
-                  <dt className="font-semibold text-slate-950">Observed</dt>
-                  <dd>{formatDate(classItem.observedAt)}</dd>
-                </>
-              ) : null}
-            </dl>
-          </TooltipContent>
-        </Tooltip>
-      </td>
-    </tr>
+                      {meeting.venue ? (
+                        <span className="break-words text-slate-600">
+                          {meeting.venue}
+                        </span>
+                      ) : null}
+                    </span>
+                  ))}
+                </dd>
+                <dt className="font-semibold text-slate-950">Quota</dt>
+                <dd className="font-medium tabular-nums">
+                  {numberFormatter.format(classItem.capacity)}
+                </dd>
+                <dt className="font-semibold text-slate-950">Avail</dt>
+                <dd className="font-medium tabular-nums">
+                  {numberFormatter.format(availableSeats(classItem))}
+                </dd>
+                <dt className="font-semibold text-slate-950">Wait</dt>
+                <dd className="font-medium tabular-nums">
+                  {numberFormatter.format(classItem.waitlist)}
+                </dd>
+                <dt className="font-semibold text-slate-950">Reservations</dt>
+                <dd className="min-w-0 break-words">
+                  {reservationLabel(classItem)}
+                </dd>
+                {classItem.observedAt ? (
+                  <>
+                    <dt className="font-semibold text-slate-950">Observed</dt>
+                    <dd>{formatDate(classItem.observedAt)}</dd>
+                  </>
+                ) : null}
+              </dl>
+            </TooltipContent>
+          </Tooltip>
+        </td>
+      </tr>
+      {error ? (
+        <tr>
+          <td
+            className="border border-slate-200 bg-white px-2 py-2"
+            colSpan={6}
+          >
+            <FieldError
+              className="text-left text-xs text-red-700"
+              id={`${inputId}-error`}
+            >
+              {error}
+            </FieldError>
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }
 
