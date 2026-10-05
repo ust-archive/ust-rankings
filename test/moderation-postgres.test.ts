@@ -11,6 +11,69 @@ const OPERATOR = "deploy-operator";
 if (!connection) {
   test.skip("Moderation PostgreSQL contract (TEST_CONTRIBUTIONS_POSTGRES_URL is not configured)", () => {});
 } else {
+  test("failed Moderation Case persistence rolls back every related mutation", async () => {
+    await withPostgresSchema("moderation_atomic", async ({ sql }) => {
+      const { PostgresModerationRepository, PostgresReviewRepository } =
+        await import("@/lib/contributions/postgres");
+      const authorId = crypto.randomUUID();
+      const reporterId = crypto.randomUUID();
+      const fileId = crypto.randomUUID();
+      await sql`INSERT INTO contribution_users (id, status, public_display_name) VALUES (${authorId}, 'active', 'Author'), (${reporterId}, 'active', 'Reporter')`;
+      await sql`INSERT INTO stored_files (id, owner_user_id, object_key, byte_size, sha256, detected_mime) VALUES (${fileId}, ${authorId}, ${fileId}, 12, ${"ab".repeat(32)}, 'image/jpeg')`;
+      const reviews = createReviewService(new PostgresReviewRepository(sql), {
+        reviewPolicyVersion: "review-test-v1",
+        async validateAssociations(associations) {
+          return associations;
+        },
+      });
+      const review = await reviews.publishReview(authorId, {
+        associations: {
+          course: { coursePrefix: "COMP", courseNumber: "2000" },
+        },
+        markdown: "Useful labs.",
+      });
+      const moderation = createModerationService(
+        new PostgresModerationRepository(sql),
+      );
+      await sql.unsafe(`CREATE FUNCTION reject_test_case() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'simulated-case-failure'; END $$;
+        CREATE TRIGGER reject_test_case BEFORE INSERT ON moderation_cases FOR EACH ROW EXECUTE FUNCTION reject_test_case();`);
+
+      await expect(
+        moderation.reportReview(reporterId, review.id, "spam"),
+      ).rejects.toThrow("simulated-case-failure");
+      expect(await sql`SELECT id FROM review_reports`).toHaveLength(0);
+      await expect(
+        moderation.withdrawReview(OPERATOR, review.id, "spam"),
+      ).rejects.toThrow("simulated-case-failure");
+      expect(await reviews.getReview(review.id)).toBeDefined();
+      await expect(
+        moderation.suppressAttribution(OPERATOR, review.id, "spam"),
+      ).rejects.toThrow("simulated-case-failure");
+      expect((await reviews.getReview(review.id))?.attribution).toBe(
+        "attributed",
+      );
+      await expect(
+        moderation.removeStoredFile(OPERATOR, fileId, "malicious-files"),
+      ).rejects.toThrow("simulated-case-failure");
+      expect(
+        (
+          await sql`SELECT removal_requested_at FROM stored_files WHERE id = ${fileId}`
+        )[0].removal_requested_at,
+      ).toBeNull();
+      await expect(
+        moderation.suspendUser(OPERATOR, authorId, "spam"),
+      ).rejects.toThrow("simulated-case-failure");
+      expect(
+        (
+          await sql`SELECT status FROM contribution_users WHERE id = ${authorId}`
+        )[0].status,
+      ).toBe("active");
+      await expect(
+        moderation.lookupIdentity(OPERATOR, review.id, "security-incident"),
+      ).rejects.toThrow("simulated-case-failure");
+    });
+  });
+
   test("Moderation PostgreSQL contract covers reports, privacy, operator actions, and lookup reasons", async () => {
     await withPostgresSchema("moderation", async ({ sql, connect }) => {
       const moderationSql = connect(2);

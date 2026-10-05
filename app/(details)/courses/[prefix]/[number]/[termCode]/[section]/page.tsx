@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { CourseDetails } from "@/app/courses/course-details";
 import { BrowserCourseRankings } from "@/app/courses/course-details-client";
 import { loadReviews } from "@/app/courses/review-data";
+import { hydrateReviewEditorOptions } from "@/app/courses/review-editor-options";
 import {
   normalizeCourseRoute,
   type RouteSearchParams,
@@ -30,7 +31,7 @@ export default async function ClassPage({
     normalizeCourseRoute(route, query);
   if (!termCode || !section) notFound();
   const [rankingPreference, community] = await Promise.all([
-    readRankingPreferenceQuery(),
+    readRankingPreferenceQuery(query),
     loadReviews({
       type: "course",
       coursePrefix,
@@ -42,8 +43,19 @@ export default async function ClassPage({
   ]);
   return (
     <CourseDetails
+      botRestricted={community.botRestricted}
       coursePrefix={coursePrefix}
       courseNumber={courseNumber}
+      reviewEditorOptions={
+        await hydrateReviewEditorOptions(
+          {
+            courses: [{ coursePrefix, courseNumber }],
+            instructors: [],
+            contexts: [],
+          },
+          community.reviews,
+        )
+      }
       rankingsContent={
         <BrowserCourseRankings
           coursePrefix={coursePrefix}

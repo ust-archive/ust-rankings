@@ -24,7 +24,10 @@ export default async function OnboardingPage({
   const returnPath = safeReturnPath(r);
   const userId = await authenticatedUserId();
   if (!userId) redirect(`/auth/login?r=${encodeURIComponent(returnPath)}`);
-  const user = await getAccountService().getUser(userId);
+  const user = await getAccountService({
+    caller: "account",
+    authentication: "authenticated",
+  }).getUser(userId);
   if (!user) redirect(`/auth/login?r=${encodeURIComponent(returnPath)}`);
   if (user.status === "active") redirect(returnPath);
   if (user.status !== "onboarding") redirect("/account");

@@ -1,12 +1,21 @@
-import { unstable_cache } from "next/cache";
 import {
   ContributionsUnavailableError,
   normalizePublicReview,
   type PublicReview,
   type ReviewListQuery,
   type ReviewOrder,
-  readWithReviewCache,
 } from "@/lib/contributions/reviews";
+import { skipBotCommunityRead } from "@/lib/database-request-context";
+
+function reviewCaller(query: ReviewListQuery) {
+  return query.type === "instructor"
+    ? "instructor"
+    : query.section
+      ? "course-section"
+      : query.termCode
+        ? "course-term"
+        : "course";
+}
 
 type ReadReviews = (
   query: ReviewListQuery,
@@ -15,13 +24,11 @@ type ReadReviews = (
 
 const readReviews: ReadReviews = async (query, viewerUserId) =>
   (await import("@/lib/contributions/postgres"))
-    .getReviewService()
+    .getReviewService({
+      caller: reviewCaller(query),
+      authentication: viewerUserId ? "authenticated" : "anonymous",
+    })
     .listReviews(query, viewerUserId);
-
-const readCachedReviews = unstable_cache(readReviews, ["reviews"], {
-  revalidate: 3600,
-  tags: ["contributions"],
-});
 
 async function optionalAuthenticatedUserId() {
   if (!process.env.AUTH_SECRET) return undefined;
@@ -36,14 +43,29 @@ export async function loadReviews(
   query: ReviewListQuery,
   read: ReadReviews = readReviews,
   identify: () => Promise<string | undefined> = optionalAuthenticatedUserId,
-) {
+): Promise<{
+  reviews: PublicReview[];
+  signedIn: boolean;
+  unavailable: boolean;
+  botRestricted?: true;
+}> {
   const viewerUserId = await identify().catch(() => undefined);
+  if (
+    await skipBotCommunityRead(
+      reviewCaller(query),
+      "reviews.listReviews",
+      Boolean(viewerUserId),
+    )
+  )
+    return {
+      reviews: [],
+      signedIn: false,
+      unavailable: true,
+      botRestricted: true,
+    };
   try {
-    const reviews = await readWithReviewCache(
-      read === readReviews,
-      () => readCachedReviews(query, viewerUserId),
-      () => read(query, viewerUserId),
-    );
+    // Operator moderation changes PostgreSQL outside the Next.js process.
+    const reviews = await read(query, viewerUserId);
     return {
       reviews: reviews.map(normalizePublicReview),
       signedIn: Boolean(viewerUserId),

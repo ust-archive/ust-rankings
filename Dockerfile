@@ -27,6 +27,7 @@ COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/node_modules/postgres ./node_modules/postgres
 COPY --from=builder --chown=node:node /app/scripts/migrate-contributions.ts ./scripts/
+COPY --from=builder --chown=node:node /app/lib/database-telemetry.ts ./lib/
 COPY --from=builder --chown=node:node /app/contributions/migrations ./contributions/migrations
 
 USER node

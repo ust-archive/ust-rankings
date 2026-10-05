@@ -94,7 +94,10 @@ async function HeaderAuth() {
   let label = "Account";
   if (process.env.CONTRIBUTIONS_POSTGRES_URL)
     try {
-      const user = await getAccountService().getUser(userId);
+      const user = await getAccountService({
+        caller: "account.header",
+        authentication: "authenticated",
+      }).getUser(userId);
       if (user?.publicDisplayName) label = user.publicDisplayName;
     } catch {
       // Keep public pages independent from contribution storage.
@@ -163,11 +166,17 @@ export default function RootLayout({
                 Courses
               </EntityLink>
               <Link
+                className="no-underline underline-offset-4 hover:underline"
+                href="/schedule"
+              >
+                Schedule
+              </Link>
+              <Link
                 className="hidden no-underline underline-offset-4 hover:underline sm:inline"
-                href="/waitlist"
+                href="/wl"
                 transitionTypes={forwardTransition}
               >
-                WL Compass
+                WL
               </Link>
               <HeaderAuth />
             </nav>
@@ -211,7 +220,8 @@ export default function RootLayout({
               links={[
                 ["Instructor Rankings", "/rankings/instructors"],
                 ["Course Rankings", "/rankings/courses"],
-                ["WL Compass", "/waitlist"],
+                ["UST Schedule", "/schedule"],
+                ["WL", "/wl"],
               ]}
             />
             <FooterLinks

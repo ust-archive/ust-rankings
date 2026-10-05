@@ -184,7 +184,12 @@ export type CourseQueryOperations = {
     output: Rankings;
   };
   schedulePage: {
-    input: { termCode?: string; search?: string; limit?: number };
+    input: {
+      termCode?: string;
+      search?: string;
+      limit?: number;
+      classNumbers?: number[];
+    };
     output: SchedulePage;
   };
   scheduleDetails: {

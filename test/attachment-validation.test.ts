@@ -37,6 +37,22 @@ function reject(bytes: Uint8Array, filename: string, declaredMime: string) {
   );
 }
 
+test.each([
+  ["notes.txt", "text/plain", "Please read the course notes.\n"],
+  ["notes.md", "text/markdown", "% Completion\n75% complete\n"],
+  ["table.csv", "text/csv", "Percentage,Count\n75,3\n"],
+])(
+  "valid UTF-8 %s can begin with a format-signature character",
+  (filename, declaredMime, text) => {
+    expect(
+      validateUpload({ bytes: textBytes(text), filename, declaredMime }),
+    ).toMatchObject({
+      mime: declaredMime,
+      kind: "document",
+    });
+  },
+);
+
 test("every allowed raster format is accepted when extension, MIME, and structure agree", () => {
   accept(jpegBytes(), "photo.JPG", "image/jpeg", {
     mime: "image/jpeg",
@@ -68,6 +84,15 @@ test("every allowed raster format is accepted when extension, MIME, and structur
     extension: "heif",
     kind: "image",
   });
+});
+
+test("renamed PDFs and ZIP documents remain rejected as plain text", () => {
+  reject(pdfBytes(), "notes.txt", "text/plain");
+  reject(
+    zipBytes([{ name: "notes.txt", data: "notes" }]),
+    "notes.txt",
+    "text/plain",
+  );
 });
 
 test("every allowed document format is accepted when extension, MIME, and structure agree", () => {
@@ -223,6 +248,82 @@ test("legacy, macro-enabled, encrypted, and malformed office containers fail clo
   reject(
     odfBytes(ODT_MIME, [{ name: "Basic/script.xml", data: "<script/>" }]),
     "macro.odt",
+    ODT_MIME,
+  );
+});
+
+test("ODF encryption is rejected with aliased, default, and nested namespaces", () => {
+  const namespace = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0";
+  const manifests = [
+    `<m:manifest xmlns:m="${namespace}"><m:file-entry><m:encryption-data/></m:file-entry></m:manifest>`,
+    `<manifest xmlns="${namespace}"><file-entry><encryption-data/></file-entry></manifest>`,
+    `<m:manifest xmlns:m="${namespace}"><m:file-entry><x:encryption-data xmlns:x='${namespace}'/></m:file-entry></m:manifest>`,
+    `<m:manifest xmlns:m="${namespace}"><m:encrypted-key/></m:manifest>`,
+    `<m:manifest xmlns:m="${namespace}"><entry xmlns="${namespace}"><encryption-data/></entry></m:manifest>`,
+    `<m:manifest xmlns:m="urn:other"><entry xmlns:m="${namespace}"><m:encryption-data/></entry></m:manifest>`,
+    `<m:manifest xmlns:m="${namespace}" note=" xmlns:m='urn:other' "><m:encryption-data/></m:manifest>`,
+  ];
+  for (const [mime, extension] of [
+    [ODT_MIME, "odt"],
+    [ODS_MIME, "ods"],
+    [ODP_MIME, "odp"],
+  ]) {
+    for (const manifest of manifests) {
+      reject(
+        zipBytes([
+          { name: "mimetype", data: mime, store: true },
+          { name: "META-INF/manifest.xml", data: manifest },
+          {
+            name: "content.xml",
+            data: new Uint8Array([1, 2, 3, 4]),
+            store: true,
+          },
+        ]),
+        `encrypted.${extension}`,
+        mime,
+      );
+    }
+  }
+});
+
+test("ODF encryption inspection preserves unencrypted namespace scopes and is bounded", () => {
+  const namespace = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0";
+  const packageBytes = (manifest: string) =>
+    zipBytes([
+      { name: "mimetype", data: ODT_MIME, store: true },
+      { name: "META-INF/manifest.xml", data: manifest },
+      { name: "content.xml", data: "<document/>" },
+    ]);
+  for (const manifest of [
+    `<m:manifest xmlns:m="${namespace}"><!-- <m:encryption-data/> --><m:file-entry/></m:manifest>`,
+    `<m:manifest xmlns:m="${namespace}"><![CDATA[<m:encryption-data/>]]><m:file-entry/></m:manifest>`,
+    `<m:manifest xmlns:m="${namespace}"><other xmlns:m="urn:other"><m:encryption-data/></other><m:file-entry/></m:manifest>`,
+    `<m:manifest xmlns:m="${namespace}"><other xmlns="urn:other"><encryption-data/></other></m:manifest>`,
+    `<m:manifest xmlns:m="urn:other" note=" xmlns:m='${namespace}' "><m:encryption-data/></m:manifest>`,
+  ]) {
+    accept(packageBytes(manifest), "ordinary.odt", ODT_MIME, {
+      mime: ODT_MIME,
+      extension: "odt",
+      kind: "document",
+    });
+  }
+  reject(
+    packageBytes("<entry>".repeat(65) + "</entry>".repeat(65)),
+    "deep.odt",
+    ODT_MIME,
+  );
+  reject(
+    packageBytes(
+      `<m:manifest xmlns:m="${namespace}"><m:encryption-data/></wrong>`,
+    ),
+    "broken.odt",
+    ODT_MIME,
+  );
+  reject(
+    packageBytes(
+      `<m:manifest xmlns:m="${namespace.replace("manifest", "manife&#115;t")}"><m:encryption-data/></m:manifest>`,
+    ),
+    "ambiguous.odt",
     ODT_MIME,
   );
 });

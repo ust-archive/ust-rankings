@@ -1,5 +1,7 @@
 ## Agent skills
 
+User instructions and project conventions take precedence over skill defaults. Apply skills within the requested scope and deliverable, using the project's existing design and test setup. Reuse prior decisions and approvals.
+
 ### Matt
 
 Always use matching `mattpocock/skills` skills.

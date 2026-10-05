@@ -206,6 +206,7 @@ export async function makeRankingGeneration(
     extraInstructors?: number;
     includeScheduleCourse?: boolean;
     includePriorOnly?: boolean;
+    includeHistoricalTeaching?: boolean;
     punctuatedInstructor?: boolean;
     identityEvents?: FixtureIdentityEvent[];
     associationCorrections?: Array<{
@@ -356,6 +357,23 @@ export async function makeRankingGeneration(
         courseRows.push(
           `('COMP', '2000', 99, '2430', true, '${criterion}', 0.1, 0.1, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
         );
+    if (options.includeHistoricalTeaching)
+      for (const [term, termCode] of [
+        [96, "2410"],
+        [97, "2420"],
+      ] as const)
+        for (const code of ["2000", "3000"])
+          for (const criterion of [
+            "content",
+            "teaching",
+            "grading",
+            "workload",
+            "course",
+            "instructor",
+          ])
+            courseRows.push(
+              `('${code === "2000" ? "COMP" : "HIST"}', '${code}', ${term}, '${termCode}', ${term === 96 && code === "2000"}, '${criterion}', 0.5, 0.5, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
+            );
     const courseValues = courseRows.join(",\n");
     const courses = `SELECT ${castMeasures} FROM (VALUES ${courseValues}) AS t(subject, code, ${ratingColumns.replace("is_active", "is_offered")})`;
     await copy("course-ratings.parquet", courses);
@@ -401,6 +419,23 @@ export async function makeRankingGeneration(
         );
       }
     }
+    if (options.includeHistoricalTeaching)
+      for (const [term, termCode] of [
+        [96, "2410"],
+        [97, "2420"],
+      ] as const)
+        for (const identity of fixtureIdentities.slice(0, 2))
+          for (const criterion of [
+            "content",
+            "teaching",
+            "grading",
+            "workload",
+            "course",
+            "instructor",
+          ])
+            rows.push(
+              `('${identity.uuid}', '${identity.canonicalName}', ${term}, '${termCode}', ${term === 96 && identity.uuid.endsWith("1")}, '${criterion}', 0.5, 0.5, 1.0, 1::BIGINT, 1::BIGINT, 1.0, 0.5, 0.1)`,
+            );
     const instructorValues = rows.join(",\n");
     const instructorRatings = `SELECT ${castMeasures} FROM (VALUES ${instructorValues}) AS t(uuid, name, ${ratingColumns.replace("is_active", "is_teaching")})`;
     await copy(
@@ -452,6 +487,7 @@ export async function makeRankingGeneration(
         ('00000000-0000-4000-8000-000000000004', 'Gamma Instructor', 100, '2510', 'MISS', '4000'),
         ('00000000-0000-4000-8000-000000000005', 'Historical Instructor', 100, '2510', 'COMP', '1000')
         ${options.punctuatedInstructor ? ", ('00000000-0000-4000-8000-000000000007', 'LI, Xin', 100, '2510', 'COMP', '1000')" : ""}
+        ${options.includeHistoricalTeaching ? ", ('00000000-0000-4000-8000-000000000001', 'Alpha Instructor', 96, '2410', 'COMP', '2000')" : ""}
         ${options.includeScheduleCourse ? ", ('00000000-0000-4000-8000-000000000001', 'Alpha Instructor', 100, '2510', 'COMP', '2000'), ('00000000-0000-4000-8000-000000000001', 'Alpha Instructor', 99, '2430', 'COMP', '2000')" : ""}
       ) AS t(uuid, name, term_num, term_code, subject, code)`,
     );

@@ -9,6 +9,7 @@ import {
   DetailsCommunityLoading,
 } from "@/app/courses/details-sections";
 import { loadCourseReviews } from "@/app/courses/review-data";
+import { hydrateReviewEditorOptions } from "@/app/courses/review-editor-options";
 import {
   normalizeCourseRoute,
   type RouteSearchParams,
@@ -55,13 +56,17 @@ async function CourseCommunity({
     ),
     loadSignals({ type: "course", coursePrefix, courseNumber }),
   ]);
-  const editor: ReviewEditorOptions = {
-    courses: [{ coursePrefix, courseNumber }],
-    contexts: [],
-    instructors: [],
-  };
+  const editor: ReviewEditorOptions = await hydrateReviewEditorOptions(
+    {
+      courses: [{ coursePrefix, courseNumber }],
+      contexts: [],
+      instructors: [],
+    },
+    community.reviews,
+  );
   return (
     <DetailsCommunity
+      botRestricted={community.botRestricted}
       description="Published experiences and signals for this Course."
       editor={editor}
       error={
@@ -103,7 +108,7 @@ export async function renderCoursePage(
 ) {
   const [query, route] = await Promise.all([searchParams, params]);
   const { coursePrefix, courseNumber } = normalizeCourseRoute(route, query);
-  const rankingPreference = await readRankingPreferenceQuery();
+  const rankingPreference = await readRankingPreferenceQuery(query);
   const selectedTerm =
     typeof query.term === "string" && /^[0-9]{4}$/.test(query.term)
       ? query.term

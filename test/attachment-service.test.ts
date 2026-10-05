@@ -92,6 +92,9 @@ function memory(options?: {
     async get(key) {
       return objects.get(key)?.bytes;
     },
+    async put(key, bytes, contentType) {
+      objects.set(key, { bytes, contentType });
+    },
     async delete(key) {
       objects.delete(key);
     },
@@ -108,8 +111,10 @@ function memory(options?: {
     }
     for (const intent of intents.values()) {
       if (
-        intent.storedFileId ||
-        !["reserved", "uploaded", "validating"].includes(intent.state)
+        [...files.values()].some(
+          (file) =>
+            file.objectKey === intent.objectKey && !removed.has(file.id),
+        )
       )
         continue;
       if (!userId || intent.ownerUserId === userId)
@@ -258,12 +263,21 @@ function memory(options?: {
       return { attachment, objectKey: file.objectKey };
     },
     async listCleanupIntents(when) {
-      return [...intents.values()].filter(
-        (intent) =>
-          ["rejected", "validation_error"].includes(intent.state) ||
-          (!intent.storedFileId &&
-            intent.expiresAt.getTime() <= when.getTime()),
-      );
+      return [...intents.values()]
+        .filter(
+          (intent) =>
+            intent.expiresAt.getTime() <= when.getTime() &&
+            (intent.state !== "validating" ||
+              intent.updatedAt.getTime() <=
+                when.getTime() - 24 * 60 * 60 * 1000),
+        )
+        .map((intent) => ({
+          id: intent.id,
+          objectKeys: [intent.objectKey, `verified/${intent.id}`].filter(
+            (key) =>
+              ![...files.values()].some((file) => file.objectKey === key),
+          ),
+        }));
     },
     async deleteIntent(intentId) {
       intents.delete(intentId);
@@ -417,8 +431,41 @@ test("complete upload preserves exact bytes after ownership, size, and raster ch
     kind: "image",
     reused: false,
   });
-  expect(world.files.get(FILE_ID)?.objectKey).toBe(INTENT_ID);
-  expect(Buffer.from(world.objects.get(INTENT_ID)?.bytes ?? [])).toEqual(bytes);
+  expect(
+    Buffer.from(
+      world.objects.get(world.files.get(FILE_ID)?.objectKey ?? "")?.bytes ?? [],
+    ),
+  ).toEqual(bytes);
+});
+
+test("replaying a signed upload cannot replace a published Attachment's validated bytes", async () => {
+  const world = memory();
+  const bytes = jpegBytes();
+  const accepted = await accept(world, bytes);
+  const [attachment] = await world.attachments.attachToRevision({
+    userId: USER_ID,
+    revisionId: REVISION_ID,
+    attachments: [
+      {
+        storedFileId: accepted.id,
+        filename: "photo.jpg",
+        description: "Course notes",
+      },
+    ],
+  });
+
+  world.objects.set(INTENT_ID, {
+    bytes: Buffer.alloc(bytes.length),
+    contentType: "image/jpeg",
+  });
+  const signed = await world.attachments.signPublicRead(attachment.id);
+  const publishedKey = new URL(signed.url).pathname.slice(1);
+  expect(world.objects.get(publishedKey)?.bytes).toEqual(bytes);
+  expect(await world.attachments.cleanupExpired()).toBe(0);
+  world.setNow(new Date("2026-04-01T00:16:00.000Z"));
+  expect(await world.attachments.cleanupExpired()).toBe(1);
+  expect(world.objects.has(INTENT_ID)).toBe(false);
+  expect(world.objects.get(publishedKey)?.bytes).toEqual(bytes);
 });
 
 test("HEAD mismatch, expiry, and failed raster validation keep uploads private", async () => {
@@ -565,7 +612,7 @@ test("public resolver signs only accepted current Revision images", async () => 
   });
   const signed = await world.attachments.signPublicRead(attachment.id);
   expect(signed).toEqual({
-    url: `https://cdn-free.example/${INTENT_ID}?get=1`,
+    url: `https://cdn-free.example/verified/${INTENT_ID}?get=1`,
     mime: "image/jpeg",
     kind: "image",
     expiresAt: new Date("2026-04-01T00:05:00.000Z"),
@@ -573,7 +620,7 @@ test("public resolver signs only accepted current Revision images", async () => 
   });
   expect(world.gets).toEqual([
     {
-      key: INTENT_ID,
+      key: `verified/${INTENT_ID}`,
       expiresSeconds: GET_EXPIRES_SECONDS,
       contentType: "image/jpeg",
     },
@@ -609,6 +656,8 @@ test("rejected and expired uploads stay private and release quota after confirme
     .completeUpload({ userId: USER_ID, intentId: reservation.intentId })
     .catch(() => {});
   expect(world.objects.has(reservation.objectKey)).toBe(true);
+  expect(await world.attachments.cleanupExpired()).toBe(0);
+  world.setNow(new Date("2026-04-01T00:16:00.000Z"));
   const cleaned = await world.attachments.cleanupExpired();
   expect(cleaned).toBe(1);
   expect(world.objects.has(reservation.objectKey)).toBe(false);
@@ -717,7 +766,7 @@ test("usage alerts fire before the 128 GiB cap without disabling Review text", a
   expect(alerts[0]?.globalUsedBytes).toBeGreaterThanOrEqual(USAGE_ALERT_BYTES);
 });
 
-test("operator byte removal leaves a Tombstone and releases quota after confirmed absence", async () => {
+test("operator byte removal releases Stored File bytes while replayable intents remain reserved", async () => {
   const world = memory();
   const stored = await accept(world, jpegBytes());
   const [attachment] = await world.attachments.attachToRevision({
@@ -742,10 +791,18 @@ test("operator byte removal leaves a Tombstone and releases quota after confirme
   await expect(
     world.attachments.signPublicRead(attachment.id),
   ).rejects.toMatchObject({ code: "attachment-unavailable" });
+  await expect(
+    world.attachments.reserveUpload({
+      userId: USER_ID,
+      byteSize: USER_QUOTA_BYTES,
+      filename: "full.jpg",
+      contentType: "image/jpeg",
+    }),
+  ).rejects.toMatchObject({ code: "quota-exceeded" });
   const again = await world.attachments.reserveUpload({
     userId: USER_ID,
-    byteSize: USER_QUOTA_BYTES,
-    filename: "full.jpg",
+    byteSize: USER_QUOTA_BYTES - jpegBytes().byteLength,
+    filename: "remaining.jpg",
     contentType: "image/jpeg",
   });
   expect(again.quotaUsedBytes).toBe(USER_QUOTA_BYTES);
@@ -766,6 +823,7 @@ test("cleanup retries until the object is confirmed gone", async () => {
   await world.attachments
     .completeUpload({ userId: USER_ID, intentId: reservation.intentId })
     .catch(() => {});
+  world.setNow(new Date("2026-04-01T00:16:00.000Z"));
   const restore = world.keepObjectOnDelete();
   expect(await world.attachments.cleanupExpired()).toBe(0);
   expect(world.intents.has(reservation.intentId)).toBe(true);

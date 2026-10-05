@@ -165,7 +165,8 @@ SELECT DISTINCT
 FROM source_schedule_classes AS classes
 JOIN source_schedule_courses AS courses
   ON courses.term_num = classes.term_num
- AND courses.id = classes.course_id,
+ AND upper(trim(courses.prefix)) = upper(trim(classes.prefix))
+ AND upper(trim(courses.number)) = upper(trim(classes.course_number)),
   unnest(classes.schedules) AS schedules(schedule),
   unnest(schedule.instructors) AS names(instructor)
 WHERE classes.role = 'E'
@@ -212,7 +213,8 @@ WHERE valid_instructor_name(instructor_name);
 CREATE OR REPLACE TEMP TABLE instructor_coaliases AS
 WITH record_names AS (
   SELECT DISTINCT
-    'schedule:' || classes.term_num || ':' || classes.number AS record_id,
+    concat_ws(':', 'schedule', classes.term_num, classes.prefix,
+      classes.course_number, classes.section, classes.number) AS record_id,
     instructor_name_key(instructor) AS name_key
   FROM source_schedule_classes AS classes,
     unnest(classes.schedules) AS schedules(schedule),
@@ -474,6 +476,9 @@ SELECT DISTINCT
   round(num_invites * response_rate)::BIGINT AS samples,
   (num_invites * response_rate)::DOUBLE AS sfq_weight_base,
   response_rate::DOUBLE AS sfq_response_rate,
+  num_invites::BIGINT AS sfq_num_invites,
+  course_overall_sd::DOUBLE AS source_stddev,
+  sha256 AS acquisition_sha256,
   version,
   school_code,
   section
@@ -512,6 +517,13 @@ SELECT DISTINCT
   round(num_invites * response_rate)::BIGINT AS samples,
   (num_invites * response_rate)::DOUBLE AS sfq_weight_base,
   response_rate::DOUBLE AS sfq_response_rate,
+  num_invites::BIGINT AS sfq_num_invites,
+  course_overall_mean::DOUBLE AS paired_course_rating,
+  instructor_overall_sd::DOUBLE AS source_stddev,
+  sha256 AS acquisition_sha256,
+  version,
+  school_code,
+  section,
   instructor_name
 FROM source_sfq_instructors
 WHERE num_invites > 0
@@ -530,13 +542,23 @@ SELECT * EXCLUDE (
   school_code,
   section,
   sfq_weight_base,
-  sfq_response_rate
+  sfq_response_rate,
+  sfq_num_invites,
+  source_stddev,
+  acquisition_sha256
 ) FROM sfq_course_observations
 UNION ALL BY NAME
 SELECT * EXCLUDE (
+  version,
+  school_code,
+  section,
   instructor_name,
   sfq_weight_base,
-  sfq_response_rate
+  sfq_response_rate,
+  sfq_num_invites,
+  paired_course_rating,
+  source_stddev,
+  acquisition_sha256
 ) FROM sfq_instructor_observations;
 
 -- Many-to-many bridge from evidence to people. The third branch reattaches a
@@ -595,7 +617,8 @@ SELECT DISTINCT
 FROM source_schedule_classes AS classes
 JOIN source_schedule_courses AS courses
   ON courses.term_num = classes.term_num
- AND courses.id = classes.course_id,
+ AND upper(trim(courses.prefix)) = upper(trim(classes.prefix))
+ AND upper(trim(courses.number)) = upper(trim(classes.course_number)),
   unnest(classes.schedules) AS schedules(schedule),
   unnest(schedule.instructors) AS names(instructor)
 JOIN instructor_aliases AS aliases

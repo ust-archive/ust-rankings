@@ -11,7 +11,7 @@ const provenanceKey = "__ustEntityNavigation";
 let documentProvenance: string | undefined;
 let pendingEntityNavigation = false;
 
-type EntityLinkProps = ComponentProps<typeof Link> & {
+type EntityLinkProps = Omit<ComponentProps<typeof Link>, "prefetch"> & {
   navigationHref?: string;
 };
 
@@ -62,15 +62,10 @@ export function EntityLink({
       return undefined;
     if (preparation.current?.href === props.href)
       return preparation.current.promise;
-    router.prefetch(navigationHref ?? props.href);
-    const promise = import("@/lib/browser-query/client")
-      .then(({ preloadPublicQuery }) =>
-        preloadPublicQuery(props.href as string),
-      )
-      .then((destination) => {
-        router.prefetch(destination);
-        return destination;
-      });
+    // Prepare immutable browser data without executing dynamic community reads.
+    const promise = import("@/lib/browser-query/client").then(
+      ({ preloadPublicQuery }) => preloadPublicQuery(props.href as string),
+    );
     preparation.current = { href: props.href, promise };
     return promise;
   }
@@ -102,7 +97,7 @@ export function EntityLink({
         onPointerDown?.(event);
         void prepare()?.catch(() => undefined);
       }}
-      prefetch={props.prefetch === undefined ? false : props.prefetch}
+      prefetch={false}
       ref={ref}
       transitionTypes={types}
     >

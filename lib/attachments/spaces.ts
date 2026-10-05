@@ -141,6 +141,18 @@ export class SpacesAttachmentStore implements AttachmentStore {
     }
   }
 
+  async put(key: string, bytes: Uint8Array, contentType: string) {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: this.key(key),
+        Body: bytes,
+        ContentLength: bytes.byteLength,
+        ContentType: contentType,
+      }),
+    );
+  }
+
   async exists(key: string) {
     return Boolean(await this.head(key));
   }

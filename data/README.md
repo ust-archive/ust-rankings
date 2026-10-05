@@ -9,9 +9,9 @@ the files in [`sql/`](sql/). The full contract is documented in
 The inputs are [`catalog`](https://huggingface.co/datasets/ust-archive/catalog),
 [`schedule`](https://huggingface.co/datasets/ust-archive/schedule),
 [`ust-space`](https://huggingface.co/datasets/ust-archive/ust-space), and
-[`sfq`](https://huggingface.co/datasets/ust-archive/sfq). The current schedule
-export starts at term `2510`; older rating observations remain, but historical
-schedule-only coverage from the retired CQ source does not.
+[`sfq`](https://huggingface.co/datasets/ust-archive/sfq). Schedule activity uses
+the unified `canonical/class_records.parquet` and `canonical/course_records.parquet`
+views, including legacy historical records as well as current API records.
 
 ## Run
 
@@ -33,7 +33,8 @@ layout; authentication is then unnecessary:
 
 ```text
 catalog/courses.parquet
-schedule/{classes,courses}.parquet
+schedule/canonical/{class_records,course_records}.parquet
+schedule/{classes,courses}.parquet # additionally required by data:backtest
 ust-space/reviews.parquet
 sfq/canonical/{section_records,instructor_records}.parquet
 ```
@@ -65,8 +66,11 @@ rating evidence as well as current schedule assignments.
 after source-name clustering. Include `criterion` when joining or identifying a
 rating row. `is_offered` and
 `is_teaching` come from active schedule data for that exact term;
-`is_teaching` specifically means a primary (`E` role) `LEC` or `IND`
-assignment. Filter those flags first, then calculate rank or percentile
+`is_teaching` means a primary (`E` role) `LEC` or `IND` assignment in API
+records, or an `L`-number lecture section in legacy records that lack these
+fields. Labs and tutorials do not establish teaching activity.
+Active-Term dropdowns include only Terms with activity flags for that population;
+all-time mode retains the full rating history. Filter those flags first, then calculate rank or percentile
 dynamically from `bayesian` so the displayed positions match the population
 visible in the frontend.
 
@@ -105,6 +109,25 @@ ORDER BY r.rank, a.subject, a.code;
 Run `npm run type-check` and `npm run test` for static analysis and the
 end-to-end pipeline test. Walk-forward model validation is available through
 [`npm run data:backtest`](../docs/data-pipeline.md#walk-forward-model-validation).
+The backtest report also contains analysis-only Course and Instructor results.
+The primary Course unit gives equal weight to each
+`Course Code × outcome Term × criterion`. The primary Instructor unit gives
+equal weight to each `Instructor UUID × outcome Term`. Canonical Schedule Class
+records add enrollment, capacity, Section, and teaching-team context. These
+fields do not change the production output files.
+
+Retrospective backtests reject any outcome after the frozen development ceiling
+in `validation/future-holdout.json`, including the legacy comparison export.
+Use development-only input files with outcome Terms at or below that ceiling;
+reserved future outcomes require a separate sealed evaluation. The report also
+includes equal-unit error by criterion, source, evidence density, cold-start
+state, teaching team, and number of historical Courses, plus raw-pair Gaussian
+coverage at 50%, 80%, 90%, and 95%. These diagnostics do not select production
+parameters or establish an independent holdout.
+The report also fits empirical residual quantiles on outcome Terms through 91
+and checks coverage on Terms 92-102, explicitly as a retrospective diagnostic.
+Schedule-backed Ranking Population follow-up counts show how many eligible
+Courses receive later evidence; final four-Term windows may be incomplete.
 
 The upstream dataset cards declare `license: other`; two inputs are private.
 

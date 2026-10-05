@@ -2,6 +2,10 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
+import {
+  prepareBacktestAnalysis,
+  writeBacktestAnalysis,
+} from "./backtest-analysis.ts";
 import { assignInstructorIdentities } from "./identities.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -131,13 +135,13 @@ const sources = {
     "catalog/courses.parquet",
     `hf://datasets/ust-archive/catalog@${revisions.catalog}/courses.parquet`,
   ),
-  schedule_classes: source(
-    "schedule/classes.parquet",
-    `hf://datasets/ust-archive/schedule@${revisions.schedule}/classes.parquet`,
+  schedule_class_records: source(
+    "schedule/canonical/class_records.parquet",
+    `hf://datasets/ust-archive/schedule@${revisions.schedule}/canonical/class_records.parquet`,
   ),
-  schedule_courses: source(
-    "schedule/courses.parquet",
-    `hf://datasets/ust-archive/schedule@${revisions.schedule}/courses.parquet`,
+  schedule_course_records: source(
+    "schedule/canonical/course_records.parquet",
+    `hf://datasets/ust-archive/schedule@${revisions.schedule}/canonical/course_records.parquet`,
   ),
   reviews: source(
     "ust-space/reviews.parquet",
@@ -188,6 +192,27 @@ async function executeFile(
 ): Promise<void> {
   const sql = await readFile(resolve(root, "sql", file), "utf8");
   await connection.run(sql);
+}
+
+async function assertDevelopmentOutcomes(
+  connection: DuckDBConnection,
+): Promise<void> {
+  const manifest = JSON.parse(
+    await readFile(join(root, "validation", "future-holdout.json"), "utf8"),
+  );
+  const ceiling = manifest.developmentOutcomeCeilingTerm;
+  if (!Number.isSafeInteger(ceiling) || ceiling < 0)
+    throw new Error("Invalid frozen development outcome ceiling");
+  const reader = await connection.runAndReadAll(
+    "SELECT count(*) AS count FROM observations WHERE term_num > $ceiling",
+    { ceiling },
+  );
+  if (Number(reader.getRowObjectsJS()[0]?.count) > 0)
+    throw new Error(
+      `Retrospective backtests cannot inspect outcomes after Term ${ceiling}: ` +
+        "they are reserved by data/validation/future-holdout.json. " +
+        "Use pinned development sources; future outcomes require a separately sealed holdout evaluation.",
+    );
 }
 
 async function setVariables(
@@ -347,12 +372,18 @@ try {
     if (!backtestDirectory)
       throw new Error("RANKINGS_BACKTEST_DIRECTORY is required");
     await executeFile(connection, "10_observations.sql");
+    await assertDevelopmentOutcomes(connection);
     await assignInstructorIdentities(connection, {
       previousGenerationDir: process.env.RANKINGS_PREVIOUS_GENERATION_DIR,
       initialize: initializeIdentityHistory,
       sourceCommit: process.env.RANKINGS_IDENTITY_COMMIT ?? "local",
       correctionsPath: process.env.RANKINGS_INSTRUCTOR_REGISTRY_FILE,
     });
+    await prepareBacktestAnalysis(
+      connection,
+      sources.schedule_class_records,
+      sources.schedule_course_records,
+    );
     for (const candidate of backtestCandidates) {
       await setVariables(connection, candidateModelSettings(candidate));
       await executeFile(connection, "11_backtest_weights.sql");
@@ -366,9 +397,11 @@ try {
         connection,
         join(directory, "course-ratings.parquet"),
       );
+      await writeBacktestAnalysis(connection, directory);
     }
   } else {
     await executeFile(connection, "10_observations.sql");
+    if (backtestRowsPath) await assertDevelopmentOutcomes(connection);
     await assignInstructorIdentities(connection, {
       previousGenerationDir: process.env.RANKINGS_PREVIOUS_GENERATION_DIR,
       initialize: initializeIdentityHistory,

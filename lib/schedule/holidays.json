@@ -1,0 +1,201 @@
+[
+  {
+    "academicYear": 2025,
+    "source": "https://registry.hkust.edu.hk/calendar_dates/dates25-26confirmed.pdf",
+    "retrievedAt": "2026-09-09",
+    "closures": [
+      {
+        "from": "2025-10-01",
+        "until": "2025-10-02",
+        "name": "The National Day"
+      },
+      {
+        "from": "2025-10-07",
+        "until": "2025-10-08",
+        "name": "The day following the Chinese Mid-Autumn Festival"
+      },
+      {
+        "from": "2025-10-29",
+        "until": "2025-10-30",
+        "name": "Chung Yeung Festival"
+      },
+      {
+        "from": "2025-12-25",
+        "until": "2025-12-26",
+        "name": "Christmas Day"
+      },
+      {
+        "from": "2025-12-26",
+        "until": "2025-12-27",
+        "name": "The first weekday after Christmas Day"
+      },
+      {
+        "from": "2026-01-01",
+        "until": "2026-01-02",
+        "name": "The first day of January"
+      },
+      {
+        "from": "2026-02-17",
+        "until": "2026-02-18",
+        "name": "Lunar New Year's Day"
+      },
+      {
+        "from": "2026-02-18",
+        "until": "2026-02-19",
+        "name": "The second day of Lunar New Year"
+      },
+      {
+        "from": "2026-02-19",
+        "until": "2026-02-20",
+        "name": "The third day of Lunar New Year"
+      },
+      {
+        "from": "2026-04-03",
+        "until": "2026-04-04",
+        "name": "Good Friday; Mid-Term Break"
+      },
+      {
+        "from": "2026-04-04",
+        "until": "2026-04-05",
+        "name": "The day following Good Friday; Mid-Term Break"
+      },
+      {
+        "from": "2026-04-05",
+        "until": "2026-04-06",
+        "name": "Mid-Term Break"
+      },
+      {
+        "from": "2026-04-06",
+        "until": "2026-04-07",
+        "name": "The day following Ching Ming Festival; Mid-Term Break"
+      },
+      {
+        "from": "2026-04-07",
+        "until": "2026-04-08",
+        "name": "The day following Easter Monday; Mid-Term Break"
+      },
+      {
+        "from": "2026-04-08",
+        "until": "2026-04-09",
+        "name": "Mid-Term Break"
+      },
+      {
+        "from": "2026-05-01",
+        "until": "2026-05-02",
+        "name": "Labor Day"
+      },
+      {
+        "from": "2026-05-25",
+        "until": "2026-05-26",
+        "name": "The day following the Birthday of the Buddha"
+      },
+      {
+        "from": "2026-06-19",
+        "until": "2026-06-20",
+        "name": "Tuen Ng Festival"
+      },
+      {
+        "from": "2026-07-01",
+        "until": "2026-07-02",
+        "name": "Hong Kong Special Administrative Region Establishment Day"
+      }
+    ]
+  },
+  {
+    "academicYear": 2026,
+    "closures": [
+      {
+        "from": "2026-09-26",
+        "until": "2026-09-27",
+        "name": "The day following the Chinese Mid-Autumn Festival"
+      },
+      {
+        "from": "2026-10-01",
+        "until": "2026-10-02",
+        "name": "The National Day"
+      },
+      {
+        "from": "2026-10-19",
+        "until": "2026-10-20",
+        "name": "The day following the Chung Yeung Festival"
+      },
+      {
+        "from": "2026-12-25",
+        "until": "2026-12-26",
+        "name": "Christmas Day"
+      },
+      {
+        "from": "2026-12-26",
+        "until": "2026-12-27",
+        "name": "The first weekday after Christmas Day"
+      },
+      {
+        "from": "2027-01-01",
+        "until": "2027-01-02",
+        "name": "The first day of January"
+      },
+      {
+        "from": "2027-02-06",
+        "until": "2027-02-07",
+        "name": "Lunar New Year&rsquo;s Day"
+      },
+      {
+        "from": "2027-02-08",
+        "until": "2027-02-09",
+        "name": "The third day of Lunar New Year"
+      },
+      {
+        "from": "2027-02-09",
+        "until": "2027-02-10",
+        "name": "The fourth day of Lunar New Year"
+      },
+      {
+        "from": "2027-03-25",
+        "until": "2027-03-31",
+        "name": "Mid Term Break"
+      },
+      {
+        "from": "2027-03-26",
+        "until": "2027-03-27",
+        "name": "Good Friday"
+      },
+      {
+        "from": "2027-03-27",
+        "until": "2027-03-28",
+        "name": "The day following Good Friday"
+      },
+      {
+        "from": "2027-03-29",
+        "until": "2027-03-30",
+        "name": "Easter Monday"
+      },
+      {
+        "from": "2027-04-05",
+        "until": "2027-04-06",
+        "name": "Ching Ming Festival"
+      },
+      {
+        "from": "2027-05-01",
+        "until": "2027-05-02",
+        "name": "Labor Day"
+      },
+      {
+        "from": "2027-05-13",
+        "until": "2027-05-14",
+        "name": "The Birthday of the Buddha"
+      },
+      {
+        "from": "2027-06-09",
+        "until": "2027-06-10",
+        "name": "Tuen Ng Festival"
+      },
+      {
+        "from": "2027-07-01",
+        "until": "2027-07-02",
+        "name": "Hong Kong Special Administrative Region Establishment Day"
+      }
+    ],
+    "source": "https://caldates.ust.hk/cgi-bin/eng/ical.php",
+    "retrievedAt": "2026-09-08T17:09:58.717Z"
+  }
+]

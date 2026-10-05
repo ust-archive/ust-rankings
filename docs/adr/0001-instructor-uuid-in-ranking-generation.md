@@ -10,6 +10,8 @@ Merge, split, ITSC, and Instructor Association Calibration corrections are idemp
 
 Between pipeline runs the full identity snapshot is the previous Ranking Generation on Hugging Face. The identity relations carry current identities and append-only event history.
 
+The snapshot's ITSC is authoritative when reconstructing Instructor Identity History. Historical events add identifier provenance and redirects without replacing that current value; commit hashes and exported row order do not establish chronology. The pipeline applies newly appended ITSC corrections to the next snapshot in correction input order, and ignores corrections already present in its history.
+
 Every Instructor the pipeline clustered receives an Instructor UUID, including schedule-only names with no rating samples. TBA is not an Instructor. Those Instructors are emitted with zero samples and a Bayesian score equal to the population prior (the mean), so Rank and related measures follow. They compete in Instructor Rankings so a User can open details and publish a Review. The prior is computed only from Instructors with samples; zero-sample Instructors receive that mean and do not change it. Term coverage is the existing dense grid: first coverage through the latest source Term. `is_teaching` still distinguishes current from all-time.
 
 Normal publication requires all four previous identity relations and fails without them. For the first identity-history publication only, an operator may pass `--init`; current identities and aliases remain required, while absent event and split-association relations start empty. The pipeline must not mint a parallel registry.

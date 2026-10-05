@@ -19,8 +19,8 @@ const connection = await instance.connect();
 await connection.run("SET threads = 1");
 for (const [name, value] of Object.entries({
   catalog_courses: path("catalog/courses.parquet"),
-  schedule_classes: path("schedule/classes.parquet"),
-  schedule_courses: path("schedule/courses.parquet"),
+  schedule_class_records: path("schedule/canonical/class_records.parquet"),
+  schedule_course_records: path("schedule/canonical/course_records.parquet"),
   reviews: path("ust-space/reviews.parquet"),
   sfq_instructors: path("sfq/canonical/instructor_records.parquet"),
   sfq_sections: path("sfq/canonical/section_records.parquet"),

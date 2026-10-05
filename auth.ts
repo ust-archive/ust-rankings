@@ -12,10 +12,18 @@ const providers = createInstitutionalProviders({
 
 const callbacks = createAuthCallbacks({
   establishUser(claims) {
-    return getAccountService().establishUser(claims);
+    return getAccountService({
+      caller: "auth",
+      authentication: "authenticated",
+      requestClass: "action-api",
+    }).establishUser(claims);
   },
   getUser(userId) {
-    return getAccountService().getUser(userId);
+    return getAccountService({
+      caller: "auth",
+      authentication: "authenticated",
+      requestClass: "action-api",
+    }).getUser(userId);
   },
 });
 
