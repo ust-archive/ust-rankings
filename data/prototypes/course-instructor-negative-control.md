@@ -55,3 +55,40 @@ node data/prototypes/course-instructor-offering.ts \
 The complete per-seed output is captured in [course-instructor-negative-control.json](course-instructor-negative-control.json). It includes the source revisions and cache hash. The runner exits before the original model-selection path. No production code or ranking output is changed.
 
 Verification on 2026-09-07: two complete runs produced identical raw JSON bytes (SHA-256 `f6ee82b3e89fde4869c58af4df3f4babd3c9bdc487750e1a969ede8712e3ba02`). The checked-in artifact uses repository JSON formatting (SHA-256 `7b93ec87e0625ea307427cf7d3463b1556e890e2ade7aabc7a5bc9d608823a6d`). Targeted strict TypeScript checking, Biome, and `git diff --check` pass. Independent code reviews checked both the fixed comparison and the observation boundaries.
+
+## Review the before and after comparison
+
+Run from the repository root with Node 26.7.0:
+
+```sh
+node data/prototypes/review-negative-control.ts
+```
+
+This command reads and checks the archived development artifact. It does not
+download sources, fit a model, or inspect future outcomes. The observed output is:
+
+```json
+{
+  "evidence": "Archived retrospective artifact; no new statistical run",
+  "before": {
+    "residualGainOverCourse": 0.05034721237151418
+  },
+  "after": {
+    "residualGainOverPopulation": -0.02105050104363576,
+    "shufflesWithLowerResidualError": 10,
+    "sourceFragmentMaximumDifference": 1.4210854715202004e-14
+  },
+  "productionPromotion": false
+}
+```
+
+The before comparison measures the apparent gain against Course-only prediction.
+The added controls compare the same real-identity model against a population
+offset and ten fixed identity shuffles. They change the interpretation of the
+archived experiment, not the production Ranking model. Equivalent source
+fragments still reconstruct the same canonical observations.
+
+The review decision is whether to retain this negative-control evidence on the
+isolated prototype branch. It supplies no basis for promoting the model. A
+production model or a new confirmatory experiment requires a separate design and
+validation decision; neither is part of this patch.
