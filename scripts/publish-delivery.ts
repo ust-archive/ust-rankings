@@ -11,6 +11,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { DeliveryManifest } from "@/lib/server-index-contract";
+import { checkPublicationHead } from "./check-publication-head.ts";
 
 const GENERATION = /^[0-9a-f]{64}$/;
 const CORS_ORIGIN = "https://ust-rankings.invalid";
@@ -35,6 +36,7 @@ type PutOptions = {
 };
 
 export type PublicationDependencies = {
+  isCurrent?(): Promise<boolean>;
   prepare?(): Promise<void>;
   put(
     key: string,
@@ -175,6 +177,7 @@ export async function publishGeneration(
   dependencies: PublicationDependencies,
   request: typeof fetch = fetch,
 ) {
+  if (dependencies.isCurrent && !(await dependencies.isCurrent())) return;
   await dependencies.prepare?.();
   const manifest = JSON.parse(
     await readFile(resolve(directory, "manifest.json"), "utf8"),
@@ -187,6 +190,7 @@ export async function publishGeneration(
   const previous = await currentPublication(request);
   const files = (await readdir(directory)).sort();
   for (const name of files) {
+    if (dependencies.isCurrent && !(await dependencies.isCurrent())) return;
     const path = resolve(directory, name);
     const body = await readFile(path);
     await dependencies.put(
@@ -203,6 +207,8 @@ export async function publishGeneration(
     );
   }
   await dependencies.verifyGeneration(manifest.generation, manifest);
+  // After mirroring, check again before beginning the paired activation/promotion.
+  if (dependencies.isCurrent && !(await dependencies.isCurrent())) return;
   try {
     await activateConfirmed(activation(manifest), dependencies);
     await putLatest(
@@ -473,9 +479,11 @@ function productionDependencies(): PublicationDependencies {
 async function main() {
   const [action, value] = process.argv.slice(2);
   const dependencies = productionDependencies();
-  if (action === "publish" && value)
+  if (action === "publish" && value) {
+    dependencies.isCurrent = () =>
+      checkPublicationHead(required("PUBLISH_SHA"));
     await publishGeneration(resolve(value), dependencies);
-  else if (action === "rollback" && value)
+  } else if (action === "rollback" && value)
     await rollbackGeneration(value, dependencies);
   else
     throw new Error(
