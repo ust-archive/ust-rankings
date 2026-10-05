@@ -4,6 +4,7 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+    branches: [master]
   schedule:
     - cron: "21 20 * * *"
   workflow_dispatch:
@@ -18,10 +19,6 @@ on:
         type: string
         required: false
 
-concurrency:
-  group: update-data
-  cancel-in-progress: false
-
 jobs:
   update:
     if: >-
@@ -30,6 +27,9 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.head_branch == 'master')
+    concurrency:
+      group: update-data
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
