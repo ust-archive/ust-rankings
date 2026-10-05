@@ -9,6 +9,7 @@ import {
   DetailsCommunityLoading,
 } from "@/app/courses/details-sections";
 import { loadCourseReviews } from "@/app/courses/review-data";
+import { hydrateReviewEditorOptions } from "@/app/courses/review-editor-options";
 import {
   normalizeCourseRoute,
   type RouteSearchParams,
@@ -55,11 +56,14 @@ async function CourseCommunity({
     ),
     loadSignals({ type: "course", coursePrefix, courseNumber }),
   ]);
-  const editor: ReviewEditorOptions = {
-    courses: [{ coursePrefix, courseNumber }],
-    contexts: [],
-    instructors: [],
-  };
+  const editor: ReviewEditorOptions = await hydrateReviewEditorOptions(
+    {
+      courses: [{ coursePrefix, courseNumber }],
+      contexts: [],
+      instructors: [],
+    },
+    community.reviews,
+  );
   return (
     <DetailsCommunity
       botRestricted={community.botRestricted}
