@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
 import type { RankingsQuery } from "@/lib/rankings/server";
@@ -22,19 +22,22 @@ export function RankingPagination({
   const [pageCount, setPageCount] = useState(initialPages);
   const [resultCount, setResultCount] = useState(initialResultCount);
   const [error, setError] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
   const loadingCursor = useRef<string | undefined>(undefined);
   const sentinel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const element = sentinel.current;
     if (!element || !nextCursor) return;
+    let current = true;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting || loadingCursor.current === nextCursor)
           return;
         loadingCursor.current = nextCursor;
-        startTransition(async () => {
+        const requestHref = window.location.href;
+        setIsPending(true);
+        void (async () => {
           try {
             const nextQuery = { ...query, cursor: nextCursor };
             const page =
@@ -65,6 +68,7 @@ export function RankingPagination({
                       };
                     },
                   );
+            if (!current || window.location.href !== requestHref) return;
             setResultCount((current) => current + page.results.length);
             setError(false);
             setNextCursor(page.nextCursor);
@@ -76,16 +80,23 @@ export function RankingPagination({
             url.searchParams.set("cursor", nextCursor);
             window.history.replaceState(null, "", url);
           } catch {
-            setError(true);
+            if (current && window.location.href === requestHref) setError(true);
           } finally {
-            loadingCursor.current = undefined;
+            if (current) {
+              loadingCursor.current = undefined;
+              setIsPending(false);
+            }
           }
-        });
+        })();
       },
       { rootMargin: "400px" },
     );
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => {
+      current = false;
+      loadingCursor.current = undefined;
+      observer.disconnect();
+    };
   }, [nextCursor, pageCount, query]);
 
   return (
