@@ -39,6 +39,8 @@ node data/prototypes/waitlist-clearance.ts --validate-term=2610
 
 The report command detects the local `.preview/schedule` files created by `preview:data`. DuckDB computes the normalized observations, trajectory features, movement outcomes, and tuning aggregates; JavaScript only indexes small counts and formats Markdown. The local run should complete within one minute after download. This writes `data/prototypes/waitlist-clearance-validation-2610.md` and fails if the Term has no completed trajectories. The command scores the frozen candidate grid against only that held-out Term; it does not edit `WAITLIST_MODEL_VERSION`, prior weights, or Delivery metadata.
 
+The current HUMA 1710 L1 position-25 demonstration is optional: add `--live-demo` to include it. A missing or inactive live queue is reported as unavailable and does not prevent the historical report or held-out validation from completing. Set `WAITLIST_REPORT_PATH` to write the report elsewhere.
+
 A production parameter change requires repeatable whole-Term Brier improvement without material local-match coverage loss. Update the shared implementation and tests, increment `WAITLIST_MODEL_VERSION`, regenerate the prototype report, rebuild the Delivery artifact, and review the resulting manifest diff. Never update parameters automatically from one completed Term.
 
 For a preview or report review, do not use the prototype's remote fallback. Run `npm run preview:data` first so the source revision is pinned locally.
