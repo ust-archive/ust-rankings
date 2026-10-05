@@ -732,4 +732,100 @@ if (!connection) {
       });
     });
   }, 30_000);
+
+  test("Review PostgreSQL writes associate Attachments atomically on publication and edit", async () => {
+    await withPostgresSchema("review_attachments", async ({ sql }) => {
+      const { PostgresReviewRepository } = await import(
+        "@/lib/contributions/postgres"
+      );
+      const reviews = createReviewService(new PostgresReviewRepository(sql), {
+        reviewPolicyVersion: "review-test-v1",
+        async validateAssociations(associations) {
+          return associations;
+        },
+      });
+      const authorId = crypto.randomUUID();
+      const otherId = crypto.randomUUID();
+      await sql`
+        INSERT INTO contribution_users (id, status, public_display_name)
+        VALUES (${authorId}, 'active', 'Author'),
+               (${otherId}, 'active', 'Other User')
+      `;
+      const storedFileId = crypto.randomUUID();
+      const foreignFileId = crypto.randomUUID();
+      for (const [id, owner] of [
+        [storedFileId, authorId],
+        [foreignFileId, otherId],
+      ]) {
+        await sql`
+          INSERT INTO stored_files (
+            id, owner_user_id, object_key, byte_size, sha256, detected_mime
+          ) VALUES (${id}, ${owner}, ${`verified/${id}`}, 46,
+                    ${"a".repeat(64)}, 'image/jpeg')
+        `;
+      }
+      const draft = (fileId = storedFileId) => ({
+        id: crypto.randomUUID(),
+        storedFileId: fileId,
+        filename: "lab.jpg",
+        description: "Lab setup",
+      });
+      const associations = {
+        course: { coursePrefix: "COMP", courseNumber: "2000" },
+      };
+      const firstDraft = draft();
+      const published = await reviews.publishReview(authorId, {
+        associations,
+        markdown: "Initial Review with a file",
+        attachments: [firstDraft],
+      });
+      expect(published.attachments).toMatchObject([firstDraft]);
+      const editedDraft = { ...draft(), description: "Updated description" };
+      const edited = await reviews.editReview(authorId, published.id, {
+        expectedRevisionId: published.revisionId,
+        associations,
+        markdown: "Edited Review reusing the same bytes",
+        attribution: "attributed",
+        attachments: [editedDraft],
+      });
+      expect(edited.attachments).toMatchObject([editedDraft]);
+      expect(edited.revisionId).not.toBe(published.revisionId);
+      expect((await reviews.getReview(published.id))?.revisionId).toBe(
+        edited.revisionId,
+      );
+
+      const unauthorizedDrafts = [draft(), draft(foreignFileId)];
+      await expect(
+        reviews.editReview(authorId, published.id, {
+          expectedRevisionId: edited.revisionId,
+          associations,
+          markdown: "Must roll back the Revision and its first Attachment",
+          attribution: "attributed",
+          attachments: unauthorizedDrafts,
+        }),
+      ).rejects.toMatchObject({ code: "invalid-review" });
+      await expect(
+        reviews.publishReview(authorId, {
+          associations: {
+            course: { coursePrefix: "COMP", courseNumber: "2001" },
+          },
+          markdown: "Must roll back the new Review and its first Attachment",
+          attachments: [draft(), draft(foreignFileId)],
+        }),
+      ).rejects.toMatchObject({ code: "invalid-review" });
+      const [retained] = await sql`
+        SELECT (SELECT count(*)::int FROM reviews) AS reviews,
+               (SELECT count(*)::int FROM review_revisions) AS revisions,
+               (SELECT count(*)::int FROM attachments) AS attachments,
+               (SELECT current_revision_id FROM reviews
+                WHERE id = ${published.id}) AS current
+      `;
+      expect(retained).toEqual({
+        reviews: 1,
+        revisions: 2,
+        attachments: 2,
+        current: edited.revisionId,
+      });
+    });
+  });
 }

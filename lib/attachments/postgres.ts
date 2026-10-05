@@ -65,6 +65,51 @@ function storedFile(row: StoredFileRecord): StoredFileRecord {
   return { ...row, byteSize: asNumber(row.byteSize) };
 }
 
+export async function attachToReviewRevision(
+  sql: postgres.TransactionSql,
+  input: Parameters<AttachmentRepository["attachToRevision"]>[0],
+) {
+  if (input.attachments.length > 4)
+    throw new AttachmentWriteError(
+      "too-many-attachments",
+      "A Review Revision has at most four Attachments",
+    );
+  const created: ImageAttachment[] = [];
+  for (const draft of input.attachments) {
+    const [row] = await sql<ImageAttachment[]>`
+      WITH inserted AS (
+        INSERT INTO attachments (
+          id, revision_id, stored_file_id, public_filename, description
+        )
+        SELECT ${draft.id}, ${input.revisionId}, sf.id,
+               ${draft.filename}, ${draft.description}
+        FROM stored_files sf
+        WHERE sf.id = ${draft.storedFileId}
+          AND sf.owner_user_id = ${input.userId}
+          AND sf.removed_at IS NULL
+        RETURNING id, stored_file_id, public_filename, description
+      )
+      SELECT inserted.id,
+             inserted.stored_file_id AS "storedFileId",
+             inserted.public_filename AS filename,
+             inserted.description,
+             sf.detected_mime AS mime,
+             CASE WHEN sf.detected_mime LIKE 'image/%' THEN 'image'
+                  ELSE 'document' END AS kind,
+             true AS available
+      FROM inserted
+      JOIN stored_files sf ON sf.id = inserted.stored_file_id
+    `;
+    if (!row)
+      throw new AttachmentWriteError(
+        "invalid-attachment",
+        "Stored File cannot be attached",
+      );
+    created.push(row);
+  }
+  return created;
+}
+
 export class PostgresAttachmentRepository implements AttachmentRepository {
   constructor(
     private readonly sql: Sql,
@@ -279,47 +324,7 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
     input: Parameters<AttachmentRepository["attachToRevision"]>[0],
   ) {
     try {
-      return await this.sql.begin(async (sql) => {
-        if (input.attachments.length > 4)
-          throw new AttachmentWriteError(
-            "too-many-attachments",
-            "A Review Revision has at most four Attachments",
-          );
-        const created: ImageAttachment[] = [];
-        for (const draft of input.attachments) {
-          const [row] = await sql<ImageAttachment[]>`
-            WITH inserted AS (
-              INSERT INTO attachments (
-                id, revision_id, stored_file_id, public_filename, description
-              )
-              SELECT ${draft.id}, ${input.revisionId}, sf.id,
-                     ${draft.filename}, ${draft.description}
-              FROM stored_files sf
-              WHERE sf.id = ${draft.storedFileId}
-                AND sf.owner_user_id = ${input.userId}
-                AND sf.removed_at IS NULL
-              RETURNING id, stored_file_id, public_filename, description
-            )
-            SELECT inserted.id,
-                   inserted.stored_file_id AS "storedFileId",
-                   inserted.public_filename AS filename,
-                   inserted.description,
-                   sf.detected_mime AS mime,
-                   CASE WHEN sf.detected_mime LIKE 'image/%' THEN 'image'
-                        ELSE 'document' END AS kind,
-                   true AS available
-            FROM inserted
-            JOIN stored_files sf ON sf.id = inserted.stored_file_id
-          `;
-          if (!row)
-            throw new AttachmentWriteError(
-              "invalid-attachment",
-              "Stored File cannot be attached",
-            );
-          created.push(row);
-        }
-        return created;
-      });
+      return await this.sql.begin((sql) => attachToReviewRevision(sql, input));
     } catch (error) {
       mapWriteError(error);
     }
