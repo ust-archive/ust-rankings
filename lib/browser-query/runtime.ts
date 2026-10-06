@@ -42,6 +42,7 @@ import {
 } from "@/lib/server-index-contract";
 import {
   activationAt,
+  associationPlanCandidate,
   bundleTrajectories,
   formatHeadline,
   interval,
@@ -2278,7 +2279,7 @@ function waitlistCandidate(
   current: readonly WaitlistCurrentClass[],
   selected: readonly WaitlistCurrentClass[],
   positions: ReadonlyMap<string, number>,
-): WaitlistPlanCandidate {
+): WaitlistPlanCandidate | undefined {
   const components = selected
     .map((item) => {
       const observedAt = item.observedAtMs;
@@ -2294,12 +2295,6 @@ function waitlistCandidate(
               ),
             }),
         features: item.features,
-        ordinal: current
-          .filter(({ value }) => value.classType === item.value.classType)
-          .sort((left, right) =>
-            left.value.section.localeCompare(right.value.section),
-          )
-          .findIndex(({ value }) => value.section === item.value.section),
         position: positions.get(item.value.section) as number,
         section: item.value.section,
         type: item.value.classType,
@@ -2310,16 +2305,23 @@ function waitlistCandidate(
         left.type.localeCompare(right.type) ||
         left.section.localeCompare(right.section),
     );
-  return {
-    components,
-    course: courseCode,
-    pattern: components
-      .map(({ type }) => type)
-      .sort()
-      .join("+"),
-    season: term.season,
-    term: term.termCode,
-  };
+  return associationPlanCandidate(
+    current.map(({ association, value }) => ({
+      association,
+      section: value.section,
+      type: value.classType,
+    })),
+    {
+      components,
+      course: courseCode,
+      pattern: components
+        .map(({ type }) => type)
+        .sort()
+        .join("+"),
+      season: term.season,
+      term: term.termCode,
+    },
+  );
 }
 
 async function waitlistPlan(
@@ -2435,6 +2437,21 @@ async function waitlistPlan(
     selected.push(item);
   }
   const metadata = waitlistMetadata(runtime);
+  const candidate = waitlistCandidate(
+    term,
+    requestedCourse,
+    current,
+    selected,
+    new Map(entries.map(({ section, position }) => [section, position])),
+  );
+  if (!candidate)
+    return waitlistUnsupported(
+      runtime,
+      "mixed-association",
+      "Classes from different associations do not yet have comparable joint history.",
+      term,
+      requestedCourse,
+    );
   const historyRows = await queryRows(
     runtime,
     `SELECT term_code, course_code, section, association, class_type, class_number,
@@ -2444,13 +2461,6 @@ async function waitlistPlan(
      ORDER BY term_code, course_code, association, class_type, section, observed_at, source_order`,
   );
   const historical = waitlistHistoricalData(historyRows);
-  const candidate = waitlistCandidate(
-    term,
-    requestedCourse,
-    current,
-    selected,
-    new Map(entries.map(({ section, position }) => [section, position])),
-  );
   const training = historical.bundles.filter((bundle) => {
     const info = waitlistTerm(bundle.term);
     return (

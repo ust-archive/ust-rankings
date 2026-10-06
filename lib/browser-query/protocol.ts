@@ -39,6 +39,7 @@ export type WaitlistUnsupportedReason =
   | "malformed"
   | "class-not-found"
   | "duplicate-class"
+  | "mixed-association"
   | "no-history"
   | "stale-position";
 export type WaitlistReservation = {
