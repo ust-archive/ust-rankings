@@ -1,0 +1,30 @@
+{
+  "label": "after",
+  "controlledTiming": "Next native-history adapter withheld for this context; actual Worker, real immutable data; no prevalence claim",
+  "rsc": ["/wl?q=ACCT2010&_rsc=zrMyDk3QLgw1a8WA"],
+  "state": {
+    "url": "http://localhost:17842/wl?q=ACCT2010",
+    "input": "ACCT2010",
+    "courses": ["ACCT 2010"],
+    "historyLength": 2,
+    "width": 1280,
+    "scrollWidth": 1280
+  },
+  "requests": [
+    {
+      "operation": "waitlistSearch",
+      "input": {
+        "limit": 24,
+        "offset": 0
+      }
+    },
+    {
+      "operation": "waitlistSearch",
+      "input": {
+        "limit": 24,
+        "offset": 0,
+        "search": "ACCT2010"
+      }
+    }
+  ]
+}

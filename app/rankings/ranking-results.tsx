@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
+import { currentSearchIntent } from "@/lib/rankings/search-lifecycle";
 import type { RankingsQuery } from "@/lib/rankings/server";
 
 export function RankingPagination({
@@ -30,9 +31,15 @@ export function RankingPagination({
     const element = sentinel.current;
     if (!element || !nextCursor) return;
     let current = true;
+    const searchIntent = currentSearchIntent();
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (!entry?.isIntersecting || loadingCursor.current === nextCursor)
+        if (
+          !current ||
+          searchIntent !== currentSearchIntent() ||
+          !entry?.isIntersecting ||
+          loadingCursor.current === nextCursor
+        )
           return;
         loadingCursor.current = nextCursor;
         const requestHref = window.location.href;
@@ -68,7 +75,12 @@ export function RankingPagination({
                       };
                     },
                   );
-            if (!current || window.location.href !== requestHref) return;
+            if (
+              !current ||
+              searchIntent !== currentSearchIntent() ||
+              window.location.href !== requestHref
+            )
+              return;
             setResultCount((current) => current + page.results.length);
             setError(false);
             setNextCursor(page.nextCursor);
@@ -80,7 +92,12 @@ export function RankingPagination({
             url.searchParams.set("cursor", nextCursor);
             window.history.replaceState(null, "", url);
           } catch {
-            if (current && window.location.href === requestHref) setError(true);
+            if (
+              current &&
+              searchIntent === currentSearchIntent() &&
+              window.location.href === requestHref
+            )
+              setError(true);
           } finally {
             if (current) {
               loadingCursor.current = undefined;

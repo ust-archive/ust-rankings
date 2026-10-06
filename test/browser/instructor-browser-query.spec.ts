@@ -114,7 +114,9 @@ test("Instructor search accepts compact Course Codes", async ({ page }) => {
     name: "Search Instructors",
   });
   await search.fill("COMP2000");
-  expect(new URL(page.url()).searchParams.get("q")).toBe("COMP2000");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("q"))
+    .toBe("COMP2000");
   const results = page
     .getByRole("list", { name: "Instructor rankings" })
     .getByRole("link");

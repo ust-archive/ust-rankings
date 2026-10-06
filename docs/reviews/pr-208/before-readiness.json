@@ -1,0 +1,47 @@
+{
+  "label": "before",
+  "controlledTiming": "Next native-history adapter withheld for this context; actual Worker, real immutable data; no prevalence claim",
+  "rsc": [],
+  "state": {
+    "url": "http://localhost:17840/wl?q=ACCT2010",
+    "input": "ACCT2010",
+    "courses": [
+      "ACCT 2010",
+      "ACCT 3010",
+      "ACCT 3030",
+      "ACCT 3610",
+      "ACCT 3880",
+      "ACCT 4010",
+      "ACCT 4510",
+      "ACCT 4710",
+      "ACCT 5100",
+      "ACCT 5140",
+      "ACCT 5160",
+      "ACCT 5170",
+      "ACCT 5210",
+      "ACCT 5220",
+      "ACCT 5410",
+      "ACCT 5630",
+      "ACCT 5710",
+      "ACCT 5920",
+      "ACCT 5930",
+      "ACCT 5940",
+      "ACCT 6970A",
+      "ACCT 7900I",
+      "ACCT 7990",
+      "AESF 5210"
+    ],
+    "historyLength": 2,
+    "width": 1280,
+    "scrollWidth": 1280
+  },
+  "requests": [
+    {
+      "operation": "waitlistSearch",
+      "input": {
+        "limit": 24,
+        "offset": 0
+      }
+    }
+  ]
+}
