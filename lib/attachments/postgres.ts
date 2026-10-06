@@ -12,9 +12,12 @@ import {
   createAttachmentService,
   GLOBAL_QUOTA_BYTES,
   type ImageAttachment,
+  MAX_VALIDATION_ATTEMPTS,
   type StoredFileRecord,
   type UploadIntentRecord,
   USER_QUOTA_BYTES,
+  VALIDATION_LEASE_SECONDS,
+  type ValidationLease,
 } from "./attachments";
 import { SpacesAttachmentStore } from "./spaces";
 
@@ -33,6 +36,9 @@ function mapWriteError(error: unknown): never {
       "global-quota-exceeded",
       "upload-not-found",
       "upload-expired",
+      "validation-in-progress",
+      "validation-retry-exhausted",
+      "validation-lease-lost",
       "too-many-attachments",
       "invalid-attachment",
       "attachment-not-found",
@@ -172,6 +178,10 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
                             WHERE file.object_key = intent.object_key
                               AND file.removed_at IS NULL
                           )), 0)
+              + COALESCE((SELECT sum(intent.declared_byte_size) FROM upload_intents intent
+                          CROSS JOIN LATERAL unnest(intent.validation_keys) AS candidate(key)
+                          WHERE NOT EXISTS (SELECT 1 FROM stored_files file
+                            WHERE file.object_key = candidate.key AND file.removed_at IS NULL)), 0)
             )::text AS "globalBytes"
         `;
         const userBytes = Number(usage.userBytes);
@@ -225,21 +235,102 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
     return row ? intent(row) : undefined;
   }
 
-  async markRejected(intentId: string, state: "rejected" | "validation_error") {
+  async getAccepted(intentId: string) {
+    const [row] = await this.sql<(StoredFileRecord & { reused: boolean })[]>`
+      SELECT sf.id, sf.owner_user_id AS "ownerUserId", sf.object_key AS "objectKey",
+             sf.byte_size AS "byteSize", sf.sha256, sf.detected_mime AS "detectedMime",
+             intent.accepted_reused AS reused
+      FROM upload_intents intent JOIN stored_files sf ON sf.id = intent.stored_file_id
+      WHERE intent.id = ${intentId} AND intent.state = 'accepted'
+        AND sf.removal_requested_at IS NULL AND sf.removed_at IS NULL
+    `;
+    return row ? { ...storedFile(row), reused: row.reused } : undefined;
+  }
+
+  async markRejected(
+    intentId: string,
+    state: "rejected" | "validation_error",
+    leaseId: string,
+  ) {
     await this.sql`
       UPDATE upload_intents
       SET state = ${state}, updated_at = now(), stored_file_id = NULL
-      WHERE id = ${intentId} AND state <> 'accepted'
+      WHERE id = ${intentId} AND state = 'validating'
+        AND validation_lease_id = ${leaseId}
     `;
   }
 
   async beginValidation(intentId: string) {
-    const [row] = await this.sql<UploadIntentRecord[]>`
+    return this.sql.begin(async (sql) => {
+      // Share reservation's lock so retained attempt copies cannot bypass the physical cap.
+      await sql`SELECT pg_advisory_xact_lock(1431520338, 48)`;
+      const [current] = await sql<
+        {
+          state: string;
+          expired: boolean;
+          active: boolean;
+          attempts: number;
+          byteSize: string;
+        }[]
+      >`
+        SELECT state, expires_at <= clock_timestamp() AS expired,
+               validation_lease_expires_at > clock_timestamp() AS active,
+               validation_attempts AS attempts, declared_byte_size::text AS "byteSize"
+        FROM upload_intents WHERE id = ${intentId} FOR UPDATE
+      `;
+      if (
+        !current ||
+        !["reserved", "uploaded", "validation_error", "validating"].includes(
+          current.state,
+        )
+      )
+        throw new AttachmentWriteError(
+          "upload-not-found",
+          "Upload was not found",
+        );
+      if (current.expired)
+        throw new AttachmentWriteError(
+          "upload-expired",
+          "Upload Intent expired",
+        );
+      if (current.state === "validating" && current.active)
+        throw new AttachmentWriteError(
+          "validation-in-progress",
+          "Upload validation is already running",
+        );
+      if (current.attempts >= MAX_VALIDATION_ATTEMPTS)
+        throw new AttachmentWriteError(
+          "validation-retry-exhausted",
+          "Upload validation retry limit reached",
+        );
+      const [usage] = await sql<{ bytes: string }[]>`
+        SELECT (COALESCE((SELECT sum(byte_size) FROM stored_files WHERE removed_at IS NULL), 0)
+          + COALESCE((SELECT sum(declared_byte_size) FROM upload_intents intent
+              WHERE NOT EXISTS (SELECT 1 FROM stored_files sf WHERE sf.object_key = intent.object_key
+                                AND sf.removed_at IS NULL)), 0)
+          + COALESCE((SELECT sum(intent.declared_byte_size) FROM upload_intents intent
+              CROSS JOIN LATERAL unnest(intent.validation_keys) AS candidate(key)
+              WHERE NOT EXISTS (SELECT 1 FROM stored_files sf WHERE sf.object_key = candidate.key
+                                AND sf.removed_at IS NULL)), 0))::text AS bytes
+      `;
+      if (
+        Number(usage.bytes) + Number(current.byteSize) >
+        this.limits.globalQuota
+      )
+        throw new AttachmentWriteError(
+          "global-quota-exceeded",
+          "The global Attachment reservation cap is exceeded",
+        );
+      const leaseId = crypto.randomUUID();
+      const objectKey = `verified/${intentId}/${leaseId}`;
+      const [row] = await sql<ValidationLease[]>`
       UPDATE upload_intents
-      SET state = 'validating', updated_at = now()
+      SET state = 'validating', updated_at = now(),
+          validation_lease_id = ${leaseId},
+          validation_lease_expires_at = LEAST(expires_at, clock_timestamp() + ${VALIDATION_LEASE_SECONDS} * interval '1 second'),
+          validation_attempts = validation_attempts + 1,
+          validation_keys = array_append(validation_keys, ${objectKey})
       WHERE id = ${intentId}
-        AND state IN ('reserved', 'uploaded')
-        AND expires_at > now()
       RETURNING id,
                 owner_user_id AS "ownerUserId",
                 object_key AS "objectKey",
@@ -250,14 +341,18 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
                 stored_file_id AS "storedFileId",
                 expires_at AS "expiresAt",
                 created_at AS "createdAt",
-                updated_at AS "updatedAt"
+                updated_at AS "updatedAt",
+                validation_lease_id AS "validationLeaseId",
+                ${objectKey}::text AS "validationObjectKey",
+                validation_lease_expires_at AS "validationLeaseExpiresAt"
     `;
-    if (!row)
-      throw new AttachmentWriteError(
-        "upload-not-found",
-        "Upload was not found",
-      );
-    return intent(row);
+      return {
+        ...intent(row),
+        validationLeaseId: row.validationLeaseId,
+        validationObjectKey: row.validationObjectKey,
+        validationLeaseExpiresAt: new Date(row.validationLeaseExpiresAt),
+      };
+    });
   }
 
   async findStoredFile(userId: string, sha256: string) {
@@ -277,6 +372,34 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
   async accept(input: Parameters<AttachmentRepository["accept"]>[0]) {
     try {
       return await this.sql.begin(async (sql) => {
+        const [claimed] = await sql<
+          {
+            ownerUserId: string;
+            objectKey: string;
+            byteSize: string;
+            mime: string;
+          }[]
+        >`
+          SELECT owner_user_id AS "ownerUserId",
+                 'verified/' || id || '/' || validation_lease_id AS "objectKey",
+                 declared_byte_size::text AS "byteSize", declared_mime AS mime
+          FROM upload_intents
+          WHERE id = ${input.intentId} AND state = 'validating'
+            AND validation_lease_id = ${input.leaseId}
+            AND validation_lease_expires_at > clock_timestamp() AND expires_at > clock_timestamp()
+          FOR UPDATE
+        `;
+        if (
+          !claimed ||
+          claimed.ownerUserId !== input.storedFile.ownerUserId ||
+          Number(claimed.byteSize) !== input.storedFile.byteSize ||
+          claimed.mime !== input.storedFile.detectedMime ||
+          (!input.reused && claimed.objectKey !== input.storedFile.objectKey)
+        )
+          throw new AttachmentWriteError(
+            "validation-lease-lost",
+            "Upload validation lease is no longer current",
+          );
         if (!input.reused) {
           await sql`
             INSERT INTO stored_files (
@@ -306,13 +429,24 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
             "validation-failed",
             "Stored File was not retained",
           );
-        await sql`
+        const accepted = await sql`
           UPDATE upload_intents
           SET state = 'accepted',
               stored_file_id = ${file.id},
+              accepted_reused = ${input.reused || file.id !== input.storedFile.id},
+              validation_keys = CASE WHEN ${input.reused}
+                THEN array_remove(validation_keys, ${claimed.objectKey}) ELSE validation_keys END,
               updated_at = now()
           WHERE id = ${input.intentId}
+            AND validation_lease_id = ${input.leaseId}
+            AND validation_lease_expires_at > clock_timestamp() AND expires_at > clock_timestamp()
+          RETURNING id
         `;
+        if (!accepted.length)
+          throw new AttachmentWriteError(
+            "validation-lease-lost",
+            "Upload validation lease expired before acceptance",
+          );
         return storedFile(file);
       });
     } catch (error) {
@@ -362,12 +496,16 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
     return this.sql<Array<{ id: string; objectKeys: string[] }>>`
       SELECT intent.id,
              ARRAY(
-               SELECT key FROM unnest(ARRAY[intent.object_key, 'verified/' || intent.id]) AS key
+               SELECT DISTINCT key FROM unnest(ARRAY[intent.object_key, 'verified/' || intent.id] || intent.validation_keys) AS key
                WHERE NOT EXISTS (SELECT 1 FROM stored_files WHERE object_key = key)
              ) AS "objectKeys"
       FROM upload_intents intent
       WHERE expires_at <= ${now}
-        AND (state <> 'validating'
+        -- Failed and overlapping attempts may have late provider writes. Keep
+        -- their metadata for a full day, including after a later success.
+        AND (cardinality(validation_keys) = 0
+             OR (state NOT IN ('validating', 'validation_error')
+                 AND validation_attempts <= 1 AND cardinality(validation_keys) <= 1)
              OR updated_at <= ${now}::timestamptz - interval '24 hours')
     `;
   }
