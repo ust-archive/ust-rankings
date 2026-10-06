@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -97,7 +98,7 @@ type DraftAttachment = {
   storedFileId: string;
   filename: string;
   description: string;
-  status: "ready" | "pending" | "failed";
+  status: "ready" | "pending";
   kind?: "image" | "document";
 };
 
@@ -355,11 +356,8 @@ export function ReviewComposer({
       );
       return ready;
     } catch (error) {
-      updateAttachments((current) =>
-        current.map((item) =>
-          item.id === id ? { ...item, status: "failed" } : item,
-        ),
-      );
+      updateAttachments((current) => current.filter((item) => item.id !== id));
+      toast.warning(`${file.name} could not be uploaded.`);
       throw error;
     }
   }
