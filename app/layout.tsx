@@ -178,6 +178,12 @@ export default function RootLayout({
               >
                 WL
               </Link>
+              <Link
+                className="no-underline underline-offset-4 hover:underline"
+                href="/tools"
+              >
+                Tools
+              </Link>
               <HeaderAuth />
             </nav>
           </div>
@@ -222,6 +228,7 @@ export default function RootLayout({
                 ["Course Rankings", "/rankings/courses"],
                 ["UST Schedule", "/schedule"],
                 ["WL", "/wl"],
+                ["UST Tools", "/tools"],
               ]}
             />
             <FooterLinks
