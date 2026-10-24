@@ -19,18 +19,29 @@ on:
         type: string
         required: false
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   update:
     if: >-
-      github.event_name != 'workflow_run' ||
+      (github.event_name != 'workflow_run' &&
+      (github.ref == 'refs/heads/master' ||
+      (github.event_name == 'workflow_dispatch' && inputs.action == 'rollback'))) ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.head_branch == 'master')
     concurrency:
-      group: update-data
+      group: production-publish
+      queue: max
       cancel-in-progress: false
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PUBLISH_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      DIGITALOCEAN_APP_ID: 435103e7-5383-4f5e-804e-f8a1fb715c72
     steps:
       - uses: actions/checkout@v6
         with:
@@ -41,8 +52,15 @@ jobs:
           node-version: 26.7.0
           cache: npm
 
-      - name: Validate Hugging Face authentication
+      - name: Verify tested checkout is current master
+        id: head
         if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        run: |
+          current="$(node scripts/check-publication-head.ts "$PUBLISH_SHA")"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Hugging Face authentication
+        if: steps.head.outputs.current == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: node scripts/huggingface-source.ts auth
@@ -71,7 +89,7 @@ jobs:
         run: node scripts/publish-delivery.ts rollback "$ROLLBACK_GENERATION"
 
       - name: Resolve immutable source revisions
-        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -87,7 +105,7 @@ jobs:
           done
 
       - name: Load previous Instructor identities
-        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -98,7 +116,7 @@ jobs:
           echo "RANKINGS_PREVIOUS_GENERATION_DIR=$RUNNER_TEMP/previous-rankings" >> "$GITHUB_ENV"
 
       - name: Build full-fidelity Ranking archive
-        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true'
         working-directory: data
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -109,17 +127,23 @@ jobs:
           cp dataset/README.md out/README.md
 
       - name: Publish full-fidelity Ranking archive
-        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          current="$(node scripts/check-publication-head.ts "$PUBLISH_SHA")"
+          if [ "$current" != true ]; then
+            echo "PUBLICATION_STALE=true" >> "$GITHUB_ENV"
+            echo "Current master changed; skipping remaining publication writers."
+            exit 0
+          fi
           uvx hf repos create ust-archive/ust-rankings --type dataset --exist-ok
           uvx hf upload ust-archive/ust-rankings data/out . --type dataset --commit-message "update(v0): $(TZ='Asia/Hong_Kong' date --iso-8601=seconds)"
           sha="$(node scripts/huggingface-source.ts revision ust-archive/ust-rankings)"
           echo "RANKING_GENERATION_SHA=$sha" >> "$GITHUB_ENV"
 
       - name: Download pinned canonical archives
-        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -140,7 +164,7 @@ jobs:
           node scripts/write-source-manifest.ts "$RUNNER_TEMP/schedule" "$SCHEDULE_REVISION" "${schedule_files[@]}"
 
       - name: Build paired Delivery Dataset and Server Index
-        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true'
         run: |
           npm run build-delivery --workspace data -- --ranking-dir "$RUNNER_TEMP/rankings" --schedule-dir "$RUNNER_TEMP/schedule" --ranking-revision "$RANKING_GENERATION_SHA" --schedule-revision "$SCHEDULE_REVISION" --output-dir "$RUNNER_TEMP/delivery"
           generation="$(find "$RUNNER_TEMP/delivery" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')"
@@ -148,15 +172,73 @@ jobs:
           echo "DELIVERY_GENERATION=$generation" >> "$GITHUB_ENV"
           echo "DELIVERY_DIRECTORY=$RUNNER_TEMP/delivery/$generation" >> "$GITHUB_ENV"
 
+      - if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true' && github.event_name == 'workflow_run'
+        name: Download image digest from CI
+        uses: actions/download-artifact@v7
+        with:
+          name: production-image-digest
+          path: .deploy
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true' && github.event_name == 'workflow_run'
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Create image app spec
+        if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true' && github.event_name == 'workflow_run'
+        run: |
+          mkdir -p .do
+          digest="$(tr -d '\r\n' < .deploy/image-digest.txt)"
+          doctl apps get "$DIGITALOCEAN_APP_ID" --output json > .deploy/app.json
+          node scripts/create-image-app-spec.ts .deploy/app.json "$digest" .do/app.json
+
+      - name: Deploy verified image to DigitalOcean App Platform
+        if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true' && github.event_name == 'workflow_run'
+        run: |
+          current="$(node scripts/check-publication-head.ts "$PUBLISH_SHA")"
+          if [ "$current" != true ]; then
+            echo "PUBLICATION_STALE=true" >> "$GITHUB_ENV"
+            echo "Current master changed; skipping remaining publication writers."
+            exit 0
+          fi
+          if doctl apps update "$DIGITALOCEAN_APP_ID" --spec .do/app.json --wait --output json > .deploy/updated-app.json; then
+            exit 0
+          fi
+          # doctl outputs the original update response when its deployment wait fails.
+          if ! deployment_id="$(jq -er '.[0].pending_deployment.id // .[0].in_progress_deployment.id' .deploy/updated-app.json)"; then
+            echo "::error::App update failed without identifying a deployment."
+            exit 1
+          fi
+          digest="$(tr -d '\r\n' < .deploy/image-digest.txt)"
+          if doctl apps get-deployment "$DIGITALOCEAN_APP_ID" "$deployment_id" --output json > .deploy/deployment.json; then
+            jq '.[0] | {id, phase, progress}' .deploy/deployment.json
+            if jq -e --arg digest "$digest" \
+              '.[0] | .phase == "ACTIVE" and any(.spec.services[]; .name == "web" and .image.digest == $digest)' \
+              .deploy/deployment.json > /dev/null; then
+              echo "Deployment became active after doctl wait exited unexpectedly."
+              exit 0
+            fi
+          fi
+          doctl apps logs "$DIGITALOCEAN_APP_ID" web --deployment "$deployment_id" --type deploy --tail 100 || true
+          exit 1
+
       - name: Publish derived generation canonically to Hugging Face
-        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          current="$(node scripts/check-publication-head.ts "$PUBLISH_SHA")"
+          if [ "$current" != true ]; then
+            echo "PUBLICATION_STALE=true" >> "$GITHUB_ENV"
+            echo "Current master changed; skipping remaining publication writers."
+            exit 0
+          fi
           uvx hf upload ust-archive/ust-rankings "$DELIVERY_DIRECTORY" "browser/$DELIVERY_GENERATION" --type dataset --commit-message "publish browser generation $DELIVERY_GENERATION"
 
       - name: Mirror, activate, and promote Delivery generation
-        if: github.event_name != 'workflow_dispatch' || inputs.action != 'rollback'
+        if: steps.head.outputs.current == 'true' && env.PUBLICATION_STALE != 'true'
         env:
           DATA_SPACES_ACCESS_KEY_ID: ${{ secrets.DATA_SPACES_ACCESS_KEY_ID }}
           DATA_SPACES_SECRET_ACCESS_KEY: ${{ secrets.DATA_SPACES_SECRET_ACCESS_KEY }}

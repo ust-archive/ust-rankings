@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import type { DeliveryManifest } from "@/lib/server-index-contract";
+import { checkPublicationHead } from "@/scripts/check-publication-head";
 import {
   type PublicationDependencies,
   publishGeneration,
@@ -141,6 +142,45 @@ test("publication verifies immutable files before activating and promoting", asy
     "put:latest.json",
     `verify-latest:${generation}`,
   ]);
+});
+
+test("a head change during mirroring leaves the active index and latest pointer untouched", async () => {
+  process.env.DATA_SPACES_CDN_BASE_URL = cdn;
+  const tested = "1".repeat(40);
+  let current = tested;
+  const events: string[] = [];
+  const adapter = dependencies(events);
+  adapter.isCurrent = () =>
+    checkPublicationHead(tested, async (args) =>
+      args[0] === "rev-parse" ? tested : `${current}\trefs/heads/master\n`,
+    );
+  const verify = adapter.verifyGeneration;
+  adapter.verifyGeneration = async (...args) => {
+    await verify(...args);
+    current = "2".repeat(40);
+  };
+  await expect(
+    publishGeneration(await fixture(), adapter, noCurrentPublication()),
+  ).resolves.toBeUndefined();
+  expect(events).toContain(`verify-generation:${generation}`);
+  expect(
+    events.some(
+      (event) => event.startsWith("activate:") || event === "put:latest.json",
+    ),
+  ).toBe(false);
+});
+
+test("stale publication skips every writer while explicit rollback remains available", async () => {
+  process.env.DATA_SPACES_CDN_BASE_URL = cdn;
+  const events: string[] = [];
+  const adapter = { ...dependencies(events), isCurrent: async () => false };
+  await expect(
+    publishGeneration(await fixture(), adapter, noCurrentPublication()),
+  ).resolves.toBeUndefined();
+  expect(events).toEqual([]);
+  await rollbackGeneration(generation, adapter, publicationRequest());
+  expect(events).toContain(`activate:${generation}`);
+  expect(events).toContain("put:latest.json");
 });
 
 test("first paired publication supersedes a legacy browser-only pointer", async () => {

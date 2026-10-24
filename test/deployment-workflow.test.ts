@@ -10,15 +10,17 @@ const digest = `sha256:${"a".repeat(64)}`;
 const deploymentId = "1ad29b5a-32aa-4f21-b1e8-b3e054e98d8c";
 const newerId = "eac2214e-dd85-458f-bdfb-be500dd7e42b";
 
-async function runDeployment(phase: "ERROR" | "ACTIVE") {
+async function runDeployment(phase: "ERROR" | "ACTIVE", current = true) {
   const workflow = await readFile(
-    resolve(".github/workflows/deploy.yml"),
+    resolve(".github/workflows/update-data.yml"),
     "utf8",
   );
-  const script = workflow
+  const step = workflow
     .split(
       "      - name: Deploy verified image to DigitalOcean App Platform",
     )[1]
+    .split("\n      - ")[0];
+  const script = step
     .split("        run: |\n")[1]
     .split("\n")
     .map((line) => line.replace(/^ {10}/, ""))
@@ -38,7 +40,7 @@ async function runDeployment(phase: "ERROR" | "ACTIVE") {
   };
   await mkdir(join(directory, ".deploy"));
   await writeFile(join(directory, ".deploy/image-digest.txt"), `${digest}\n`);
-
+  await writeFile(join(directory, "calls.txt"), "");
   try {
     const result = await execFileAsync(
       "bash",
@@ -49,7 +51,12 @@ async function runDeployment(phase: "ERROR" | "ACTIVE") {
         "pipefail",
         "-c",
         `
+node() {
+  [[ "$1" == "scripts/check-publication-head.ts" && "$2" == "$PUBLISH_SHA" ]] || return 1
+  printf '%s\n' "$MOCK_CURRENT"
+}
 doctl() {
+  printf '%s\n' "$2" >> "$MOCK_CALLS"
   case "$2" in
     update) printf '%s\n' "$MOCK_UPDATED_APP"; return 1 ;;
     list-deployments)
@@ -58,9 +65,7 @@ doctl() {
     get-deployment)
       [[ "$4" == "$MOCK_DEPLOYMENT_ID" ]] || return 1
       printf '%s\n' "$MOCK_DEPLOYMENT" ;;
-    logs)
-      printf 'Logs requested for %s\n' "$*"
-      return 1 ;;
+    logs) printf 'Logs requested for %s\n' "$*"; return 1 ;;
     *) return 1 ;;
   esac
 }
@@ -71,6 +76,10 @@ ${script}`,
         env: {
           ...process.env,
           DIGITALOCEAN_APP_ID: "test-app",
+          PUBLISH_SHA: "a".repeat(40),
+          GITHUB_ENV: "github-env",
+          MOCK_CURRENT: String(current),
+          MOCK_CALLS: "calls.txt",
           MOCK_UPDATED_APP: JSON.stringify([
             { in_progress_deployment: deployment },
           ]),
@@ -84,7 +93,10 @@ ${script}`,
       (result) => ({ ...result, code: 0 }),
       (error: { stdout: string; stderr: string; code: number }) => error,
     );
-    return result;
+    return {
+      ...result,
+      calls: await readFile(join(directory, "calls.txt"), "utf8"),
+    };
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -102,4 +114,11 @@ test("a failed wait succeeds when that exact deployment is active despite a newe
   expect(result.code).toBe(0);
   expect(result.stdout).toContain("Deployment became active");
   expect(result.stdout).not.toContain("Logs requested");
+});
+
+test("a stale head skips provider deployment in the relocated script", async () => {
+  const result = await runDeployment("ACTIVE", false);
+  expect(result.code).toBe(0);
+  expect(result.calls).toBe("");
+  expect(result.stdout).toContain("skipping remaining publication writers");
 });

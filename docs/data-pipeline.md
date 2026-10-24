@@ -224,7 +224,9 @@ identity, and Community. Maintenance and held-out validation are documented in
 
 ## Publication and rollback
 
-The `Update data` workflow resolves every source `main` pointer to a 40-hex
+The draft coordinated `Update data` workflow is the single production writer;
+see [its ordered publication proposal and release gates](research/coordinated-production-publication.md).
+It resolves every source `main` pointer to a 40-hex
 revision before building. It publishes the unchanged full-fidelity Ranking
 archive at the Hugging Face repository root, derives the paired browser
 projection from that pinned commit and the pinned Schedule archive, and uploads
