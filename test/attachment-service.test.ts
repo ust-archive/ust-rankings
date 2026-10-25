@@ -60,6 +60,9 @@ function memory(options?: {
   let now = new Date("2026-04-01T00:00:00.000Z");
   let uuidIndex = 0;
   const ids = [INTENT_ID, FILE_ID, ATTACHMENT_ID];
+  const leases = new Map<string, string>();
+  const validationKeys = new Map<string, string[]>();
+  const acceptedReused = new Map<string, boolean>();
   const store: AttachmentStore = {
     async presignPut({ key, contentType, contentLength, expiresSeconds }) {
       puts.push({ key, expiresSeconds });
@@ -170,6 +173,16 @@ function memory(options?: {
     async getIntent(intentId) {
       return intents.get(intentId);
     },
+    async getAccepted(intentId) {
+      const intent = intents.get(intentId);
+      const file =
+        intent?.state === "accepted" && intent.storedFileId
+          ? files.get(intent.storedFileId)
+          : undefined;
+      return file && !removed.has(file.id)
+        ? { ...file, reused: acceptedReused.get(intentId) ?? false }
+        : undefined;
+    },
     async markRejected(intentId, state) {
       const intent = intents.get(intentId);
       if (intent) {
@@ -181,7 +194,7 @@ function memory(options?: {
       const intent = intents.get(intentId);
       if (
         !intent ||
-        !["reserved", "uploaded"].includes(intent.state) ||
+        !["reserved", "uploaded", "validation_error"].includes(intent.state) ||
         intent.expiresAt.getTime() <= now.getTime()
       )
         throw Object.assign(new Error("upload-not-found"), {
@@ -189,7 +202,19 @@ function memory(options?: {
         });
       intent.state = "validating";
       intent.updatedAt = now;
-      return { ...intent };
+      const leaseId = "00000000-0000-4000-8000-000000000548";
+      leases.set(intentId, leaseId);
+      const key = `verified/${intentId}/${leaseId}`;
+      validationKeys.set(intentId, [
+        ...(validationKeys.get(intentId) ?? []),
+        key,
+      ]);
+      return {
+        ...intent,
+        validationLeaseId: leaseId,
+        validationObjectKey: key,
+        validationLeaseExpiresAt: new Date(now.getTime() + 120_000),
+      };
     },
     async accept({ intentId, storedFile, reused }) {
       if (!reused) files.set(storedFile.id, storedFile);
@@ -199,6 +224,7 @@ function memory(options?: {
         intent.storedFileId = storedFile.id;
         intent.updatedAt = now;
       }
+      acceptedReused.set(intentId, reused);
       return files.get(storedFile.id) ?? storedFile;
     },
     async findStoredFile(userId, digest) {
@@ -273,7 +299,11 @@ function memory(options?: {
         )
         .map((intent) => ({
           id: intent.id,
-          objectKeys: [intent.objectKey, `verified/${intent.id}`].filter(
+          objectKeys: [
+            intent.objectKey,
+            `verified/${intent.id}`,
+            ...(validationKeys.get(intent.id) ?? []),
+          ].filter(
             (key) =>
               ![...files.values()].some((file) => file.objectKey === key),
           ),
@@ -492,7 +522,7 @@ test("HEAD mismatch, expiry, and failed raster validation keep uploads private",
       userId: USER_ID,
       intentId: reservation.intentId,
     }),
-  ).rejects.toMatchObject({ code: "size-mismatch" });
+  ).rejects.toMatchObject({ code: "upload-not-found" });
   const invalid = await world.attachments.reserveUpload({
     userId: USER_ID,
     byteSize: 4,
@@ -612,7 +642,7 @@ test("public resolver signs only accepted current Revision images", async () => 
   });
   const signed = await world.attachments.signPublicRead(attachment.id);
   expect(signed).toEqual({
-    url: `https://cdn-free.example/verified/${INTENT_ID}?get=1`,
+    url: `https://cdn-free.example/verified/${INTENT_ID}/00000000-0000-4000-8000-000000000548?get=1`,
     mime: "image/jpeg",
     kind: "image",
     expiresAt: new Date("2026-04-01T00:05:00.000Z"),
@@ -620,7 +650,7 @@ test("public resolver signs only accepted current Revision images", async () => 
   });
   expect(world.gets).toEqual([
     {
-      key: `verified/${INTENT_ID}`,
+      key: `verified/${INTENT_ID}/00000000-0000-4000-8000-000000000548`,
       expiresSeconds: GET_EXPIRES_SECONDS,
       contentType: "image/jpeg",
     },

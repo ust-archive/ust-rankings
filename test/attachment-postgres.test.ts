@@ -86,7 +86,7 @@ if (!connection) {
       ).value;
       objects.set(reserved.intentId, new Uint8Array(80));
       for (const state of ["rejected", "validation_error"] as const) {
-        await repository.markRejected(reserved.intentId, state);
+        await sql`UPDATE upload_intents SET state = ${state} WHERE id = ${reserved.intentId}`;
         await expect(
           attachments.reserveUpload({
             userId: userA,
@@ -217,19 +217,12 @@ if (!connection) {
         declaredMime: "image/jpeg",
         expiresAt: new Date(Date.now() + 60_000),
       });
-      await repository.beginValidation(legacyIntent);
-      await repository.accept({
-        intentId: legacyIntent,
-        reused: false,
-        storedFile: {
-          id: legacyFile,
-          ownerUserId: userB,
-          objectKey: legacyIntent,
-          byteSize: bytes.length,
-          sha256: "ab".repeat(32),
-          detectedMime: "image/jpeg",
-        },
-      });
+      // Seed a genuine pre-verified-key accepted record; new completions can
+      // only publish the current lease's server-only key.
+      await sql`INSERT INTO stored_files (id, owner_user_id, object_key, byte_size, sha256, detected_mime)
+        VALUES (${legacyFile}, ${userB}, ${legacyIntent}, ${bytes.length}, ${"ab".repeat(32)}, 'image/jpeg')`;
+      await sql`UPDATE upload_intents SET state = 'accepted', stored_file_id = ${legacyFile}
+        WHERE id = ${legacyIntent}`;
       objects.set(legacyIntent, bytes);
       objects.set(copy.objectKey, Buffer.alloc(bytes.length));
       objects.set(`verified/${copy.intentId}`, bytes);

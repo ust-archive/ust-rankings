@@ -72,6 +72,28 @@ path. Daily `/api/attachments/cleanup` uses `CRON_SECRET` and releases quota
 only after the object is confirmed gone. Set `ATTACHMENTS_UPLOADS_DISABLED=1`
 to reject new uploads without disabling Review text or existing downloads.
 Accepted files are not malware-scanned; UI copy must not claim otherwise.
+`0013_upload_validation_leases.sql` makes completion retryable within the
+original 15-minute Upload Intent: one validator owns a two-minute lease,
+with at most three attempts. Caught origin/database failures enter
+`validation_error`; a crashed validator can be replaced after its lease expires.
+Acceptance and rejection are fenced by the lease identity. Each attempt uses
+its own server-only verified object key, so replayed staging PUTs and late
+validators cannot overwrite accepted bytes. An accepted completion can be
+repeated while its intent remains retained, including after staging deletion.
+
+Candidate copies reserve additional global physical capacity; they do not
+increase the User's distinct-file reservation. Failed or overlapping attempts
+keep their object keys and quota until confirmed expiry cleanup, with a
+24-hour grace after the last state change to cover late origin requests.
+This grace also protects an earlier failed candidate when a successful retry
+deduplicates to another Stored File and never writes its own candidate.
+Single successful attempts retain the existing expiry cleanup behavior.
+Origin HEAD/GET/PUT requests receive the lease's cancellation signal. This is
+not a transactional object-store guarantee: a provider that completes a write
+more than a day after cancellation still needs an operational orphan sweep.
+Separate proposed PR #205 preserves the selected File and creates a fresh
+Upload Intent on Retry; it is not merged. This endpoint draft adds no composer
+Retry or resume controls and supports retrying the same Intent explicitly.
 Attachments receive only a non-exclusive site license and are not automatically
 CC BY 4.0.
 

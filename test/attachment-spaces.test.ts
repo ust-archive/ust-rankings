@@ -81,3 +81,35 @@ test("Spaces adapter prepares PUT/GET signing requests with opaque keys", async 
     ),
   ).toBe(true);
 });
+test("Spaces forwards the validation lease cancellation signal to origin HEAD/GET/PUT", async () => {
+  const { SpacesAttachmentStore } = await import("@/lib/attachments/spaces");
+  const requests: Array<{ name: string; signal?: AbortSignal }> = [];
+  const signal = new AbortController().signal;
+  const store = new SpacesAttachmentStore({
+    bucket: "private-attachments",
+    client: {
+      send: async (
+        command: object,
+        options?: { abortSignal?: AbortSignal },
+      ) => {
+        requests.push({
+          name: command.constructor.name,
+          signal: options?.abortSignal,
+        });
+        return {
+          ContentLength: 1,
+          Body: { transformToByteArray: async () => new Uint8Array([1]) },
+        };
+      },
+    } as never,
+  });
+  await store.head("staging", signal);
+  await store.get("staging", 1, signal);
+  await store.put("verified/lease", new Uint8Array([1]), "image/jpeg", signal);
+  expect(requests.map((request) => request.name)).toEqual([
+    "HeadObjectCommand",
+    "GetObjectCommand",
+    "PutObjectCommand",
+  ]);
+  expect(requests.every((request) => request.signal === signal)).toBe(true);
+});
