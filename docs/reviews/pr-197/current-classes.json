@@ -1,0 +1,506 @@
+[
+  {
+    "prefix": "ACCT",
+    "number": "5170",
+    "section": "L1",
+    "type": "LEC",
+    "association": 1,
+    "wait": 7
+  },
+  {
+    "prefix": "ACCT",
+    "number": "5170",
+    "section": "L2",
+    "type": "LEC",
+    "association": 2,
+    "wait": 0
+  },
+  {
+    "prefix": "ACCT",
+    "number": "5170",
+    "section": "L3",
+    "type": "LEC",
+    "association": 3,
+    "wait": 2
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T02",
+    "type": "TUT",
+    "association": 2,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T04",
+    "type": "TUT",
+    "association": 4,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T05",
+    "type": "TUT",
+    "association": 5,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T06",
+    "type": "TUT",
+    "association": 6,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T07",
+    "type": "TUT",
+    "association": 7,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T08",
+    "type": "TUT",
+    "association": 8,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T09",
+    "type": "TUT",
+    "association": 9,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T10",
+    "type": "TUT",
+    "association": 10,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T11",
+    "type": "TUT",
+    "association": 11,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T13",
+    "type": "TUT",
+    "association": 13,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T14",
+    "type": "TUT",
+    "association": 14,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T16",
+    "type": "TUT",
+    "association": 16,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T17",
+    "type": "TUT",
+    "association": 17,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T18",
+    "type": "TUT",
+    "association": 18,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T19",
+    "type": "TUT",
+    "association": 19,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T20",
+    "type": "TUT",
+    "association": 20,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T21",
+    "type": "TUT",
+    "association": 21,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T22",
+    "type": "TUT",
+    "association": 22,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T23",
+    "type": "TUT",
+    "association": 23,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T26",
+    "type": "TUT",
+    "association": 26,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T28",
+    "type": "TUT",
+    "association": 28,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T30",
+    "type": "TUT",
+    "association": 30,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T31",
+    "type": "TUT",
+    "association": 31,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T32",
+    "type": "TUT",
+    "association": 32,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T34",
+    "type": "TUT",
+    "association": 34,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T35",
+    "type": "TUT",
+    "association": 35,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T36",
+    "type": "TUT",
+    "association": 36,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T37",
+    "type": "TUT",
+    "association": 37,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T39",
+    "type": "TUT",
+    "association": 39,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T40",
+    "type": "TUT",
+    "association": 40,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T41",
+    "type": "TUT",
+    "association": 41,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T42",
+    "type": "TUT",
+    "association": 42,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T43",
+    "type": "TUT",
+    "association": 43,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T44",
+    "type": "TUT",
+    "association": 44,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T45",
+    "type": "TUT",
+    "association": 45,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T46",
+    "type": "TUT",
+    "association": 46,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T47",
+    "type": "TUT",
+    "association": 47,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T48",
+    "type": "TUT",
+    "association": 48,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T50",
+    "type": "TUT",
+    "association": 50,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T51",
+    "type": "TUT",
+    "association": 51,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T52",
+    "type": "TUT",
+    "association": 52,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T53",
+    "type": "TUT",
+    "association": 53,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T55",
+    "type": "TUT",
+    "association": 55,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T56",
+    "type": "TUT",
+    "association": 56,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T59",
+    "type": "TUT",
+    "association": 59,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T60",
+    "type": "TUT",
+    "association": 60,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T62",
+    "type": "TUT",
+    "association": 62,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T63",
+    "type": "TUT",
+    "association": 63,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T64",
+    "type": "TUT",
+    "association": 64,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T65",
+    "type": "TUT",
+    "association": 65,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T66",
+    "type": "TUT",
+    "association": 66,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T68",
+    "type": "TUT",
+    "association": 68,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T70",
+    "type": "TUT",
+    "association": 70,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T71",
+    "type": "TUT",
+    "association": 71,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T73",
+    "type": "TUT",
+    "association": 73,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T74",
+    "type": "TUT",
+    "association": 74,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T75",
+    "type": "TUT",
+    "association": 75,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T76",
+    "type": "TUT",
+    "association": 76,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T77",
+    "type": "TUT",
+    "association": 77,
+    "wait": 0
+  },
+  {
+    "prefix": "LANG",
+    "number": "1402",
+    "section": "T78",
+    "type": "TUT",
+    "association": 78,
+    "wait": 0
+  }
+]

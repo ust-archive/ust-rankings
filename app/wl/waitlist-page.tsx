@@ -936,7 +936,7 @@ function WaitlistCourseCard({
             </TooltipProvider>
           </section>
           {state.error ? (
-            <Alert variant="destructive">
+            <Alert className="border-rose-200 bg-rose-50 text-[#9f4f5c] dark:border-rose-200 dark:bg-rose-50 dark:text-[#9f4f5c]">
               <h3 className="font-semibold">Plan not calculated</h3>
               <AlertDescription>{state.error}</AlertDescription>
             </Alert>

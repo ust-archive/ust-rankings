@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
   activationAt,
+  associationPlanCandidate,
   bundleTrajectories,
   jointOutcome,
   prediction,
   tuneJoint,
   WAITLIST_TERMS,
+  type WaitlistPlanCandidate,
   type WaitlistTrajectory,
 } from "../src/waitlist-evidence.ts";
 
@@ -29,6 +31,115 @@ const trajectory = (
   term,
   type,
   association: 1,
+});
+
+test("LANG 1402-shaped association-local Classes do not inherit other associations' ordinals", () => {
+  const classes = Array.from({ length: 60 }, (_, index) => ({
+    section: `T${String(index + 1).padStart(2, "0")}`,
+    type: "TUT",
+    association: index + 1,
+  }));
+  for (const section of ["T01", "T02", "T60"]) {
+    const candidate = associationPlanCandidate(classes, {
+      components: [{ section, type: "TUT", position: 20, activationHours: 0 }],
+      course: "LANG 1402",
+      pattern: "TUT",
+      season: "Fall",
+    });
+    assert.equal(candidate?.components[0]?.ordinal, 0);
+    const historical = bundleTrajectories([
+      {
+        ...trajectory("T91", "TUT", [0, 30, 0]),
+        course: "LANG 1402",
+        association: 900,
+      },
+    ]);
+    assert.equal(
+      candidate
+        ? prediction(historical, candidate, "baseline", 2)?.successes
+        : undefined,
+      1,
+    );
+  }
+});
+
+test("same-association plans require both queues; mixed associations fail closed", () => {
+  const classes = [
+    { section: "L1", type: "LEC", association: 1 },
+    { section: "T1", type: "TUT", association: 1 },
+    { section: "L2", type: "LEC", association: 2 },
+    { section: "T2", type: "TUT", association: 2 },
+  ];
+  const makePlan = (sections: string[]): WaitlistPlanCandidate => ({
+    components: sections.map((section) => ({
+      section,
+      type: section.startsWith("L") ? "LEC" : "TUT",
+      position: 20,
+      activationHours: 0,
+    })),
+    course: "COMP1000",
+    pattern: "LEC+TUT",
+    season: "Fall",
+  });
+  const candidate = associationPlanCandidate(classes, makePlan(["L2", "T2"]));
+  assert.deepEqual(
+    candidate?.components.map(({ ordinal }) => ordinal),
+    [0, 0],
+  );
+  assert.equal(
+    associationPlanCandidate(classes, makePlan(["L1", "T2"])),
+    undefined,
+  );
+  const historical = bundleTrajectories([
+    { ...trajectory("L3", "LEC", [0, 30, 0]), association: 700 },
+    { ...trajectory("T3", "TUT", [0, 30, 25]), association: 700 },
+  ]);
+  assert.equal(
+    candidate ? jointOutcome(historical[0], candidate)?.success : undefined,
+    false,
+  );
+  assert.equal(
+    candidate
+      ? prediction(historical, candidate, "baseline", 2)?.estimate
+      : undefined,
+    0,
+  );
+  const lecture = associationPlanCandidate(classes, makePlan(["L2"]));
+  assert.equal(
+    lecture ? jointOutcome(historical[0], lecture)?.success : undefined,
+    true,
+  );
+});
+
+test("association-local ordinals retain distinct same-type required Classes", () => {
+  const candidate = associationPlanCandidate(
+    [
+      { section: "T0", type: "TUT", association: 1 },
+      { section: "T1", type: "TUT", association: 2 },
+      { section: "T2", type: "TUT", association: 2 },
+    ],
+    {
+      components: [
+        { section: "T1", type: "TUT", position: 20 },
+        { section: "T2", type: "TUT", position: 20 },
+      ],
+      course: "COMP1000",
+      pattern: "TUT+TUT",
+      season: "Fall",
+    },
+  );
+  assert.deepEqual(
+    candidate?.components.map(({ ordinal }) => ordinal),
+    [0, 1],
+  );
+  const [historical] = bundleTrajectories([
+    trajectory("T81", "TUT", [0, 30, 0]),
+    trajectory("T82", "TUT", [0, 30, 25]),
+  ]);
+  assert.equal(
+    candidate ? jointOutcome(historical, candidate)?.success : undefined,
+    false,
+  );
 });
 
 test("groups required Class types into one correlated Course Offering", () => {

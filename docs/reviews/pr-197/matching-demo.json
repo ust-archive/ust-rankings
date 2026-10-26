@@ -1,0 +1,48 @@
+{
+  "source": "Schedule f9632eceb9751da775079efb472c6ba80d03be11, latest active Classes, term 2610",
+  "current": [
+    {
+      "prefix": "ACCT",
+      "number": "5170",
+      "section": "L1",
+      "type": "LEC",
+      "association": 1,
+      "wait": 7
+    },
+    {
+      "prefix": "ACCT",
+      "number": "5170",
+      "section": "L2",
+      "type": "LEC",
+      "association": 2,
+      "wait": 0
+    },
+    {
+      "prefix": "ACCT",
+      "number": "5170",
+      "section": "L3",
+      "type": "LEC",
+      "association": 3,
+      "wait": 2
+    }
+  ],
+  "before": {
+    "selected": "L3",
+    "globalLECOrdinal": 2
+  },
+  "after": {
+    "selected": "L3",
+    "associationLocalOrdinal": 0
+  },
+  "mixed": {
+    "selected": ["L1", "L3"],
+    "associations": [1, 3],
+    "result": "mixed-association: unsupported"
+  },
+  "lang1402": {
+    "classes": 60,
+    "associations": 60,
+    "reportedWait": 0,
+    "note": "All current queues have no reported wait; this shape demonstrates ordinal mapping, not a live prediction."
+  }
+}
