@@ -24,7 +24,7 @@ async function setPath(
   });
 }
 
-export async function prepareBacktestAnalysis(
+export async function prepareObservationContexts(
   connection: DuckDBConnection,
   scheduleClassRecordsPath: string,
   scheduleCourseRecordsPath: string,
@@ -123,7 +123,7 @@ export async function prepareBacktestAnalysis(
         AS capacity_utilization,
       len(list_distinct(list_filter(
         flatten(list_transform(schedules, schedule -> schedule.instructors)),
-        instructor -> length(trim(coalesce(instructor, ''))) > 0
+        instructor -> valid_instructor_name(instructor)
       )))::INTEGER AS team_size
     FROM active_classes
     WHERE section_rank = 1;
@@ -239,7 +239,20 @@ export async function prepareBacktestAnalysis(
       USING (term_num, subject, code, section)
     LEFT JOIN backtest_schedule_courses AS courses
       USING (term_num, subject, code);
+  `);
+}
 
+export async function prepareBacktestAnalysis(
+  connection: DuckDBConnection,
+  scheduleClassRecordsPath: string,
+  scheduleCourseRecordsPath: string,
+): Promise<void> {
+  await prepareObservationContexts(
+    connection,
+    scheduleClassRecordsPath,
+    scheduleCourseRecordsPath,
+  );
+  await connection.run(`
     CREATE OR REPLACE TEMP TABLE backtest_observation_allocations AS
     WITH linked AS (
       SELECT DISTINCT
