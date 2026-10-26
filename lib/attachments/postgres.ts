@@ -99,7 +99,7 @@ export async function attachToReviewRevision(
              true AS available
       FROM inserted
       JOIN stored_files sf ON sf.id = inserted.stored_file_id
-    `;
+    `.catch(mapWriteError);
     if (!row)
       throw new AttachmentWriteError(
         "invalid-attachment",
@@ -269,7 +269,8 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
              sha256,
              detected_mime AS "detectedMime"
       FROM stored_files
-      WHERE owner_user_id = ${userId} AND sha256 = ${sha256} AND removed_at IS NULL
+      WHERE owner_user_id = ${userId} AND sha256 = ${sha256}
+        AND removal_requested_at IS NULL AND removed_at IS NULL
     `;
     return row ? storedFile(row) : undefined;
   }
@@ -299,13 +300,18 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
           FROM stored_files
           WHERE owner_user_id = ${input.storedFile.ownerUserId}
             AND sha256 = ${input.storedFile.sha256}
-            AND removed_at IS NULL
+            AND removal_requested_at IS NULL AND removed_at IS NULL
+          FOR UPDATE
         `;
         if (!file)
           throw new AttachmentWriteError(
             "validation-failed",
             "Stored File was not retained",
           );
+        await sql`
+          UPDATE stored_files SET last_upload_completed_at = now()
+          WHERE id = ${file.id}
+        `;
         await sql`
           UPDATE upload_intents
           SET state = 'accepted',
@@ -397,6 +403,28 @@ export class PostgresAttachmentRepository implements AttachmentRepository {
         "Stored File was not found",
       );
     return storedFile(row);
+  }
+
+  async queueOrphanedFiles(now: Date) {
+    await this.sql.begin(async (sql) => {
+      const candidates = await sql<{ id: string }[]>`
+        SELECT id FROM stored_files sf
+        WHERE removal_requested_at IS NULL AND removed_at IS NULL
+          AND last_upload_completed_at <= ${now}::timestamptz - interval '24 hours'
+          AND NOT EXISTS (SELECT 1 FROM attachments WHERE stored_file_id = sf.id)
+        FOR UPDATE SKIP LOCKED
+      `;
+      if (!candidates.length) return;
+      // Recheck in a fresh snapshot after acquiring the same locks as reuse
+      // and Attachment insertion; never delete bytes associated meanwhile.
+      await sql`
+        UPDATE stored_files sf SET removal_requested_at = ${now}
+        WHERE id = ANY(${candidates.map((file) => file.id)}::uuid[])
+          AND removal_requested_at IS NULL AND removed_at IS NULL
+          AND last_upload_completed_at <= ${now}::timestamptz - interval '24 hours'
+          AND NOT EXISTS (SELECT 1 FROM attachments WHERE stored_file_id = sf.id)
+      `;
+    });
   }
 
   async listRemovalQueue() {

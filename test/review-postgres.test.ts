@@ -813,6 +813,44 @@ if (!connection) {
           attachments: [draft(), draft(foreignFileId)],
         }),
       ).rejects.toMatchObject({ code: "invalid-review" });
+      const claimedFileId = crypto.randomUUID();
+      await sql`
+        INSERT INTO stored_files (
+          id, owner_user_id, object_key, byte_size, sha256, detected_mime,
+          last_upload_completed_at
+        ) VALUES (${claimedFileId}, ${authorId}, ${`verified/${claimedFileId}`},
+                  46, ${"b".repeat(64)}, 'image/jpeg', now() - interval '2 days')
+      `;
+      const { PostgresAttachmentRepository } = await import(
+        "@/lib/attachments/postgres"
+      );
+      const attachments = new PostgresAttachmentRepository(sql);
+      await attachments.queueOrphanedFiles(new Date());
+      expect(await attachments.listRemovalQueue()).toHaveLength(1);
+      await expect(
+        reviews.publishReview(authorId, {
+          associations: {
+            course: { coursePrefix: "COMP", courseNumber: "2001" },
+          },
+          markdown: "Reject a selected File claimed by cleanup",
+          attachments: [draft(claimedFileId)],
+        }),
+      ).rejects.toMatchObject({
+        name: "ReviewWriteError",
+        code: "invalid-review",
+      });
+      await expect(
+        reviews.editReview(authorId, published.id, {
+          expectedRevisionId: edited.revisionId,
+          associations,
+          markdown: "Keep the current Revision when cleanup claimed its File",
+          attribution: "attributed",
+          attachments: [draft(claimedFileId)],
+        }),
+      ).rejects.toMatchObject({
+        name: "ReviewWriteError",
+        code: "invalid-review",
+      });
       const [retained] = await sql`
         SELECT (SELECT count(*)::int FROM reviews) AS reviews,
                (SELECT count(*)::int FROM review_revisions) AS revisions,

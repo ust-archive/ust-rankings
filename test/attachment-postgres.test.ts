@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, test, vi } from "vitest";
 import { createAttachmentService } from "@/lib/attachments/attachments";
 import { jpegBytes } from "./attachment-fixtures";
@@ -262,5 +263,203 @@ if (!connection) {
         attachments.signPublicRead(attachment.id),
       ).rejects.toMatchObject({ code: "attachment-unavailable" });
     });
+  });
+  test("orphan cleanup preserves recent reuse/history and releases quota only after confirmed deletion", async () => {
+    await withPostgresSchema("attachment_orphan", async ({ sql }) => {
+      const { PostgresAttachmentRepository } = await import(
+        "@/lib/attachments/postgres"
+      );
+      const owner = crypto.randomUUID();
+      await sql`INSERT INTO contribution_users (id, status, public_display_name) VALUES (${owner}, 'active', 'Uploader')`;
+      const bytes = jpegBytes();
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      const files = [
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+      ];
+      const [orphanId, reusedId, historicalId] = files;
+      const objects = new Map<string, Uint8Array>(
+        files.map((id) => [`verified/${id}`, bytes]),
+      );
+      for (const [index, id] of files.entries()) {
+        await sql`
+          INSERT INTO stored_files (id, owner_user_id, object_key, byte_size, sha256, detected_mime, last_upload_completed_at)
+          VALUES (${id}, ${owner}, ${`verified/${id}`}, ${bytes.length}, ${index === 1 ? digest : String(index).repeat(64)}, 'image/jpeg', now() - interval '2 days')
+        `;
+      }
+      const review = crypto.randomUUID();
+      const revision = crypto.randomUUID();
+      await sql`SELECT publish_review(${review}, ${revision}, ${owner}, 'COMP', '2000', NULL, NULL, NULL, 'Historical Review', 'attributed', 'test-v1')`;
+      await sql`INSERT INTO attachments (id, revision_id, stored_file_id, public_filename, description) VALUES (${crypto.randomUUID()}, ${revision}, ${historicalId}, 'past.jpg', 'Historical file')`;
+      await sql`SELECT withdraw_review(${review}, ${revision}, ${owner})`;
+      const repository = new PostgresAttachmentRepository(sql, {
+        userQuota: 200,
+        globalQuota: 1000,
+      });
+      let deletionConfirmed = false;
+      const attachments = createAttachmentService(repository, {
+        async presignPut({ key }) {
+          return { url: `https://space.test/${key}`, headers: {} };
+        },
+        async presignGet({ key }) {
+          return { url: `https://space.test/${key}` };
+        },
+        async head(key) {
+          const value = objects.get(key);
+          return value
+            ? { contentLength: value.length, contentType: "image/jpeg" }
+            : undefined;
+        },
+        async get(key) {
+          return objects.get(key);
+        },
+        async put(key, value) {
+          objects.set(key, value);
+        },
+        async delete(key) {
+          if (key !== `verified/${orphanId}` || deletionConfirmed)
+            objects.delete(key);
+        },
+        async exists(key) {
+          return objects.has(key);
+        },
+      });
+      const upload = await attachments.reserveUpload({
+        userId: owner,
+        byteSize: bytes.length,
+        filename: "reuse.jpg",
+        contentType: "image/jpeg",
+      });
+      objects.set(upload.objectKey, bytes);
+      expect(
+        await attachments.completeUpload({
+          userId: owner,
+          intentId: upload.intentId,
+        }),
+      ).toMatchObject({ id: reusedId, reused: true });
+      await sql`UPDATE upload_intents SET expires_at = now() - interval '1 minute'`;
+      await attachments.cleanupExpired();
+      expect(
+        await repository.findStoredFile(owner, "0".repeat(64)),
+      ).toBeUndefined();
+      const [queued] =
+        await sql`SELECT removal_requested_at, removed_at FROM stored_files WHERE id = ${orphanId}`;
+      expect(queued.removal_requested_at).not.toBeNull();
+      expect(queued.removed_at).toBeNull();
+      const lateUpload = await attachments.reserveUpload({
+        userId: owner,
+        byteSize: bytes.length,
+        filename: "late.jpg",
+        contentType: "image/jpeg",
+      });
+      await repository.beginValidation(lateUpload.intentId);
+      await expect(
+        repository.accept({
+          intentId: lateUpload.intentId,
+          reused: true,
+          storedFile: {
+            id: orphanId,
+            ownerUserId: owner,
+            objectKey: `verified/${orphanId}`,
+            byteSize: bytes.length,
+            sha256: "0".repeat(64),
+            detectedMime: "image/jpeg",
+          },
+        }),
+      ).rejects.toMatchObject({ code: "validation-failed" });
+      await sql`UPDATE upload_intents SET state = 'rejected', expires_at = now() - interval '1 minute' WHERE id = ${lateUpload.intentId}`;
+      await expect(
+        attachments.reserveUpload({
+          userId: owner,
+          byteSize: 100,
+          filename: "next.jpg",
+          contentType: "image/jpeg",
+        }),
+      ).rejects.toMatchObject({ code: "quota-exceeded" });
+      await expect(
+        repository.attachToRevision({
+          userId: owner,
+          revisionId: revision,
+          attachments: [
+            {
+              id: crypto.randomUUID(),
+              storedFileId: orphanId,
+              filename: "old.jpg",
+              description: "Too late",
+            },
+          ],
+        }),
+      ).rejects.toMatchObject({ code: "invalid-attachment" });
+      deletionConfirmed = true;
+      expect(await attachments.cleanupExpired()).toBe(2);
+      const retained =
+        await sql`SELECT id, removed_at FROM stored_files ORDER BY id`;
+      expect(
+        retained.find((row) => row.id === orphanId)?.removed_at,
+      ).not.toBeNull();
+      expect(
+        retained.find((row) => row.id === reusedId)?.removed_at,
+      ).toBeNull();
+      expect(
+        retained.find((row) => row.id === historicalId)?.removed_at,
+      ).toBeNull();
+      expect(objects.has(`verified/${orphanId}`)).toBe(false);
+      expect(objects.has(`verified/${reusedId}`)).toBe(true);
+      expect(objects.has(`verified/${historicalId}`)).toBe(true);
+      await expect(
+        attachments.reserveUpload({
+          userId: owner,
+          byteSize: 100,
+          filename: "next.jpg",
+          contentType: "image/jpeg",
+        }),
+      ).resolves.toMatchObject({ quotaUsedBytes: 2 * bytes.length + 100 });
+    });
+  });
+
+  test("Attachment insertion wins its Stored File lock before orphan cleanup", async () => {
+    await withPostgresSchema(
+      "attachment_cleanup_race",
+      async ({ sql, connect }) => {
+        const { PostgresAttachmentRepository } = await import(
+          "@/lib/attachments/postgres"
+        );
+        const owner = crypto.randomUUID();
+        const file = crypto.randomUUID();
+        const review = crypto.randomUUID();
+        const revision = crypto.randomUUID();
+        await sql`INSERT INTO contribution_users (id, status, public_display_name) VALUES (${owner}, 'active', 'Uploader')`;
+        await sql`INSERT INTO stored_files (id, owner_user_id, object_key, byte_size, sha256, detected_mime, last_upload_completed_at) VALUES (${file}, ${owner}, ${`verified/${file}`}, 46, ${"a".repeat(64)}, 'image/jpeg', now() - interval '2 days')`;
+        await sql`SELECT publish_review(${review}, ${revision}, ${owner}, 'COMP', '2000', NULL, NULL, NULL, 'Review', 'attributed', 'test-v1')`;
+        let inserted!: () => void;
+        const ready = new Promise<void>((resolve) => {
+          inserted = resolve;
+        });
+        let commit!: () => void;
+        const release = new Promise<void>((resolve) => {
+          commit = resolve;
+        });
+        const writing = connect(1).begin(async (transaction) => {
+          await transaction`INSERT INTO attachments (id, revision_id, stored_file_id, public_filename, description) VALUES (${crypto.randomUUID()}, ${revision}, ${file}, 'photo.jpg', 'Accepted attachment')`;
+          inserted();
+          await release;
+        });
+        await ready;
+        const repository = new PostgresAttachmentRepository(sql);
+        try {
+          await repository.queueOrphanedFiles(new Date());
+          expect(await repository.listRemovalQueue()).toEqual([]);
+        } finally {
+          commit();
+        }
+        await writing;
+        await repository.queueOrphanedFiles(new Date());
+        expect(await repository.listRemovalQueue()).toEqual([]);
+        expect(
+          await sql`SELECT id FROM attachments WHERE stored_file_id = ${file}`,
+        ).toHaveLength(1);
+      },
+    );
   });
 }

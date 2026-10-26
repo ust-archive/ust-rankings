@@ -129,6 +129,7 @@ export interface AttachmentRepository {
     now: Date,
   ): Promise<Array<{ id: string; objectKeys: string[] }>>;
   deleteIntent(intentId: string): Promise<void>;
+  queueOrphanedFiles(now: Date): Promise<void>;
   requestRemoval(storedFileId: string): Promise<StoredFileRecord>;
   listRemovalQueue(): Promise<StoredFileRecord[]>;
   markRemoved(storedFileId: string): Promise<void>;
@@ -663,6 +664,7 @@ export function createAttachmentService(
         await repository.deleteIntent(intent.id);
         cleaned++;
       }
+      await repository.queueOrphanedFiles(now());
       for (const file of await repository.listRemovalQueue()) {
         await store.delete(file.objectKey);
         if (await store.exists(file.objectKey)) continue;
